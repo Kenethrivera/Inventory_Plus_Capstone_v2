@@ -11,6 +11,8 @@ class InventoryController {
   final SupabaseClient supabase = Supabase.instance.client;
   int? currentUserNumericId;
   List<InventoryItem> _items = [];
+  List<InventoryItem> get allItems => _items;
+  List<InventoryItem> _disabledItems = [];
   String? activeLocationId;
   String? currentUserRole;
   String? currentUserName;
@@ -75,7 +77,22 @@ class InventoryController {
   }
   
 
-  List<InventoryItem> get allItems => _items;
+  List<InventoryItem> get disabledItems => List.unmodifiable(_disabledItems);
+
+  bool isDisabled(String id) => _disabledItems.any((i) => i.id == id);
+
+  InventoryItem? findAnyItemById(String id) {
+    for (final i in _items) {
+      if (i.id == id) return i;
+    }
+    for (final i in _disabledItems) {
+      if (i.id == id) return i;
+    }
+    return null;
+  }
+
+  /// Active + disabled. Only meant for reports.
+  List<InventoryItem> get reportableItems => [..._items, ..._disabledItems];
 
   void setLoggedInUser({
     required String name,
@@ -187,13 +204,23 @@ class InventoryController {
           .select()
           .eq('location_id', userLocationId);
 
-      _items = (productsResponse as List)
-          .map((p) => InventoryItem.fromSupabase(p))
-          .toList();
+      final active = <InventoryItem>[];
+      final disabled = <InventoryItem>[];
+      for (final p in productsResponse as List) {
+        final item = InventoryItem.fromSupabase(p);
+        if (p['is_active'] == false) {
+          disabled.add(item);
+        } else {
+          active.add(item);
+        }
+      }
+      _items = active;
+      _disabledItems = disabled;
 
-      await _loadStockBaselines();  
+      await _loadStockBaselines();
     } catch (e) {
       _items = [];
+      _disabledItems = [];
     }
   }
 
@@ -201,6 +228,16 @@ class InventoryController {
     final locId = activeLocationId;
     if (locId == null) {
       return;
+    }
+
+    final skuTaken = _disabledItems.any(
+      (i) => i.sku.trim().toLowerCase() == newItem.sku.trim().toLowerCase(),
+    );
+    if (skuTaken) {
+      throw Exception(
+        'This SKU belongs to a disabled item. Restore it from '
+        'Inventory > Show disabled instead of adding a new one.',
+      );
     }
 
     try {
@@ -246,6 +283,7 @@ class InventoryController {
     required String type,
     required double quantityChange,
     required double newQuantity,
+    String? note,
   }) async {
     final locId = activeLocationId;
     final userId = currentUserId;
@@ -261,6 +299,7 @@ class InventoryController {
         'location_id': locId,
         'user_id': int.tryParse(userId) ?? userId,
         'user_name': userName,
+        if (note != null && note.isNotEmpty) 'note': note,
       };
 
       await supabase.from('transaction_history').insert(insertData);
@@ -275,6 +314,40 @@ class InventoryController {
     } catch (e) {
       return null;
     }
+  }
+
+  Future<void> writeOffStock(
+    String id,
+    double qty, {
+    required String reason,
+    String? note,
+  }) async {
+    final index = _items.indexWhere((i) => i.id == id);
+    if (index == -1) throw Exception('Item not found or is disabled.');
+    final item = _items[index];
+
+    if (qty <= 0) throw Exception('Quantity must be greater than 0.');
+    if (qty > item.quantity) {
+      throw Exception('Cannot remove more than the current stock.');
+    }
+
+    final newQty = item.quantity - qty;
+    await supabase
+        .from('products')
+        .update({'product_quantity': newQty})
+        .eq('id', id);
+
+    _items[index] = item.copyWith(quantity: newQty);
+
+    await _logTransaction(
+      productId: id,
+      type: 'write_off',
+      quantityChange: -qty,
+      newQuantity: newQty,
+      note: (note == null || note.trim().isEmpty)
+          ? reason
+          : '$reason: ${note.trim()}',
+    );
   }
 
   Future<String?> uploadImageBytes(
@@ -333,20 +406,82 @@ class InventoryController {
     }
   }
 
-  Future<void> deleteItem(String id) async {
-    final index = _items.indexWhere((item) => item.id == id);
-    await supabase.from('products').delete().eq('id', id); // throws on failure
+  Future<bool> _isInOpenOrder(String productId) async {
+    final locId = activeLocationId;
+    if (locId == null) return false;
+    final rows = await supabase
+        .from('orders')
+        .select('items')
+        .eq('location_id', locId)
+        .inFilter('status', ['pending', 'prepared', 'solo_picking']);
 
-    if (index != -1) {
-      final itemToDelete = _items[index];
-      _items.removeAt(index);
-      await _logTransaction(
-        productId: null,
-        type: 'delete',
-        quantityChange: -itemToDelete.quantity,
-        newQuantity: 0,
+    for (final r in List<Map<String, dynamic>>.from(rows)) {
+      final items = r['items'] as List<dynamic>? ?? [];
+      final hit = items.any(
+        (i) => i is Map && i['product_id']?.toString() == productId,
+      );
+      if (hit) return true;
+    }
+    return false;
+  }
+
+  Future<void> disableItem(String id) async {
+    final index = _items.indexWhere((i) => i.id == id);
+    if (index == -1) return;
+
+    if (await _isInOpenOrder(id)) {
+      throw Exception(
+        'This item is in an open order. Complete or cancel the order first.',
       );
     }
+
+    await supabase.from('products').update({'is_active': false}).eq('id', id);
+
+    final item = _items.removeAt(index);
+    _disabledItems.add(item);
+
+    await _logTransaction(
+      productId: id,
+      type: 'item_disabled',
+      quantityChange: 0,
+      newQuantity: item.quantity,
+    );
+  }
+
+  Future<void> restoreItem(String id) async {
+    final index = _disabledItems.indexWhere((i) => i.id == id);
+    if (index == -1) return;
+
+    await supabase.from('products').update({'is_active': true}).eq('id', id);
+
+    final item = _disabledItems.removeAt(index);
+    _items.add(item);
+
+    await _logTransaction(
+      productId: id,
+      type: 'item_restored',
+      quantityChange: 0,
+      newQuantity: item.quantity,
+    );
+  }
+
+  Future<void> deleteItem(String id) async {
+    final index = _disabledItems.indexWhere((i) => i.id == id);
+    if (index == -1) {
+      throw Exception(
+        'Only disabled items can be deleted. Disable the item first.',
+      );
+    }
+
+    await supabase.from('products').delete().eq('id', id); // throws on failure
+
+    final itemToDelete = _disabledItems.removeAt(index);
+    await _logTransaction(
+      productId: null,
+      type: 'delete',
+      quantityChange: -itemToDelete.quantity,
+      newQuantity: 0,
+    );
   }
 
   Future<void> updateItemLocationDetails(
@@ -376,26 +511,40 @@ class InventoryController {
   List<InventoryItem> get unassignedItems =>
       _items.where((item) => item.shelfLevel == null || item.shelfLevel!.isEmpty).toList();
 
-  List<InventoryItem> filterInventory({
-    required String query,
-    required String category,
-  }) {
-    final filtered = _items.where((item) {
+  List<InventoryItem> _applyFilter(
+    List<InventoryItem> source,
+    String query,
+    String category,
+  ) {
+    final filtered = source.where((item) {
       final matchesSearch =
           item.name.toLowerCase().contains(query.toLowerCase()) ||
           item.sku.toLowerCase().contains(query.toLowerCase());
 
       final matchesCategory =
           category == 'All' ||
-          (category == 'Unassigned' && (item.shelfLevel == null || item.shelfLevel!.isEmpty)) ||
+          (category == 'Unassigned' &&
+              (item.shelfLevel == null || item.shelfLevel!.isEmpty)) ||
           item.category == category;
 
       return matchesSearch && matchesCategory;
     }).toList();
 
-    filtered.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    filtered.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
     return filtered;
   }
+
+   List<InventoryItem> filterInventory({
+    required String query,
+    required String category,
+  }) => _applyFilter(_items, query, category);
+
+  List<InventoryItem> filterDisabled({
+    required String query,
+    required String category,
+  }) => _applyFilter(_disabledItems, query, category);
 
   List<String> getUniqueCategories() {
     final categories = _items.map((item) => item.category).toSet().toList();
@@ -749,6 +898,15 @@ class InventoryController {
   }) async {
     final locId = activeLocationId;
     if (locId == null) return null; // CHANGE 2: return null
+
+    for (final oi in items) {
+      if (!_items.any((i) => i.id == oi.productId)) {
+        throw Exception(
+          'An item in this order is no longer available. '
+          'Remove it from the cart and try again.',
+        );
+      }
+    }
 
     try {
       final response = await supabase.from('orders').insert({

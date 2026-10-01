@@ -1,21 +1,28 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_litert/flutter_litert.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/material.dart';
 import 'ui/login_page.dart';
 import 'ui/main_screen.dart'; 
 import 'logic/inventory_controller.dart'; 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
 try {
-      // We removed dotenv.load entirely.
-      
+      await dotenv.load(fileName: "lib/.env");
       // Use const String.fromEnvironment to read Vercel's injected keys
+      // await Supabase.initialize(
+      //   url: const String.fromEnvironment('SUPABASE_URL'),
+      //   anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
+      // );
+
       await Supabase.initialize(
-        url: const String.fromEnvironment('SUPABASE_URL'),
-        anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
-      );
+      url: dotenv.env['SUPABASE_URL']!,
+      anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+    );
   } catch (e) {
     print("Initialization Error: $e");
   }
@@ -23,6 +30,12 @@ try {
   final inventoryController = InventoryController();
 
   runApp(InventoryApp(controller: inventoryController));
+}
+
+Future<void> initDetectorRuntime() async {
+  if (kIsWeb) {
+    await initializeWeb(); // loads the LiteRT.js/TFLite.js runtime in-browser
+  }
 }
 
 class InventoryApp extends StatelessWidget {

@@ -73,6 +73,9 @@ class _MainScreenState extends State<MainScreen> {
                 if (dialogContext.mounted) Navigator.pop(dialogContext);
                 if (mounted) setState(() {});
               },
+              onStatusChanged: () {
+                if (mounted) setState(() {});
+              },
             ),
           ),
         ),
@@ -281,6 +284,9 @@ Widget _quickSet(
         onBack: _handleBackToMain,
         onUpdate: _handleUpdateItem,
         onDelete: _handleDeleteItem,
+        onStatusChanged: () {
+          if (mounted) setState(() {});
+        },
       );
     }
 

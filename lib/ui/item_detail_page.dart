@@ -18,6 +18,7 @@ class ItemDetailPage extends StatefulWidget {
   final VoidCallback onBack;
   final Future<void> Function(InventoryItem) onUpdate;
   final FutureOr<void> Function(String) onDelete;
+  final VoidCallback? onStatusChanged;
 
   const ItemDetailPage({
     super.key,
@@ -26,6 +27,7 @@ class ItemDetailPage extends StatefulWidget {
     required this.onBack,
     required this.onUpdate,
     required this.onDelete,
+    this.onStatusChanged,
   });
 
   @override
@@ -41,6 +43,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   bool isReadOnly = false;
 
   bool _isSaving = false;
+  bool get _isDisabled => widget.controller.isDisabled(_currentItem.id);
+  
   String? _newImageUrl;
   XFile? _selectedImage;
   final ImagePicker _picker = ImagePicker();
@@ -433,52 +437,169 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   Future<void> _pickImage() async {
     if (!_isEditing) return;
 
-    showModalBottomSheet(
+    // Camera only makes sense on phones/tablets, not web or desktop.
+    final bool cameraAvailable =
+        !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+    final bool hasImage = (_newImageUrl ?? _currentItem.imageUrl).isNotEmpty;
+
+    final String? choice = await showDialog<String>(
       context: context,
-      builder: (context) => SafeArea(
-        child: Wrap(
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.imagePlus,
+        color: Colors.orange,
+        title: "Product Photo",
+        subtitle: "Choose how to change the image",
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(LucideIcons.camera),
-              title: const Text('Take Photo'),
-              onTap: () async {
-                Navigator.pop(context);
-                final XFile? photo = await _picker.pickImage(
-                  source: ImageSource.camera,
-                );
-                if (photo != null) {
-                  setState(() {
-                    _selectedImage = photo;
-                    _newImageUrl = photo.path;
-                  });
-                }
-              },
+            if (cameraAvailable) ...[
+              _buildSourceOption(
+                icon: LucideIcons.camera,
+                title: "Take Photo",
+                description: "Use your device camera",
+                onTap: () => Navigator.pop(dialogContext, 'camera'),
+              ),
+              const SizedBox(height: 10),
+            ],
+            _buildSourceOption(
+              icon: LucideIcons.image,
+              title: "Choose from Gallery",
+              description: "Pick an existing photo",
+              onTap: () => Navigator.pop(dialogContext, 'gallery'),
             ),
-            ListTile(
-              leading: const Icon(LucideIcons.image),
-              title: const Text('Choose from Gallery'),
-              onTap: () async {
-                Navigator.pop(context);
-                final XFile? image = await _picker.pickImage(
-                  source: ImageSource.gallery,
-                );
-                if (image != null) {
-                  setState(() {
-                    _selectedImage = image;
-                    _newImageUrl = image.path;
-                  });
-                }
-              },
+            const SizedBox(height: 10),
+            _buildSourceOption(
+              icon: LucideIcons.link,
+              title: "Enter Image URL",
+              description: "Use an image hosted online",
+              onTap: () => Navigator.pop(dialogContext, 'url'),
             ),
-            ListTile(
-              leading: const Icon(LucideIcons.link),
-              title: const Text('Enter Image URL'),
-              onTap: () {
-                Navigator.pop(context);
-                _showUrlInputDialog();
-              },
-            ),
+            if (hasImage) ...[
+              const SizedBox(height: 10),
+              _buildSourceOption(
+                icon: LucideIcons.trash2,
+                title: "Remove Photo",
+                description: "Clear the current image",
+                color: Colors.red.shade600,
+                onTap: () => Navigator.pop(dialogContext, 'remove'),
+              ),
+            ],
           ],
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.black87,
+              side: BorderSide(color: Colors.grey.shade300),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            child: const Text("Cancel"),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || choice == null) return;
+
+    switch (choice) {
+      case 'camera':
+        await _pickFromSource(ImageSource.camera);
+        break;
+      case 'gallery':
+        await _pickFromSource(ImageSource.gallery);
+        break;
+      case 'url':
+        _showUrlInputDialog();
+        break;
+      case 'remove':
+        setState(() {
+          _newImageUrl = ''; // empty string = "clear the image" on save
+          _selectedImage = null;
+        });
+        _toast("Photo removed");
+        break;
+    }
+  }
+
+  Future<void> _pickFromSource(ImageSource source) async {
+    try {
+      final XFile? file = await _picker.pickImage(source: source);
+      if (file == null || !mounted) return; // user cancelled
+      setState(() {
+        _selectedImage = file;
+        _newImageUrl = file.path;
+      });
+      _toast("Photo added");
+    } catch (e) {
+      _toast("Couldn't load the image: $e", isError: true);
+    }
+  }
+
+  Widget _buildSourceOption({
+    required IconData icon,
+    required String title,
+    required String description,
+    required VoidCallback onTap,
+    Color color = Colors.orange,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: color == Colors.orange
+                            ? const Color(0xFF0F172A)
+                            : color,
+                      ),
+                    ),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                LucideIcons.chevronRight,
+                size: 16,
+                color: Colors.grey.shade400,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -488,26 +609,72 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     final urlController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Image URL"),
-        content: TextField(
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.link,
+        color: Colors.orange,
+        title: "Image URL",
+        subtitle: "Use an image hosted online",
+        child: TextField(
           controller: urlController,
-          decoration: const InputDecoration(hintText: "Paste link here"),
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: InputDecoration(
+            hintText: "Paste link here (https://...)",
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.black87,
+              side: BorderSide(color: Colors.grey.shade300),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
             child: const Text("Cancel"),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () {
+              final url = urlController.text.trim();
+              final uri = Uri.tryParse(url);
+              final valid =
+                  uri != null &&
+                  (uri.scheme == 'http' || uri.scheme == 'https') &&
+                  uri.host.isNotEmpty;
+
+              if (!valid) {
+                _toast(
+                  "Please enter a valid image link starting with http(s)://",
+                  isError: true,
+                );
+                return; // keep the dialog open so they can fix it
+              }
+
               setState(() {
-                _newImageUrl = urlController.text;
+                _newImageUrl = url;
                 _selectedImage = null;
               });
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
+              _toast("Image URL added");
             },
-            child: const Text("OK"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            child: const Text(
+              "OK",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -527,7 +694,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       String finalImageUrl = _currentItem.imageUrl;
 
       if (_newImageUrl != null && _newImageUrl != _currentItem.imageUrl) {
-        if (!_newImageUrl!.startsWith('http')) {
+        if (_newImageUrl!.isEmpty) {
+           finalImageUrl = '';
+        } else if (!_newImageUrl!.startsWith('http')) {
           final String fileName = _nameController.text.isNotEmpty
               ? '${_nameController.text}_image.jpg'
               : 'updated_product_image.jpg';
@@ -553,7 +722,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
       final updated = widget.controller.prepareUpdatedItem(
         originalItem: _currentItem,
-        newName: _nameController.text,
+        newName: _nameController.text.trim(),
         newSku: _skuController.text,
         newPrice: _priceController.text,
         newStock: _stockController.text,
@@ -604,6 +773,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   
   bool _validate() {
     final errors = <String, String>{};
+    if (_nameController.text.trim().isEmpty)
+      errors['name'] = 'Name is required';
     final price = double.tryParse(_priceController.text.trim());
     if (price == null || price < 0) errors['price'] = 'Enter a valid price';
     final stock = double.tryParse(_stockController.text.trim());
@@ -630,6 +801,37 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
+                      if (_isDisabled)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                LucideIcons.eyeOff,
+                                size: 18,
+                                color: Colors.orange.shade700,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'This item is disabled. It is hidden from POS and '
+                                  'the inventory list. Restore it to sell it again.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.orange.shade900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       Row(
                         children: [
                           _buildStatCard(
@@ -647,7 +849,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                             _statusColor(
                               widget.controller.stockStatusFor(_currentItem),
                             ),
-                            _stockController, isReadOnly: true,
+                            _stockController,
+                            isReadOnly: true,
                           ),
                         ],
                       ),
@@ -657,7 +860,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                       _buildDetailsBox(),
                       const SizedBox(height: 24),
                       _buildTransactionHistoryBox(),
-                      const SizedBox(height: 24),
+                      const SizedBox(
+                        height: 100,
+                      ), // was 24: keeps content clear of the bottom bar
                     ],
                   ),
                 ),
@@ -697,7 +902,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             icon: const Icon(LucideIcons.check, color: Colors.greenAccent),
             onPressed: _handleSave,
           )
-        else if (widget.controller.currentUserRole?.toLowerCase() == 'admin')
+        else if (widget.controller.currentUserRole?.toLowerCase() == 'admin' && !_isDisabled)
           IconButton(
             icon: const Icon(LucideIcons.pencil, color: Colors.white, size: 20),
             onPressed: () => setState(() => _isEditing = true),
@@ -769,6 +974,18 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
   Widget _buildImage() {
     final imageUrl = _newImageUrl ?? _currentItem.imageUrl;
+
+    if (imageUrl.isEmpty) {
+  return Container(
+    color: Colors.grey.shade200,
+    child: const Icon(
+      Icons.image_not_supported,
+      color: Colors.grey,
+      size: 50,
+    ),
+  );
+}
+
     if (kIsWeb || imageUrl.startsWith('http')) {
       return Image.network(
         imageUrl,
@@ -949,6 +1166,13 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+          _buildField(
+            "Name",
+            _nameController,
+            _currentItem.name,
+            errorKey: 'name',
           ),
           const SizedBox(height: 16),
           _buildField("SKU", _skuController, _currentItem.sku, isReadOnly: true),
@@ -1197,7 +1421,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     String displayValue, {
     bool isMultiline = false,
     bool isReadOnly = false,
+    String? errorKey,
   }) {
+    final error = errorKey == null ? null : _errors[errorKey];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1206,6 +1432,11 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             ? TextField(
                 controller: controller,
                 maxLines: isMultiline ? null : 1,
+                onChanged: (_) {
+                  if (errorKey != null && _errors.containsKey(errorKey)) {
+                    setState(() => _errors.remove(errorKey));
+                  }
+                },
                 decoration: const InputDecoration(
                   isDense: true,
                   contentPadding: EdgeInsets.symmetric(vertical: 8),
@@ -1218,48 +1449,206 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   style: const TextStyle(fontSize: 14),
                 ),
               ),
+        if (_isEditing && error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              error,
+              style: const TextStyle(
+                color: Colors.red,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
       ],
     );
   }
 
   Widget _buildBottomActions() {
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Colors.grey.shade200)),
+  final isAdmin = widget.controller.currentUserRole?.toLowerCase() == 'admin';
+  final disabled = _isDisabled;
+
+  final buttons = <Widget>[];
+
+  if (!disabled) {
+    // Active item
+    buttons.add(
+      ElevatedButton.icon(
+        onPressed: _showRestockDialog,
+        icon: const Icon(LucideIcons.plus, size: 18),
+        label: const Text("Restock"),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.orange,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _showRestockDialog,
-                icon: const Icon(LucideIcons.plus, size: 18),
-                label: const Text("Restock"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
+      ),
+    );
+    if (isAdmin) {
+      buttons.add(
+        OutlinedButton.icon(
+          onPressed: _currentItem.quantity > 0 ? _showWriteOffDialog : null,
+          icon: const Icon(LucideIcons.packageMinus, size: 18),
+          label: const Text("Write off"),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.red,
+            side: const BorderSide(color: Colors.red),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+        ),
+      );
+      buttons.add(
+        OutlinedButton.icon(
+          onPressed: _showDisableDialog,
+          icon: const Icon(LucideIcons.eyeOff, size: 18),
+          label: const Text("Disable"),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.orange.shade800,
+            side: BorderSide(color: Colors.orange.shade600),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+        ),
+      );
+    }
+  } else if (isAdmin) {
+    // Disabled item
+    buttons.add(
+      ElevatedButton.icon(
+        onPressed: _restoreItem,
+        icon: const Icon(LucideIcons.rotateCcw, size: 18),
+        label: const Text("Restore"),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+        ),
+      ),
+    );
+    buttons.add(
+      OutlinedButton.icon(
+        onPressed: _showDeleteDialog,
+        icon: const Icon(LucideIcons.trash2, size: 18),
+        label: const Text("Delete"),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.red,
+          side: const BorderSide(color: Colors.red),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+        ),
+      ),
+    );
+  }
+
+  if (buttons.isEmpty) return const SizedBox.shrink();
+
+  return Positioned(
+    bottom: 0,
+    left: 0,
+    right: 0,
+    child: Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < buttons.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            Expanded(child: buttons[i]),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+
+  Future<void> _showDisableDialog() async {
+    final hasStock = _currentItem.quantity > 0;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.eyeOff,
+        color: Colors.orange,
+        title: 'Disable item?',
+        subtitle: 'Hidden from POS and inventory',
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.black87,
+              side: BorderSide(color: Colors.grey.shade300),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
               ),
             ),
-            if (widget.controller.currentUserRole?.toLowerCase() ==
-                'admin') ...[
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _showDeleteDialog,
-                  icon: const Icon(LucideIcons.trash2, size: 18),
-                  label: const Text("Delete"),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(LucideIcons.eyeOff, size: 16),
+            label: const Text(
+              'Disable',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _currentItem.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                      color: Color(0xFF0F172A),
+                    ),
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_currentItem.sku}  •  ${_fmt(_currentItem.quantity)} ${_currentItem.unit} in stock',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Past sales, history and reports keep this item. '
+              'You can restore it anytime from Inventory > Show disabled.',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            ),
+            if (hasStock) ...[
+              const SizedBox(height: 10),
+              Text(
+                'It still has stock, so it will not appear in low-stock alerts while disabled.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.orange.shade800,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -1267,6 +1656,40 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         ),
       ),
     );
+
+    if (confirmed != true || !mounted) return;
+
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final name = _currentItem.name;
+    try {
+      await widget.controller.disableItem(_currentItem.id);
+      widget.onStatusChanged?.call();
+      widget.onBack();
+      AppToast.showOn(overlay, '"$name" disabled');
+    } catch (e) {
+      AppToast.showOn(
+        overlay,
+        e.toString().replaceFirst('Exception: ', ''),
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _restoreItem() async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final name = _currentItem.name;
+    try {
+      await widget.controller.restoreItem(_currentItem.id);
+      widget.onStatusChanged?.call();
+      widget.onBack();
+      AppToast.showOn(overlay, '"$name" restored');
+    } catch (e) {
+      AppToast.showOn(
+        overlay,
+        e.toString().replaceFirst('Exception: ', ''),
+        isError: true,
+      );
+    }
   }
 
   Future<void> _showDeleteDialog() async {
@@ -1275,8 +1698,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       builder: (dialogContext) => AppDialog(
         icon: LucideIcons.trash2,
         color: Colors.red,
-        title: 'Delete item?',
-        subtitle: "This can't be undone",
+        title: 'Delete permanently?',
+        subtitle: "This permanently removes the disabled item. Its past sales will show as Deleted item in the dashboard and activity log.",
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -1359,6 +1782,289 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     } catch (e) {
       AppToast.showOn(overlay, 'Could not delete "$name": $e', isError: true);
     }
+  }
+
+  Future<void> _showWriteOffDialog() async {
+    final qtyCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    final unit = _currentItem.unit;
+
+    const reasons = ['Damaged', 'Expired', 'Lost', 'Other'];
+    String reason = reasons.first;
+    bool saving = false;
+    bool touched = false;
+    String? error;
+
+    String? validate(String text) {
+      final t = text.trim();
+      if (t.isEmpty) return 'Enter the quantity to remove';
+      final v = double.tryParse(t);
+      if (v == null) return 'Enter a valid number';
+      if (v <= 0) return 'Must be greater than 0';
+      if (v > _currentItem.quantity) {
+        return 'Only ${_fmt(_currentItem.quantity)} $unit in stock';
+      }
+      return null;
+    }
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final value = double.tryParse(qtyCtrl.text.trim());
+          final remaining =
+              (value != null && value > 0 && value <= _currentItem.quantity)
+              ? _currentItem.quantity - value
+              : null;
+
+          Future<void> submit() async {
+            touched = true;
+            final err = validate(qtyCtrl.text);
+            if (err != null) {
+              setDialogState(() => error = err);
+              return;
+            }
+            setDialogState(() {
+              error = null;
+              saving = true;
+            });
+            try {
+              final qty = double.parse(qtyCtrl.text.trim());
+              await widget.controller.writeOffStock(
+                _currentItem.id,
+                qty,
+                reason: reason,
+                note: noteCtrl.text,
+              );
+              if (!mounted) return;
+              final newQty = _currentItem.quantity - qty;
+              setState(() {
+                _currentItem = _currentItem.copyWith(quantity: newQty);
+                _stockController.text = newQty.toString();
+              });
+              widget.onStatusChanged?.call();
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+              _toast(
+                'Removed ${_fmt(qty)} $unit of ${_currentItem.name} ($reason)',
+              );
+              _loadHistory();
+            } catch (e) {
+              if (dialogContext.mounted) setDialogState(() => saving = false);
+              _toast(
+                e.toString().replaceFirst('Exception: ', ''),
+                isError: true,
+              );
+            }
+          }
+
+          OutlineInputBorder border(Color c, [double w = 1]) =>
+              OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: c, width: w),
+              );
+
+          return AppDialog(
+            icon: LucideIcons.packageMinus,
+            color: Colors.red,
+            title: 'Write off stock',
+            subtitle: _currentItem.name,
+            actions: [
+              OutlinedButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.black87,
+                  side: BorderSide(color: Colors.grey.shade300),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: saving ? null : submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text(
+                        'Remove stock',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+              ),
+            ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _stockSummary(
+                          'CURRENT',
+                          '${_fmt(_currentItem.quantity)} $unit',
+                          const Color(0xFF0F172A),
+                        ),
+                      ),
+                      Icon(
+                        LucideIcons.arrowRight,
+                        size: 18,
+                        color: Colors.grey.shade400,
+                      ),
+                      Expanded(
+                        child: _stockSummary(
+                          'AFTER',
+                          remaining == null ? '—' : '${_fmt(remaining)} $unit',
+                          remaining == null ? Colors.grey : Colors.red.shade700,
+                          alignEnd: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Reason',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: reasons
+                      .map(
+                        (r) => ChoiceChip(
+                          label: Text(r),
+                          selected: reason == r,
+                          selectedColor: Colors.red.withOpacity(0.12),
+                          labelStyle: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: reason == r
+                                ? Colors.red.shade700
+                                : Colors.black87,
+                          ),
+                          onSelected: saving
+                              ? null
+                              : (_) => setDialogState(() => reason = r),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Quantity to remove',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          LucideIcons.alertCircle,
+                          size: 13,
+                          color: Colors.red,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            error!,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: qtyCtrl,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    // digits with at most one decimal point
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                  ],
+                  onChanged: (text) => setDialogState(() {
+                    if (touched) error = validate(text);
+                  }),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '0',
+                    suffixText: unit,
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 14,
+                    ),
+                    enabledBorder: border(
+                      error != null ? Colors.red : Colors.grey.shade300,
+                    ),
+                    focusedBorder: border(
+                      error != null ? Colors.red : Colors.red.shade300,
+                      1.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: noteCtrl,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    hintText: 'Note (optional), e.g. dropped during unloading',
+                    hintStyle: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade500,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    enabledBorder: border(Colors.grey.shade300),
+                    focusedBorder: border(Colors.red.shade300, 1.5),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    qtyCtrl.dispose();
+    noteCtrl.dispose();
   }
 
 }

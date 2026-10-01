@@ -24,8 +24,13 @@ class SystemSettingsPage extends StatefulWidget {
 }
 
 class _SystemSettingsPageState extends State<SystemSettingsPage> {
-  bool _isLoading = true;
+  // Global Settings State
+  bool _isLoadingSettings = true;
   List<MeasurementUnit> _measurements = [];
+
+  // Staff State
+  bool _isLoadingStaff = true;
+  List<Map<String, dynamic>> _staffList = [];
 
   // Global Threshold State
   final TextEditingController _lowPercentCtrl = TextEditingController();
@@ -37,6 +42,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   void initState() {
     super.initState();
     _fetchSettings();
+    _loadStaff();
   }
 
   @override
@@ -46,13 +52,9 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     super.dispose();
   }
 
-  // Shows 20 instead of 20.0 in the text fields.
   String _formatPct(double v) =>
       v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
-  // The controller owns the measurements list (availableMeasurements) and
-  // keeps it up to date after every add/update/delete, so the page just
-  // rebuilds its local view models from it.
   List<MeasurementUnit> _measurementsFromController() {
     return widget.controller.availableMeasurements
         .map(
@@ -67,10 +69,6 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
   Future<void> _fetchSettings() async {
     try {
-      // Thresholds + measurements are both loaded by the controller.
-      // Note: loadSystemSettings() swallows its own errors and keeps the
-      // default values (20 / 10), so a failed fetch shows defaults
-      // rather than an error toast.
       await widget.controller.loadSystemSettings();
       if (!mounted) return;
 
@@ -81,12 +79,35 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
       setState(() {
         _measurements = _measurementsFromController();
-        _isLoading = false;
+        _isLoadingSettings = false;
       });
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _isLoadingSettings = false);
         _showToast("Error loading settings: $e", isError: true);
+      }
+    }
+  }
+
+  Future<void> _loadStaff() async {
+    setState(() => _isLoadingStaff = true);
+    try {
+      final staff = await widget.controller.fetchStaff();
+      final currentUserId = widget.controller.currentUserId;
+      final filteredStaff = staff
+          .where((s) => s['id'].toString() != currentUserId)
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _staffList = filteredStaff;
+          _isLoadingStaff = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingStaff = false);
+        _showToast("Error loading staff: $e", isError: true);
       }
     }
   }
@@ -98,6 +119,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         : AppToast.success(context, message);
   }
 
+  // ─── THRESHOLD MANAGEMENT ──────────────────────────────────────────────────
   Future<void> _saveGlobalThresholds() async {
     setState(() => _thresholdError = null);
 
@@ -119,9 +141,6 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     setState(() => _isSavingThresholds = true);
 
     try {
-      // Controller upserts the global settings row AND updates its own
-      // globalLowStockPct / globalCriticalPct, so ItemCard and the
-      // inventory page pick up the new values without a refetch.
       await widget.controller.updateGlobalThresholds(lowVal, critVal);
 
       if (mounted) {
@@ -138,138 +157,139 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     }
   }
 
+  // ─── MEASUREMENT MANAGEMENT ────────────────────────────────────────────────
   void _showMeasurementModal([MeasurementUnit? existing]) {
-  final nameCtrl = TextEditingController(text: existing?.name ?? '');
-  final symbolCtrl = TextEditingController(text: existing?.symbol ?? '');
-  String? nameError;
-  String? symbolError;
-  bool saving = false;
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final symbolCtrl = TextEditingController(text: existing?.symbol ?? '');
+    String? nameError;
+    String? symbolError;
+    bool saving = false;
 
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (context, setModalState) {
-        Future<void> validateAndSave() async {
-          final name = nameCtrl.text.trim();
-          final symbol = symbolCtrl.text.trim();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setModalState) {
+          Future<void> validateAndSave() async {
+            final name = nameCtrl.text.trim();
+            final symbol = symbolCtrl.text.trim();
 
-          setModalState(() {
-            nameError = name.isEmpty ? "Measurement name is required" : null;
-            symbolError = symbol.isEmpty ? "Symbol/Unit is required" : null;
-          });
-          if (name.isEmpty || symbol.isEmpty) return;
+            setModalState(() {
+              nameError = name.isEmpty ? "Measurement name is required" : null;
+              symbolError = symbol.isEmpty ? "Symbol/Unit is required" : null;
+            });
+            if (name.isEmpty || symbol.isEmpty) return;
 
-          setModalState(() => saving = true);
-          try {
-            if (existing == null) {
-              await widget.controller.addMeasurement(name, symbol);
-              _showToast("Measurement added successfully");
-            } else {
-              await widget.controller.updateMeasurement(
-                existing.id,
-                name,
-                symbol,
-              );
-              _showToast("Measurement updated successfully");
+            setModalState(() => saving = true);
+            try {
+              if (existing == null) {
+                await widget.controller.addMeasurement(name, symbol);
+                _showToast("Measurement added successfully");
+              } else {
+                await widget.controller.updateMeasurement(
+                  existing.id,
+                  name,
+                  symbol,
+                );
+                _showToast("Measurement updated successfully");
+              }
+
+              if (mounted) {
+                setState(() => _measurements = _measurementsFromController());
+              }
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+            } catch (e) {
+              setModalState(() => saving = false);
+              _showToast("Failed to save measurement: $e", isError: true);
             }
-
-            if (mounted) {
-              setState(() => _measurements = _measurementsFromController());
-            }
-            if (dialogContext.mounted) Navigator.pop(dialogContext);
-          } catch (e) {
-            setModalState(() => saving = false);
-            _showToast("Failed to save measurement: $e", isError: true);
           }
-        }
 
-        InputDecoration deco(String label, String? error) => InputDecoration(
-          labelText: label,
-          errorText: error,
-          filled: true,
-          fillColor: const Color(0xFFF8FAFC),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Colors.orange, width: 2),
-          ),
-        );
+          InputDecoration deco(String label, String? error) => InputDecoration(
+            labelText: label,
+            errorText: error,
+            filled: true,
+            fillColor: const Color(0xFFF8FAFC),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Colors.orange, width: 2),
+            ),
+          );
 
-        return AppDialog(
-          icon: LucideIcons.ruler,
-          color: Colors.orange,
-          title: existing == null ? "Add Measurement" : "Edit Measurement",
-          subtitle: existing?.name,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: deco("Measurement Name (e.g. Pieces)", nameError),
+          return AppDialog(
+            icon: LucideIcons.ruler,
+            color: Colors.blue,
+            title: existing == null ? "Add Measurement" : "Edit Measurement",
+            subtitle: existing?.name,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: deco("Measurement Name (e.g. Pieces)", nameError),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: symbolCtrl,
+                  decoration: deco("Symbol / Unit (e.g. pcs)", symbolError),
+                ),
+              ],
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.black87,
+                  side: BorderSide(color: Colors.grey.shade300),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text("Cancel"),
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: symbolCtrl,
-                decoration: deco("Symbol / Unit (e.g. pcs)", symbolError),
+              ElevatedButton(
+                onPressed: saving ? null : validateAndSave,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        "Save",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
             ],
-          ),
-          actions: [
-            OutlinedButton(
-              onPressed: saving ? null : () => Navigator.pop(dialogContext),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.black87,
-                side: BorderSide(color: Colors.grey.shade300),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              onPressed: saving ? null : validateAndSave,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              child: saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Text(
-                      "Save",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-            ),
-          ],
-        );
-      },
-    ),
-  );
-}
+          );
+        },
+      ),
+    );
+  }
 
-  void _confirmDelete(MeasurementUnit item) {
+  void _confirmDeleteMeasurement(MeasurementUnit item) {
     showDialog(
       context: context,
       builder: (ctx) => AppDialog(
@@ -302,7 +322,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                   setState(() => _measurements = _measurementsFromController());
                 }
                 if (ctx.mounted) Navigator.pop(ctx);
-                _showToast("Measurement deleted", isError: true);
+                _showToast("Measurement deleted");
               } catch (e) {
                 if (ctx.mounted) Navigator.pop(ctx);
                 _showToast("Failed to delete measurement: $e", isError: true);
@@ -329,12 +349,995 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     );
   }
 
+  // ─── STAFF MANAGEMENT ──────────────────────────────────────────────────────
+  String _getInitials(String? name) {
+    if (name == null || name.trim().isEmpty) return "??";
+    List<String> parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
+    return "${parts[0][0]}${parts[1][0]}".toUpperCase();
+  }
+
+  String _generateDefaultPassword(String name) {
+    if (name.trim().isEmpty) return "default123";
+    List<String> parts = name.trim().toLowerCase().split(RegExp(r'\s+'));
+    String first = parts.first;
+    String initials = parts.length > 1
+        ? parts.sublist(1).map((p) => p[0]).join()
+        : "";
+    return "$first${initials}123";
+  }
+
+  Widget _buildDarkField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    TextInputType? keyboardType,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF4A5568),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          style: const TextStyle(color: Color(0xFF1A1F36), fontSize: 14),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: Color(0xFFB0B7C3)),
+            prefixIcon: Icon(icon, color: const Color(0xFF8892A4), size: 16),
+            filled: true,
+            fillColor: const Color(0xFFF8FAFC),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Colors.orange, width: 2),
+            ),
+            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showAddStaffDialog() {
+    final nameCtrl = TextEditingController();
+    final userCtrl = TextEditingController();
+    final addressCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    String selectedRole = 'staff';
+    bool isSaving = false;
+    String defaultPassword = "";
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setModalState) {
+          nameCtrl.addListener(() {
+            setModalState(() {
+              defaultPassword = _generateDefaultPassword(nameCtrl.text);
+            });
+          });
+
+          return AppDialog(
+            icon: LucideIcons.userPlus,
+            color: Colors.orange,
+            title: "Add New Staff",
+            subtitle: "Fill in the details to create an account",
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDarkField(
+                  controller: nameCtrl,
+                  label: "Full Name",
+                  hint: "Enter full name",
+                  icon: LucideIcons.user,
+                ),
+                const SizedBox(height: 16),
+                _buildDarkField(
+                  controller: userCtrl,
+                  label: "Username",
+                  hint: "Enter username",
+                  icon: LucideIcons.atSign,
+                ),
+                const SizedBox(height: 16),
+                _buildDarkField(
+                  controller: emailCtrl,
+                  label: "Email Address",
+                  hint: "Enter email (optional)",
+                  icon: LucideIcons.mail,
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 16),
+                _buildDarkField(
+                  controller: phoneCtrl,
+                  label: "Phone Number",
+                  hint: "Enter phone (optional)",
+                  icon: LucideIcons.phone,
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 16),
+                _buildDarkField(
+                  controller: addressCtrl,
+                  label: "Address",
+                  hint: "Enter address (optional)",
+                  icon: LucideIcons.mapPin,
+                ),
+                const SizedBox(height: 16),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Role",
+                      style: TextStyle(
+                        color: Color(0xFF4A5568),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedRole,
+                      dropdownColor: Colors.white,
+                      style: const TextStyle(
+                        color: Color(0xFF1A1F36),
+                        fontSize: 14,
+                      ),
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(
+                          LucideIcons.shield,
+                          color: Color(0xFF8892A4),
+                          size: 16,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(
+                            color: Colors.orange,
+                            width: 2,
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 14,
+                        ),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'staff', child: Text('Staff')),
+                        DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                        DropdownMenuItem(
+                          value: 'helper',
+                          child: Text('Helper'),
+                        ),
+                      ],
+                      onChanged: (val) =>
+                          setModalState(() => selectedRole = val!),
+                    ),
+                  ],
+                ),
+                if (defaultPassword.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFBBF7D0)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          LucideIcons.keyRound,
+                          color: Color(0xFF16A34A),
+                          size: 16,
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Default Password",
+                              style: TextStyle(
+                                color: Color(0xFF4A5568),
+                                fontSize: 11,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              defaultPassword,
+                              style: const TextStyle(
+                                color: Color(0xFF15803D),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF4A5568),
+                  side: BorderSide(color: Colors.grey.shade300),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (nameCtrl.text.trim().isEmpty ||
+                            userCtrl.text.trim().isEmpty) {
+                          _showToast(
+                            "Name and username are required.",
+                            isError: true,
+                          );
+                          return;
+                        }
+                        setModalState(() => isSaving = true);
+                        try {
+                          final success = await widget.controller.createStaff(
+                            name: nameCtrl.text.trim(),
+                            username: userCtrl.text.trim(),
+                            password: defaultPassword,
+                            email: emailCtrl.text.trim(),
+                            phone: phoneCtrl.text.trim(),
+                            address: addressCtrl.text.trim(),
+                            role: selectedRole,
+                          );
+                          if (success) {
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                            }
+                            _loadStaff();
+                            _showToast("Staff created successfully.");
+                          } else {
+                            setModalState(() => isSaving = false);
+                            _showToast(
+                              "Failed to create staff. Username may already exist.",
+                              isError: true,
+                            );
+                          }
+                        } catch (e) {
+                          setModalState(() => isSaving = false);
+                          _showToast("Error creating staff: $e", isError: true);
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: isSaving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        "Create Account",
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showEditStaffRole(Map<String, dynamic> staff) {
+    String selectedRole = staff['role'] ?? 'staff';
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return AppDialog(
+            icon: LucideIcons.shield,
+            color: Colors.blue,
+            title: "Change Role",
+            subtitle: staff['name'],
+            child: DropdownButtonFormField<String>(
+              initialValue: selectedRole,
+              decoration: InputDecoration(
+                labelText: "Role",
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.orange, width: 2),
+                ),
+                prefixIcon: const Icon(LucideIcons.shield),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'staff', child: Text('Staff')),
+                DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                DropdownMenuItem(value: 'helper', child: Text('Helper')),
+              ],
+              onChanged: (val) => setModalState(() => selectedRole = val!),
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.black87,
+                  side: BorderSide(color: Colors.grey.shade300),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        setModalState(() => isSaving = true);
+                        try {
+                          final success = await widget.controller
+                              .updateStaffRole(
+                                staff['id'].toString(),
+                                selectedRole,
+                              );
+                          if (success) {
+                            if (dialogContext.mounted)
+                              Navigator.pop(dialogContext);
+                            _loadStaff();
+                            _showToast("Role updated successfully.");
+                          } else {
+                            setModalState(() => isSaving = false);
+                            _showToast("Error updating role", isError: true);
+                          }
+                        } catch (e) {
+                          setModalState(() => isSaving = false);
+                          _showToast("Error updating role: $e", isError: true);
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text("Save Changes"),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showResetPasswordDialog(Map<String, dynamic> staff) {
+    final newPass = _generateDefaultPassword(staff['name'] ?? '');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AppDialog(
+        icon: LucideIcons.refreshCw,
+        color: Colors.orange,
+        title: "Reset Password",
+        subtitle: staff['name'],
+        child: Text.rich(
+          TextSpan(
+            text: "Are you sure you want to reset the password for ",
+            children: [
+              TextSpan(
+                text: "${staff['name']}",
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: "?\n\nIt will be updated to: "),
+              TextSpan(
+                text: newPass,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.black87,
+              side: BorderSide(color: Colors.grey.shade300),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                final success = await widget.controller.adminResetUserPassword(
+                  staff['id'].toString(),
+                  newPass,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (success && mounted) {
+                  _showToast('Password successfully reset to $newPass');
+                } else if (mounted) {
+                  _showToast(
+                    'Failed to reset password. Please try again.',
+                    isError: true,
+                  );
+                }
+              } catch (e) {
+                if (ctx.mounted) Navigator.pop(ctx);
+                _showToast("Error resetting password: $e", isError: true);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            child: const Text("Confirm Reset"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteStaff(Map<String, dynamic> staff) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AppDialog(
+        icon: LucideIcons.trash2,
+        color: Colors.red.shade600,
+        title: "Delete Account?",
+        subtitle: staff['name'],
+        child: Text(
+          "Are you sure you want to completely remove this staff account? This action cannot be undone.",
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.black87,
+              side: BorderSide(color: Colors.grey.shade300),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                final success = await widget.controller.deleteStaff(
+                  staff['id'].toString(),
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (success) {
+                  _loadStaff();
+                  _showToast("Staff account deleted");
+                } else {
+                  _showToast("Failed to delete staff account.", isError: true);
+                }
+              } catch (e) {
+                if (ctx.mounted) Navigator.pop(ctx);
+                _showToast("Error deleting staff: $e", isError: true);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            child: const Text(
+              "Delete",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showStaffDetailsModal(Map<String, dynamic> staff) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: Colors.white,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            bool isMobile = constraints.maxWidth < 650;
+
+            return ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 750),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              LucideIcons.x,
+                              color: Colors.orange,
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                            splashRadius: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            "Staff Profile Details",
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Flex(
+                        direction: isMobile ? Axis.vertical : Axis.horizontal,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Flexible(
+                            flex: isMobile ? 0 : 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFF7F2),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 24,
+                                        backgroundColor: Colors.orange,
+                                        child: Text(
+                                          _getInitials(staff['name']),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Wrap(
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              spacing: 8,
+                                              children: [
+                                                Text(
+                                                  (staff['name'] ??
+                                                          'Unknown User')
+                                                      .toUpperCase(),
+                                                  style: const TextStyle(
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue
+                                                        .withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    (staff['role'] ?? 'staff')
+                                                        .toString()
+                                                        .toUpperCase(),
+                                                    style: const TextStyle(
+                                                      fontSize: 10,
+                                                      color: Colors.blue,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                const Icon(
+                                                  LucideIcons.mapPin,
+                                                  size: 14,
+                                                  color: Colors.grey,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    staff['address'] ??
+                                                        "No address provided",
+                                                    style: const TextStyle(
+                                                      color: Colors.grey,
+                                                      fontSize: 12,
+                                                    ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                if (isMobile)
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _buildInfoTile(
+                                        "USERNAME",
+                                        staff['username'] ?? 'N/A',
+                                        LucideIcons.user,
+                                        fullWidth: true,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildInfoTile(
+                                        "EMAIL ADDRESS",
+                                        staff['email'] ?? 'Not provided',
+                                        LucideIcons.mail,
+                                        fullWidth: true,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildInfoTile(
+                                        "FULL LEGAL NAME",
+                                        staff['name'] ?? 'N/A',
+                                        LucideIcons.clipboardList,
+                                        fullWidth: true,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildInfoTile(
+                                        "JOINED AT",
+                                        staff['created_at'] != null
+                                            ? "Joined ${staff['created_at'].toString().substring(0, 10)}"
+                                            : 'N/A',
+                                        LucideIcons.calendar,
+                                        fullWidth: true,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildInfoTile(
+                                        "PHONE NUMBER",
+                                        staff['phone'] ?? 'Not provided',
+                                        LucideIcons.phone,
+                                        fullWidth: true,
+                                      ),
+                                    ],
+                                  )
+                                else
+                                  Wrap(
+                                    spacing: 16,
+                                    runSpacing: 16,
+                                    children: [
+                                      _buildInfoTile(
+                                        "USERNAME",
+                                        staff['username'] ?? 'N/A',
+                                        LucideIcons.user,
+                                      ),
+                                      _buildInfoTile(
+                                        "EMAIL ADDRESS",
+                                        staff['email'] ?? 'Not provided',
+                                        LucideIcons.mail,
+                                      ),
+                                      _buildInfoTile(
+                                        "FULL LEGAL NAME",
+                                        staff['name'] ?? 'N/A',
+                                        LucideIcons.clipboardList,
+                                        fullWidth: true,
+                                      ),
+                                      _buildInfoTile(
+                                        "JOINED AT",
+                                        staff['created_at'] != null
+                                            ? "Joined ${staff['created_at'].toString().substring(0, 10)}"
+                                            : 'N/A',
+                                        LucideIcons.calendar,
+                                        fullWidth: true,
+                                      ),
+                                      _buildInfoTile(
+                                        "PHONE NUMBER",
+                                        staff['phone'] ?? 'Not provided',
+                                        LucideIcons.phone,
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (!isMobile) const SizedBox(width: 24),
+                          if (isMobile) const SizedBox(height: 24),
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: isMobile ? double.infinity : 220,
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF7F2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: const [
+                                      Icon(
+                                        LucideIcons.shieldAlert,
+                                        size: 16,
+                                        color: Colors.orange,
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        "Account Actions",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        _showEditStaffRole(staff);
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.orange,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                      ),
+                                      icon: const Icon(
+                                        LucideIcons.pencil,
+                                        size: 16,
+                                      ),
+                                      label: const Text("Change Role"),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        _showResetPasswordDialog(staff);
+                                      },
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.black87,
+                                        side: BorderSide(
+                                          color: Colors.grey.shade300,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                      ),
+                                      icon: const Icon(
+                                        LucideIcons.refreshCw,
+                                        size: 16,
+                                      ),
+                                      label: const Text("Reset Password"),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        _confirmDeleteStaff(staff);
+                                      },
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.red,
+                                        side: BorderSide(
+                                          color: Colors.red.shade200,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                      ),
+                                      icon: const Icon(
+                                        LucideIcons.trash2,
+                                        size: 16,
+                                      ),
+                                      label: const Text("Delete Account"),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoTile(
+    String label,
+    String value,
+    IconData icon, {
+    bool fullWidth = false,
+  }) {
+    return Container(
+      width: fullWidth ? double.infinity : 217,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7F2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.grey,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(icon, size: 16, color: Colors.grey.shade700),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─── UI BUILDER ────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),
-      body: _isLoading
+      body: (_isLoadingSettings)
           ? const Center(child: CircularProgressIndicator(color: Colors.orange))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
@@ -351,7 +1354,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "Manage global configurations and core data",
+                    "Manage global configurations, units, and user accounts",
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
                   const SizedBox(height: 32),
@@ -629,7 +1632,6 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                           ),
                         ),
                         const Divider(height: 1),
-
                         if (_measurements.isEmpty)
                           const Padding(
                             padding: EdgeInsets.all(40.0),
@@ -715,7 +1717,215 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                             size: 18,
                                             color: Colors.red.shade400,
                                           ),
-                                          onPressed: () => _confirmDelete(item),
+                                          onPressed: () =>
+                                              _confirmDeleteMeasurement(item),
+                                          tooltip: "Delete",
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ─── SECTION 3: STAFF MANAGEMENT ───────────────────────────────
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      LucideIcons.users,
+                                      color: Colors.purple.shade600,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  const Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "Staff Management",
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        "Manage system access and user roles.",
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: () => _showAddStaffDialog(),
+                                icon: const Icon(
+                                  LucideIcons.userPlus,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                label: const Text(
+                                  "Add Staff",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        if (_isLoadingStaff)
+                          const Padding(
+                            padding: EdgeInsets.all(40.0),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.orange,
+                              ),
+                            ),
+                          )
+                        else if (_staffList.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(40.0),
+                            child: Center(
+                              child: Text(
+                                "No other staff members found.",
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          )
+                        else
+                          ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _staffList.length,
+                            separatorBuilder: (context, index) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final staff = _staffList[index];
+                              final isAdmin = staff['role'] == 'admin';
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24.0,
+                                  vertical: 12.0,
+                                ),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 20,
+                                      backgroundColor: isAdmin
+                                          ? Colors.orange.withOpacity(0.1)
+                                          : Colors.blue.withOpacity(0.1),
+                                      child: Icon(
+                                        isAdmin
+                                            ? LucideIcons.shieldCheck
+                                            : LucideIcons.user,
+                                        color: isAdmin
+                                            ? Colors.orange
+                                            : Colors.blue,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            staff['name'] ?? 'Unknown User',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 15,
+                                              color: Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            (staff['role'] ?? 'staff')
+                                                .toString()
+                                                .toUpperCase(),
+                                            style: const TextStyle(
+                                              color: Colors.grey,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(
+                                            LucideIcons.eye,
+                                            size: 18,
+                                            color: Colors.blue,
+                                          ),
+                                          onPressed: () =>
+                                              _showStaffDetailsModal(staff),
+                                          tooltip: "View Details",
+                                        ),
+                                        IconButton(
+                                          icon: Icon(
+                                            LucideIcons.pencil,
+                                            size: 18,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                          onPressed: () =>
+                                              _showEditStaffRole(staff),
+                                          tooltip: "Edit Role",
+                                        ),
+                                        IconButton(
+                                          icon: Icon(
+                                            LucideIcons.trash2,
+                                            size: 18,
+                                            color: Colors.red.shade400,
+                                          ),
+                                          onPressed: () =>
+                                              _confirmDeleteStaff(staff),
                                           tooltip: "Delete",
                                         ),
                                       ],

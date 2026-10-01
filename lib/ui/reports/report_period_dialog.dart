@@ -62,14 +62,17 @@ Future<void> showReportPeriodDialog(
                   _box<String>(
                     value: period,
                     items: ReportRange.periods
-                        .map((p) => DropdownMenuItem(
-                              value: p,
-                              child: Text(
-                                p,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600),
+                        .map(
+                          (p) => DropdownMenuItem(
+                            value: p,
+                            child: Text(
+                              p,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
                               ),
-                            ))
+                            ),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) {
                       if (v == null) return;
@@ -88,14 +91,17 @@ Future<void> showReportPeriodDialog(
                   _box<int>(
                     value: offset,
                     items: options
-                        .map((r) => DropdownMenuItem(
-                              value: r.offset,
-                              child: Text(
-                                r.optionLabel,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600),
+                        .map(
+                          (r) => DropdownMenuItem(
+                            value: r.offset,
+                            child: Text(
+                              r.optionLabel,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
                               ),
-                            ))
+                            ),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) {
                       if (v != null) setState(() => offset = v);
@@ -110,8 +116,10 @@ Future<void> showReportPeriodDialog(
                     const SizedBox(height: 4),
                     Text(
                       note,
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 24),

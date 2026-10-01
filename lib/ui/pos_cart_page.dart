@@ -10,6 +10,7 @@ import '../logic/inventory_controller.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/order_checklist_view.dart';
+import 'visual_search_page.dart';
 
 const double _kSnapFull = 0.75;
 const double _kBaseChromeHeight = 320.0;
@@ -392,6 +393,23 @@ class _PosCartPageState extends State<PosCartPage>
       } catch (_) {}
     }
     return total;
+  }
+
+  void _openAIObjectScanner() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => VisualSearchPage(
+          controller: widget.controller,
+          onSelectItem: (item) {
+            if (_addToCart(item)) {
+              Navigator.pop(context);
+              AppToast.success(context, '${item.name} added to cart!');
+            }
+          },
+        ),
+      ),
+    );
   }
 
   void _showDiscountDialog(BuildContext context) {
@@ -2251,7 +2269,19 @@ class _PosCartPageState extends State<PosCartPage>
                   ],
                 ),
               ),
+              const SizedBox(width: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  icon: const Icon(LucideIcons.scanLine, color: Colors.white),
+                  onPressed: _openAIObjectScanner,
+                ),
+              ),
             ],
+            
           ),
         ),
         SizedBox(

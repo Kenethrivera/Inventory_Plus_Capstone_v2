@@ -38,6 +38,7 @@ class InventoryPage extends StatefulWidget {
 class _InventoryPageState extends State<InventoryPage> {
   String _searchQuery = "";
   String _selectedCategory = "All";
+  bool _showDisabled = false;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -78,10 +79,15 @@ class _InventoryPageState extends State<InventoryPage> {
         .where((category) => category.toLowerCase() != 'unassigned')
         .toList();
 
-    final filteredInventory = widget.controller.filterInventory(
-      query: _searchQuery,
-      category: _selectedCategory,
-    );
+        final filteredInventory = _showDisabled
+        ? widget.controller.filterDisabled(
+            query: _searchQuery,
+            category: _selectedCategory,
+          )
+        : widget.controller.filterInventory(
+            query: _searchQuery,
+            category: _selectedCategory,
+          );
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -260,38 +266,55 @@ class _InventoryPageState extends State<InventoryPage> {
                 const SizedBox(height: 12),
                 SizedBox(
                   height: 36,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: categories.length,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final category = categories[index];
-                      final isSelected = _selectedCategory == category;
-                      return GestureDetector(
-                        onTap: () =>
-                            setState(() => _selectedCategory = category),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? const Color(0xFF1E293B)
-                                : Colors.grey[100],
-                            borderRadius: BorderRadius.circular(100),
-                          ),
-                          child: Text(
-                            category,
-                            style: TextStyle(
-                              color: isSelected
-                                  ? Colors.white
-                                  : Colors.grey[600],
-                              fontSize: 12,
-                            ),
-                          ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: categories.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (context, index) {
+                            final category = categories[index];
+                            final isSelected = _selectedCategory == category;
+                            return GestureDetector(
+                              onTap: () =>
+                                  setState(() => _selectedCategory = category),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? const Color(0xFF1E293B)
+                                      : Colors.grey[100],
+                                  borderRadius: BorderRadius.circular(100),
+                                ),
+                                child: Text(
+                                  category,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? Colors.white
+                                        : Colors.grey[600],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
+                      ),
+                      if (widget.controller.isAdmin) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 1,
+                          height: 20,
+                          color: Colors.grey.shade300,
+                        ),
+                        const SizedBox(width: 8),
+                        _buildDisabledPill(),
+                      ],
+                    ],
                   ),
                 ),
               ],
@@ -322,6 +345,42 @@ class _InventoryPageState extends State<InventoryPage> {
       ),
     );
   }
+
+
+  Widget _buildDisabledPill() {
+  final color = _showDisabled ? Colors.orange.shade800 : Colors.grey.shade600;
+  return GestureDetector(
+    onTap: () => setState(() => _showDisabled = !_showDisabled),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: _showDisabled
+            ? Colors.orange.withOpacity(0.1)
+            : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(
+          color: _showDisabled ? Colors.orange : Colors.transparent,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(LucideIcons.eyeOff, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            'Show disabled (${widget.controller.disabledItems.length})',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildListHeader(int count) {
     return Padding(
@@ -397,7 +456,7 @@ class _InventoryPageState extends State<InventoryPage> {
     BuildContext context,
     ReportRange range,
   ) async {
-    final items = widget.controller.allItems;
+    final items = widget.controller.reportableItems;
 
     if (items.isEmpty) {
       _showToast("No inventory items found to generate report.", isError: true);
