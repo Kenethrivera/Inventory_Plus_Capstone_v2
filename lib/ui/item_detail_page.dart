@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import 'package:inventory_plus/ui/widgets/app_dialog.dart';
+import 'store_map.dart'; // Adjust the path if necessary depending on your folder structure
 
 
 class ItemDetailPage extends StatefulWidget {
@@ -859,6 +860,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                       const SizedBox(height: 24),
                       _buildDetailsBox(),
                       const SizedBox(height: 24),
+                      _buildLocationMapBox(),
+                      const SizedBox(height: 24),
                       _buildTransactionHistoryBox(),
                       const SizedBox(
                         height: 100,
@@ -1183,6 +1186,89 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             _currentItem.description,
             isMultiline: true,
           ),
+        ],
+      ),
+    );
+  }
+  Widget _buildLocationMapBox() {
+    final hasLocation = _currentItem.locationId != null && _currentItem.locationId!.isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(LucideIcons.mapPin, size: 16, color: Colors.grey),
+                    SizedBox(width: 8),
+                    Text(
+                      "Store Location",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                if (hasLocation)
+                  TextButton(
+                    onPressed: _showFullscreenMap,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Row(
+                      children: [
+                        Text(
+                          "Fullscreen",
+                          style: TextStyle(
+                            color: Colors.orange,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(width: 4),
+                        Icon(LucideIcons.maximize, size: 14, color: Colors.orange),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (!hasLocation)
+            const Padding(
+              padding: EdgeInsets.only(left: 16, right: 16, bottom: 16),
+              child: Text(
+                "This item is not assigned to a physical location.",
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          else
+            Container(
+              height: 250,
+              width: double.infinity,
+              clipBehavior: Clip.antiAlias,
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(12),
+                  bottomRight: Radius.circular(12),
+                ),
+              ),
+              child: StoreMap(
+                controller: widget.controller,
+                mode: MapMode.view,
+                selectedItemId: _currentItem.id, // Auto-opens the specific item's location
+              ),
+            ),
         ],
       ),
     );
@@ -2066,7 +2152,47 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     qtyCtrl.dispose();
     noteCtrl.dispose();
   }
-
+  void _showFullscreenMap() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: 800,
+          height: 600,
+          child: Column(
+            children: [
+              Container(
+                color: const Color(0xFF0F172A),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Location: ${_currentItem.name}',
+                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(dialogContext),
+                    )
+                  ],
+                ),
+              ),
+              Expanded(
+                child: StoreMap(
+                  controller: widget.controller,
+                  mode: MapMode.view,
+                  selectedItemId: _currentItem.id, // Auto-opens the specific item's location
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 extension StringExtension on String {

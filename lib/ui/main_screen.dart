@@ -15,7 +15,7 @@ import 'pos_cart_page.dart';
 import 'order_queue_page.dart';
 import 'transaction_history_page.dart';
 import 'system_settings_page.dart';
-
+import 'map_editor_page.dart';
 import '../services/export_reminder_service.dart';
 import '../services/export_period.dart';
 import '../services/debug_clock.dart';
@@ -309,6 +309,7 @@ Widget _quickSet(
         final int orderQueueIndex = (isHelper || isAdmin) ? pageIndex++ : -1;
         final int inventoryIndex = pageIndex++;
         final int transactionIndex = isAdmin ? pageIndex++ : -1;
+        final int mapIndex = isAdmin ? pageIndex++ : -1;
         final int system_settings_page = isAdmin? pageIndex++ : -1;
 
         final pages = <Widget>[];
@@ -375,7 +376,9 @@ Widget _quickSet(
             ),
           );
         }
-
+if (isAdmin) {
+          pages.add(MapEditorPage(controller: widget.controller)); // <-- ADD THIS
+        }
         if (isAdmin) {
           pages.add(SystemSettingsPage(controller: widget.controller));
         }
@@ -458,6 +461,14 @@ Widget _quickSet(
                                   'Transactions',
                                   activeIcon: Icons.history,
                                   showDot: _salesExportDue,
+                                ),
+                                
+                              if (isAdmin)
+                                _buildSidebarItem(
+                                  mapIndex,
+                                  Icons.map_outlined,
+                                  'Store Map',
+                                  activeIcon: Icons.map,
                                 ),
                               if (isAdmin)
                                 _buildSidebarItem(
@@ -572,6 +583,12 @@ Widget _quickSet(
                       _salesExportDue,
                     ),
                     label: 'History',
+                  ),
+                  if (isAdmin)
+                  const NavigationDestination(
+                    icon: Icon(Icons.map_outlined, color: Colors.grey),
+                    selectedIcon: Icon(Icons.map, color: Colors.white),
+                    label: 'Map',
                   ),
                 if (isAdmin)
                   const NavigationDestination(

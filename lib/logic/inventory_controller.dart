@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:crypto/crypto.dart';
 import '../data/inventory.dart';
+import 'package:flutter/material.dart';
 import 'dart:math' as math;
 enum StockStatus { ok, low, critical, out }
 
@@ -22,6 +23,7 @@ class InventoryController {
   double globalLowStockPct = 20.0;
   double globalCriticalPct = 10.0;
   List<Map<String, dynamic>> availableMeasurements = [];
+  List<MapElement> storeLayout = [];
 
   static const int _baselineRestocks = 3;
   static const int _baselineWindowDays = 180;
@@ -218,6 +220,7 @@ class InventoryController {
       _disabledItems = disabled;
 
       await _loadStockBaselines();
+      await fetchMapLayout();
     } catch (e) {
       _items = [];
       _disabledItems = [];
@@ -1099,4 +1102,102 @@ Stream<List<CustomerOrder>> streamOrders() {
       return false;
     }
   }
+  Future<void> fetchMapLayout() async {
+    final locId = activeLocationId;
+    if (locId == null) return;
+
+    try {
+      final locationResponse = await supabase
+          .from('locations')
+          .select('layout_data')
+          .eq('id', locId)
+          .maybeSingle();
+
+      if (locationResponse != null && locationResponse['layout_data'] != null) {
+        final List<dynamic> layoutJson = locationResponse['layout_data'] is String 
+              ? jsonDecode(locationResponse['layout_data']) 
+              : locationResponse['layout_data'];
+              
+        storeLayout = layoutJson.map((el) => MapElement.fromJson(el as Map<String, dynamic>)).toList();
+        debugPrint("✅ Map loaded successfully: ${storeLayout.length} elements.");
+      } else {
+        storeLayout = [];
+      }
+    } catch (e) {
+      debugPrint("❌ Error parsing map data: $e");
+      storeLayout = [];
+    }
+  }
+  // ─── MAP EDITOR METHODS ────────────────────────────────────────────────────
+
+  Future<void> saveLayout() async {
+    final locId = activeLocationId;
+    if (locId == null) return;
+
+    try {
+      // Using your exact old working serialization method!
+      final String encodedData = jsonEncode(
+        storeLayout.map((el) => el.toJson()).toList(),
+      );
+
+      // Adding .select() forces Supabase to return the row if it succeeded
+      final response = await supabase
+          .from('locations')
+          .update({'layout_data': jsonDecode(encodedData)})
+          .eq('id', locId)
+          .select(); 
+          
+      if (response.isEmpty) {
+        debugPrint("❌ ALERT: Location ID '$locId' does not exist in the locations table! Map cannot save.");
+      } else {
+        debugPrint("✅ Map saved to database successfully!");
+      }
+    } catch (e) {
+      debugPrint("❌ Error saving layout: $e");
+    }
+  }
+
+  Future<void> clearMapLayout() async {
+    final locId = activeLocationId;
+    if (locId == null) return;
+
+    try {
+      storeLayout.clear();
+
+      final response = await supabase
+          .from('locations')
+          .update({'layout_data': null})
+          .eq('id', locId)
+          .select();
+
+      if (response.isEmpty) {
+        debugPrint("❌ ALERT: Location ID '$locId' does not exist!");
+      } else {
+        debugPrint("✅ Map cleared successfully!");
+      }
+    } catch (e) {
+      debugPrint("❌ Error clearing layout: $e");
+    }
+  }
+  void deleteMapElement(String id) {
+    storeLayout.removeWhere((element) => element.id == id);
+  }
+
+  Future<void> assignItemToLocation(String itemId, String mapElementId) async {
+    try {
+      await supabase
+          .from('products')
+          .update({'map_element_id': mapElementId})
+          .eq('id', itemId);
+      
+      final index = allItems.indexWhere((item) => item.id == itemId);
+      if (index != -1) {
+        allItems[index] = allItems[index].copyWith(locationId: mapElementId);
+      }
+    } catch (e) {
+      debugPrint("Error assigning item to location: $e");
+      rethrow;
+    }
+  }
+  
 }

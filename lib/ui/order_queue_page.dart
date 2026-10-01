@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../logic/inventory_controller.dart';
-
 import 'widgets/order_checklist_view.dart';
 
 // --- UPDATE THESE IMPORTS TO MATCH YOUR FILE STRUCTURE ---

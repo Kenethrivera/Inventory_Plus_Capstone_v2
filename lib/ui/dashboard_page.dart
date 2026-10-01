@@ -153,7 +153,7 @@ class _DashboardPageState extends State<DashboardPage> {
           final metrics = _calculateMetrics(orders);
           
           final allItems = widget.controller.filterInventory(query: "", category: "All");
-          final criticalStockItems = allItems.where((item) => item.quantity > 0 && item.quantity <= 10).toList()
+          final criticalStockItems = allItems.where((item) => item.quantity >= 0 && item.quantity <= 10).toList()
             ..sort((a, b) => a.quantity.compareTo(b.quantity));
           final deadStockItems = allItems.where((item) => item.quantity <= 0).toList();
 

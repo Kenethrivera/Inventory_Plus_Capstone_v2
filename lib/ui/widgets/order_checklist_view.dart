@@ -5,6 +5,7 @@ import '../../logic/inventory_controller.dart';
 import '../scanner_search_page.dart';
 import 'app_toast.dart';
 import 'app_dialog.dart';
+import '../store_map.dart';
 
 /// The checklist UI itself — no Scaffold/AppBar, so it can be dropped into
 /// a full page (Order Queue) or a modal (POS Solo Mode) without duplicating
@@ -50,6 +51,50 @@ class _OrderChecklistViewState extends State<OrderChecklistView> {
       }
     });
   }
+  void _showItemLocationMap(BuildContext context, String productId, String productName) {
+  showDialog(
+    context: context,
+    builder: (dialogContext) => Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 600,
+        height: 500,
+        child: Column(
+          children: [
+            // Header
+            Container(
+              color: const Color(0xFF0F172A),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Location: $productName',
+                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(dialogContext),
+                  )
+                ],
+              ),
+            ),
+            // Map Canvas
+            Expanded(
+              child: StoreMap(
+                controller: widget.controller,
+                mode: MapMode.view, // Set to view-only mode
+                selectedItemId: productId, // This highlights the specific item
+                onSelectionAssigned: () {},
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
   void _showPickConfirmationSheet(
     InventoryItem dbItem,
@@ -331,6 +376,14 @@ class _OrderChecklistViewState extends State<OrderChecklistView> {
                         ],
                       ),
                     ),
+                    IconButton(
+      icon: const Icon(LucideIcons.mapPin, color: Colors.orange), // or LucideIcons.map
+      tooltip: 'Show Location',
+      onPressed: () {
+        // Pass the specific item's ID and Name
+        _showItemLocationMap(context, item.productId, item.productName);
+      },
+    ),
                     IconButton(
                       icon: const Icon(
                         LucideIcons.scanLine,
