@@ -6,6 +6,7 @@ import '../logic/inventory_controller.dart';
 import 'models_3d.dart';
 
 enum MapMode { view, manage, selection, pick }
+const Color kMapContainerBg = Color.fromARGB(255, 9, 36, 73);
 
 class StoreMap extends StatefulWidget {
   final InventoryController controller;
@@ -507,22 +508,20 @@ class _StoreMapState extends State<StoreMap>
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: widget.mode == MapMode.view
-          ? const EdgeInsets.symmetric(vertical: 8)
-          : EdgeInsets.zero,
+      // Margin on all sides so the map doesn't touch the sidebar
+      margin: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: widget.mode == MapMode.view
-            ? BorderRadius.circular(12)
-            : BorderRadius.zero,
-        border: widget.mode == MapMode.view
-            ? Border.all(color: Colors.grey.shade800)
-            : null,
+        color: kMapContainerBg,
+        borderRadius: BorderRadius.circular(16),
+         border: Border.all(
+  color: Colors.black.withOpacity(0.15),
+  width: 1,
+), // was Colors.white.withOpacity(0.12)
+          
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          // if (widget.mode == MapMode.view) _buildHeader(),
           _buildLiveMapDisplay(),
           if (widget.location != null) _buildFooter(),
         ],
@@ -1332,7 +1331,7 @@ class _StoreMapState extends State<StoreMap>
                         width: mapWidth,
                         height: mapHeight,
                         decoration: BoxDecoration(
-                          color: const Color.fromARGB(255, 124, 126, 129),
+                          color: const Color(0xFF7C7E81),
                           border: Border.all(color: Colors.blueGrey, width: 2),
                         ),
                         child: Stack(
@@ -1447,7 +1446,7 @@ class _StoreMapState extends State<StoreMap>
     return Expanded(
       child: Container(
         width: double.infinity,
-        color: const Color(0xFF0F172A),
+        color: kMapContainerBg,
         child: mapDisplay,
       ),
     );

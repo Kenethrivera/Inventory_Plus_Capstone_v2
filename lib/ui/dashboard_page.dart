@@ -3,14 +3,23 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../logic/inventory_controller.dart';
 import '../data/inventory.dart';
+import '../data/ai_insights_service.dart'; // <-- Added Import
 import 'widgets/app_dialog.dart';
 
 class DashboardPage extends StatefulWidget {
   final InventoryController controller;
-  final VoidCallback onViewTransactions;  
+  final VoidCallback onViewTransactions;
   final VoidCallback onOpenQueue;
   final VoidCallback onViewActivity;
-  const DashboardPage({super.key, required this.controller, required this.onViewTransactions,required this.onOpenQueue,required this.onViewActivity,});
+  final VoidCallback onOpenForecasting;
+  const DashboardPage({
+    super.key,
+    required this.controller,
+    required this.onViewTransactions,
+    required this.onOpenQueue,
+    required this.onViewActivity,
+    required this.onOpenForecasting,
+  });
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -21,10 +30,21 @@ class _DashboardPageState extends State<DashboardPage> {
   List<Map<String, dynamic>> _recentTransactions = [];
   bool _isLoadingTxs = true;
 
+  // ─── AI STATE VARIABLES ──────────────────────────────────────────────────
+  String _aiRecommendation = "Tap refresh to generate AI insights.";
+  bool _isLoadingAI = false;
+  String _forecastingFilter = 'Season';
+  String _forecastInsightText = "Loading forecast...";
+  bool _isFetchingForecast = false;
+  bool _isBulletedFormat = true;
+  final AIInsightsService _aiService = AIInsightsService();
+
   @override
   void initState() {
     super.initState();
     _fetchTransactions();
+    _fetchAIRecommendations(); // NEW
+    _fetchForecast(); // NEW
   }
 
   Future<void> _fetchTransactions() async {
@@ -37,26 +57,123 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  // ─── AI LOGIC ────────────────────────────────────────────────────────────
+  Future<void> _fetchForecast() async {
+    if (!mounted) return;
+    setState(() => _isFetchingForecast = true);
+
+    try {
+      final allItems = widget.controller.filterInventory(
+        query: "",
+        category: "All",
+      );
+
+      final List<Map<String, dynamic>> salesData = allItems
+          .map(
+            (item) => {
+              'name': item.name,
+              'current_quantity': item.quantity,
+              // Added fallback in case maxQuantity is missing from older data structures
+              'max_capacity': (item as dynamic).maxQuantity ?? 100,
+            },
+          )
+          .toList();
+
+      final result = await _aiService.getDemandForecast(
+        _forecastingFilter,
+        salesData,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _forecastInsightText = result;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _forecastInsightText = "Network error: $e");
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isFetchingForecast = false);
+      }
+    }
+  }
+
+  Future<void> _fetchAIRecommendations() async {
+    if (!mounted) return;
+    setState(() => _isLoadingAI = true);
+
+    try {
+      final allItems = widget.controller.filterInventory(
+        query: "",
+        category: "All",
+      );
+
+      // Adjusted to target file's logic to prevent errors
+      final criticalItemsList = allItems.where(
+        (i) => i.quantity > 0 && i.quantity <= 10,
+      );
+      final deadItemsList = allItems.where((i) => i.quantity <= 0);
+
+      final criticalItems = criticalItemsList
+          .map((i) => "${i.name} (Current: ${i.quantity})")
+          .join(', ');
+      final deadItems = deadItemsList.map((i) => i.name).join(', ');
+
+      if (criticalItems.isEmpty && deadItems.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _aiRecommendation =
+              "All inventory levels are healthy. No items require immediate restocking!";
+          _isLoadingAI = false;
+        });
+        return;
+      }
+
+      final result = await _aiService.getRestockRecommendations(
+        criticalItems,
+        deadItems,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _aiRecommendation = result.replaceAll(RegExp(r'\*+'), '').trim();
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _aiRecommendation = "Network error: $e");
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingAI = false);
+      }
+    }
+  }
+
   // --- LOCAL DATA AGGREGATION ---
   Map<String, dynamic> _calculateMetrics(List<CustomerOrder> orders) {
     final now = DateTime.now();
     // Use the actual end of today for accurate comparisons
     final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
     final startOfToday = DateTime(now.year, now.month, now.day);
-    
+
     // Determine cutoff based on filter
     DateTime currentPeriodStart;
     DateTime previousPeriodStart;
-    
+
     if (_selectedFilter == 'Today') {
       currentPeriodStart = startOfToday;
       previousPeriodStart = startOfToday.subtract(const Duration(days: 1));
     } else if (_selectedFilter == '7 Days') {
-      currentPeriodStart = startOfToday.subtract(const Duration(days: 6)); // Includes today + 6 past days
-      previousPeriodStart = currentPeriodStart.subtract(const Duration(days: 7));
+      currentPeriodStart = startOfToday.subtract(const Duration(days: 6));
+      previousPeriodStart = currentPeriodStart.subtract(
+        const Duration(days: 7),
+      );
     } else {
       currentPeriodStart = startOfToday.subtract(const Duration(days: 29));
-      previousPeriodStart = currentPeriodStart.subtract(const Duration(days: 30));
+      previousPeriodStart = currentPeriodStart.subtract(
+        const Duration(days: 30),
+      );
     }
 
     double currentRevenue = 0;
@@ -67,7 +184,6 @@ class _DashboardPageState extends State<DashboardPage> {
     int preparedCount = 0;
     int waitingLongCount = 0;
 
-    // Bar chart data (Last 7 days, ending today)
     List<double> dailyRevenue = List.filled(7, 0.0);
     double totalWeekRevenue = 0;
     int bestDayIndex = 6;
@@ -83,21 +199,19 @@ class _DashboardPageState extends State<DashboardPage> {
       }
 
       if (o.status == 'completed') {
-        // Filter Comparison for Top Cards
-        if (o.createdAt.isAfter(currentPeriodStart) || o.createdAt.isAtSameMomentAs(currentPeriodStart)) {
+        if (o.createdAt.isAfter(currentPeriodStart) ||
+            o.createdAt.isAtSameMomentAs(currentPeriodStart)) {
           currentRevenue += o.totalAmount;
           currentOrders++;
-        } else if (o.createdAt.isAfter(previousPeriodStart) && o.createdAt.isBefore(currentPeriodStart)) {
+        } else if (o.createdAt.isAfter(previousPeriodStart) &&
+            o.createdAt.isBefore(currentPeriodStart)) {
           previousRevenue += o.totalAmount;
           previousOrders++;
         }
 
-        // Weekly Distribution Chart (Always last 7 days ending today)
-        if (o.createdAt.isAfter(startOfChartWeek) || o.createdAt.isAtSameMomentAs(startOfChartWeek)) {
-          // Calculate the difference in days from the start of the 7-day window
+        if (o.createdAt.isAfter(startOfChartWeek) ||
+            o.createdAt.isAtSameMomentAs(startOfChartWeek)) {
           int dayIndex = o.createdAt.difference(startOfChartWeek).inDays;
-          
-          // Failsafe bounds check
           if (dayIndex >= 0 && dayIndex < 7) {
             dailyRevenue[dayIndex] += o.totalAmount;
             totalWeekRevenue += o.totalAmount;
@@ -113,7 +227,9 @@ class _DashboardPageState extends State<DashboardPage> {
       }
     }
 
-    double revGrowth = previousRevenue == 0 ? 100.0 : ((currentRevenue - previousRevenue) / previousRevenue) * 100;
+    double revGrowth = previousRevenue == 0
+        ? 100.0
+        : ((currentRevenue - previousRevenue) / previousRevenue) * 100;
     int orderDiff = currentOrders - previousOrders;
 
     return {
@@ -128,34 +244,67 @@ class _DashboardPageState extends State<DashboardPage> {
       'totalWeekRevenue': totalWeekRevenue,
       'avgOrder': currentOrders > 0 ? (currentRevenue / currentOrders) : 0.0,
       'bestDayIndex': bestDayIndex,
-      'maxDailyRevenue': maxDailyRevenue == 0 ? 1.0 : maxDailyRevenue, 
+      'maxDailyRevenue': maxDailyRevenue == 0 ? 1.0 : maxDailyRevenue,
     };
   }
+
   String _formatCurrentDate() {
     final now = DateTime.now();
-    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const weekdays = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
     return "${weekdays[now.weekday - 1]}, ${months[now.month - 1]} ${now.day}, ${now.year} - Store overview";
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F8), 
+      backgroundColor: const Color(0xFFF4F6F8),
       body: StreamBuilder<List<CustomerOrder>>(
         stream: widget.controller.streamOrders(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting && _isLoadingTxs) {
-            return const Center(child: CircularProgressIndicator(color: Colors.orange));
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              _isLoadingTxs) {
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.orange),
+            );
           }
 
           final orders = snapshot.data ?? [];
           final metrics = _calculateMetrics(orders);
-          
-          final allItems = widget.controller.filterInventory(query: "", category: "All");
-          final criticalStockItems = allItems.where((item) => item.quantity >= 0 && item.quantity <= 10).toList()
-            ..sort((a, b) => a.quantity.compareTo(b.quantity));
-          final deadStockItems = allItems.where((item) => item.quantity <= 0).toList();
+
+          final allItems = widget.controller.filterInventory(
+            query: "",
+            category: "All",
+          );
+          final criticalStockItems =
+              allItems
+                  .where((item) => item.quantity >= 0 && item.quantity <= 10)
+                  .toList()
+                ..sort((a, b) => a.quantity.compareTo(b.quantity));
+          final deadStockItems = allItems
+              .where((item) => item.quantity <= 0)
+              .toList();
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
@@ -170,9 +319,22 @@ class _DashboardPageState extends State<DashboardPage> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text("Dashboard", style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text(
+                          "Dashboard",
+                          style: TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
                         const SizedBox(height: 4),
-                        Text(_formatCurrentDate(), style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                        Text(
+                          _formatCurrentDate(),
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                        ),
                       ],
                     ),
                     Container(
@@ -185,26 +347,36 @@ class _DashboardPageState extends State<DashboardPage> {
                         children: ['Today', '7 Days', '30 Days'].map((filter) {
                           final isSelected = _selectedFilter == filter;
                           return InkWell(
-                            onTap: () => setState(() => _selectedFilter = filter),
+                            onTap: () =>
+                                setState(() => _selectedFilter = filter),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
                               decoration: BoxDecoration(
-                                color: isSelected ? const Color(0xFF0F172A) : Colors.transparent,
+                                color: isSelected
+                                    ? const Color(0xFF0F172A)
+                                    : Colors.transparent,
                                 borderRadius: BorderRadius.circular(7),
                               ),
                               child: Text(
                                 filter,
                                 style: TextStyle(
                                   fontSize: 13,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                                  color: isSelected ? Colors.white : Colors.grey.shade600,
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.w600,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : Colors.grey.shade600,
                                 ),
                               ),
                             ),
                           );
                         }).toList(),
                       ),
-                    )
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -212,7 +384,9 @@ class _DashboardPageState extends State<DashboardPage> {
                 // ─── TOP METRIC CARDS ──────────────────────────────────────
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    int crossAxisCount = constraints.maxWidth > 1000 ? 4 : (constraints.maxWidth > 600 ? 2 : 1);
+                    int crossAxisCount = constraints.maxWidth > 1000
+                        ? 4
+                        : (constraints.maxWidth > 600 ? 2 : 1);
                     return GridView(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
@@ -220,16 +394,18 @@ class _DashboardPageState extends State<DashboardPage> {
                         crossAxisCount: crossAxisCount,
                         crossAxisSpacing: 16,
                         mainAxisSpacing: 16,
-                        mainAxisExtent: 160, 
+                        mainAxisExtent: 160,
                       ),
                       children: [
                         _buildMetricCard(
                           title: "Revenue",
-                          value: "₱${metrics['currentRevenue'].toStringAsFixed(0)}",
+                          value:
+                              "₱${metrics['currentRevenue'].toStringAsFixed(0)}",
                           icon: LucideIcons.dollarSign,
                           iconBg: Colors.green.shade50,
                           iconColor: Colors.green,
-                          trendText: "${metrics['revGrowth'].abs().toStringAsFixed(0)}% ${metrics['revGrowth'] >= 0 ? 'vs last period' : 'vs last period'}",
+                          trendText:
+                              "${metrics['revGrowth'].abs().toStringAsFixed(0)}% ${metrics['revGrowth'] >= 0 ? 'vs last period' : 'vs last period'}",
                           isPositiveTrend: metrics['revGrowth'] >= 0,
                         ),
                         _buildMetricCard(
@@ -238,17 +414,19 @@ class _DashboardPageState extends State<DashboardPage> {
                           icon: LucideIcons.shoppingBag,
                           iconBg: Colors.blue.shade50,
                           iconColor: Colors.blue,
-                          trendText: "${metrics['orderDiff'].abs()} ${metrics['orderDiff'] >= 0 ? 'more' : 'fewer'} than last period",
+                          trendText:
+                              "${metrics['orderDiff'].abs()} ${metrics['orderDiff'] >= 0 ? 'more' : 'fewer'} than last period",
                           isPositiveTrend: metrics['orderDiff'] >= 0,
                         ),
                         _buildMetricCard(
-                          title: "Low / Critical Stock",
-                          value: "${deadStockItems.length} / ${criticalStockItems.length}",
+                          title: "Low | Critical Stock",
+                          value:
+                              "${deadStockItems.length} | ${criticalStockItems.length}",
                           icon: LucideIcons.hexagon,
                           iconBg: Colors.orange.shade50,
                           iconColor: Colors.orange,
                           trendText: "Needs restock",
-                          isPositiveTrend: false, 
+                          isPositiveTrend: false,
                         ),
                         _buildMetricCard(
                           title: "Pending Orders",
@@ -256,7 +434,8 @@ class _DashboardPageState extends State<DashboardPage> {
                           icon: LucideIcons.clock,
                           iconBg: Colors.red.shade50,
                           iconColor: Colors.red,
-                          trendText: "${metrics['waitingLongCount']} waiting 60+ days",
+                          trendText:
+                              "${metrics['waitingLongCount']} waiting 60+ days",
                           isPositiveTrend: false,
                         ),
                       ],
@@ -282,6 +461,30 @@ class _DashboardPageState extends State<DashboardPage> {
                         Expanded(
                           flex: isDesktop ? 4 : 0,
                           child: _buildRestockPriority(criticalStockItems),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // ─── AI FORECASTING & RECOMMENDATIONS (Preview) ────────────────
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isDesktop = constraints.maxWidth > 900;
+                    return Flex(
+                      direction: isDesktop ? Axis.horizontal : Axis.vertical,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: isDesktop ? 6 : 0,
+                          child: _buildForecastingChart(),
+                        ),
+                        if (isDesktop) const SizedBox(width: 16),
+                        if (!isDesktop) const SizedBox(height: 16),
+                        Expanded(
+                          flex: isDesktop ? 4 : 0,
+                          child: _buildAIRecommendations(),
                         ),
                       ],
                     );
@@ -326,7 +529,323 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  // ─── WIDGET BUILDERS ───────────────────────────────────────────────────────
+  // ─── AI WIDGET BUILDERS ──────────────────────────────────────────────────
+
+  Widget _buildForecastingChart() {
+    String insightTitle = _forecastingFilter == 'Season'
+        ? "Seasonal High-Demand Predictions"
+        : "Next Month Demand Predictions";
+
+    return Container(
+      height: 380, // Matches chart height
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(
+                      LucideIcons.trendingUp,
+                      color: Colors.blue,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    const Flexible(
+                      child: Text(
+                        "AI Demand Forecasting",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        "Admin Preview",
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.orange.shade900,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      
+                    ),
+                    TextButton(
+                      onPressed: widget.onOpenForecasting,
+                      child: const Text(
+                        "View Full Report →",
+                        style: TextStyle(
+                          color: Colors.blue,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    height: 32,
+                    width: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        _isBulletedFormat
+                            ? LucideIcons.alignHorizontalJustifyStart400
+                            : LucideIcons.list,
+                        color: Colors.blue.shade700,
+                        size: 16,
+                      ),
+                      tooltip: _isBulletedFormat
+                          ? "Switch to Paragraph Format"
+                          : "Switch to Bulleted List",
+                      onPressed: () {
+                        setState(() => _isBulletedFormat = !_isBulletedFormat);
+                        _fetchForecast();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _forecastingFilter,
+                        isDense: true,
+                        items: <String>['Season', 'Month'].map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(
+                              value,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (newValue) {
+                          if (newValue != null &&
+                              newValue != _forecastingFilter) {
+                            setState(() => _forecastingFilter = newValue);
+                            _fetchForecast();
+                          }
+                        },
+                        icon: const Icon(
+                          Icons.arrow_drop_down,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Uses contextual market data to forecast future demand and optimize restocking.",
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade100),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    insightTitle,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.blue.shade900,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: _isFetchingForecast
+                        ? const Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          )
+                        : SizedBox(
+                            width: double.infinity,
+                            child: SingleChildScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: Text(
+                                _forecastInsightText,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF334155),
+                                  height: 1.6,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAIRecommendations() {
+    return Container(
+      height: 380, // Matches height
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(
+                      LucideIcons.sparkles,
+                      color: Colors.orange,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    const Flexible(
+                      child: Text(
+                        "AI Restocking Plan",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade800,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        "Admin Preview",
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(
+                  LucideIcons.refreshCw,
+                  color: Colors.orange,
+                  size: 16,
+                ),
+                onPressed: _isLoadingAI ? null : _fetchAIRecommendations,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
+              ),
+              child: _isLoadingAI
+                  ? const Center(
+                      child: CircularProgressIndicator(color: Colors.orange),
+                    )
+                  : SingleChildScrollView(
+                      child: Text(
+                        _aiRecommendation,
+                        style: const TextStyle(
+                          color: Color(0xFFE2E8F0),
+                          fontSize: 13,
+                          height: 1.6,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── ORIGINAL WIDGET BUILDERS ────────────────────────────────────────────
 
   Widget _buildMetricCard({
     required String title,
@@ -349,7 +868,10 @@ class _DashboardPageState extends State<DashboardPage> {
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Icon(icon, color: iconColor, size: 24),
           ),
           const SizedBox(width: 16),
@@ -359,23 +881,33 @@ class _DashboardPageState extends State<DashboardPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  title, 
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontWeight: FontWeight.w600)
+                  style: TextStyle(
+                    color: Colors.grey.shade500,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  value, 
-                  maxLines: 1, 
+                  value,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF0F172A),
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Row(
                   children: [
                     Icon(
-                      isPositiveTrend ? LucideIcons.triangle : LucideIcons.triangle,
+                      isPositiveTrend
+                          ? LucideIcons.triangle
+                          : LucideIcons.triangle,
                       size: 10,
                       color: isPositiveTrend ? Colors.green : Colors.red,
                     ),
@@ -405,14 +937,32 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _buildSalesChart(Map<String, dynamic> metrics) {
     final List<double> dailyRev = metrics['dailyRevenue'];
     final double maxRev = metrics['maxDailyRevenue'];
-    final List<String> days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Today'];
-    
+    final List<String> days = [
+      'Mon',
+      'Tue',
+      'Wed',
+      'Thu',
+      'Fri',
+      'Sat',
+      'Today',
+    ];
+
     final now = DateTime.now();
     int bestDayIndexOffset = 6 - metrics['bestDayIndex'] as int;
-    String bestDayStr = bestDayIndexOffset == 0 ? "Today" : ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][now.subtract(Duration(days: bestDayIndexOffset)).weekday - 1];
+    String bestDayStr = bestDayIndexOffset == 0
+        ? "Today"
+        : [
+            'Mon',
+            'Tue',
+            'Wed',
+            'Thu',
+            'Fri',
+            'Sat',
+            'Sun',
+          ][now.subtract(Duration(days: bestDayIndexOffset)).weekday - 1];
 
     return Container(
-      height: 380, 
+      height: 380,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -427,23 +977,47 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               const Row(
                 children: [
-                  Icon(LucideIcons.barChart2, size: 18, color: Color(0xFF0F172A)),
+                  Icon(
+                    LucideIcons.barChart2,
+                    size: 18,
+                    color: Color(0xFF0F172A),
+                  ),
                   SizedBox(width: 8),
-                  Text("Sales — Last 7 Days", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                  Text(
+                    "Sales — Last 7 Days",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
                 ],
               ),
               TextButton(
-  onPressed: widget.onViewTransactions, // <-- UPDATE THIS
-  child: const Text("View Transactions →", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
-)
+                onPressed: widget.onViewTransactions,
+                child: const Text(
+                  "View Transactions →",
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
           Row(
             children: [
-              _buildChartHeaderMetric("Total", "₱${(metrics['totalWeekRevenue'] as double).toStringAsFixed(0)}"),
+              _buildChartHeaderMetric(
+                "Total",
+                "₱${(metrics['totalWeekRevenue'] as double).toStringAsFixed(0)}",
+              ),
               const SizedBox(width: 40),
-              _buildChartHeaderMetric("Avg. order", "₱${(metrics['avgOrder'] as double).isNaN ? '0' : (metrics['avgOrder'] as double).toStringAsFixed(0)}"),
+              _buildChartHeaderMetric(
+                "Avg. order",
+                "₱${(metrics['avgOrder'] as double).isNaN ? '0' : (metrics['avgOrder'] as double).toStringAsFixed(0)}",
+              ),
               const SizedBox(width: 40),
               _buildChartHeaderMetric("Best day", bestDayStr),
             ],
@@ -455,14 +1029,22 @@ class _DashboardPageState extends State<DashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: List.generate(7, (index) {
                 double val = dailyRev[index];
-                double barHeight = maxRev == 0 ? 0 : (val / maxRev) * 120; 
+                double barHeight = maxRev == 0 ? 0 : (val / maxRev) * 120;
                 bool isToday = index == 6;
-                String formatVal = val >= 1000 ? "${(val/1000).toStringAsFixed(1)}k" : val.toStringAsFixed(0);
+                String formatVal = val >= 1000
+                    ? "${(val / 1000).toStringAsFixed(1)}k"
+                    : val.toStringAsFixed(0);
 
                 return Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Text(val == 0 ? "" : formatVal, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    Text(
+                      val == 0 ? "" : formatVal,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 500),
@@ -470,16 +1052,27 @@ class _DashboardPageState extends State<DashboardPage> {
                       height: barHeight == 0 ? 4 : barHeight,
                       decoration: BoxDecoration(
                         color: isToday ? Colors.orange : Colors.orange.shade200,
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(6),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Text(days[index], style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: isToday ? FontWeight.bold : FontWeight.normal)),
+                    Text(
+                      days[index],
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                        fontWeight: isToday
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
                   ],
                 );
               }),
             ),
-          )
+          ),
         ],
       ),
     );
@@ -489,14 +1082,23 @@ class _DashboardPageState extends State<DashboardPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+        Text(
+          label,
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+        ),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF0F172A),
+          ),
+        ),
       ],
     );
   }
 
-  // ─── STUNNING DIALOG IMPORTED FROM ITEM_DETAIL_PAGE ─────────────────────
   Future<void> _showRestockDialog(InventoryItem item) async {
     final qtyCtrl = TextEditingController();
     final unit = item.unit;
@@ -545,17 +1147,15 @@ class _DashboardPageState extends State<DashboardPage> {
             });
             try {
               final qty = double.parse(qtyCtrl.text.trim());
-              final updated = item.copyWith(
-                quantity: item.quantity + qty,
-              );
-              
+              final updated = item.copyWith(quantity: item.quantity + qty);
+
               await widget.controller.updateItem(updated);
-              
+
               if (!mounted) return;
               setState(() {}); // Refresh Dashboard Data
-              
+
               if (dialogContext.mounted) Navigator.pop(dialogContext);
-              
+
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
@@ -568,7 +1168,10 @@ class _DashboardPageState extends State<DashboardPage> {
             } catch (e) {
               if (dialogContext.mounted) setDialogState(() => saving = false);
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Restock failed: $e'), backgroundColor: Colors.red),
+                SnackBar(
+                  content: Text('Restock failed: $e'),
+                  backgroundColor: Colors.red,
+                ),
               );
             }
           }
@@ -591,9 +1194,16 @@ class _DashboardPageState extends State<DashboardPage> {
                 borderSide: BorderSide(color: c, width: w),
               );
 
-          Widget stockSummary(String label, String value, Color color, {bool alignEnd = false}) {
+          Widget stockSummary(
+            String label,
+            String value,
+            Color color, {
+            bool alignEnd = false,
+          }) {
             return Column(
-              crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: alignEnd
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 Text(
                   label,
@@ -799,7 +1409,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildRestockPriority(List<InventoryItem> criticalItems) {
     return Container(
-      height: 380, 
+      height: 380,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -814,16 +1424,32 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               Row(
                 children: [
-                  Icon(LucideIcons.triangleAlert, size: 18, color: Colors.red.shade600),
+                  Icon(
+                    LucideIcons.triangleAlert,
+                    size: 18,
+                    color: Colors.red.shade600,
+                  ),
                   const SizedBox(width: 8),
-                  Text("Restock Priority", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.red.shade700)),
+                  Text(
+                    "Restock Priority",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.red.shade700,
+                    ),
+                  ),
                 ],
               ),
             ],
           ),
           const SizedBox(height: 24),
           if (criticalItems.isEmpty)
-            const Center(child: Text("All stock levels look good!", style: TextStyle(color: Colors.grey)))
+            const Center(
+              child: Text(
+                "All stock levels look good!",
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
           else
             Expanded(
               child: ListView.builder(
@@ -832,8 +1458,10 @@ class _DashboardPageState extends State<DashboardPage> {
                   final item = criticalItems[index];
                   String locStr = "Unassigned";
                   List<String> locParts = [];
-                  if (item.shelfLevel != null && item.shelfLevel!.isNotEmpty) locParts.add("Shelf ${item.shelfLevel}");
-                  if (item.binNumber != null && item.binNumber!.isNotEmpty) locParts.add("Bin ${item.binNumber}");
+                  if (item.shelfLevel != null && item.shelfLevel!.isNotEmpty)
+                    locParts.add("Shelf ${item.shelfLevel}");
+                  if (item.binNumber != null && item.binNumber!.isNotEmpty)
+                    locParts.add("Bin ${item.binNumber}");
                   if (locParts.isNotEmpty) locStr = locParts.join(" - ");
 
                   return Container(
@@ -842,7 +1470,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       color: Colors.transparent,
                       child: InkWell(
                         borderRadius: BorderRadius.circular(8),
-                        onTap: () => _showRestockDialog(item), // OPEN THE NEW DIALOG MODAL HERE!
+                        onTap: () => _showRestockDialog(item),
                         child: Padding(
                           padding: const EdgeInsets.all(8.0),
                           child: Row(
@@ -853,25 +1481,64 @@ class _DashboardPageState extends State<DashboardPage> {
                                 decoration: BoxDecoration(
                                   color: Colors.red.shade50,
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.red.shade100)
+                                  border: Border.all(
+                                    color: Colors.red.shade100,
+                                  ),
                                 ),
-                                child: Icon(LucideIcons.arrowDown, size: 14, color: Colors.red.shade600),
+                                child: Icon(
+                                  LucideIcons.arrowDown,
+                                  size: 14,
+                                  color: Colors.red.shade600,
+                                ),
                               ),
                               const SizedBox(width: 16),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(item.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0F172A)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    Text(
+                                      item.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                     const SizedBox(height: 4),
-                                    Text("$locStr · ${item.quantity.toInt()}% of capacity", style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                                    Text(
+                                      "$locStr · ${item.quantity.toInt()} left",
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade500,
+                                      ),
+                                    ),
                                     const SizedBox(height: 8),
                                     Stack(
                                       children: [
-                                        Container(height: 4, width: double.infinity, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(2))),
-                                        Container(height: 4, width: 40, decoration: BoxDecoration(color: Colors.red.shade500, borderRadius: BorderRadius.circular(2))), 
+                                        Container(
+                                          height: 4,
+                                          width: double.infinity,
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade200,
+                                            borderRadius: BorderRadius.circular(
+                                              2,
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          height: 4,
+                                          width: 40,
+                                          decoration: BoxDecoration(
+                                            color: Colors.red.shade500,
+                                            borderRadius: BorderRadius.circular(
+                                              2,
+                                            ),
+                                          ),
+                                        ),
                                       ],
-                                    )
+                                    ),
                                   ],
                                 ),
                               ),
@@ -879,9 +1546,14 @@ class _DashboardPageState extends State<DashboardPage> {
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  Text("${item.quantity.toInt()} ${item.unit}", style: TextStyle(fontWeight: FontWeight.w900, color: Colors.red.shade700, fontSize: 14)),
-                                  const SizedBox(height: 4),
-                                  Text("Reorder ~40 ${item.unit}", style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
+                                  Text(
+                                    "${item.quantity.toInt()} ${item.unit}",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.red.shade700,
+                                      fontSize: 14,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ],
@@ -905,15 +1577,17 @@ class _DashboardPageState extends State<DashboardPage> {
     for (var tx in _recentTransactions) {
       if (tx['transaction_type'] == 'checkout') {
         String pid = tx['product_id']?.toString() ?? '';
-        sales[pid] = (sales[pid] ?? 0) + (tx['quantity_change'] as num).abs().toDouble();
+        sales[pid] =
+            (sales[pid] ?? 0) + (tx['quantity_change'] as num).abs().toDouble();
       }
     }
-    
-    var sortedSales = sales.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+
+    var sortedSales = sales.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     var top3 = sortedSales.take(3).toList();
 
     return Container(
-      height: 320, // Increased height
+      height: 320,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -927,21 +1601,33 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               Icon(LucideIcons.award, size: 18, color: Color(0xFF0F172A)),
               SizedBox(width: 8),
-              Text("Top Sellers", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+              Text(
+                "Top Sellers",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 24),
           if (top3.isEmpty)
-            const Text("No recent sales data.", style: TextStyle(color: Colors.grey))
+            const Text(
+              "No recent sales data.",
+              style: TextStyle(color: Colors.grey),
+            )
           else
             ...top3.asMap().entries.map((entry) {
               int index = entry.key;
               String pId = entry.value.key;
               double qty = entry.value.value;
-              
+
               InventoryItem? item;
-              try { item = allItems.firstWhere((i) => i.id == pId); } catch (_) {}
-              
+              try {
+                item = allItems.firstWhere((i) => i.id == pId);
+              } catch (_) {}
+
               return Padding(
                 padding: const EdgeInsets.only(bottom: 20),
                 child: Row(
@@ -950,28 +1636,61 @@ class _DashboardPageState extends State<DashboardPage> {
                       width: 24,
                       height: 24,
                       decoration: BoxDecoration(
-                        color: index == 0 ? Colors.orange : Colors.grey.shade200,
+                        color: index == 0
+                            ? Colors.orange
+                            : Colors.grey.shade200,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Center(
-                        child: Text("${index + 1}", style: TextStyle(color: index == 0 ? Colors.white : Colors.grey.shade700, fontWeight: FontWeight.bold, fontSize: 12)),
+                        child: Text(
+                          "${index + 1}",
+                          style: TextStyle(
+                            color: index == 0
+                                ? Colors.white
+                                : Colors.grey.shade700,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: Text(item?.name ?? "Unknown Item", style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF0F172A)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        item?.name ?? "Unknown Item",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: Color(0xFF0F172A),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text("${qty.toInt()} ${item?.unit ?? 'pcs'}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
-                        Text("₱${((item?.price ?? 0) * qty).toStringAsFixed(0)}", style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+                        Text(
+                          "${qty.toInt()} ${item?.unit ?? 'pcs'}",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                        Text(
+                          "₱${((item?.price ?? 0) * qty).toStringAsFixed(0)}",
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
                       ],
-                    )
+                    ),
                   ],
                 ),
               );
-            })
+            }),
         ],
       ),
     );
@@ -979,7 +1698,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildOrderPipeline(Map<String, dynamic> metrics) {
     return Container(
-      height: 320, // Increased height
+      height: 320,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -994,23 +1713,45 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               const Row(
                 children: [
-                  Icon(LucideIcons.alignLeft, size: 18, color: Color(0xFF0F172A)),
+                  Icon(
+                    LucideIcons.alignLeft,
+                    size: 18,
+                    color: Color(0xFF0F172A),
+                  ),
                   SizedBox(width: 8),
-                  Text("Order Pipeline", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                  Text(
+                    "Order Pipeline",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
                 ],
               ),
               TextButton(
-                onPressed: widget.onOpenQueue, // <-- UPDATE THIS
-                child: const Text("Open queue →", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
-              )
+                onPressed: widget.onOpenQueue,
+                child: const Text(
+                  "Open queue →",
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 24),
           _buildPipelineRow("Pending", metrics['pendingCount'], Colors.orange),
           const SizedBox(height: 20),
-          _buildPipelineRow("Being prepared", 0, Colors.blue), // Simulation
+          _buildPipelineRow("Being prepared", 0, Colors.blue),
           const SizedBox(height: 20),
-          _buildPipelineRow("Ready for pickup", metrics['preparedCount'], Colors.green),
+          _buildPipelineRow(
+            "Ready for pickup",
+            metrics['preparedCount'],
+            Colors.green,
+          ),
         ],
       ),
     );
@@ -1026,16 +1767,30 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF0F172A))),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: Color(0xFF0F172A),
+            ),
+          ),
         ),
-        Text("$count", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Color(0xFF0F172A))),
+        Text(
+          "$count",
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: 14,
+            color: Color(0xFF0F172A),
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildRecentActivity() {
     return Container(
-      height: 320, // Increased height
+      height: 320,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1052,29 +1807,48 @@ class _DashboardPageState extends State<DashboardPage> {
                 children: [
                   Icon(LucideIcons.history, size: 18, color: Color(0xFF0F172A)),
                   SizedBox(width: 8),
-                  Text("Recent Activity", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                  Text(
+                    "Recent Activity",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
                 ],
               ),
               TextButton(
-                onPressed: widget.onViewActivity, // <-- UPDATE THIS
-                child: const Text("All →", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
-              )
+                onPressed: widget.onViewActivity,
+                child: const Text(
+                  "All →",
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 20),
           if (_isLoadingTxs)
             const Center(child: CircularProgressIndicator())
           else if (_recentTransactions.isEmpty)
-            const Text("No recent activity.", style: TextStyle(color: Colors.grey))
+            const Text(
+              "No recent activity.",
+              style: TextStyle(color: Colors.grey),
+            )
           else
             Expanded(
               child: ListView.builder(
-                itemCount: _recentTransactions.length > 3 ? 3 : _recentTransactions.length,
+                itemCount: _recentTransactions.length > 3
+                    ? 3
+                    : _recentTransactions.length,
                 itemBuilder: (context, index) {
                   final tx = _recentTransactions[index];
                   final isPositive = (tx['quantity_change'] as num) > 0;
                   final type = tx['transaction_type'] as String;
-                  
+
                   String pName = "Unknown Item";
                   if (tx['products'] != null) {
                     pName = tx['products']['product_name'] ?? pName;
@@ -1086,7 +1860,8 @@ class _DashboardPageState extends State<DashboardPage> {
                   }
 
                   final date = DateTime.parse(tx['created_at']).toLocal();
-                  final timeStr = "${date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour)}:${date.minute.toString().padLeft(2, '0')} ${date.hour >= 12 ? 'PM' : 'AM'}";
+                  final timeStr =
+                      "${date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour)}:${date.minute.toString().padLeft(2, '0')} ${date.hour >= 12 ? 'PM' : 'AM'}";
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 16),
@@ -1096,32 +1871,57 @@ class _DashboardPageState extends State<DashboardPage> {
                         Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: isPositive ? Colors.green.shade50 : Colors.red.shade50,
+                            color: isPositive
+                                ? Colors.green.shade50
+                                : Colors.red.shade50,
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Icon(isPositive ? LucideIcons.plus : LucideIcons.minus, size: 12, color: isPositive ? Colors.green : Colors.red),
+                          child: Icon(
+                            isPositive ? LucideIcons.plus : LucideIcons.minus,
+                            size: 12,
+                            color: isPositive ? Colors.green : Colors.red,
+                          ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("${type.substring(0,1).toUpperCase()}${type.substring(1)} · $pName", style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF0F172A)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                              Text(
+                                "${type.substring(0, 1).toUpperCase()}${type.substring(1)} · $pName",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  color: Color(0xFF0F172A),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                               const SizedBox(height: 4),
-                              Text("$uName · $timeStr", style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+                              Text(
+                                "$uName · $timeStr",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
                             ],
                           ),
                         ),
                         Text(
                           "${isPositive ? '+' : ''}${tx['quantity_change']}",
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isPositive ? Colors.green : Colors.red),
-                        )
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: isPositive ? Colors.green : Colors.red,
+                          ),
+                        ),
                       ],
                     ),
                   );
                 },
               ),
-            )
+            ),
         ],
       ),
     );

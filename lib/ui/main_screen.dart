@@ -21,6 +21,7 @@ import '../services/export_period.dart';
 import '../services/debug_clock.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
+import 'forecasting_page.dart';
 
 class MainScreen extends StatefulWidget {
   final InventoryController controller;
@@ -52,7 +53,6 @@ class _MainScreenState extends State<MainScreen> {
       showDialog(
         context: context,
         builder: (dialogContext) => Dialog(
-          // <- was (context)
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -106,7 +106,7 @@ class _MainScreenState extends State<MainScreen> {
     await _checkExportReminders();
   }
 
-    @override
+  @override
   void initState() {
     super.initState();
     _checkExportReminders();
@@ -152,73 +152,104 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _debugClockButton() {
-  return FloatingActionButton.small(
-    backgroundColor: DebugClock.isOverridden ? Colors.red : Colors.grey,
-    onPressed: _showDebugClockDialog,
-    child: const Icon(Icons.schedule, color: Colors.white),
-  );
-}
+    return FloatingActionButton.small(
+      backgroundColor: DebugClock.isOverridden ? Colors.red : Colors.grey,
+      onPressed: _showDebugClockDialog,
+      child: const Icon(Icons.schedule, color: Colors.white),
+    );
+  }
 
-void _showDebugClockDialog() {
-  showDialog(
-    context: context,
-    builder: (dialogContext) {
-      DateTime picked = DebugClock.now();
-      return StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: const Text('Debug clock'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Current fake "now": ${picked.toString()}'),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _quickSet('Daily 5:01 PM', () {
-                    final n = DateTime.now();
-                    return DateTime(n.year, n.month, n.day, 17, 1);
-                  }, setD, (d) => picked = d),
-                  _quickSet('Sunday 5:01 PM (week due)', () {
-                    final n = DateTime.now();
-                    final sunday = n.add(Duration(days: 7 - n.weekday));
-                    return DateTime(sunday.year, sunday.month, sunday.day, 17, 1);
-                  }, setD, (d) => picked = d),
-                  _quickSet('Last day of month, 5:01 PM', () {
-                    final n = DateTime.now();
-                    final lastDay = DateTime(n.year, n.month + 1, 0);
-                    return DateTime(lastDay.year, lastDay.month, lastDay.day, 17, 1);
-                  }, setD, (d) => picked = d),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: () async {
-                  final date = await showDatePicker(
-                    context: ctx,
-                    initialDate: picked,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2100),
-                  );
-                  if (date == null) return;
-                  final time = await showTimePicker(
-                    context: ctx,
-                    initialTime: TimeOfDay.fromDateTime(picked),
-                  );
-                  if (time == null) return;
-                  setD(() {
-                    picked = DateTime(
-                      date.year, date.month, date.day, time.hour, time.minute,
+  void _showDebugClockDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        DateTime picked = DebugClock.now();
+        return StatefulBuilder(
+          builder: (ctx, setD) => AlertDialog(
+            title: const Text('Debug clock'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Current fake "now": ${picked.toString()}'),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _quickSet(
+                      'Daily 5:01 PM',
+                      () {
+                        final n = DateTime.now();
+                        return DateTime(n.year, n.month, n.day, 17, 1);
+                      },
+                      setD,
+                      (d) => picked = d,
+                    ),
+                    _quickSet(
+                      'Sunday 5:01 PM (week due)',
+                      () {
+                        final n = DateTime.now();
+                        final sunday = n.add(Duration(days: 7 - n.weekday));
+                        return DateTime(
+                          sunday.year,
+                          sunday.month,
+                          sunday.day,
+                          17,
+                          1,
+                        );
+                      },
+                      setD,
+                      (d) => picked = d,
+                    ),
+                    _quickSet(
+                      'Last day of month, 5:01 PM',
+                      () {
+                        final n = DateTime.now();
+                        final lastDay = DateTime(n.year, n.month + 1, 0);
+                        return DateTime(
+                          lastDay.year,
+                          lastDay.month,
+                          lastDay.day,
+                          17,
+                          1,
+                        );
+                      },
+                      setD,
+                      (d) => picked = d,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: () async {
+                    final date = await showDatePicker(
+                      context: ctx,
+                      initialDate: picked,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2100),
                     );
-                  });
-                },
-                child: const Text('Pick custom date/time'),
-              ),
-            ],
-          ),
-                    actions: [
+                    if (date == null) return;
+                    final time = await showTimePicker(
+                      context: ctx,
+                      initialTime: TimeOfDay.fromDateTime(picked),
+                    );
+                    if (time == null) return;
+                    setD(() {
+                      picked = DateTime(
+                        date.year,
+                        date.month,
+                        date.day,
+                        time.hour,
+                        time.minute,
+                      );
+                    });
+                  },
+                  child: const Text('Pick custom date/time'),
+                ),
+              ],
+            ),
+            actions: [
               TextButton(
                 onPressed: () async {
                   await _debugClearExportLog();
@@ -248,32 +279,30 @@ void _showDebugClockDialog() {
                 child: const Text('Apply'),
               ),
             ],
-        ),
-      );
-    },
-  );
-}
+          ),
+        );
+      },
+    );
+  }
 
-Widget _quickSet(
-  String label,
-  DateTime Function() compute,
-  void Function(void Function()) setD,
-  void Function(DateTime) assign,
-) {
-  return ActionChip(
-    label: Text(label, style: const TextStyle(fontSize: 12)),
-    onPressed: () => setD(() => assign(compute())),
-  );
-}
+  Widget _quickSet(
+    String label,
+    DateTime Function() compute,
+    void Function(void Function()) setD,
+    void Function(DateTime) assign,
+  ) {
+    return ActionChip(
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+      onPressed: () => setD(() => assign(compute())),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     if (widget.controller.currentUserId == null) {
       return const Scaffold(
         backgroundColor: Color(0xFF0F172A),
-        body: Center(
-          child: CircularProgressIndicator(color: Colors.orange),
-        ),
+        body: Center(child: CircularProgressIndicator(color: Colors.orange)),
       );
     }
 
@@ -290,56 +319,75 @@ Widget _quickSet(
       );
     }
 
-    
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 600;
-        final role = widget.controller.currentUserRole?.toLowerCase() ?? 'staff';
+        final role =
+            widget.controller.currentUserRole?.toLowerCase() ?? 'staff';
         final isAdmin = role == 'admin';
         final isCashier = role == 'staff';
         final isHelper = role == 'helper';
 
         _currentIndex ??= 0;
 
-        // 2. DYNAMIC INDICES BASED ON ROLE (Settings Removed)
+        // ─── CORRECTED DYNAMIC INDICES ───────────────────────────────────────
         int pageIndex = 0;
         final int dashboardIndex = isAdmin ? pageIndex++ : -1;
+        final int forecastingIndex = isAdmin
+            ? pageIndex++
+            : -1; // Added Forecasting Index
         final int posIndex = (isCashier || isAdmin) ? pageIndex++ : -1;
         final int orderQueueIndex = (isHelper || isAdmin) ? pageIndex++ : -1;
         final int inventoryIndex = pageIndex++;
         final int transactionIndex = isAdmin ? pageIndex++ : -1;
         final int mapIndex = isAdmin ? pageIndex++ : -1;
-        final int system_settings_page = isAdmin? pageIndex++ : -1;
+        final int systemSettingsIndex = isAdmin ? pageIndex++ : -1;
 
         final pages = <Widget>[];
-                 
+
+        // ─── CORRECTED PAGE ORDERING ─────────────────────────────────────────
         if (isAdmin) {
-          pages.add(DashboardPage(
-            controller: widget.controller,
-            onViewTransactions: () {
-              setState(() {
-                _txTargetTab = 'Sales History'; 
-                _currentIndex = transactionIndex;
-              });
-            },
-            onOpenQueue: () { 
-              setState(() {
-                _currentIndex = orderQueueIndex; 
-              });
-            },
-            onViewActivity: () { 
-              setState(() {
-                _txTargetTab = 'Activity Log'; 
-                _currentIndex = transactionIndex;
-              });
-            },
-          ));
+          pages.add(
+            DashboardPage(
+              controller: widget.controller,
+              onViewTransactions: () {
+                setState(() {
+                  _txTargetTab = 'Sales History';
+                  _currentIndex = transactionIndex;
+                });
+              },
+              onOpenQueue: () {
+                setState(() {
+                  _currentIndex = orderQueueIndex;
+                });
+              },
+              onViewActivity: () {
+                setState(() {
+                  _txTargetTab = 'Activity Log';
+                  _currentIndex = transactionIndex;
+                });
+              },
+              onOpenForecasting: () {
+                // Added missing parameter
+                setState(() {
+                  _currentIndex = forecastingIndex;
+                });
+              },
+            ),
+          );
         }
+
+        if (isAdmin) {
+          pages.add(
+            ForecastingPage(controller: widget.controller),
+          ); // Moved to correct position
+        }
+
         if (isCashier || isAdmin) {
           pages.add(PosCartPage(controller: widget.controller));
         }
-       if (isHelper || isAdmin) {
+
+        if (isHelper || isAdmin) {
           pages.add(
             OrderQueuePage(
               controller: widget.controller,
@@ -350,7 +398,7 @@ Widget _quickSet(
             ),
           );
         }
-        
+
         pages.add(
           InventoryPage(
             controller: widget.controller,
@@ -376,9 +424,11 @@ Widget _quickSet(
             ),
           );
         }
-if (isAdmin) {
-          pages.add(MapEditorPage(controller: widget.controller)); // <-- ADD THIS
+
+        if (isAdmin) {
+          pages.add(MapEditorPage(controller: widget.controller));
         }
+
         if (isAdmin) {
           pages.add(SystemSettingsPage(controller: widget.controller));
         }
@@ -398,7 +448,7 @@ if (isAdmin) {
                   child: Column(
                     children: [
                       Expanded(
-                        child: SingleChildScrollView( 
+                        child: SingleChildScrollView(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -433,6 +483,13 @@ if (isAdmin) {
                                   'Dashboard',
                                   activeIcon: Icons.dashboard,
                                 ),
+                              if (isAdmin)
+                                _buildSidebarItem(
+                                  forecastingIndex,
+                                  LucideIcons.trendingUp,
+                                  'Forecasting',
+                                  activeIcon: LucideIcons.trendingUp,
+                                ),
                               if (isCashier || isAdmin)
                                 _buildSidebarItem(
                                   posIndex,
@@ -462,7 +519,6 @@ if (isAdmin) {
                                   activeIcon: Icons.history,
                                   showDot: _salesExportDue,
                                 ),
-                                
                               if (isAdmin)
                                 _buildSidebarItem(
                                   mapIndex,
@@ -472,7 +528,7 @@ if (isAdmin) {
                                 ),
                               if (isAdmin)
                                 _buildSidebarItem(
-                                  system_settings_page, // The index variable from your code
+                                  systemSettingsIndex,
                                   Icons.settings_outlined,
                                   'System Settings',
                                   activeIcon: Icons.settings,
@@ -488,20 +544,11 @@ if (isAdmin) {
                 Expanded(
                   child: IndexedStack(index: _currentIndex, children: pages),
                 ),
-                
-                
               ],
-              
             ),
-            
-            
             floatingActionButton: kReleaseMode ? null : _debugClockButton(),
-
-            
           );
-
         }
-        
 
         // ==========================================
         // MOBILE LAYOUT (Bottom Navigation)
@@ -511,23 +558,27 @@ if (isAdmin) {
           backgroundColor: Colors.white,
           appBar: AppBar(
             backgroundColor: _darkSidebarBg,
-            toolbarHeight: 70, 
+            toolbarHeight: 70,
             elevation: 0,
             titleSpacing: 0,
-            title: _buildProfileTile(), 
+            title: _buildProfileTile(),
           ),
           body: IndexedStack(index: _currentIndex, children: pages),
           bottomNavigationBar: NavigationBarTheme(
             data: NavigationBarThemeData(
               indicatorColor: Colors.orange,
-              labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>(
-                (Set<WidgetState> states) {
-                  if (states.contains(WidgetState.selected)) {
-                    return const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12);
-                  }
-                  return const TextStyle(color: Colors.grey, fontSize: 12);
-                },
-              ),
+              labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((
+                Set<WidgetState> states,
+              ) {
+                if (states.contains(WidgetState.selected)) {
+                  return const TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  );
+                }
+                return const TextStyle(color: Colors.grey, fontSize: 12);
+              }),
             ),
             child: NavigationBar(
               backgroundColor: _darkSidebarBg,
@@ -545,10 +596,25 @@ if (isAdmin) {
                     selectedIcon: Icon(Icons.dashboard, color: Colors.white),
                     label: 'Dashboard',
                   ),
+                if (isAdmin)
+                  const NavigationDestination(
+                    icon: Icon(LucideIcons.trendingUp, color: Colors.grey),
+                    selectedIcon: Icon(
+                      LucideIcons.trendingUp,
+                      color: Colors.white,
+                    ),
+                    label: 'Forecasting',
+                  ),
                 if (isCashier || isAdmin)
                   const NavigationDestination(
-                    icon: Icon(Icons.point_of_sale_outlined, color: Colors.grey),
-                    selectedIcon: Icon(Icons.point_of_sale, color: Colors.white),
+                    icon: Icon(
+                      Icons.point_of_sale_outlined,
+                      color: Colors.grey,
+                    ),
+                    selectedIcon: Icon(
+                      Icons.point_of_sale,
+                      color: Colors.white,
+                    ),
                     label: 'POS',
                   ),
                 if (isHelper || isAdmin)
@@ -584,7 +650,7 @@ if (isAdmin) {
                     ),
                     label: 'History',
                   ),
-                  if (isAdmin)
+                if (isAdmin)
                   const NavigationDestination(
                     icon: Icon(Icons.map_outlined, color: Colors.grey),
                     selectedIcon: Icon(Icons.map, color: Colors.white),
@@ -766,18 +832,23 @@ if (isAdmin) {
             userId: widget.controller.currentUserId ?? "",
             role: widget.controller.currentUserRole ?? "staff",
           );
-      
+
           if (isDesktop) {
             showDialog(
               context: context,
               builder: (context) => Dialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 clipBehavior: Clip.antiAlias,
                 child: SizedBox(width: 500, height: 600, child: profilePage),
               ),
             );
           } else {
-            Navigator.push(context, MaterialPageRoute(builder: (context) => profilePage));
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => profilePage),
+            );
           }
         },
         child: Container(
@@ -792,7 +863,10 @@ if (isAdmin) {
                 backgroundColor: Colors.orange.withOpacity(0.2),
                 child: Text(
                   widget.controller.currentUserName?[0].toUpperCase() ?? 'U',
-                  style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -803,7 +877,11 @@ if (isAdmin) {
                   children: [
                     Text(
                       widget.controller.currentUserName ?? "Unknown User",
-                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -817,7 +895,11 @@ if (isAdmin) {
                 ),
               ),
               IconButton(
-                icon: const Icon(LucideIcons.logOut, color: Colors.redAccent, size: 20),
+                icon: const Icon(
+                  LucideIcons.logOut,
+                  color: Colors.redAccent,
+                  size: 20,
+                ),
                 onPressed: _handleLogout,
                 tooltip: "Logout",
               ),

@@ -143,7 +143,7 @@ class _LoginPageState extends State<LoginPage> {
                     const SizedBox(height: 8),
                     _buildTextField(
                       _usernameController,
-                      "Enter your operator ID",
+                      "Enter your username",
                       LucideIcons.user,
                       false,
                       onSubmitted: (_) =>

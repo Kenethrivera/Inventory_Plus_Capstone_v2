@@ -33,6 +33,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  msix: ^3.18.0
 
 flutter:
   uses-material-design: true
@@ -41,3 +42,12 @@ flutter:
     - assets/models/best.tflite
     - assets/models/best_v1.2.tflite
     - assets/models/labels.txt
+
+msix_config:
+  display_name: Inventory Plus
+  publisher_display_name: Async Co.
+  identity_name: com.inventoryplus.app
+  msix_version: 1.0.0.0 
+  description: Smart Inventory System for SME Hardware Shops
+  # logo_path: assets/logo.png 
+  capabilities: internetClient # Required so Supabase can connect to the internet

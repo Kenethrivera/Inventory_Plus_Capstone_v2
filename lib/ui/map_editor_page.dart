@@ -51,10 +51,11 @@ class _MapEditorPageState extends State<MapEditorPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1120), // Deep dark background
+      backgroundColor: const Color(0xFFFAFAFA), // Deep dark background
       appBar: AppBar(
         automaticallyImplyLeading: false, // Hidden back button as requested
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,7 +63,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
             const Text(
               "Store Layout Designer",
               style: TextStyle(
-                color: Colors.white,
+                color: Color(0xFF0F172A),
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
@@ -70,7 +71,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
             Text(
               "$_assignedCount of $_totalCount items assigned",
               style: TextStyle(
-                color: Colors.grey.shade400,
+                color: Colors.grey.shade600,
                 fontSize: 12,
                 fontWeight: FontWeight.normal,
               ),
@@ -167,7 +168,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
       body: Column(
         children: [
           _buildModeTabs(),
-          Divider(height: 1, color: Colors.white.withOpacity(0.1)),
+          Divider(height: 1, color: Colors.white.withOpacity(0.8)),
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -177,7 +178,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                   Container(
                     width: 280,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A),
+                      color: Colors.white,
                       border: Border(
                         right: BorderSide(
                             color: Colors.white.withOpacity(0.1), width: 1),
@@ -220,11 +221,11 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   Widget _buildModeTabs() {
     return Container(
-      color: const Color(0xFF0F172A),
+      color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
+          color: const Color(0xFFF1F3F5),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
@@ -261,7 +262,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
             Icon(
               icon,
               size: 16,
-              color: isSelected ? Colors.white : Colors.grey.shade400,
+              color: isSelected ? Colors.white : Colors.grey.shade600,
             ),
             const SizedBox(width: 8),
             Text(
@@ -313,7 +314,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
           child: Text(
             "ITEMS TO PLACE",
             style: TextStyle(
-              color: Colors.grey.shade400,
+              color: Colors.grey.shade600,
               fontSize: 11,
               fontWeight: FontWeight.bold,
               letterSpacing: 1.0,
@@ -324,13 +325,13 @@ class _MapEditorPageState extends State<MapEditorPage> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: TextField(
             controller: _searchController,
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+            style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
             decoration: InputDecoration(
               hintText: 'Search items...',
               hintStyle: TextStyle(color: Colors.grey.shade500),
               prefixIcon: Icon(LucideIcons.search, size: 16, color: Colors.grey.shade500),
               filled: true,
-              fillColor: const Color(0xFF1E293B),
+              fillColor: Color(0xFFF1F3F5),
               contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -409,7 +410,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                             Text(
                               item.name,
                               style: TextStyle(
-                                color: Colors.white,
+                                color: const Color(0xFF0F172A),
                                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                                 fontSize: 13,
                               ),
@@ -420,7 +421,11 @@ class _MapEditorPageState extends State<MapEditorPage> {
                             Text(
                               isAssigned ? "Rack Assigned" : "Unassigned",
                               style: TextStyle(
-                                color: isAssigned ? Colors.green : Colors.orange,
+                                color: isAssigned
+                                    ? Colors.green
+                                    : (isSelected
+                                          ? Colors.orange
+                                          : Colors.grey.shade500),
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -446,16 +451,16 @@ class _MapEditorPageState extends State<MapEditorPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.orange : const Color(0xFF1E293B),
+          color: isSelected ? Colors.orange : const Color(0xFFF1F3F5),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? Colors.orange : Colors.white.withOpacity(0.05),
+            color: isSelected ? Colors.orange : Colors.black.withOpacity(0.05),
           ),
         ),
         child: Text(
           "$label $count",
           style: TextStyle(
-            color: isSelected ? Colors.white : Colors.grey.shade400,
+            color: isSelected ? Colors.white : Colors.grey.shade700,
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
           ),
@@ -479,7 +484,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.15),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: Colors.blue.withOpacity(0.5)),
               ),

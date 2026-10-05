@@ -36,7 +36,7 @@ class TfliteService {
           .where((s) => s.trim().isNotEmpty)
           .toList();
 
-      _interpreter = await Interpreter.fromAsset('assets/models/best.tflite');
+      _interpreter = await Interpreter.fromAsset('assets/models/best_v1.2.tflite');
     } catch (e) {
       debugPrint('[TFLite] Error loading model: $e');
     }
