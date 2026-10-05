@@ -87,7 +87,25 @@ class _LoginPageState extends State<LoginPage> {
     _passwordFocusNode.dispose();
     super.dispose();
   }
-
+void _showPolicyDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF151D2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        content: SingleChildScrollView(
+          child: Text(content, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Close", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -231,10 +249,37 @@ class _LoginPageState extends State<LoginPage> {
                     const Divider(color: Colors.white10, height: 1),
                     const SizedBox(height: 24),
 
-                    const Center(
-                      child: Text("Terms of Service   •   Privacy Policy",
-                          style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    ),
+                    // NEW CODE
+Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    TextButton(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      onPressed: () => _showPolicyDialog(
+        "Terms of Service",
+        "By accessing and using Inventory Plus, you accept and agree to be bound by the terms and provisions of this agreement.\n\nAny participation in this service will constitute acceptance of this agreement. These terms are governed by the laws of the Republic of the Philippines."
+      ),
+      child: const Text("Terms of Service", style: TextStyle(color: Colors.grey, fontSize: 12)),
+    ),
+    const Text("   •   ", style: TextStyle(color: Colors.grey, fontSize: 12)),
+    TextButton(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      onPressed: () => _showPolicyDialog(
+        "Privacy Policy",
+        "Inventory Plus is committed to protecting your personal information. \n\nWe process your data in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines. We collect, use, and store your data solely for inventory management and system authentication purposes."
+      ),
+      child: const Text("Privacy Policy", style: TextStyle(color: Colors.grey, fontSize: 12)),
+    ),
+  ],
+),
                   ],
                 ),
               ),

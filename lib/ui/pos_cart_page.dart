@@ -729,22 +729,16 @@ class _PosCartPageState extends State<PosCartPage>
                     children: [
                       Icon(
                         icon,
-                        color: isSelected
-                            ? Colors.orange
-                            : Colors.grey.shade400,
+                        color: isSelected ? Colors.orange : Colors.grey.shade400,
                         size: 20,
                       ),
                       const SizedBox(height: 4),
                       Text(
                         title,
                         style: TextStyle(
-                          color: isSelected
-                              ? Colors.orange
-                              : Colors.grey.shade600,
+                          color: isSelected ? Colors.orange : Colors.grey.shade600,
                           fontSize: 12,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.normal,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                     ],
@@ -767,6 +761,7 @@ class _PosCartPageState extends State<PosCartPage>
               width: 400,
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
+                child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -874,8 +869,7 @@ class _PosCartPageState extends State<PosCartPage>
                         buildPaymentTile('Cash', LucideIcons.banknote),
                         const SizedBox(width: 8),
                         buildPaymentTile('GCash', LucideIcons.smartphone),
-                        const SizedBox(width: 8),
-                        buildPaymentTile('Card', LucideIcons.creditCard),
+                        // Removed Card option
                       ],
                     ),
 
@@ -902,7 +896,7 @@ class _PosCartPageState extends State<PosCartPage>
                               inputFormatters: [
                                 FilteringTextInputFormatter.allow(
                                   RegExp(r'^\d*\.?\d*'),
-                                ), // Blocks letters completely
+                                ),
                               ],
                               textAlign: TextAlign.right,
                               style: const TextStyle(
@@ -917,8 +911,7 @@ class _PosCartPageState extends State<PosCartPage>
                                   fontWeight: FontWeight.normal,
                                 ),
                                 filled: true,
-                                fillColor: Colors
-                                    .transparent, // Transparent as requested
+                                fillColor: Colors.transparent,
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 8,
@@ -940,7 +933,7 @@ class _PosCartPageState extends State<PosCartPage>
                                   borderSide: const BorderSide(
                                     color: Colors.orange,
                                     width: 2,
-                                  ), // Highlighting the input
+                                  ),
                                 ),
                                 isDense: true,
                               ),
@@ -974,6 +967,51 @@ class _PosCartPageState extends State<PosCartPage>
                             ),
                           ),
                         ],
+                      ),
+                    ] else if (paymentMode == 'GCash') ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.shade100),
+                        ),
+                        child: Column(
+                          children: [
+                            const Text(
+                              "Scan to Pay with GCash",
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: QrImageView(
+                                // A placeholder GCash URI — replace with an actual merchant link if applicable
+                                data: "gcash://qr/pay?amount=${totalDue.toStringAsFixed(2)}",
+                                version: QrVersions.auto,
+                                size: 120.0,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              "Please wait for the customer to confirm transfer.",
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
 
@@ -1034,20 +1072,18 @@ class _PosCartPageState extends State<PosCartPage>
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed:
-                                (paymentMode == 'Cash' &&
-                                    cashReceived < totalDue)
+                            onPressed: (paymentMode == 'Cash' && cashReceived < totalDue)
                                 ? null
                                 : () => Navigator.pop(context, {
-                                    'confirmed': true,
-                                    'paymentMode': paymentMode,
-                                    'cashReceived': paymentMode == 'Cash'
-                                        ? cashReceived
-                                        : totalDue,
-                                    'change': paymentMode == 'Cash'
-                                        ? (cashReceived - totalDue)
-                                        : 0.0,
-                                  }),
+                                      'confirmed': true,
+                                      'paymentMode': paymentMode,
+                                      'cashReceived': paymentMode == 'Cash'
+                                          ? cashReceived
+                                          : totalDue,
+                                      'change': paymentMode == 'Cash'
+                                          ? (cashReceived - totalDue)
+                                          : 0.0,
+                                    }),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
                               disabledBackgroundColor: Colors.green.shade200,
@@ -1069,6 +1105,7 @@ class _PosCartPageState extends State<PosCartPage>
                       ],
                     ),
                   ],
+                ),
                 ),
               ),
             ),
