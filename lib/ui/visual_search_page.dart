@@ -68,13 +68,8 @@ class _VisualSearchPageState extends State<VisualSearchPage>
   // Web guide box: square, tuned for a laptop webcam at typical distance.
   static const double _alignBoxFactor = 0.55;
 
-  // Mobile guide box: a portrait RECTANGLE, not a square. Hand tools
-  // (hammers, wrenches, pliers) are elongated, and a phone is usually
-  // held closer to the object than a webcam is — a square box either
-  // clips long tools or forces an awkward diagonal hold. Width is wider
-  // than height's counterpart on web because phone screens are already
-  // narrow; height is shorter than width to fit a tool held vertically
-  // without requiring the user to back into a wall.
+  // Mobile guide box is only a framing aid; mobile scans use the complete
+  // captured camera frame. Keep the portrait rectangle for elongated tools.
   static const double _mobileCropWidth = 0.75;
   static const double _mobileCropHeight = 0.55;
 
@@ -319,17 +314,11 @@ class _VisualSearchPageState extends State<VisualSearchPage>
     }
   }
 
-  // Computes the crop region in RAW PHOTO fractions (0.0-1.0), so it
-  // matches whatever the user actually sees inside the on-screen guide
-  // box on each platform — see the box widget in build() below, which
-  // uses these same _mobileCropWidth/_mobileCropHeight /
-  // _alignBoxFactor constants so the two never drift out of sync.
+  // Web scans crop to the visible guide box. Mobile scans retain the full
+  // camera frame so tools outside the guide rectangle are not discarded.
   Rect _computeCropRect() {
     if (_isMobilePlatform) {
-      // Portrait rectangle, not a square — see constant comments above.
-      const w = _mobileCropWidth;
-      const h = _mobileCropHeight;
-      return Rect.fromLTWH((1 - w) / 2, (1 - h) / 2, w, h);
+      return const Rect.fromLTWH(0, 0, 1, 1);
     }
 
     final previewSize = _cameraController?.value.previewSize;
@@ -825,12 +814,8 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                     child: CircularProgressIndicator(color: Colors.orange),
                   ),
           ),
-          // Guide box: shown on BOTH web and mobile now (previously
-          // web-only). Web keeps its square box; mobile gets a portrait
-          // rectangle sized for elongated hand tools. Box dimensions
-          // here MUST match _computeCropRect()'s fractions above, or
-          // what the user sees framed won't be what actually gets sent
-          // to the model.
+          // The web guide box is the crop boundary. On mobile it is only
+          // a framing aid because the complete camera frame is analyzed.
           if (!_isLiveMode)
             Positioned.fill(
               child: Container(
@@ -857,7 +842,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                           padding: const EdgeInsets.all(8.0),
                           child: Text(
                             _isMobilePlatform
-                                ? "Fit tool inside box — step back if needed"
+                                ? "Keep the whole tool in view"
                                 : "Align Tool Here",
                             textAlign: TextAlign.center,
                             style: const TextStyle(
@@ -1145,22 +1130,27 @@ Map<String, dynamic> processImageInBackground(Map<String, dynamic> params) {
     }
   }
 
-  // --- Local model: keep near the model's native 640px input and use
-  // higher JPEG quality, so _letterbox() isn't upsampling a blurry,
-  // heavily-compressed image. ---
-  img.Image forLocal = croppedImage;
-  if (forLocal.width > 640) {
-    forLocal = img.copyResize(forLocal, width: 640);
-  }
-  final localBytes = img.encodeJpg(forLocal, quality: 90);
+  // Bound the longest edge for predictable preprocessing cost in the model,
+  // while retaining enough detail for its 640px input.
+  final forLocal = _resizeToMaxEdge(croppedImage, 640);
+  final localBytes = img.encodeJpg(forLocal, quality: 95);
 
-  // --- Gemini: small + more compressed, since it only needs enough
-  // detail to name the object, not feed a tensor. ---
-  img.Image forApi = croppedImage;
-  if (forApi.width > 400) {
-    forApi = img.copyResize(forApi, width: 400);
-  }
+  // Gemini only needs enough detail to identify the object, so its fallback
+  // image is intentionally smaller and more compressed.
+  final forApi = _resizeToMaxEdge(croppedImage, 400);
   final apiBytes = img.encodeJpg(forApi, quality: 60);
 
   return {'histogram': bins, 'localBytes': localBytes, 'apiBytes': apiBytes};
+}
+
+img.Image _resizeToMaxEdge(img.Image source, int maxEdge) {
+  final longestEdge = math.max(source.width, source.height);
+  if (longestEdge <= maxEdge) return source;
+
+  final scale = maxEdge / longestEdge;
+  return img.copyResize(
+    source,
+    width: math.max(1, (source.width * scale).round()),
+    height: math.max(1, (source.height * scale).round()),
+  );
 }
