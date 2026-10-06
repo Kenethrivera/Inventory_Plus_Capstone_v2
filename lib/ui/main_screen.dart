@@ -38,18 +38,17 @@ class _MainScreenState extends State<MainScreen> {
   String _txTargetTab = 'Sales History';
   String? _targetOrderId;
   
-  // --- NEW DESKTOP COLOR PALETTE ---
+  // --- THEME PALETTE ---
   static const Color _primaryBlue = Color(0xFF2563EB);
   static const Color _sidebarBg = Colors.white;
   static const Color _mainBg = Color(0xFFF4F6F8);
   static const Color _darkText = Color(0xFF0F172A);
-  static const Color _inactiveText = Color(0xFF475569);
-  static const String _fontFam = 'Outfit';
+  static const Color _inactiveText = Color(0xFF64748B);
+  static const String _fontFam = 'Hellix';
 
   bool _inventoryExportDue = false;
   bool _salesExportDue = false;
 
-  // --- REUSABLE PAGE FUNCTIONS ---
   void _handleSelectItem(InventoryItem item) {
     final isDesktop = MediaQuery.of(context).size.width >= 600;
 
@@ -326,11 +325,10 @@ class _MainScreenState extends State<MainScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 600;
-        final role =
-            widget.controller.currentUserRole?.toLowerCase() ?? 'staff';
+        final role = widget.controller.currentUserRole?.toLowerCase() ?? 'staff';
         final isAdmin = role == 'admin';
-        final isCashier = role == 'staff';
         final isHelper = role == 'helper';
+        final isCashier = role == 'staff';
 
         _currentIndex ??= 0;
 
@@ -374,9 +372,6 @@ class _MainScreenState extends State<MainScreen> {
               },
             ),
           );
-        }
-
-        if (isAdmin) {
           pages.add(ForecastingPage(controller: widget.controller));
         }
 
@@ -420,19 +415,36 @@ class _MainScreenState extends State<MainScreen> {
               },
             ),
           );
-        }
-
-        if (isAdmin) {
           pages.add(MapEditorPage(controller: widget.controller));
-        }
-
-        if (isAdmin) {
           pages.add(SystemSettingsPage(controller: widget.controller));
         }
 
-        // ==========================================
-        // DESKTOP LAYOUT (Sidebar)
-        // ==========================================
+        // ══════════════════════════════════════════════════════════════════════
+        // 1. HELPER & CASHIER DESKTOP VIEW (Top Navigation Header)
+        // ══════════════════════════════════════════════════════════════════════
+        if ((isHelper || isCashier) && isDesktop) {
+          if (_currentIndex! > 1) _currentIndex = 0;
+
+          return Scaffold(
+            backgroundColor: _mainBg,
+            body: Column(
+              children: [
+                _buildTopNavBar(isHelper: isHelper),
+                Expanded(
+                  child: IndexedStack(
+                    index: _currentIndex,
+                    children: pages, // Since Cashier/Helper only have 2 pages max in the array
+                  ),
+                ),
+              ],
+            ),
+            floatingActionButton: kReleaseMode ? null : _debugClockButton(),
+          );
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // 2. ADMIN DESKTOP VIEW (Left Sidebar Navigation)
+        // ══════════════════════════════════════════════════════════════════════
         if (isDesktop) {
           return Scaffold(
             backgroundColor: _mainBg,
@@ -468,13 +480,14 @@ class _MainScreenState extends State<MainScreen> {
                                         color: _primaryBlue,
                                         borderRadius: BorderRadius.circular(8),
                                       ),
+                                      child: const Icon(LucideIcons.package, color: Colors.white, size: 18),
                                     ),
                                     const SizedBox(width: 12),
                                     const Text(
                                       'Inventory Plus',
                                       style: TextStyle(
                                         color: _darkText,
-                                        fontWeight: FontWeight.w800,
+                                        fontWeight: FontWeight.w900,
                                         fontSize: 20,
                                         fontFamily: _fontFam,
                                       ),
@@ -494,13 +507,13 @@ class _MainScreenState extends State<MainScreen> {
                                   LucideIcons.trendingUp,
                                   'Forecasting',
                                 ),
-                              if (isCashier || isAdmin)
+                              if (isAdmin)
                                 _buildSidebarItem(
                                   posIndex,
                                   LucideIcons.shoppingCart,
                                   'POS System',
                                 ),
-                              if (isHelper || isAdmin)
+                              if (isAdmin)
                                 _buildSidebarItem(
                                   orderQueueIndex,
                                   LucideIcons.fileText,
@@ -548,9 +561,9 @@ class _MainScreenState extends State<MainScreen> {
           );
         }
 
-        // ==========================================
-        // MOBILE LAYOUT (Bottom Navigation)
-        // ==========================================
+        // ══════════════════════════════════════════════════════════════════════
+        // 3. MOBILE VIEW (Bottom Navigation)
+        // ══════════════════════════════════════════════════════════════════════
         return Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
@@ -677,6 +690,215 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  // ─── TOP NAVIGATION BAR (For Cashier & Helper) ───────────────
+  Widget _buildTopNavBar({required bool isHelper}) {
+    return Container(
+      height: 60,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Row(
+        children: [
+          // App Logo
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: _primaryBlue,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(LucideIcons.package, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Inventory Plus',
+                style: TextStyle(
+                  color: _darkText,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 20,
+                  fontFamily: _fontFam,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 56),
+
+          // Stream for pending badge (Safe to run for both, only visual for Helper)
+          StreamBuilder<List<CustomerOrder>>(
+            stream: widget.controller.streamOrders(),
+            builder: (context, snapshot) {
+              final pendingCount = snapshot.hasData
+                  ? snapshot.data!.where((o) => o.status == 'pending').length
+                  : 0;
+
+              return Row(
+                children: [
+                  if (isHelper)
+                    _buildTopNavTabItem(
+                      index: 0,
+                      icon: LucideIcons.fileText,
+                      label: "Order queue",
+                      badgeCount: pendingCount,
+                    )
+                  else
+                    _buildTopNavTabItem(
+                      index: 0,
+                      icon: LucideIcons.shoppingCart,
+                      label: "POS System",
+                    ),
+                  
+                  const SizedBox(width: 24),
+                  
+                  _buildTopNavTabItem(
+                    index: 1,
+                    icon: LucideIcons.box,
+                    label: "Inventory",
+                  ),
+                ],
+              );
+            },
+          ),
+
+          const Spacer(),
+
+          // Profile Chip
+          _buildTopProfileChip(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopNavTabItem({
+    required int index,
+    required IconData icon,
+    required String label,
+    int? badgeCount,
+  }) {
+    final isSelected = _currentIndex == index;
+
+    return InkWell(
+      onTap: () => setState(() => _currentIndex = index),
+      child: Container(
+        height: 72,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: isSelected
+              ? const Border(
+                  bottom: BorderSide(color: _primaryBlue, width: 3),
+                )
+              : null,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isSelected ? _primaryBlue : _inactiveText,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: _fontFam,
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? _primaryBlue : _inactiveText,
+              ),
+            ),
+            if (badgeCount != null && badgeCount > 0) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _primaryBlue,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  "$badgeCount",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: _fontFam,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopProfileChip() {
+    final name = widget.controller.currentUserName ?? "User";
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : "U";
+
+    return InkWell(
+      onTap: _showProfileDialog,
+      borderRadius: BorderRadius.circular(30),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(30),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: _primaryBlue,
+              child: Text(
+                initial,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  fontFamily: _fontFam,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontFamily: _fontFam,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: _darkText,
+                  ),
+                ),
+                Text(
+                  "On shift",
+                  style: TextStyle(
+                    fontFamily: _fontFam,
+                    fontSize: 11,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 6),
+            IconButton(
+              icon: const Icon(LucideIcons.logOut, size: 16, color: Colors.redAccent),
+              onPressed: _handleLogout,
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _navIcon(IconData icon, Color color, bool showDot) {
     return Stack(
       clipBehavior: Clip.none,
@@ -697,6 +919,27 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  void _showProfileDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: 500,
+          height: 600,
+          child: ProfileInfoPage(
+            controller: widget.controller,
+            currentName: widget.controller.currentUserName ?? "Unknown",
+            currentEmail: widget.controller.loggedInUserEmail,
+            userId: widget.controller.currentUserId ?? "",
+            role: widget.controller.currentUserRole ?? "staff",
+          ),
+        ),
+      ),
     );
   }
 
@@ -729,11 +972,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  color: contentColor,
-                  size: 20,
-                ),
+                Icon(icon, color: contentColor, size: 20),
                 const SizedBox(width: 16),
                 Text(
                   label,
@@ -763,109 +1002,11 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Future<void> _handleLogout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AppDialog(
-        icon: LucideIcons.logOut,
-        color: Colors.red,
-        title: 'Log out?',
-        subtitle: widget.controller.currentUserName,
-        child: Text(
-          "You'll need to sign in again to continue using Inventory Plus.",
-          style: TextStyle(
-            fontSize: 14,
-            height: 1.4,
-            color: Colors.grey.shade700,
-            fontFamily: _fontFam,
-          ),
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.black87,
-              side: BorderSide(color: Colors.grey.shade300),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Log Out',
-              style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true || !mounted) return;
-
-    final overlay = Overlay.of(context, rootOverlay: true);
-    final navigator = Navigator.of(context);
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-    } catch (e) {
-      if (mounted) AppToast.error(context, 'Could not log out: $e');
-      return;
-    }
-
-    AppToast.showOn(overlay, 'Logged out successfully');
-    navigator.pushReplacementNamed('/login');
-  }
-
   Widget _buildProfileTile() {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        hoverColor: Colors.grey.shade50,
-        onTap: () {
-          final isDesktop = MediaQuery.of(context).size.width >= 600;
-          final profilePage = ProfileInfoPage(
-            controller: widget.controller,
-            currentName: widget.controller.currentUserName ?? "Unknown",
-            currentEmail: widget.controller.loggedInUserEmail,
-            userId: widget.controller.currentUserId ?? "",
-            role: widget.controller.currentUserRole ?? "staff",
-          );
-
-          if (isDesktop) {
-            showDialog(
-              context: context,
-              builder: (context) => Dialog(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: SizedBox(width: 500, height: 600, child: profilePage),
-              ),
-            );
-          } else {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => profilePage),
-            );
-          }
-        },
+        onTap: _showProfileDialog,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           decoration: BoxDecoration(
@@ -905,29 +1046,56 @@ class _MainScreenState extends State<MainScreen> {
                     Text(
                       "ID: ${widget.controller.currentUserId}",
                       style: TextStyle(
-                        color: Colors.grey.shade500, 
+                        color: Colors.grey.shade500,
                         fontSize: 11,
                         fontFamily: _fontFam,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
               IconButton(
-                icon: const Icon(
-                  LucideIcons.logOut,
-                  color: Colors.redAccent,
-                  size: 20,
-                ),
+                icon: const Icon(LucideIcons.logOut, color: Colors.redAccent, size: 20),
                 onPressed: _handleLogout,
-                tooltip: "Logout",
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _handleLogout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.logOut,
+        color: Colors.red,
+        title: 'Log out?',
+        subtitle: widget.controller.currentUserName,
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel', style: TextStyle(fontFamily: _fontFam)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Log Out', style: TextStyle(color: Colors.white, fontFamily: _fontFam)),
+          ),
+        ],
+        child: const Text("You'll need to sign in again to continue."),
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+    } catch (e) {
+      if (mounted) AppToast.error(context, 'Could not log out: $e');
+    }
   }
 }
