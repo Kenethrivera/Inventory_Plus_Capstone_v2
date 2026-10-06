@@ -6,7 +6,9 @@ import '../logic/inventory_controller.dart';
 import 'models_3d.dart';
 
 enum MapMode { view, manage, selection, pick }
-const Color kMapContainerBg = Color.fromARGB(255, 9, 36, 73);
+
+// Updated to the soft light-blue background
+const Color kMapContainerBg = Color.fromARGB(255, 214, 235, 255); 
 
 class StoreMap extends StatefulWidget {
   final InventoryController controller;
@@ -94,7 +96,6 @@ class _StoreMapState extends State<StoreMap>
         final element = widget.controller.storeLayout.firstWhere((e) => e.id == item.locationId);
         
         setState(() {
-          // Uses the correct variable defined on line 42
           _selectedPopupElement = element; 
         });
       }
@@ -102,6 +103,7 @@ class _StoreMapState extends State<StoreMap>
       // Item or location not found; fail silently
     }
   }
+
   // ==========================================
   // NEW: Zoom logic for the right controls
   // ==========================================
@@ -330,7 +332,7 @@ class _StoreMapState extends State<StoreMap>
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: Colors.orange,
+                color: Colors.blue.shade600, // Updated to blue theme
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: const [
                   BoxShadow(
@@ -344,7 +346,7 @@ class _StoreMapState extends State<StoreMap>
                 turns: _isToolbarExpanded ? 0.125 : 0.0,
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeInOut,
-                child: const Icon(Icons.add, color: Colors.black, size: 32),
+                child: const Icon(Icons.add, color: Colors.white, size: 32),
               ),
             ),
           ),
@@ -396,9 +398,9 @@ class _StoreMapState extends State<StoreMap>
                     color: const Color(0xFF1E293B),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      // Change border to orange when hovered
+                      // Change border to blue when hovered
                       color: isHovered
-                          ? Colors.orange
+                          ? Colors.blue.shade400
                           : Colors.blueGrey.withOpacity(0.5),
                       width: isHovered ? 2.0 : 1.5,
                     ),
@@ -434,7 +436,7 @@ class _StoreMapState extends State<StoreMap>
                   decoration: BoxDecoration(
                     color: const Color(0xFF1E293B),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange, width: 1.5),
+                    border: Border.all(color: Colors.blue.shade400, width: 1.5),
                     boxShadow: const [
                       BoxShadow(
                         color: Colors.black45,
@@ -513,11 +515,11 @@ class _StoreMapState extends State<StoreMap>
       decoration: BoxDecoration(
         color: kMapContainerBg,
         borderRadius: BorderRadius.circular(16),
-         border: Border.all(
-  color: Colors.black.withOpacity(0.15),
-  width: 1,
-), // was Colors.white.withOpacity(0.12)
-          
+        // Faint border
+        border: Border.all(
+          color: Colors.black.withOpacity(0.08),
+          width: 1,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -535,7 +537,7 @@ class _StoreMapState extends State<StoreMap>
       color: const Color(0xFF0F172A),
       child: Row(
         children: [
-          const Icon(LucideIcons.mapPin, color: Colors.orange, size: 20),
+          Icon(LucideIcons.mapPin, color: Colors.blue.shade600, size: 20),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -1330,9 +1332,8 @@ class _StoreMapState extends State<StoreMap>
                         key: _mapKey,
                         width: mapWidth,
                         height: mapHeight,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF7C7E81),
-                          border: Border.all(color: Colors.blueGrey, width: 2),
+                        decoration: const BoxDecoration(
+                          color: Colors.transparent, // Completely transparent to show background
                         ),
                         child: Stack(
                           clipBehavior: Clip.none,
@@ -1372,9 +1373,9 @@ class _StoreMapState extends State<StoreMap>
                                             decoration: BoxDecoration(
                                               color: _dragPreviewValid
                                                   ? Colors.greenAccent
-                                                        .withOpacity(0.12)
+                                                      .withOpacity(0.12)
                                                   : Colors.redAccent
-                                                        .withOpacity(0.25),
+                                                      .withOpacity(0.25),
                                               border: Border.all(
                                                 color: _dragPreviewValid
                                                     ? Colors.green
@@ -1427,26 +1428,10 @@ class _StoreMapState extends State<StoreMap>
       ],
     );
 
-    // if (widget.mode == MapMode.view) {
-    //   return Container(
-    //     height: 800,
-    //     width: double.infinity,
-    //     color: const Color(0xFF0F172A),
-    //     child: mapDisplay,
-    //   );
-    // } else {
-    //   return Expanded(
-    //     child: Container(
-    //       width: double.infinity,
-    //       color: const Color(0xFF0F172A),
-    //       child: mapDisplay,
-    //     ),
-    //   );
-    // }
     return Expanded(
       child: Container(
         width: double.infinity,
-        color: kMapContainerBg,
+        color: Colors.transparent,
         child: mapDisplay,
       ),
     );
@@ -1693,9 +1678,9 @@ class _StoreMapState extends State<StoreMap>
             ? baseColor.withOpacity(0.3)
             : Colors.transparent,
         border: !useFootprintOutline && isActive
-            ? Border.all(color: Colors.yellowAccent, width: 3)
+            ? Border.all(color: Colors.blue.shade600, width: 3)
             : (isHighlighted
-                  ? Border.all(color: Colors.orange, width: 2)
+                  ? Border.all(color: Colors.blue.shade400, width: 2)
                   : null),
       ),
       child: Stack(
@@ -1991,11 +1976,11 @@ class _StoreMapState extends State<StoreMap>
                   child: child,
                 );
               },
-              child: const Icon(
+              child: Icon(
                 LucideIcons.mapPin,
-                color: Colors.orange,
+                color: Colors.blue.shade600,
                 size: 26,
-                shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
               ),
             ),
           ),
@@ -2022,7 +2007,7 @@ class _StoreMapState extends State<StoreMap>
                       offset: const Offset(0, 6),
                     ),
                   ],
-                  border: Border.all(color: Colors.orange, width: 2),
+                  border: Border.all(color: Colors.blue.shade600, width: 2),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -2034,7 +2019,7 @@ class _StoreMapState extends State<StoreMap>
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.15),
+                        color: Colors.blue.shade600.withOpacity(0.15),
                         borderRadius: const BorderRadius.vertical(
                           top: Radius.circular(10),
                         ),
@@ -2045,9 +2030,9 @@ class _StoreMapState extends State<StoreMap>
                           Expanded(
                             child: Text(
                               el.label,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Colors.orange,
+                                color: Colors.blue.shade600,
                                 fontSize: 13,
                               ),
                               overflow: TextOverflow.ellipsis,
@@ -2113,10 +2098,10 @@ class _StoreMapState extends State<StoreMap>
                                           ),
                                           Text(
                                             "Qty: ${item.quantity}",
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 10,
                                               fontWeight: FontWeight.bold,
-                                              color: Colors.orange,
+                                              color: Colors.blue.shade600,
                                             ),
                                           ),
                                         ],
@@ -2263,8 +2248,8 @@ class _StoreMapState extends State<StoreMap>
                             children: [
                               Text(
                                 "Qty: ${item.quantity} ${item.unit}",
-                                style: const TextStyle(
-                                  color: Colors.orange,
+                                style: TextStyle(
+                                  color: Colors.blue.shade600,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -2290,27 +2275,54 @@ class _StoreMapState extends State<StoreMap>
   }
 }
 
+// class GridPainter extends CustomPainter {
+//   @override
+//   void paint(Canvas canvas, Size size) {
+//     final gridPaint = Paint()
+//       ..color = Colors.white
+//       ..strokeWidth = 1.5
+//       ..style = PaintingStyle.stroke;
+
+//     // Draw the white isometric grid lines across the available area
+//     const double step = 40;
+
+//     for (double i = 0; i <= size.width; i += step) {
+//       canvas.drawLine(Offset(i, 0), Offset(i, size.height), gridPaint);
+//     }
+//     for (double i = 0; i <= size.height; i += step) {
+//       canvas.drawLine(Offset(0, i), Offset(size.width, i), gridPaint);
+//     }
+//   }
+
+//   @override
+//   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+// }
 class GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
+    // 1. DRAW THE FLOOR BACKGROUND COLOR
+    // Change this hex code to whatever color you want the grid area to be
+    final floorPaint = Paint()..color = const Color.fromARGB(255, 165, 205, 245); 
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), floorPaint);
+
+    // 2. DRAW THE GRID LINES
+    final linePaint = Paint()
       ..color = Colors.white
       ..strokeWidth = 1.5;
 
     const double step = 40;
 
     for (double i = 0; i <= size.width; i += step) {
-      canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
+      canvas.drawLine(Offset(i, 0), Offset(i, size.height), linePaint);
     }
     for (double i = 0; i <= size.height; i += step) {
-      canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
+      canvas.drawLine(Offset(0, i), Offset(size.width, i), linePaint);
     }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-
 class CADBlockPainter extends CustomPainter {
   final Color baseColor;
   final double zHeight;

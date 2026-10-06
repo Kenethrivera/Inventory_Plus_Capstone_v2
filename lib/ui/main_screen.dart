@@ -37,10 +37,14 @@ class _MainScreenState extends State<MainScreen> {
   InventoryItem? _selectedItem;
   String _txTargetTab = 'Sales History';
   String? _targetOrderId;
-  // --- DESKTOP COLOR PALETTE ---
-  static const Color _primaryOrange = Color(0xFFEA580C);
-  static const Color _darkSidebarBg = Color(0xFF0F172A);
-  static const Color _mainBg = Color(0xFFF1F5F9);
+  
+  // --- NEW DESKTOP COLOR PALETTE ---
+  static const Color _primaryBlue = Color(0xFF2563EB);
+  static const Color _sidebarBg = Colors.white;
+  static const Color _mainBg = Color(0xFFF4F6F8);
+  static const Color _darkText = Color(0xFF0F172A);
+  static const Color _inactiveText = Color(0xFF475569);
+  static const String _fontFam = 'Outfit';
 
   bool _inventoryExportDue = false;
   bool _salesExportDue = false;
@@ -301,8 +305,8 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     if (widget.controller.currentUserId == null) {
       return const Scaffold(
-        backgroundColor: Color(0xFF0F172A),
-        body: Center(child: CircularProgressIndicator(color: Colors.orange)),
+        backgroundColor: Colors.white,
+        body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
       );
     }
 
@@ -330,12 +334,9 @@ class _MainScreenState extends State<MainScreen> {
 
         _currentIndex ??= 0;
 
-        // ─── CORRECTED DYNAMIC INDICES ───────────────────────────────────────
         int pageIndex = 0;
         final int dashboardIndex = isAdmin ? pageIndex++ : -1;
-        final int forecastingIndex = isAdmin
-            ? pageIndex++
-            : -1; // Added Forecasting Index
+        final int forecastingIndex = isAdmin ? pageIndex++ : -1;
         final int posIndex = (isCashier || isAdmin) ? pageIndex++ : -1;
         final int orderQueueIndex = (isHelper || isAdmin) ? pageIndex++ : -1;
         final int inventoryIndex = pageIndex++;
@@ -345,7 +346,6 @@ class _MainScreenState extends State<MainScreen> {
 
         final pages = <Widget>[];
 
-        // ─── CORRECTED PAGE ORDERING ─────────────────────────────────────────
         if (isAdmin) {
           pages.add(
             DashboardPage(
@@ -368,7 +368,6 @@ class _MainScreenState extends State<MainScreen> {
                 });
               },
               onOpenForecasting: () {
-                // Added missing parameter
                 setState(() {
                   _currentIndex = forecastingIndex;
                 });
@@ -378,9 +377,7 @@ class _MainScreenState extends State<MainScreen> {
         }
 
         if (isAdmin) {
-          pages.add(
-            ForecastingPage(controller: widget.controller),
-          ); // Moved to correct position
+          pages.add(ForecastingPage(controller: widget.controller));
         }
 
         if (isCashier || isAdmin) {
@@ -443,8 +440,13 @@ class _MainScreenState extends State<MainScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Container(
-                  width: 240,
-                  color: _darkSidebarBg,
+                  width: 250,
+                  decoration: BoxDecoration(
+                    color: _sidebarBg,
+                    border: Border(
+                      right: BorderSide(color: Colors.grey.shade200),
+                    ),
+                  ),
                   child: Column(
                     children: [
                       Expanded(
@@ -452,25 +454,29 @@ class _MainScreenState extends State<MainScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: 30.0,
-                                  vertical: 40.0,
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24.0,
+                                  vertical: 36.0,
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(
-                                      Icons.inventory_2_rounded,
-                                      color: _primaryOrange,
-                                      size: 28,
+                                    Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: _primaryBlue,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
                                     ),
-                                    SizedBox(width: 16),
-                                    Text(
+                                    const SizedBox(width: 12),
+                                    const Text(
                                       'Inventory Plus',
                                       style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
+                                        color: _darkText,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 20,
+                                        fontFamily: _fontFam,
                                       ),
                                     ),
                                   ],
@@ -479,59 +485,51 @@ class _MainScreenState extends State<MainScreen> {
                               if (isAdmin)
                                 _buildSidebarItem(
                                   dashboardIndex,
-                                  Icons.dashboard_outlined,
+                                  LucideIcons.layoutDashboard,
                                   'Dashboard',
-                                  activeIcon: Icons.dashboard,
                                 ),
                               if (isAdmin)
                                 _buildSidebarItem(
                                   forecastingIndex,
                                   LucideIcons.trendingUp,
                                   'Forecasting',
-                                  activeIcon: LucideIcons.trendingUp,
                                 ),
                               if (isCashier || isAdmin)
                                 _buildSidebarItem(
                                   posIndex,
-                                  Icons.point_of_sale_outlined,
+                                  LucideIcons.shoppingCart,
                                   'POS System',
-                                  activeIcon: Icons.point_of_sale,
                                 ),
                               if (isHelper || isAdmin)
                                 _buildSidebarItem(
                                   orderQueueIndex,
-                                  Icons.receipt_long_outlined,
+                                  LucideIcons.fileText,
                                   'Order Queue',
-                                  activeIcon: Icons.receipt_long,
                                 ),
                               _buildSidebarItem(
                                 inventoryIndex,
-                                Icons.inventory_2_outlined,
+                                LucideIcons.box,
                                 'Inventory',
-                                activeIcon: Icons.inventory_2,
                                 showDot: _inventoryExportDue,
                               ),
                               if (isAdmin)
                                 _buildSidebarItem(
                                   transactionIndex,
-                                  Icons.history_outlined,
+                                  LucideIcons.history,
                                   'Transactions',
-                                  activeIcon: Icons.history,
                                   showDot: _salesExportDue,
                                 ),
                               if (isAdmin)
                                 _buildSidebarItem(
                                   mapIndex,
-                                  Icons.map_outlined,
+                                  LucideIcons.map,
                                   'Store Map',
-                                  activeIcon: Icons.map,
                                 ),
                               if (isAdmin)
                                 _buildSidebarItem(
                                   systemSettingsIndex,
-                                  Icons.settings_outlined,
+                                  LucideIcons.settings,
                                   'System Settings',
-                                  activeIcon: Icons.settings,
                                 ),
                             ],
                           ),
@@ -553,35 +551,44 @@ class _MainScreenState extends State<MainScreen> {
         // ==========================================
         // MOBILE LAYOUT (Bottom Navigation)
         // ==========================================
-
         return Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
-            backgroundColor: _darkSidebarBg,
+            backgroundColor: Colors.white,
             toolbarHeight: 70,
             elevation: 0,
+            surfaceTintColor: Colors.transparent,
             titleSpacing: 0,
             title: _buildProfileTile(),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(1.0),
+              child: Container(
+                color: Colors.grey.shade200,
+                height: 1.0,
+              ),
+            ),
           ),
           body: IndexedStack(index: _currentIndex, children: pages),
           bottomNavigationBar: NavigationBarTheme(
             data: NavigationBarThemeData(
-              indicatorColor: Colors.orange,
+              indicatorColor: _primaryBlue.withOpacity(0.1),
               labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((
                 Set<WidgetState> states,
               ) {
                 if (states.contains(WidgetState.selected)) {
                   return const TextStyle(
-                    color: Colors.orange,
+                    color: _primaryBlue,
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
+                    fontFamily: _fontFam,
                   );
                 }
-                return const TextStyle(color: Colors.grey, fontSize: 12);
+                return const TextStyle(color: _inactiveText, fontSize: 12, fontFamily: _fontFam);
               }),
             ),
             child: NavigationBar(
-              backgroundColor: _darkSidebarBg,
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
               selectedIndex: _currentIndex!,
               onDestinationSelected: (index) {
                 setState(() {
@@ -592,46 +599,46 @@ class _MainScreenState extends State<MainScreen> {
               destinations: [
                 if (isAdmin)
                   const NavigationDestination(
-                    icon: Icon(Icons.dashboard_outlined, color: Colors.grey),
-                    selectedIcon: Icon(Icons.dashboard, color: Colors.white),
+                    icon: Icon(LucideIcons.layoutDashboard, color: _inactiveText),
+                    selectedIcon: Icon(LucideIcons.layoutDashboard, color: _primaryBlue),
                     label: 'Dashboard',
                   ),
                 if (isAdmin)
                   const NavigationDestination(
-                    icon: Icon(LucideIcons.trendingUp, color: Colors.grey),
+                    icon: Icon(LucideIcons.trendingUp, color: _inactiveText),
                     selectedIcon: Icon(
                       LucideIcons.trendingUp,
-                      color: Colors.white,
+                      color: _primaryBlue,
                     ),
                     label: 'Forecasting',
                   ),
                 if (isCashier || isAdmin)
                   const NavigationDestination(
                     icon: Icon(
-                      Icons.point_of_sale_outlined,
-                      color: Colors.grey,
+                      LucideIcons.shoppingCart,
+                      color: _inactiveText,
                     ),
                     selectedIcon: Icon(
-                      Icons.point_of_sale,
-                      color: Colors.white,
+                      LucideIcons.shoppingCart,
+                      color: _primaryBlue,
                     ),
                     label: 'POS',
                   ),
                 if (isHelper || isAdmin)
                   const NavigationDestination(
-                    icon: Icon(Icons.receipt_long_outlined, color: Colors.grey),
-                    selectedIcon: Icon(Icons.receipt_long, color: Colors.white),
+                    icon: Icon(LucideIcons.fileText, color: _inactiveText),
+                    selectedIcon: Icon(LucideIcons.fileText, color: _primaryBlue),
                     label: 'Queue',
                   ),
                 NavigationDestination(
                   icon: _navIcon(
-                    Icons.assignment_outlined,
-                    Colors.grey,
+                    LucideIcons.box,
+                    _inactiveText,
                     _inventoryExportDue,
                   ),
                   selectedIcon: _navIcon(
-                    Icons.assignment,
-                    Colors.white,
+                    LucideIcons.box,
+                    _primaryBlue,
                     _inventoryExportDue,
                   ),
                   label: 'Inventory',
@@ -639,27 +646,27 @@ class _MainScreenState extends State<MainScreen> {
                 if (isAdmin)
                   NavigationDestination(
                     icon: _navIcon(
-                      Icons.history_outlined,
-                      Colors.grey,
+                      LucideIcons.history,
+                      _inactiveText,
                       _salesExportDue,
                     ),
                     selectedIcon: _navIcon(
-                      Icons.history,
-                      Colors.white,
+                      LucideIcons.history,
+                      _primaryBlue,
                       _salesExportDue,
                     ),
                     label: 'History',
                   ),
                 if (isAdmin)
                   const NavigationDestination(
-                    icon: Icon(Icons.map_outlined, color: Colors.grey),
-                    selectedIcon: Icon(Icons.map, color: Colors.white),
+                    icon: Icon(LucideIcons.map, color: _inactiveText),
+                    selectedIcon: Icon(LucideIcons.map, color: _primaryBlue),
                     label: 'Map',
                   ),
                 if (isAdmin)
                   const NavigationDestination(
-                    icon: Icon(Icons.settings_outlined, color: Colors.grey),
-                    selectedIcon: Icon(Icons.settings, color: Colors.white),
+                    icon: Icon(LucideIcons.settings, color: _inactiveText),
+                    selectedIcon: Icon(LucideIcons.settings, color: _primaryBlue),
                     label: 'Settings',
                   ),
               ],
@@ -685,7 +692,7 @@ class _MainScreenState extends State<MainScreen> {
               decoration: BoxDecoration(
                 color: Colors.red,
                 shape: BoxShape.circle,
-                border: Border.all(color: _darkSidebarBg, width: 1.5),
+                border: Border.all(color: Colors.white, width: 1.5),
               ),
             ),
           ),
@@ -697,51 +704,60 @@ class _MainScreenState extends State<MainScreen> {
     int index,
     IconData icon,
     String label, {
-    IconData? activeIcon,
     bool showDot = false,
   }) {
     final isSelected = _currentIndex == index;
-    final currentColor = isSelected ? _primaryOrange : const Color(0xFF94A3B8);
+    final contentColor = isSelected ? _primaryBlue : _inactiveText;
+    final bgColor = isSelected ? _primaryBlue.withOpacity(0.08) : Colors.transparent;
 
-    return InkWell(
-      onTap: () {
-        setState(() => _currentIndex = index);
-        _checkExportReminders();
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 30),
-        color: isSelected
-            ? _primaryOrange.withOpacity(0.05)
-            : Colors.transparent,
-        child: Row(
-          children: [
-            Icon(
-              isSelected ? (activeIcon ?? icon) : icon,
-              color: currentColor,
-              size: 28,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() => _currentIndex = index);
+            _checkExportReminders();
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(width: 16),
-            Text(
-              label,
-              style: TextStyle(
-                color: currentColor,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                fontSize: 16,
-              ),
-            ),
-            if (showDot) ...[
-              const SizedBox(width: 6),
-              Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  color: contentColor,
+                  size: 20,
                 ),
-              ),
-            ],
-          ],
+                const SizedBox(width: 16),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: contentColor,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    fontSize: 15,
+                    fontFamily: _fontFam,
+                  ),
+                ),
+                if (showDot) ...[
+                  const Spacer(),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -761,6 +777,7 @@ class _MainScreenState extends State<MainScreen> {
             fontSize: 14,
             height: 1.4,
             color: Colors.grey.shade700,
+            fontFamily: _fontFam,
           ),
         ),
         actions: [
@@ -776,7 +793,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             child: const Text(
               'Cancel',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
             ),
           ),
           ElevatedButton(
@@ -792,7 +809,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             child: const Text(
               'Log Out',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
             ),
           ),
         ],
@@ -801,8 +818,6 @@ class _MainScreenState extends State<MainScreen> {
 
     if (confirm != true || !mounted) return;
 
-    // Grab these BEFORE the async gap / before this screen is replaced, so the
-    // toast can still show on top of the login page.
     final overlay = Overlay.of(context, rootOverlay: true);
     final navigator = Navigator.of(context);
 
@@ -822,7 +837,7 @@ class _MainScreenState extends State<MainScreen> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        hoverColor: Colors.white.withOpacity(0.05),
+        hoverColor: Colors.grey.shade50,
         onTap: () {
           final isDesktop = MediaQuery.of(context).size.width >= 600;
           final profilePage = ProfileInfoPage(
@@ -853,19 +868,20 @@ class _MainScreenState extends State<MainScreen> {
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: Colors.white10)),
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: Colors.grey.shade200)),
           ),
           child: Row(
             children: [
               CircleAvatar(
                 radius: 18,
-                backgroundColor: Colors.orange.withOpacity(0.2),
+                backgroundColor: _primaryBlue.withOpacity(0.1),
                 child: Text(
                   widget.controller.currentUserName?[0].toUpperCase() ?? 'U',
                   style: const TextStyle(
-                    color: Colors.orange,
+                    color: _primaryBlue,
                     fontWeight: FontWeight.bold,
+                    fontFamily: _fontFam,
                   ),
                 ),
               ),
@@ -878,16 +894,21 @@ class _MainScreenState extends State<MainScreen> {
                     Text(
                       widget.controller.currentUserName ?? "Unknown User",
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: _darkText,
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
+                        fontFamily: _fontFam,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       "ID: ${widget.controller.currentUserId}",
-                      style: const TextStyle(color: Colors.grey, fontSize: 10),
+                      style: TextStyle(
+                        color: Colors.grey.shade500, 
+                        fontSize: 11,
+                        fontFamily: _fontFam,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

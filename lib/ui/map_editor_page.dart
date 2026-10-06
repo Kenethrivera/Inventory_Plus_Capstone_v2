@@ -5,6 +5,10 @@ import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
 import 'store_map.dart';
 
+const Color _primaryBlue = Color(0xFF2563EB);
+const Color _lightBg = Color(0xFFF4F6F8);
+const String _fontFam = 'Hellix'; // Or 'Outline'
+
 class MapEditorPage extends StatefulWidget {
   final InventoryController controller;
 
@@ -51,58 +55,64 @@ class _MapEditorPageState extends State<MapEditorPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA), // Deep dark background
+      backgroundColor: _lightBg,
       appBar: AppBar(
         automaticallyImplyLeading: false, // Hidden back button as requested
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Store Layout Designer",
-              style: TextStyle(
-                color: Color(0xFF0F172A),
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+        title: Padding(
+          padding: const EdgeInsets.only(left: 8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Store Layout Designer",
+                style: TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: _fontFam,
+                ),
               ),
-            ),
-            Text(
-              "$_assignedCount of $_totalCount items assigned",
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 12,
-                fontWeight: FontWeight.normal,
+              const SizedBox(height: 2),
+              Text(
+                "$_assignedCount of $_totalCount items assigned",
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 13,
+                  fontWeight: FontWeight.normal,
+                  fontFamily: _fontFam,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           Container(
-            margin: const EdgeInsets.symmetric(vertical: 8),
+            margin: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.red.withOpacity(0.3)),
+              border: Border.all(color: Colors.red.shade200),
             ),
             child: IconButton(
-              icon: const Icon(LucideIcons.trash2, color: Colors.redAccent, size: 18),
+              icon: Icon(LucideIcons.trash2, color: Colors.red.shade500, size: 18),
               onPressed: () {
                 showDialog(
                   context: context,
                   builder: (context) => AlertDialog(
-                    title: const Text("Clear Map?"),
+                    title: const Text("Clear Map?", style: TextStyle(fontFamily: _fontFam, fontWeight: FontWeight.bold)),
                     content: const Text(
-                        "Are you sure you want to delete the entire map layout?"),
+                        "Are you sure you want to delete the entire map layout?", style: TextStyle(fontFamily: _fontFam)),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text("Cancel"),
+                        child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
                       ),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red),
+                            backgroundColor: Colors.red.shade600),
                         onPressed: () {
                           Navigator.pop(context);
                           widget.controller.clearMapLayout().then((_) {
@@ -110,7 +120,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                           });
                         },
                         child: const Text("Delete",
-                            style: TextStyle(color: Colors.white)),
+                            style: TextStyle(color: Colors.white, fontFamily: _fontFam, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
@@ -118,30 +128,33 @@ class _MapEditorPageState extends State<MapEditorPage> {
               },
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Container(
-            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            decoration: BoxDecoration(
-              color: Colors.orange,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: IconButton(
-              icon: const Icon(LucideIcons.save, color: Colors.white, size: 18),
+            margin: const EdgeInsets.only(top: 10, bottom: 10, right: 24),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryBlue,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+              ),
               onPressed: () {
                 showDialog(
                   context: context,
                   builder: (dialogContext) => AlertDialog(
-                    title: const Text("Save Map?"),
+                    title: const Text("Save Map?", style: TextStyle(fontFamily: _fontFam, fontWeight: FontWeight.bold)),
                     content: const Text(
-                        "Are you sure you want to save the current map layout?"),
+                        "Are you sure you want to save the current map layout?", style: TextStyle(fontFamily: _fontFam)),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(dialogContext),
-                        child: const Text("Cancel"),
+                        child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
                       ),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue),
+                            backgroundColor: _primaryBlue),
                         onPressed: () async {
                           Navigator.pop(dialogContext);
                           setState(() => _isSaved = true);
@@ -149,64 +162,80 @@ class _MapEditorPageState extends State<MapEditorPage> {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text("Store layout saved successfully!"),
+                                  content: Text("Store layout saved successfully!", style: TextStyle(fontFamily: _fontFam)),
                                   backgroundColor: Colors.green),
                             );
                           }
                         },
                         child: const Text("Save",
-                            style: TextStyle(color: Colors.white)),
+                            style: TextStyle(color: Colors.white, fontFamily: _fontFam, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
                 );
               },
+              child: const Text("Save layout", style: TextStyle(color: Colors.white, fontFamily: _fontFam, fontWeight: FontWeight.bold)),
             ),
           ),
         ],
       ),
       body: Column(
         children: [
-          _buildModeTabs(),
-          Divider(height: 1, color: Colors.white.withOpacity(0.8)),
+          Container(color: Colors.white, child: _buildModeTabs()),
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // SIDEBAR (Only visible in Assign mode now)
+                // SIDEBAR (Only visible in Assign mode)
                 if (_mode == MapMode.selection)
                   Container(
-                    width: 280,
+                    width: 320,
+                    margin: const EdgeInsets.only(top: 16, left: 16, bottom: 16),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      border: Border(
-                        right: BorderSide(
-                            color: Colors.white.withOpacity(0.1), width: 1),
-                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.02),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
                     child: _buildAssignSidebar(),
                   ),
                 // MAIN MAP CANVAS
                 Expanded(
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: StoreMap(
-                          controller: widget.controller,
-                          mode: _mode,
-                          selectedItemId: _selectedItemId,
-                          onSelectionAssigned: () {
-                            setState(() {
-                              _selectedItemId = null;
-                            });
-                          },
+                  child: Container(
+                    margin: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _lightBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: StoreMap(
+                              controller: widget.controller,
+                              mode: _mode,
+                              selectedItemId: _selectedItemId,
+                              onSelectionAssigned: () {
+                                setState(() {
+                                  _selectedItemId = null;
+                                });
+                              },
+                            ),
+                          ),
                         ),
-                      ),
-                      // Overlays based on mode
-                      if (_mode == MapMode.view) _buildPreviewOverlays(),
-                      if (_mode == MapMode.selection && _selectedItemId != null)
-                        _buildAssignOverlayBanner(),
-                    ],
+                        // Overlays based on mode
+                        if (_mode == MapMode.view) _buildPreviewOverlays(),
+                        if (_mode == MapMode.selection && _selectedItemId != null)
+                          _buildAssignOverlayBanner(),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -222,11 +251,13 @@ class _MapEditorPageState extends State<MapEditorPage> {
   Widget _buildModeTabs() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Container(
+        padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F3F5),
-          borderRadius: BorderRadius.circular(8),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
         ),
         child: Row(
           children: [
@@ -253,7 +284,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.orange : Colors.transparent,
+          color: isSelected ? _primaryBlue : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
@@ -268,9 +299,10 @@ class _MapEditorPageState extends State<MapEditorPage> {
             Text(
               label,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 14,
+                fontFamily: _fontFam,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                color: isSelected ? Colors.white : Colors.grey.shade400,
+                color: isSelected ? Colors.white : Colors.grey.shade700,
               ),
             ),
           ],
@@ -314,8 +346,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
           child: Text(
             "ITEMS TO PLACE",
             style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 11,
+              color: Colors.grey.shade500,
+              fontSize: 12,
+              fontFamily: _fontFam,
               fontWeight: FontWeight.bold,
               letterSpacing: 1.0,
             ),
@@ -325,16 +358,16 @@ class _MapEditorPageState extends State<MapEditorPage> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: TextField(
             controller: _searchController,
-            style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+            style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontFamily: _fontFam),
             decoration: InputDecoration(
               hintText: 'Search items...',
-              hintStyle: TextStyle(color: Colors.grey.shade500),
-              prefixIcon: Icon(LucideIcons.search, size: 16, color: Colors.grey.shade500),
+              hintStyle: TextStyle(color: Colors.grey.shade400, fontFamily: _fontFam),
+              prefixIcon: Icon(LucideIcons.search, size: 18, color: Colors.grey.shade500),
               filled: true,
-              fillColor: Color(0xFFF1F3F5),
+              fillColor: _lightBg,
               contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
               ),
             ),
@@ -345,13 +378,14 @@ class _MapEditorPageState extends State<MapEditorPage> {
         // Filters
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildFilterPill('All', _totalCount),
-              _buildFilterPill('Unassigned', unassignedCount),
-              _buildFilterPill('Assigned', _assignedCount),
+              Expanded(child: _buildFilterPill('All', _totalCount)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildFilterPill('Unassigned', unassignedCount)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildFilterPill('Assigned', _assignedCount)),
             ],
           ),
         ),
@@ -374,12 +408,12 @@ class _MapEditorPageState extends State<MapEditorPage> {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: isSelected ? Colors.orange.withOpacity(0.1) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
+                    color: isSelected ? _primaryBlue.withOpacity(0.05) : _lightBg,
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isSelected ? Colors.orange : Colors.transparent,
+                      color: isSelected ? _primaryBlue : Colors.transparent,
                       width: 1.5,
                     ),
                   ),
@@ -387,22 +421,21 @@ class _MapEditorPageState extends State<MapEditorPage> {
                     children: [
                       // Status Icon
                       Container(
-                        width: 20,
-                        height: 20,
+                        width: 24,
+                        height: 24,
                         decoration: BoxDecoration(
-                          color: isAssigned ? Colors.green : (isSelected ? Colors.orange : Colors.transparent),
-                          shape: isAssigned ? BoxShape.circle : BoxShape.rectangle,
-                          borderRadius: isAssigned ? null : BorderRadius.circular(4),
+                          color: isAssigned ? _primaryBlue : Colors.white,
+                          shape: BoxShape.circle,
                           border: Border.all(
-                            color: isAssigned ? Colors.green : (isSelected ? Colors.orange : Colors.grey.shade600),
+                            color: isAssigned ? _primaryBlue : Colors.grey.shade300,
                             width: 1.5,
                           ),
                         ),
                         child: isAssigned
-                            ? const Icon(LucideIcons.check, size: 12, color: Colors.white)
+                            ? const Icon(LucideIcons.check, size: 14, color: Colors.white)
                             : null,
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -411,8 +444,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                               item.name,
                               style: TextStyle(
                                 color: const Color(0xFF0F172A),
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: _fontFam,
+                                fontSize: 14,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -421,13 +455,10 @@ class _MapEditorPageState extends State<MapEditorPage> {
                             Text(
                               isAssigned ? "Rack Assigned" : "Unassigned",
                               style: TextStyle(
-                                color: isAssigned
-                                    ? Colors.green
-                                    : (isSelected
-                                          ? Colors.orange
-                                          : Colors.grey.shade500),
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
+                                color: isAssigned ? _primaryBlue : Colors.grey.shade500,
+                                fontSize: 12,
+                                fontFamily: _fontFam,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
@@ -449,21 +480,33 @@ class _MapEditorPageState extends State<MapEditorPage> {
     return GestureDetector(
       onTap: () => setState(() => _assignFilter = label),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.orange : const Color(0xFFF1F3F5),
+          color: isSelected ? _primaryBlue : _lightBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? Colors.orange : Colors.black.withOpacity(0.05),
-          ),
         ),
-        child: Text(
-          "$label $count",
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.grey.shade700,
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-          ),
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.grey.shade700,
+                fontSize: 11,
+                fontFamily: _fontFam,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              "$count",
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.grey.shade700,
+                fontSize: 13,
+                fontFamily: _fontFam,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -474,30 +517,35 @@ class _MapEditorPageState extends State<MapEditorPage> {
   Widget _buildPreviewOverlays() {
     return Stack(
       children: [
-        
-        // Banner
         Positioned(
           top: 24,
           left: 0,
           right: 0,
           child: Center(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.blue.withOpacity(0.5)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  )
+                ]
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(LucideIcons.eye, color: Colors.blue, size: 16),
+                  Icon(LucideIcons.eye, color: _primaryBlue, size: 18),
                   SizedBox(width: 8),
                   Text(
                     "Preview mode — view only, tap an item to see details",
                     style: TextStyle(
-                      color: Colors.blue,
-                      fontSize: 12,
+                      color: _primaryBlue,
+                      fontSize: 13,
+                      fontFamily: _fontFam,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -510,69 +558,33 @@ class _MapEditorPageState extends State<MapEditorPage> {
     );
   }
 
-  Widget _buildLegendItem(Color color, String label) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
-          ),
-          const SizedBox(width: 12),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 13)),
-        ],
-      ),
-    );
-  }
-
   Widget _buildAssignOverlayBanner() {
-    // Find item name
-    final item = widget.controller.allItems.firstWhere((i) => i.id == _selectedItemId);
-
     return Positioned(
       top: 24,
       left: 0,
       right: 0,
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.orange.withOpacity(0.15),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.orange),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              )
+            ]
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(LucideIcons.mousePointerClick, color: Colors.orange, size: 18),
-              const SizedBox(width: 12),
-              const Text(
-                "Tap a highlighted rack or\nshelf to place",
-                style: TextStyle(
-                  color: Colors.orange,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  height: 1.3,
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 24,
-                color: Colors.orange.withOpacity(0.3),
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              Text(
-                item.name,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+          child: const Text(
+            "Tap a rack to link an item",
+            style: TextStyle(
+              color: _primaryBlue,
+              fontSize: 14,
+              fontFamily: _fontFam,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ),

@@ -18,10 +18,29 @@ class _LoginPageState extends State<LoginPage> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
+  
+  final _usernameFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
 
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Add listeners to trigger rebuilds for the focus/unfocus fill color changes
+    _usernameFocusNode.addListener(() => setState(() {}));
+    _passwordFocusNode.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _usernameFocusNode.dispose();
+    _passwordFocusNode.dispose();
+    super.dispose();
+  }
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
@@ -80,46 +99,54 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  @override
-  void dispose() {
-    _usernameController.dispose();
-    _passwordController.dispose();
-    _passwordFocusNode.dispose();
-    super.dispose();
-  }
-void _showPolicyDialog(String title, String content) {
+  void _showPolicyDialog(String title, String content) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF151D2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          title, 
+          style: const TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Outfit')
+        ),
         content: SingleChildScrollView(
-          child: Text(content, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
+          child: Text(
+            content, 
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 13, height: 1.5, fontFamily: 'Outfit')
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("Close", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+            child: const Text("Close", style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold, fontFamily: 'Outfit')),
           ),
         ],
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F1423),
+      backgroundColor: const Color(0xFFF4F6F8), // Light gray background
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 380),
-              padding: const EdgeInsets.all(32),
+              constraints: const BoxConstraints(maxWidth: 420),
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.all(40),
               decoration: BoxDecoration(
-                color: const Color(0xFF151D2E),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white10),
+                color: Colors.white, // White rounded card
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
               child: Form(
                 key: _formKey,
@@ -131,39 +158,52 @@ void _showPolicyDialog(String title, String content) {
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          shape: BoxShape.circle,
+                          color: Colors.blue.shade50, // Light blue rounded square
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        child: const Icon(LucideIcons.packageCheck,
-                            color: Colors.orange, size: 48),
+                        // Note: Used a blue icon to perfectly match your screenshot reference!
+                        child: Icon(LucideIcons.package,
+                            color: Colors.blue.shade600, size: 40),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     const Center(
-                      child: Text("Inventory Plus",
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold)),
+                      child: Text(
+                        "Inventory Plus",
+                        style: TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          fontFamily: 'Outfit'
+                        )
+                      ),
                     ),
-                    const SizedBox(height: 4),
-                    const Center(
-                      child: Text("Hardware Management System",
-                          style: TextStyle(color: Colors.grey, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    Center(
+                      child: Text(
+                        "Hardware Management System",
+                        style: TextStyle(
+                          color: Colors.grey.shade500, 
+                          fontSize: 13,
+                          fontFamily: 'Outfit'
+                        )
+                      ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 40),
 
                     const Text("Username",
                         style: TextStyle(
-                            color: Colors.grey,
+                            color: Color(0xFF0F172A),
                             fontSize: 13,
-                            fontWeight: FontWeight.w600)),
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Outfit')),
                     const SizedBox(height: 8),
                     _buildTextField(
-                      _usernameController,
-                      "Enter your username",
-                      LucideIcons.user,
-                      false,
+                      controller: _usernameController,
+                      hint: "Enter your username",
+                      icon: LucideIcons.user,
+                      isPassword: false,
+                      focusNode: _usernameFocusNode,
                       onSubmitted: (_) =>
                           FocusScope.of(context).requestFocus(_passwordFocusNode),
                     ),
@@ -172,21 +212,22 @@ void _showPolicyDialog(String title, String content) {
 
                     const Text("Password",
                         style: TextStyle(
-                            color: Colors.grey,
+                            color: Color(0xFF0F172A),
                             fontSize: 13,
-                            fontWeight: FontWeight.w600)),
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Outfit')),
                     const SizedBox(height: 8),
                     _buildTextField(
-                      _passwordController,
-                      "••••••••",
-                      LucideIcons.lock,
-                      true,
+                      controller: _passwordController,
+                      hint: "Enter your password",
+                      icon: LucideIcons.lock,
+                      isPassword: true,
                       focusNode: _passwordFocusNode,
                       onSubmitted: (_) => _handleLogin(),
                       suffix: IconButton(
                         icon: Icon(
-                          _isPasswordVisible ? LucideIcons.eye : LucideIcons.eyeOff,
-                          color: Colors.grey,
+                          _isPasswordVisible ? LucideIcons.eyeOff : LucideIcons.eye,
+                          color: Colors.grey.shade500,
                           size: 18,
                         ),
                         onPressed: () => setState(
@@ -206,8 +247,12 @@ void _showPolicyDialog(String title, String content) {
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: const Text("Forgot password?",
-                            style:
-                                TextStyle(color: Colors.orange, fontSize: 12)),
+                            style: TextStyle(
+                              color: Color(0xFF2563EB), 
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Outfit'
+                            )),
                       ),
                     ),
 
@@ -215,14 +260,14 @@ void _showPolicyDialog(String title, String content) {
 
                     SizedBox(
                       width: double.infinity,
-                      height: 48,
+                      height: 52,
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _handleLogin,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
+                          backgroundColor: const Color(0xFF2563EB), // Solid blue
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6)),
+                              borderRadius: BorderRadius.circular(12)),
                           elevation: 0,
                         ),
                         child: _isLoading
@@ -237,49 +282,49 @@ void _showPolicyDialog(String title, String content) {
                                   Text("Sign In",
                                       style: TextStyle(
                                           fontSize: 15,
-                                          fontWeight: FontWeight.w600)),
+                                          fontWeight: FontWeight.w700,
+                                          fontFamily: 'Outfit')),
                                   SizedBox(width: 8),
-                                  Icon(LucideIcons.logIn, size: 18),
+                                  Icon(LucideIcons.arrowRight, size: 18),
                                 ],
                               ),
                       ),
                     ),
 
                     const SizedBox(height: 32),
-                    const Divider(color: Colors.white10, height: 1),
+                    Divider(color: Colors.grey.shade200, height: 1),
                     const SizedBox(height: 24),
 
-                    // NEW CODE
-Row(
-  mainAxisAlignment: MainAxisAlignment.center,
-  children: [
-    TextButton(
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      onPressed: () => _showPolicyDialog(
-        "Terms of Service",
-        "By accessing and using Inventory Plus, you accept and agree to be bound by the terms and provisions of this agreement.\n\nAny participation in this service will constitute acceptance of this agreement. These terms are governed by the laws of the Republic of the Philippines."
-      ),
-      child: const Text("Terms of Service", style: TextStyle(color: Colors.grey, fontSize: 12)),
-    ),
-    const Text("   •   ", style: TextStyle(color: Colors.grey, fontSize: 12)),
-    TextButton(
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      onPressed: () => _showPolicyDialog(
-        "Privacy Policy",
-        "Inventory Plus is committed to protecting your personal information. \n\nWe process your data in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines. We collect, use, and store your data solely for inventory management and system authentication purposes."
-      ),
-      child: const Text("Privacy Policy", style: TextStyle(color: Colors.grey, fontSize: 12)),
-    ),
-  ],
-),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () => _showPolicyDialog(
+                            "Terms of Service",
+                            "By accessing and using Inventory Plus, you accept and agree to be bound by the terms and provisions of this agreement.\n\nAny participation in this service will constitute acceptance of this agreement. These terms are governed by the laws of the Republic of the Philippines."
+                          ),
+                          child: Text("Terms of Service", style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontFamily: 'Outfit')),
+                        ),
+                        Text("   •   ", style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () => _showPolicyDialog(
+                            "Privacy Policy",
+                            "Inventory Plus is committed to protecting your personal information. \n\nWe process your data in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines. We collect, use, and store your data solely for inventory management and system authentication purposes."
+                          ),
+                          child: Text("Privacy Policy", style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontFamily: 'Outfit')),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -290,20 +335,22 @@ Row(
     );
   }
 
-  Widget _buildTextField(
-    TextEditingController controller,
-    String hint,
-    IconData icon,
-    bool isPassword, {
-    FocusNode? focusNode,
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    required bool isPassword,
+    required FocusNode focusNode,
     ValueChanged<String>? onSubmitted,
     Widget? suffix,
   }) {
+    final isFocused = focusNode.hasFocus;
+    
     return TextFormField(
       controller: controller,
       obscureText: isPassword && !_isPasswordVisible,
       focusNode: focusNode,
-      style: const TextStyle(color: Colors.white, fontSize: 14),
+      style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontFamily: 'Outfit'),
       validator: (value) {
         final text = value?.trim() ?? '';
         if (text.isEmpty) {
@@ -320,28 +367,28 @@ Row(
       onFieldSubmitted: onSubmitted,
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.white24),
-        prefixIcon: Icon(icon, color: Colors.white54, size: 18),
+        hintStyle: TextStyle(color: Colors.grey.shade400, fontFamily: 'Outfit'),
+        prefixIcon: Icon(icon, color: Colors.grey.shade400, size: 18),
         suffixIcon: suffix,
         filled: true,
-        fillColor: const Color(0xFF0F1423),
+        fillColor: isFocused ? Colors.white : Colors.grey.shade50,
         border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: Colors.white10)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade200)),
         enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: Colors.white10)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade200)),
         focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: Colors.orange, width: 1)),
-        errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5)),
+        errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12, fontFamily: 'Outfit'),
         contentPadding: const EdgeInsets.symmetric(vertical: 16),
       ),
     );
   }
 }
 
-// ─── Forgot Password Modal ───────────────────────────────────────────────────
+// ─── Forgot Password Modal (Updated for Light Theme) ─────────────────────────
 
 class ForgotPasswordModal extends StatefulWidget {
   const ForgotPasswordModal({super.key});
@@ -354,6 +401,9 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
   final _authService = AuthService();
   final _controller = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+
+  final _focusNode1 = FocusNode();
+  final _focusNode2 = FocusNode();
 
   int _step = 0; // 0: username, 1: OTP, 2: new password
   String? _email;
@@ -369,6 +419,22 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     "Choose a new password for your account",
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _focusNode1.addListener(() => setState(() {}));
+    _focusNode2.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _confirmPasswordController.dispose();
+    _focusNode1.dispose();
+    _focusNode2.dispose();
+    super.dispose();
+  }
+
   Future<void> _nextStep() async {
     final input = _controller.text.trim();
     if (input.isEmpty) return;
@@ -377,63 +443,63 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
 
     try {
       if (_step == 0) {
-  final isAdmin = await _authService.isAdminUser(input);
-  if (!isAdmin) {
-    if (mounted) {
-      Navigator.pop(context); // close forgot password modal
-      showDialog(
-        context: context,
-        builder: (context) => Dialog(
-          backgroundColor: const Color(0xFF151D2E),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Container(
-            width: 360,
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    shape: BoxShape.circle,
+        final isAdmin = await _authService.isAdminUser(input);
+        if (!isAdmin) {
+          if (mounted) {
+            Navigator.pop(context); // close forgot password modal
+            showDialog(
+              context: context,
+              builder: (context) => Dialog(
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.transparent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                child: Container(
+                  width: 360,
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(LucideIcons.userX, color: Colors.blue.shade600, size: 32),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text("Contact Your Administrator",
+                          style: TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Outfit')),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Staff accounts cannot reset their password here. Please contact your admin to reset your password.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 13, height: 1.5, fontFamily: 'Outfit'),
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2563EB),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: const Text("Got it", style: TextStyle(fontWeight: FontWeight.w600, fontFamily: 'Outfit')),
+                        ),
+                      ),
+                    ],
                   ),
-                  child: const Icon(LucideIcons.userX, color: Colors.blue, size: 32),
                 ),
-                const SizedBox(height: 16),
-                const Text("Contact Your Administrator",
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                const Text(
-                  "Staff accounts cannot reset their password here. Please contact your admin to reset your password.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.5),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: const Text("Got it", style: TextStyle(fontWeight: FontWeight.w600)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-    return;
-  }
+              ),
+            );
+          }
+          return;
+        }
 
- 
         final email = await _authService.getEmailFromUsername(input);
         if (email == null) throw "Username not found.";
 
@@ -459,8 +525,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
 
         await _authService.resetPasswordForUser(_email!, input);
 
-                if (mounted) {
-          // Grab the overlay first: the modal is about to close.
+        if (mounted) {
           final overlay = Overlay.of(context, rootOverlay: true);
           Navigator.pop(context);
           AppToast.showOn(overlay, 'Password updated successfully!');
@@ -476,20 +541,14 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
   }
 
   @override
-  void dispose() {
-    _controller.dispose();
-    _confirmPasswordController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: const Color(0xFF151D2E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
         width: 360,
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -498,51 +557,46 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(LucideIcons.keyRound,
-                      color: Colors.orange, size: 20),
+                  child: Icon(LucideIcons.keyRound,
+                      color: Colors.blue.shade600, size: 20),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(_stepTitles[_step],
                           style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 2),
+                              color: Color(0xFF0F172A),
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Outfit')),
+                      const SizedBox(height: 4),
                       Text(_stepSubtitles[_step],
-                          style: const TextStyle(
-                              color: Colors.grey, fontSize: 11)),
+                          style: TextStyle(
+                              color: Colors.grey.shade500, fontSize: 12, fontFamily: 'Outfit')),
                     ],
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.grey, size: 18),
-                  onPressed: () => Navigator.pop(context),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 24),
 
             // Step indicator
             Row(
               children: List.generate(3, (i) {
                 return Expanded(
                   child: Container(
-                    margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
-                    height: 3,
+                    margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: i <= _step ? Colors.orange : Colors.white12,
+                      color: i <= _step ? const Color(0xFF2563EB) : Colors.grey.shade200,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -550,12 +604,13 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
               }),
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
 
             // Input fields
             if (_step == 0) ...[
               _buildModalField(
                 controller: _controller,
+                focusNode: _focusNode1,
                 label: "Username",
                 hint: "Enter admin username",
                 icon: LucideIcons.user,
@@ -563,6 +618,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
             ] else if (_step == 1) ...[
               _buildModalField(
                 controller: _controller,
+                focusNode: _focusNode1,
                 label: "OTP Code",
                 hint: "000000",
                 icon: LucideIcons.shieldCheck,
@@ -571,16 +627,16 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.info_outline, color: Colors.grey, size: 13),
-                  const SizedBox(width: 4),
+                  Icon(Icons.info_outline, color: Colors.grey.shade500, size: 14),
+                  const SizedBox(width: 6),
                   Text("Code sent to ${_email ?? ''}",
-                      style:
-                          const TextStyle(color: Colors.grey, fontSize: 11)),
+                      style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontFamily: 'Outfit')),
                 ],
               ),
             ] else if (_step == 2) ...[
               _buildModalField(
                 controller: _controller,
+                focusNode: _focusNode1,
                 label: "New Password",
                 hint: "Min. 6 characters",
                 icon: LucideIcons.lock,
@@ -588,16 +644,17 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                 suffix: IconButton(
                   icon: Icon(
                     _obscurePassword ? LucideIcons.eyeOff : LucideIcons.eye,
-                    color: Colors.grey,
-                    size: 16,
+                    color: Colors.grey.shade400,
+                    size: 18,
                   ),
                   onPressed: () =>
                       setState(() => _obscurePassword = !_obscurePassword),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               _buildModalField(
                 controller: _confirmPasswordController,
+                focusNode: _focusNode2,
                 label: "Confirm Password",
                 hint: "Re-enter new password",
                 icon: LucideIcons.lockKeyhole,
@@ -605,8 +662,8 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                 suffix: IconButton(
                   icon: Icon(
                     _obscureConfirm ? LucideIcons.eyeOff : LucideIcons.eye,
-                    color: Colors.grey,
-                    size: 16,
+                    color: Colors.grey.shade400,
+                    size: 18,
                   ),
                   onPressed: () =>
                       setState(() => _obscureConfirm = !_obscureConfirm),
@@ -614,7 +671,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
               ),
             ],
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
 
             // Buttons
             Row(
@@ -630,13 +687,13 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                                 _confirmPasswordController.clear();
                               }),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.grey,
-                        side: const BorderSide(color: Colors.white12),
+                        foregroundColor: const Color(0xFF0F172A),
+                        side: BorderSide(color: Colors.grey.shade300),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                            borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
-                      child: const Text("Back"),
+                      child: const Text("Back", style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
                     ),
                   ),
                 if (_step > 0) const SizedBox(width: 12),
@@ -645,12 +702,12 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _nextStep,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
+                      backgroundColor: const Color(0xFF2563EB),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6)),
+                          borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
                     child: _isLoading
                         ? const SizedBox(
@@ -660,12 +717,23 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                                 color: Colors.white, strokeWidth: 2))
                         : Text(
                             _step == 2 ? "Update Password" : "Continue",
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Outfit'),
                           ),
                   ),
                 ),
               ],
             ),
+            if (_step == 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text("Cancel", style: TextStyle(color: Colors.grey.shade600, fontFamily: 'Outfit')),
+                  ),
+                ),
+              )
           ],
         ),
       ),
@@ -674,6 +742,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
 
   Widget _buildModalField({
     required TextEditingController controller,
+    required FocusNode focusNode,
     required String label,
     required String hint,
     required IconData icon,
@@ -681,37 +750,41 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     Widget? suffix,
     TextInputType? keyboardType,
   }) {
+    final isFocused = focusNode.hasFocus;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
             style: const TextStyle(
-                color: Colors.grey,
-                fontSize: 12,
-                fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
+                color: Color(0xFF0F172A),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Outfit')),
+        const SizedBox(height: 8),
         TextField(
           controller: controller,
+          focusNode: focusNode,
           obscureText: obscure,
           keyboardType: keyboardType,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
+          style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontFamily: 'Outfit'),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(color: Colors.white24),
-            prefixIcon: Icon(icon, color: Colors.white54, size: 16),
+            hintStyle: TextStyle(color: Colors.grey.shade400, fontFamily: 'Outfit'),
+            prefixIcon: Icon(icon, color: Colors.grey.shade400, size: 18),
             suffixIcon: suffix,
             filled: true,
-            fillColor: const Color(0xFF0F1423),
+            fillColor: isFocused ? Colors.white : Colors.grey.shade50,
             border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: const BorderSide(color: Colors.white10)),
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade200)),
             enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: const BorderSide(color: Colors.white10)),
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade200)),
             focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: const BorderSide(color: Colors.orange, width: 1)),
-            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5)),
+            contentPadding: const EdgeInsets.symmetric(vertical: 16),
           ),
         ),
       ],
