@@ -3,6 +3,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../data/inventory.dart';
 import '../../logic/inventory_controller.dart';
 
+const Color _primaryBlue = Color(0xFF2563EB);
+const String _fontFam = 'Hellix';
+
 class ItemCard extends StatelessWidget {
   final InventoryItem item;
   final InventoryController controller;
@@ -20,10 +23,10 @@ class ItemCard extends StatelessWidget {
       case StockStatus.ok:
         return Colors.grey.shade600;
       case StockStatus.low:
-        return Colors.orange;
+        return Colors.orange; // Kept orange for semantic low-stock warning
       case StockStatus.critical:
       case StockStatus.out:
-        return Colors.red;
+        return Colors.red; // Kept red for semantic out-of-stock warning
     }
   }
 
@@ -99,6 +102,7 @@ class ItemCard extends StatelessWidget {
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
+                  fontFamily: _fontFam,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -106,9 +110,10 @@ class ItemCard extends StatelessWidget {
             Text(
               '₱${item.price.toStringAsFixed(2)}',
               style: const TextStyle(
-                color: Colors.orange,
+                color: _primaryBlue,
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
+                fontFamily: _fontFam,
               ),
             ),
           ],
@@ -116,7 +121,11 @@ class ItemCard extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           item.sku,
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          style: TextStyle(
+            color: Colors.grey.shade500, 
+            fontSize: 12,
+            fontFamily: _fontFam,
+          ),
         ),
       ],
     );
@@ -144,6 +153,7 @@ class ItemCard extends StatelessWidget {
                   fontSize: 12,
                   color: _statusColor(status),
                   fontWeight: isAlert ? FontWeight.w600 : FontWeight.normal,
+                  fontFamily: _fontFam,
                 ),
               ),
             ],
@@ -190,6 +200,7 @@ class ItemCard extends StatelessWidget {
                   color: Colors.white,
                   fontSize: 9,
                   fontWeight: FontWeight.bold,
+                  fontFamily: _fontFam,
                 ),
               ),
             ),

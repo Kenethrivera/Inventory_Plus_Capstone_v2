@@ -14,13 +14,16 @@ import 'reports/inventory_report_generator.dart';
 import 'reports/report_range.dart';
 import 'reports/report_period_dialog.dart';
 
+const Color _primaryBlue = Color(0xFF2563EB);
+const String _fontFam = 'Hellix';
+
 String _fmtQty(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
 
 class InventoryPage extends StatefulWidget {
   final InventoryController controller;
   final Function(InventoryItem) onSelectItem;
-    final bool exportDue;
+  final bool exportDue;
   final VoidCallback? onExported;
 
   const InventoryPage({
@@ -79,7 +82,7 @@ class _InventoryPageState extends State<InventoryPage> {
         .where((category) => category.toLowerCase() != 'unassigned')
         .toList();
 
-        final filteredInventory = _showDisabled
+    final filteredInventory = _showDisabled
         ? widget.controller.filterDisabled(
             query: _searchQuery,
             category: _selectedCategory,
@@ -122,6 +125,7 @@ class _InventoryPageState extends State<InventoryPage> {
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF111827),
+                        fontFamily: _fontFam,
                       ),
                     ),
                     if (widget.controller.isAdmin)
@@ -147,7 +151,10 @@ class _InventoryPageState extends State<InventoryPage> {
                                 ),
                                 label: const Text(
                                   "Export Inventory Report",
-                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: _fontFam,
+                                  ),
                                 ),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: Colors.black87,
@@ -185,7 +192,6 @@ class _InventoryPageState extends State<InventoryPage> {
                           _buildHeaderButton(
                             icon: LucideIcons.qrCode,
                             label: "QR Labels",
-
                             onPressed: () => _generateAndPrintQRLabels(context),
                           ),
                           const SizedBox(width: 8),
@@ -234,9 +240,9 @@ class _InventoryPageState extends State<InventoryPage> {
                               }
                             },
                             icon: const Icon(LucideIcons.plus, size: 14),
-                            label: const Text("New Item"),
+                            label: const Text("New Item", style: TextStyle(fontFamily: _fontFam)),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange,
+                              backgroundColor: _primaryBlue,
                               foregroundColor: Colors.white,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
@@ -251,9 +257,11 @@ class _InventoryPageState extends State<InventoryPage> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: _searchController,
+                  style: const TextStyle(fontFamily: _fontFam),
                   onChanged: (val) => setState(() => _searchQuery = val),
                   decoration: InputDecoration(
                     hintText: "Search inventory...",
+                    hintStyle: const TextStyle(fontFamily: _fontFam),
                     prefixIcon: const Icon(LucideIcons.search, size: 18),
                     filled: true,
                     fillColor: Colors.grey[50],
@@ -297,6 +305,7 @@ class _InventoryPageState extends State<InventoryPage> {
                                         ? Colors.white
                                         : Colors.grey[600],
                                     fontSize: 12,
+                                    fontFamily: _fontFam,
                                   ),
                                 ),
                               ),
@@ -346,41 +355,41 @@ class _InventoryPageState extends State<InventoryPage> {
     );
   }
 
-
   Widget _buildDisabledPill() {
-  final color = _showDisabled ? Colors.orange.shade800 : Colors.grey.shade600;
-  return GestureDetector(
-    onTap: () => setState(() => _showDisabled = !_showDisabled),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: _showDisabled
-            ? Colors.orange.withOpacity(0.1)
-            : Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(100),
-        border: Border.all(
-          color: _showDisabled ? Colors.orange : Colors.transparent,
+    final color = _showDisabled ? _primaryBlue : Colors.grey.shade600;
+    return GestureDetector(
+      onTap: () => setState(() => _showDisabled = !_showDisabled),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _showDisabled
+              ? _primaryBlue.withOpacity(0.1)
+              : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(100),
+          border: Border.all(
+            color: _showDisabled ? _primaryBlue : Colors.transparent,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.eyeOff, size: 14, color: color),
+            const SizedBox(width: 6),
+            Text(
+              'Show disabled (${widget.controller.disabledItems.length})',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+                fontFamily: _fontFam,
+              ),
+            ),
+          ],
         ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(LucideIcons.eyeOff, size: 14, color: color),
-          const SizedBox(width: 6),
-          Text(
-            'Show disabled (${widget.controller.disabledItems.length})',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildListHeader(int count) {
     return Padding(
@@ -395,6 +404,7 @@ class _InventoryPageState extends State<InventoryPage> {
               fontWeight: FontWeight.bold,
               color: Colors.grey,
               letterSpacing: 1.1,
+              fontFamily: _fontFam,
             ),
           ),
           const Icon(LucideIcons.arrowUpDown, size: 14, color: Colors.grey),
@@ -412,7 +422,7 @@ class _InventoryPageState extends State<InventoryPage> {
           const SizedBox(height: 12),
           const Text(
             "No items found",
-            style: TextStyle(fontWeight: FontWeight.bold),
+            style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
           ),
         ],
       ),
@@ -437,6 +447,7 @@ class _InventoryPageState extends State<InventoryPage> {
               color: Color(0xFF0F172A),
               fontSize: 13,
               fontWeight: FontWeight.bold,
+              fontFamily: _fontFam,
             ),
           ),
           style: OutlinedButton.styleFrom(
@@ -656,13 +667,14 @@ class _InventoryPageState extends State<InventoryPage> {
       }
     }
   }
-  String _formatCurrency(double value) {
-  RegExp reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
-  String mathFunc(Match match) => '${match[1]},';
-  return 'P${value.toStringAsFixed(2).replaceAllMapped(reg, mathFunc)}';
-}
 
-Future<void> _markExported(ExportPeriodType type) async {
+  String _formatCurrency(double value) {
+    RegExp reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
+    String mathFunc(Match match) => '${match[1]},';
+    return 'P${value.toStringAsFixed(2).replaceAllMapped(reg, mathFunc)}';
+  }
+
+  Future<void> _markExported(ExportPeriodType type) async {
     final locId = widget.controller.activeLocationId;
     if (locId == null) return;
     final service = ExportReminderService(

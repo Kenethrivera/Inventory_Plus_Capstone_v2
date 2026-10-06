@@ -6,6 +6,9 @@ import '../logic/inventory_controller.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 
+const Color _primaryBlue = Color(0xFF2563EB);
+const String _fontFam = 'Hellix';
+
 // Data Models
 class MeasurementUnit {
   String id;
@@ -206,7 +209,9 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
           InputDecoration deco(String label, String? error) => InputDecoration(
             labelText: label,
+            labelStyle: const TextStyle(fontFamily: _fontFam),
             errorText: error,
+            errorStyle: const TextStyle(fontFamily: _fontFam),
             filled: true,
             fillColor: const Color(0xFFF8FAFC),
             border: OutlineInputBorder(
@@ -219,13 +224,13 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Colors.orange, width: 2),
+              borderSide: const BorderSide(color: _primaryBlue, width: 2),
             ),
           );
 
           return AppDialog(
             icon: LucideIcons.ruler,
-            color: Colors.blue,
+            color: _primaryBlue,
             title: existing == null ? "Add Measurement" : "Edit Measurement",
             subtitle: existing?.name,
             child: Column(
@@ -233,11 +238,13 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               children: [
                 TextField(
                   controller: nameCtrl,
+                  style: const TextStyle(fontFamily: _fontFam),
                   decoration: deco("Measurement Name (e.g. Pieces)", nameError),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: symbolCtrl,
+                  style: const TextStyle(fontFamily: _fontFam),
                   decoration: deco("Symbol / Unit (e.g. pcs)", symbolError),
                 ),
               ],
@@ -253,12 +260,12 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                   ),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                child: const Text("Cancel"),
+                child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
               ),
               ElevatedButton(
                 onPressed: saving ? null : validateAndSave,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
+                  backgroundColor: _primaryBlue,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -279,6 +286,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
+                          fontFamily: _fontFam,
                         ),
                       ),
               ),
@@ -299,7 +307,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         subtitle: item.name,
         child: Text(
           "Are you sure you want to remove '${item.name}'? Existing inventory using this unit will not be altered.",
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontFamily: _fontFam),
         ),
         actions: [
           OutlinedButton(
@@ -312,7 +320,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               ),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: const Text("Cancel"),
+            child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -341,6 +349,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
+                fontFamily: _fontFam,
               ),
             ),
           ),
@@ -383,16 +392,17 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             color: Color(0xFF4A5568),
             fontSize: 12,
             fontWeight: FontWeight.w600,
+            fontFamily: _fontFam,
           ),
         ),
         const SizedBox(height: 6),
         TextField(
           controller: controller,
           keyboardType: keyboardType,
-          style: const TextStyle(color: Color(0xFF1A1F36), fontSize: 14),
+          style: const TextStyle(color: Color(0xFF1A1F36), fontSize: 14, fontFamily: _fontFam),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(color: Color(0xFFB0B7C3)),
+            hintStyle: const TextStyle(color: Color(0xFFB0B7C3), fontFamily: _fontFam),
             prefixIcon: Icon(icon, color: const Color(0xFF8892A4), size: 16),
             filled: true,
             fillColor: const Color(0xFFF8FAFC),
@@ -406,7 +416,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Colors.orange, width: 2),
+              borderSide: const BorderSide(color: _primaryBlue, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(vertical: 14),
           ),
@@ -438,7 +448,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
           return AppDialog(
             icon: LucideIcons.userPlus,
-            color: Colors.orange,
+            color: _primaryBlue,
             title: "Add New Staff",
             subtitle: "Fill in the details to create an account",
             child: Column(
@@ -491,6 +501,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                         color: Color(0xFF4A5568),
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
+                        fontFamily: _fontFam,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -500,6 +511,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                       style: const TextStyle(
                         color: Color(0xFF1A1F36),
                         fontSize: 14,
+                        fontFamily: _fontFam,
                       ),
                       decoration: InputDecoration(
                         prefixIcon: const Icon(
@@ -520,7 +532,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                           borderSide: const BorderSide(
-                            color: Colors.orange,
+                            color: _primaryBlue,
                             width: 2,
                           ),
                         ),
@@ -529,11 +541,11 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                         ),
                       ),
                       items: const [
-                        DropdownMenuItem(value: 'staff', child: Text('Staff')),
-                        DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                        DropdownMenuItem(value: 'staff', child: Text('Staff', style: TextStyle(fontFamily: _fontFam))),
+                        DropdownMenuItem(value: 'admin', child: Text('Admin', style: TextStyle(fontFamily: _fontFam))),
                         DropdownMenuItem(
                           value: 'helper',
-                          child: Text('Helper'),
+                          child: Text('Helper', style: TextStyle(fontFamily: _fontFam)),
                         ),
                       ],
                       onChanged: (val) =>
@@ -569,6 +581,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                               style: TextStyle(
                                 color: Color(0xFF4A5568),
                                 fontSize: 11,
+                                fontFamily: _fontFam,
                               ),
                             ),
                             const SizedBox(height: 2),
@@ -579,6 +592,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
                                 letterSpacing: 1,
+                                fontFamily: _fontFam,
                               ),
                             ),
                           ],
@@ -600,7 +614,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                   ),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                child: const Text("Cancel"),
+                child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
               ),
               ElevatedButton(
                 onPressed: isSaving
@@ -644,7 +658,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                         }
                       },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
+                  backgroundColor: _primaryBlue,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -663,7 +677,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                       )
                     : const Text(
                         "Create Account",
-                        style: TextStyle(fontWeight: FontWeight.w600),
+                        style: TextStyle(fontWeight: FontWeight.w600, fontFamily: _fontFam),
                       ),
               ),
             ],
@@ -684,13 +698,15 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         builder: (context, setModalState) {
           return AppDialog(
             icon: LucideIcons.shield,
-            color: Colors.blue,
+            color: _primaryBlue,
             title: "Change Role",
             subtitle: staff['name'],
             child: DropdownButtonFormField<String>(
               initialValue: selectedRole,
+              style: const TextStyle(fontFamily: _fontFam, color: Colors.black87, fontSize: 14),
               decoration: InputDecoration(
                 labelText: "Role",
+                labelStyle: const TextStyle(fontFamily: _fontFam),
                 filled: true,
                 fillColor: const Color(0xFFF8FAFC),
                 border: OutlineInputBorder(
@@ -703,14 +719,14 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Colors.orange, width: 2),
+                  borderSide: const BorderSide(color: _primaryBlue, width: 2),
                 ),
                 prefixIcon: const Icon(LucideIcons.shield),
               ),
               items: const [
-                DropdownMenuItem(value: 'staff', child: Text('Staff')),
-                DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                DropdownMenuItem(value: 'helper', child: Text('Helper')),
+                DropdownMenuItem(value: 'staff', child: Text('Staff', style: TextStyle(fontFamily: _fontFam))),
+                DropdownMenuItem(value: 'admin', child: Text('Admin', style: TextStyle(fontFamily: _fontFam))),
+                DropdownMenuItem(value: 'helper', child: Text('Helper', style: TextStyle(fontFamily: _fontFam))),
               ],
               onChanged: (val) => setModalState(() => selectedRole = val!),
             ),
@@ -725,7 +741,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                   ),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                child: const Text("Cancel"),
+                child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
               ),
               ElevatedButton(
                 onPressed: isSaving
@@ -753,7 +769,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                         }
                       },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
+                  backgroundColor: _primaryBlue,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -770,7 +786,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                           strokeWidth: 2,
                         ),
                       )
-                    : const Text("Save Changes"),
+                    : const Text("Save Changes", style: TextStyle(fontFamily: _fontFam)),
               ),
             ],
           );
@@ -786,24 +802,26 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       context: context,
       builder: (ctx) => AppDialog(
         icon: LucideIcons.refreshCw,
-        color: Colors.orange,
+        color: _primaryBlue,
         title: "Reset Password",
         subtitle: staff['name'],
         child: Text.rich(
           TextSpan(
             text: "Are you sure you want to reset the password for ",
+            style: const TextStyle(fontFamily: _fontFam),
             children: [
               TextSpan(
                 text: "${staff['name']}",
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
               ),
-              const TextSpan(text: "?\n\nIt will be updated to: "),
+              const TextSpan(text: "?\n\nIt will be updated to: ", style: TextStyle(fontFamily: _fontFam)),
               TextSpan(
                 text: newPass,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: Colors.orange,
+                  color: _primaryBlue,
                   fontSize: 16,
+                  fontFamily: _fontFam,
                 ),
               ),
             ],
@@ -820,7 +838,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               ),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: const Text("Cancel"),
+            child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -844,7 +862,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
+              backgroundColor: _primaryBlue,
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -852,7 +870,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               ),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: const Text("Confirm Reset"),
+            child: const Text("Confirm Reset", style: TextStyle(fontFamily: _fontFam)),
           ),
         ],
       ),
@@ -869,7 +887,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         subtitle: staff['name'],
         child: Text(
           "Are you sure you want to completely remove this staff account? This action cannot be undone.",
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontFamily: _fontFam),
         ),
         actions: [
           OutlinedButton(
@@ -882,7 +900,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               ),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: const Text("Cancel"),
+            child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -915,6 +933,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
+                fontFamily: _fontFam,
               ),
             ),
           ),
@@ -947,7 +966,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                           IconButton(
                             icon: const Icon(
                               LucideIcons.x,
-                              color: Colors.orange,
+                              color: _primaryBlue,
                             ),
                             onPressed: () => Navigator.pop(context),
                             splashRadius: 20,
@@ -958,7 +977,8 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.orange,
+                              color: _primaryBlue,
+                              fontFamily: _fontFam,
                             ),
                           ),
                         ],
@@ -976,19 +996,20 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                 Container(
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFFFF7F2),
+                                    color: Colors.blue.shade50,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Row(
                                     children: [
                                       CircleAvatar(
                                         radius: 24,
-                                        backgroundColor: Colors.orange,
+                                        backgroundColor: _primaryBlue,
                                         child: Text(
                                           _getInitials(staff['name']),
                                           style: const TextStyle(
                                             color: Colors.white,
                                             fontWeight: FontWeight.bold,
+                                            fontFamily: _fontFam,
                                           ),
                                         ),
                                       ),
@@ -1010,21 +1031,22 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                                   style: const TextStyle(
                                                     fontSize: 18,
                                                     fontWeight: FontWeight.bold,
+                                                    fontFamily: _fontFam,
                                                   ),
                                                 ),
                                                 Container(
                                                   padding:
                                                       const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 4,
-                                                      ),
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
                                                   decoration: BoxDecoration(
                                                     color: Colors.blue
                                                         .withOpacity(0.1),
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                          12,
-                                                        ),
+                                                      12,
+                                                    ),
                                                   ),
                                                   child: Text(
                                                     (staff['role'] ?? 'staff')
@@ -1035,6 +1057,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                                       color: Colors.blue,
                                                       fontWeight:
                                                           FontWeight.bold,
+                                                      fontFamily: _fontFam,
                                                     ),
                                                   ),
                                                 ),
@@ -1056,6 +1079,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                                     style: const TextStyle(
                                                       color: Colors.grey,
                                                       fontSize: 12,
+                                                      fontFamily: _fontFam,
                                                     ),
                                                     overflow:
                                                         TextOverflow.ellipsis,
@@ -1161,7 +1185,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             child: Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFFF7F2),
+                                color: Colors.blue.shade50,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Column(
@@ -1172,7 +1196,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                       Icon(
                                         LucideIcons.shieldAlert,
                                         size: 16,
-                                        color: Colors.orange,
+                                        color: _primaryBlue,
                                       ),
                                       SizedBox(width: 8),
                                       Text(
@@ -1180,6 +1204,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 12,
+                                          fontFamily: _fontFam,
                                         ),
                                       ),
                                     ],
@@ -1193,7 +1218,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                         _showEditStaffRole(staff);
                                       },
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.orange,
+                                        backgroundColor: _primaryBlue,
                                         foregroundColor: Colors.white,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
@@ -1208,7 +1233,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                         LucideIcons.pencil,
                                         size: 16,
                                       ),
-                                      label: const Text("Change Role"),
+                                      label: const Text("Change Role", style: TextStyle(fontFamily: _fontFam)),
                                     ),
                                   ),
                                   const SizedBox(height: 12),
@@ -1237,7 +1262,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                         LucideIcons.refreshCw,
                                         size: 16,
                                       ),
-                                      label: const Text("Reset Password"),
+                                      label: const Text("Reset Password", style: TextStyle(fontFamily: _fontFam)),
                                     ),
                                   ),
                                   const SizedBox(height: 12),
@@ -1266,7 +1291,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                         LucideIcons.trash2,
                                         size: 16,
                                       ),
-                                      label: const Text("Delete Account"),
+                                      label: const Text("Delete Account", style: TextStyle(fontFamily: _fontFam)),
                                     ),
                                   ),
                                 ],
@@ -1296,7 +1321,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       width: fullWidth ? double.infinity : 217,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7F2),
+        color: Colors.blue.shade50,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -1308,6 +1333,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               fontSize: 10,
               color: Colors.grey,
               fontWeight: FontWeight.bold,
+              fontFamily: _fontFam,
             ),
           ),
           const SizedBox(height: 6),
@@ -1321,6 +1347,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
+                    fontFamily: _fontFam,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1338,7 +1365,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),
       body: (_isLoadingSettings)
-          ? const Center(child: CircularProgressIndicator(color: Colors.orange))
+          ? const Center(child: CircularProgressIndicator(color: _primaryBlue))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
               child: Column(
@@ -1350,12 +1377,13 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                       fontSize: 26,
                       fontWeight: FontWeight.w900,
                       color: Color(0xFF0F172A),
+                      fontFamily: _fontFam,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     "Manage global configurations, units, and user accounts",
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontFamily: _fontFam),
                   ),
                   const SizedBox(height: 32),
 
@@ -1394,6 +1422,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                     fontSize: 16,
                                     fontWeight: FontWeight.w900,
                                     color: Color(0xFF0F172A),
+                                    fontFamily: _fontFam,
                                   ),
                                 ),
                                 SizedBox(height: 4),
@@ -1402,6 +1431,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey,
+                                    fontFamily: _fontFam,
                                   ),
                                 ),
                               ],
@@ -1418,6 +1448,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                 color: Colors.redAccent,
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
+                                fontFamily: _fontFam,
                               ),
                             ),
                           ),
@@ -1434,12 +1465,14 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                       color: Colors.grey.shade600,
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
+                                      fontFamily: _fontFam,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
                                   TextField(
                                     controller: _lowPercentCtrl,
                                     keyboardType: TextInputType.number,
+                                    style: const TextStyle(fontFamily: _fontFam),
                                     inputFormatters: [
                                       FilteringTextInputFormatter.allow(
                                         RegExp(r'^\d*\.?\d*'),
@@ -1457,9 +1490,9 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                       ),
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 14,
-                                          ),
+                                        horizontal: 16,
+                                        vertical: 14,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1476,12 +1509,14 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                       color: Colors.grey.shade600,
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
+                                      fontFamily: _fontFam,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
                                   TextField(
                                     controller: _criticalPercentCtrl,
                                     keyboardType: TextInputType.number,
+                                    style: const TextStyle(fontFamily: _fontFam),
                                     inputFormatters: [
                                       FilteringTextInputFormatter.allow(
                                         RegExp(r'^\d*\.?\d*'),
@@ -1499,9 +1534,9 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                       ),
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 14,
-                                          ),
+                                        horizontal: 16,
+                                        vertical: 14,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1537,6 +1572,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                         style: TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.bold,
+                                          fontFamily: _fontFam,
                                         ),
                                       ),
                               ),
@@ -1588,6 +1624,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                           fontSize: 16,
                                           fontWeight: FontWeight.w900,
                                           color: Color(0xFF0F172A),
+                                          fontFamily: _fontFam,
                                         ),
                                       ),
                                       SizedBox(height: 4),
@@ -1596,6 +1633,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: Colors.grey,
+                                          fontFamily: _fontFam,
                                         ),
                                       ),
                                     ],
@@ -1614,10 +1652,11 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white,
+                                    fontFamily: _fontFam,
                                   ),
                                 ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.orange,
+                                  backgroundColor: _primaryBlue,
                                   elevation: 0,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
@@ -1638,7 +1677,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             child: Center(
                               child: Text(
                                 "No measurement units found.",
-                                style: TextStyle(color: Colors.grey),
+                                style: TextStyle(color: Colors.grey, fontFamily: _fontFam),
                               ),
                             ),
                           )
@@ -1669,6 +1708,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                               fontWeight: FontWeight.w700,
                                               fontSize: 15,
                                               color: Color(0xFF0F172A),
+                                              fontFamily: _fontFam,
                                             ),
                                           ),
                                         ],
@@ -1693,6 +1733,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.bold,
                                                 color: Colors.grey.shade700,
+                                                fontFamily: _fontFam,
                                               ),
                                             ),
                                           ),
@@ -1773,6 +1814,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                           fontSize: 16,
                                           fontWeight: FontWeight.w900,
                                           color: Color(0xFF0F172A),
+                                          fontFamily: _fontFam,
                                         ),
                                       ),
                                       SizedBox(height: 4),
@@ -1781,6 +1823,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: Colors.grey,
+                                          fontFamily: _fontFam,
                                         ),
                                       ),
                                     ],
@@ -1799,10 +1842,11 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white,
+                                    fontFamily: _fontFam,
                                   ),
                                 ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.orange,
+                                  backgroundColor: _primaryBlue,
                                   elevation: 0,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
@@ -1822,7 +1866,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             padding: EdgeInsets.all(40.0),
                             child: Center(
                               child: CircularProgressIndicator(
-                                color: Colors.orange,
+                                color: _primaryBlue,
                               ),
                             ),
                           )
@@ -1832,7 +1876,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             child: Center(
                               child: Text(
                                 "No other staff members found.",
-                                style: TextStyle(color: Colors.grey),
+                                style: TextStyle(color: Colors.grey, fontFamily: _fontFam),
                               ),
                             ),
                           )
@@ -1856,14 +1900,14 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                     CircleAvatar(
                                       radius: 20,
                                       backgroundColor: isAdmin
-                                          ? Colors.orange.withOpacity(0.1)
+                                          ? _primaryBlue.withOpacity(0.1)
                                           : Colors.blue.withOpacity(0.1),
                                       child: Icon(
                                         isAdmin
                                             ? LucideIcons.shieldCheck
                                             : LucideIcons.user,
                                         color: isAdmin
-                                            ? Colors.orange
+                                            ? _primaryBlue
                                             : Colors.blue,
                                         size: 20,
                                       ),
@@ -1880,6 +1924,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                               fontWeight: FontWeight.w700,
                                               fontSize: 15,
                                               color: Color(0xFF0F172A),
+                                              fontFamily: _fontFam,
                                             ),
                                           ),
                                           const SizedBox(height: 4),
@@ -1891,6 +1936,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                               color: Colors.grey,
                                               fontSize: 11,
                                               fontWeight: FontWeight.w600,
+                                              fontFamily: _fontFam,
                                             ),
                                           ),
                                         ],
@@ -1908,16 +1954,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                               _showStaffDetailsModal(staff),
                                           tooltip: "View Details",
                                         ),
-                                        IconButton(
-                                          icon: Icon(
-                                            LucideIcons.pencil,
-                                            size: 18,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                          onPressed: () =>
-                                              _showEditStaffRole(staff),
-                                          tooltip: "Edit Role",
-                                        ),
+                                        
                                         IconButton(
                                           icon: Icon(
                                             LucideIcons.trash2,

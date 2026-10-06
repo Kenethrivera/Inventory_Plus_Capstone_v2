@@ -1,5 +1,5 @@
+// ui/item_detail_page.dart
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../data/inventory.dart';
@@ -12,6 +12,8 @@ import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import 'package:inventory_plus/ui/widgets/app_dialog.dart';
 import 'store_map.dart'; // Adjust the path if necessary depending on your folder structure
 
+const Color _primaryBlue = Color(0xFF2563EB);
+const String _fontFam = 'Hellix';
 
 class ItemDetailPage extends StatefulWidget {
   final InventoryItem item;
@@ -62,7 +64,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   Color _statusColor(StockStatus status) {
     switch (status) {
       case StockStatus.ok:
-        return Colors.blue;
+        return _primaryBlue;
       case StockStatus.low:
         return Colors.orange;
       case StockStatus.critical:
@@ -165,7 +167,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
           return AppDialog(
             icon: LucideIcons.packagePlus,
-            color: Colors.orange,
+            color: _primaryBlue,
             title: 'Restock',
             subtitle: _currentItem.name,
             actions: [
@@ -179,12 +181,12 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                child: const Text('Cancel'),
+                child: const Text('Cancel', style: TextStyle(fontFamily: _fontFam)),
               ),
               ElevatedButton(
                 onPressed: saving ? null : submit,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
+                  backgroundColor: _primaryBlue,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -203,7 +205,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                       )
                     : const Text(
                         'Add stock',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
                       ),
               ),
             ],
@@ -236,7 +238,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         child: _stockSummary(
                           'NEW',
                           newQty == null ? '—' : '${_fmt(newQty)} $unit',
-                          newQty == null ? Colors.grey : Colors.orange.shade700,
+                          newQty == null ? Colors.grey : _primaryBlue,
                           alignEnd: true,
                         ),
                       ),
@@ -246,7 +248,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 const SizedBox(height: 20),
                 const Text(
                   'Quantity received',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFamily: _fontFam),
                 ),
                 if (error != null)
                   Padding(
@@ -266,6 +268,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                               color: Colors.red,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
+                              fontFamily: _fontFam,
                             ),
                           ),
                         ),
@@ -291,13 +294,16 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
+                    fontFamily: _fontFam,
                   ),
                   decoration: InputDecoration(
                     hintText: '0',
+                    hintStyle: const TextStyle(fontFamily: _fontFam),
                     suffixText: unit,
                     suffixStyle: TextStyle(
                       fontWeight: FontWeight.w600,
                       color: Colors.grey.shade600,
+                      fontFamily: _fontFam,
                     ),
                     filled: true,
                     fillColor: Colors.white,
@@ -309,7 +315,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                       error != null ? Colors.red : Colors.grey.shade300,
                     ),
                     focusedBorder: border(
-                      error != null ? Colors.red : Colors.orange,
+                      error != null ? Colors.red : _primaryBlue,
                       1.5,
                     ),
                   ),
@@ -324,8 +330,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                           labelStyle: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
+                            fontFamily: _fontFam,
                           ),
-                          backgroundColor: Colors.orange.withOpacity(0.08),
+                          backgroundColor: _primaryBlue.withOpacity(0.1),
                           side: BorderSide.none,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(20),
@@ -363,6 +370,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             fontWeight: FontWeight.w700,
             letterSpacing: 0.8,
             color: Colors.grey.shade500,
+            fontFamily: _fontFam,
           ),
         ),
         const SizedBox(height: 4),
@@ -372,6 +380,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             fontSize: 18,
             fontWeight: FontWeight.w800,
             color: color,
+            fontFamily: _fontFam,
           ),
         ),
       ],
@@ -447,7 +456,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       context: context,
       builder: (dialogContext) => AppDialog(
         icon: LucideIcons.imagePlus,
-        color: Colors.orange,
+        color: _primaryBlue,
         title: "Product Photo",
         subtitle: "Choose how to change the image",
         child: Column(
@@ -498,7 +507,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               ),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: const Text("Cancel"),
+            child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
           ),
         ],
       ),
@@ -545,7 +554,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     required String title,
     required String description,
     required VoidCallback onTap,
-    Color color = Colors.orange,
+    Color color = _primaryBlue,
   }) {
     return Material(
       color: Colors.transparent,
@@ -579,9 +588,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: color == Colors.orange
+                        color: color == _primaryBlue
                             ? const Color(0xFF0F172A)
                             : color,
+                        fontFamily: _fontFam,
                       ),
                     ),
                     Text(
@@ -589,6 +599,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade600,
+                        fontFamily: _fontFam,
                       ),
                     ),
                   ],
@@ -612,15 +623,17 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       context: context,
       builder: (dialogContext) => AppDialog(
         icon: LucideIcons.link,
-        color: Colors.orange,
+        color: _primaryBlue,
         title: "Image URL",
         subtitle: "Use an image hosted online",
         child: TextField(
           controller: urlController,
           autofocus: true,
           keyboardType: TextInputType.url,
+          style: const TextStyle(fontFamily: _fontFam),
           decoration: InputDecoration(
             hintText: "Paste link here (https://...)",
+            hintStyle: const TextStyle(fontFamily: _fontFam),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
         ),
@@ -635,7 +648,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               ),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: const Text("Cancel"),
+            child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -662,7 +675,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               _toast("Image URL added");
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
+              backgroundColor: _primaryBlue,
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -674,6 +687,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
+                fontFamily: _fontFam,
               ),
             ),
           ),
@@ -827,6 +841,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: Colors.orange.shade900,
+                                    fontFamily: _fontFam,
                                   ),
                                 ),
                               ),
@@ -952,9 +967,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                     Text(
                       _currentItem.category.toUpperCase(),
                       style: const TextStyle(
-                        color: Colors.orange,
+                        color: _primaryBlue,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
+                        fontFamily: _fontFam,
                       ),
                     ),
                     Text(
@@ -963,6 +979,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         color: Colors.white,
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
+                        fontFamily: _fontFam,
                       ),
                     ),
                   ],
@@ -1050,7 +1067,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 children: [
                   Text(
                     label.toUpperCase(),
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    style: const TextStyle(fontSize: 10, color: Colors.grey, fontFamily: _fontFam),
                   ),
                   if (_isEditing && error != null)
                     Padding(
@@ -1061,6 +1078,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                           color: Colors.red,
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
+                          fontFamily: _fontFam,
                         ),
                       ),
                     ),
@@ -1077,6 +1095,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
+                            fontFamily: _fontFam,
                           ),
                         )
                       : Text(
@@ -1084,6 +1103,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
+                            fontFamily: _fontFam,
                           ),
                         ),
                 ],
@@ -1113,7 +1133,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               SizedBox(width: 8),
               Text(
                 "Specifications",
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
               ),
             ],
           ),
@@ -1166,7 +1186,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               SizedBox(width: 8),
               Text(
                 "Inventory Info",
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
               ),
             ],
           ),
@@ -1214,7 +1234,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                     SizedBox(width: 8),
                     Text(
                       "Store Location",
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
                     ),
                   ],
                 ),
@@ -1231,13 +1251,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         Text(
                           "Fullscreen",
                           style: TextStyle(
-                            color: Colors.orange,
+                            color: _primaryBlue,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
+                            fontFamily: _fontFam,
                           ),
                         ),
                         SizedBox(width: 4),
-                        Icon(LucideIcons.maximize, size: 14, color: Colors.orange),
+                        Icon(LucideIcons.maximize, size: 14, color: _primaryBlue),
                       ],
                     ),
                   ),
@@ -1249,7 +1270,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               padding: EdgeInsets.only(left: 16, right: 16, bottom: 16),
               child: Text(
                 "This item is not assigned to a physical location.",
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(color: Colors.grey, fontFamily: _fontFam),
               ),
             )
           else
@@ -1297,7 +1318,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   SizedBox(width: 8),
                   Text(
                     "Transaction History",
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
                   ),
                 ],
               ),
@@ -1317,16 +1338,17 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                       Text(
                         "View All",
                         style: TextStyle(
-                          color: Colors.orange,
+                          color: _primaryBlue,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
+                          fontFamily: _fontFam,
                         ),
                       ),
                       SizedBox(width: 4),
                       Icon(
                         LucideIcons.chevronRight,
                         size: 14,
-                        color: Colors.orange,
+                        color: _primaryBlue,
                       ),
                     ],
                   ),
@@ -1340,7 +1362,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             const Center(
               child: Text(
                 "No transaction history found.",
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(color: Colors.grey, fontFamily: _fontFam),
               ),
             )
           else
@@ -1387,11 +1409,11 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       ),
       title: Text(
         "${isPositive ? '+' : ''}$quantityChange  •  ${type.replaceAll('_', ' ').capitalize()}",
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: _fontFam),
       ),
       subtitle: Text(
         "By $userName  •  $formattedDate",
-        style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+        style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontFamily: _fontFam),
       ),
       trailing: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1401,7 +1423,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         ),
         child: Text(
           "Qty: ${transaction['new_quantity']}",
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, fontFamily: _fontFam),
         ),
       ),
     );
@@ -1446,6 +1468,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
+                            fontFamily: _fontFam,
                           ),
                         ),
                         Text(
@@ -1453,6 +1476,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                           style: TextStyle(
                             color: Colors.grey.shade500,
                             fontSize: 13,
+                            fontFamily: _fontFam,
                           ),
                         ),
                       ],
@@ -1463,15 +1487,16 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
+                        color: _primaryBlue.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
                         "${_transactionHistory.length} records",
                         style: const TextStyle(
-                          color: Colors.orange,
+                          color: _primaryBlue,
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
+                          fontFamily: _fontFam,
                         ),
                       ),
                     ),
@@ -1513,11 +1538,12 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey, fontFamily: _fontFam)),
         (_isEditing && !isReadOnly)
             ? TextField(
                 controller: controller,
                 maxLines: isMultiline ? null : 1,
+                style: const TextStyle(fontFamily: _fontFam),
                 onChanged: (_) {
                   if (errorKey != null && _errors.containsKey(errorKey)) {
                     setState(() => _errors.remove(errorKey));
@@ -1532,7 +1558,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   displayValue.isEmpty ? "N/A" : displayValue,
-                  style: const TextStyle(fontSize: 14),
+                  style: const TextStyle(fontSize: 14, fontFamily: _fontFam),
                 ),
               ),
         if (_isEditing && error != null)
@@ -1544,6 +1570,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 color: Colors.red,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
+                fontFamily: _fontFam,
               ),
             ),
           ),
@@ -1563,9 +1590,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       ElevatedButton.icon(
         onPressed: _showRestockDialog,
         icon: const Icon(LucideIcons.plus, size: 18),
-        label: const Text("Restock"),
+        label: const Text("Restock", style: TextStyle(fontFamily: _fontFam)),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.orange,
+          backgroundColor: _primaryBlue,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
         ),
@@ -1576,7 +1603,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         OutlinedButton.icon(
           onPressed: _currentItem.quantity > 0 ? _showWriteOffDialog : null,
           icon: const Icon(LucideIcons.packageMinus, size: 18),
-          label: const Text("Write off"),
+          label: const Text("Write off", style: TextStyle(fontFamily: _fontFam)),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.red,
             side: const BorderSide(color: Colors.red),
@@ -1588,7 +1615,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         OutlinedButton.icon(
           onPressed: _showDisableDialog,
           icon: const Icon(LucideIcons.eyeOff, size: 18),
-          label: const Text("Disable"),
+          label: const Text("Disable", style: TextStyle(fontFamily: _fontFam)),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.orange.shade800,
             side: BorderSide(color: Colors.orange.shade600),
@@ -1603,7 +1630,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       ElevatedButton.icon(
         onPressed: _restoreItem,
         icon: const Icon(LucideIcons.rotateCcw, size: 18),
-        label: const Text("Restore"),
+        label: const Text("Restore", style: TextStyle(fontFamily: _fontFam)),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.green,
           foregroundColor: Colors.white,
@@ -1615,7 +1642,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       OutlinedButton.icon(
         onPressed: _showDeleteDialog,
         icon: const Icon(LucideIcons.trash2, size: 18),
-        label: const Text("Delete"),
+        label: const Text("Delete", style: TextStyle(fontFamily: _fontFam)),
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.red,
           side: const BorderSide(color: Colors.red),
@@ -1671,14 +1698,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            child: const Text('Cancel'),
+            child: const Text('Cancel', style: TextStyle(fontFamily: _fontFam)),
           ),
           ElevatedButton.icon(
             onPressed: () => Navigator.pop(dialogContext, true),
             icon: const Icon(LucideIcons.eyeOff, size: 16),
             label: const Text(
               'Disable',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange,
@@ -1711,12 +1738,13 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                       fontWeight: FontWeight.w800,
                       fontSize: 15,
                       color: Color(0xFF0F172A),
+                      fontFamily: _fontFam,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '${_currentItem.sku}  •  ${_fmt(_currentItem.quantity)} ${_currentItem.unit} in stock',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontFamily: _fontFam),
                   ),
                 ],
               ),
@@ -1725,7 +1753,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             Text(
               'Past sales, history and reports keep this item. '
               'You can restore it anytime from Inventory > Show disabled.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700, fontFamily: _fontFam),
             ),
             if (hasStock) ...[
               const SizedBox(height: 10),
@@ -1735,6 +1763,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   fontSize: 12,
                   color: Colors.orange.shade800,
                   fontWeight: FontWeight.w600,
+                  fontFamily: _fontFam,
                 ),
               ),
             ],
@@ -1797,14 +1826,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            child: const Text('Cancel'),
+            child: const Text('Cancel', style: TextStyle(fontFamily: _fontFam)),
           ),
           ElevatedButton.icon(
             onPressed: () => Navigator.pop(dialogContext, true),
             icon: const Icon(LucideIcons.trash2, size: 16),
             label: const Text(
               'Delete',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
@@ -1837,12 +1866,13 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                       fontWeight: FontWeight.w800,
                       fontSize: 15,
                       color: Color(0xFF0F172A),
+                      fontFamily: _fontFam,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '${_currentItem.sku}  •  ${_fmt(_currentItem.quantity)} ${_currentItem.unit} in stock',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontFamily: _fontFam),
                   ),
                 ],
               ),
@@ -1850,7 +1880,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             const SizedBox(height: 14),
             Text(
               'This permanently removes the item from your inventory.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700, fontFamily: _fontFam),
             ),
           ],
         ),
@@ -1966,7 +1996,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                child: const Text('Cancel'),
+                child: const Text('Cancel', style: TextStyle(fontFamily: _fontFam)),
               ),
               ElevatedButton(
                 onPressed: saving ? null : submit,
@@ -1990,7 +2020,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                       )
                     : const Text(
                         'Remove stock',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
                       ),
               ),
             ],
@@ -2032,7 +2062,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 const SizedBox(height: 20),
                 const Text(
                   'Reason',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFamily: _fontFam),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -2049,6 +2079,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                             color: reason == r
                                 ? Colors.red.shade700
                                 : Colors.black87,
+                            fontFamily: _fontFam,
                           ),
                           onSelected: saving
                               ? null
@@ -2060,7 +2091,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 const SizedBox(height: 20),
                 const Text(
                   'Quantity to remove',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFamily: _fontFam),
                 ),
                 if (error != null)
                   Padding(
@@ -2080,6 +2111,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                               color: Colors.red,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
+                              fontFamily: _fontFam,
                             ),
                           ),
                         ),
@@ -2103,9 +2135,11 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
+                    fontFamily: _fontFam,
                   ),
                   decoration: InputDecoration(
                     hintText: '0',
+                    hintStyle: const TextStyle(fontFamily: _fontFam),
                     suffixText: unit,
                     filled: true,
                     fillColor: Colors.white,
@@ -2126,11 +2160,13 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 TextField(
                   controller: noteCtrl,
                   maxLines: 2,
+                  style: const TextStyle(fontFamily: _fontFam),
                   decoration: InputDecoration(
                     hintText: 'Note (optional), e.g. dropped during unloading',
                     hintStyle: TextStyle(
                       fontSize: 13,
                       color: Colors.grey.shade500,
+                      fontFamily: _fontFam,
                     ),
                     filled: true,
                     fillColor: Colors.white,
@@ -2171,7 +2207,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   children: [
                     Text(
                       'Location: ${_currentItem.name}',
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: _fontFam),
                     ),
                     IconButton(
                       icon: const Icon(Icons.close, color: Colors.white),
