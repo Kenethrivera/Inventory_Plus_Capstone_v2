@@ -1,5 +1,5 @@
 {
-  "buildCommand": "flutter/bin/flutter build web --release --no-tree-shake-icons --web-define=NONCE=default --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=GROQ_API_KEY=$GROQ_API_KEY",
+  "buildCommand": "bash vercel_build.sh",
   "outputDirectory": "build/web",
   "installCommand": "if cd flutter; then git pull && cd .. ; else git clone -b stable https://github.com/flutter/flutter.git; fi && flutter/bin/flutter doctor && flutter/bin/flutter config --enable-web",
   "rewrites": [
