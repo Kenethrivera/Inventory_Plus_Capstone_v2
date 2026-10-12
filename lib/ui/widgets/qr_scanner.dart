@@ -148,10 +148,10 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
     return Container(
       height: 2,
       decoration: BoxDecoration(
-        color: Colors.orange,
+        color: const Color(0xFF2563EB),
         boxShadow: [
           BoxShadow(
-            color: Colors.orange.withOpacity(0.6),
+            color: const Color(0xFF2563EB).withValues(alpha: 0.6),
             blurRadius: 8,
             spreadRadius: 2,
           ),
@@ -168,10 +168,10 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
         height: 32,
         decoration: BoxDecoration(
           border: Border(
-            top: isTop ? const BorderSide(color: Colors.orange, width: 4) : BorderSide.none,
-            bottom: !isTop ? const BorderSide(color: Colors.orange, width: 4) : BorderSide.none,
-            left: isLeft ? const BorderSide(color: Colors.orange, width: 4) : BorderSide.none,
-            right: !isLeft ? const BorderSide(color: Colors.orange, width: 4) : BorderSide.none,
+            top: isTop ? const BorderSide(color: Color(0xFF2563EB), width: 4) : BorderSide.none,
+            bottom: !isTop ? const BorderSide(color: Color(0xFF2563EB), width: 4) : BorderSide.none,
+            left: isLeft ? const BorderSide(color: Color(0xFF2563EB), width: 4) : BorderSide.none,
+            right: !isLeft ? const BorderSide(color: Color(0xFF2563EB), width: 4) : BorderSide.none,
           ),
           borderRadius: BorderRadius.only(
             topLeft: isTop && isLeft ? const Radius.circular(8) : Radius.zero,

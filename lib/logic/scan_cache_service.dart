@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 class ScanCacheService {
   static final List<Map<String, dynamic>> _scanCache = [];
   static const _cacheTTL = Duration(minutes: 10);
@@ -27,11 +25,6 @@ class ScanCacheService {
       }
     }
 
-    if (closestDiff != double.infinity) {
-      debugPrint(
-        '[Cache] closest diff: ${closestDiff.toStringAsFixed(3)} -> ${closestDiff < _cacheMatchThreshold ? "HIT" : "MISS"}',
-      );
-    }
 
     if (closestDiff < _cacheMatchThreshold && closestMatch != null) {
       return closestMatch;

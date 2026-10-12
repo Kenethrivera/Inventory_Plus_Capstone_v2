@@ -608,7 +608,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   }
 
   Widget _buildLogFilterPills() {
-    final filters = ['All', 'Stock In', 'Stock Out', 'Adjustments'];
+    final filters = ['All', 'Stock In', 'Stock Out'];
     return Row(
       children: filters.map((f) {
         final isSelected = _logFilter == f;

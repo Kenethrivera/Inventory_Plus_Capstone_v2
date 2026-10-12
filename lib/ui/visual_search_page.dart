@@ -13,7 +13,12 @@ import '../../data/inventory.dart';
 import '../../logic/inventory_controller.dart';
 import '../../logic/vision_service.dart';
 import '../../logic/tflite_service.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import '../../logic/scan_logger.dart';
+import 'package:flutter/services.dart';
+
+const Color _primaryBlue = Color(0xFF2563EB);
+const Color _lightBlue = Color(0xFF3B82F6);
+const Color _darkBlue = Color(0xFF1D4ED8);
 
 class VisualSearchPage extends StatefulWidget {
   final InventoryController controller;
@@ -66,27 +71,19 @@ class _VisualSearchPageState extends State<VisualSearchPage>
   bool _isCheckingStability = false;
 
   // Web guide box: square, tuned for a laptop webcam at typical distance.
-  static const double _alignBoxFactor = 0.55;
+  static const double _alignBoxFactor = 0.65;
 
   // Mobile guide box is only a framing aid; mobile scans use the complete
   // captured camera frame. Keep the portrait rectangle for elongated tools.
-  static const double _mobileCropWidth = 0.75;
-  static const double _mobileCropHeight = 0.55;
+  static const double _mobileCropWidth = 0.85;
+  static const double _mobileCropHeight = 0.62;
+
+  double get _boxWFactor =>
+      _isMobilePlatform ? _mobileCropWidth : _alignBoxFactor;
+  double get _boxHFactor =>
+      _isMobilePlatform ? _mobileCropHeight : _alignBoxFactor;
 
   String _liveStatusText = "Point camera at a tool";
-
-  // In-Memory Cache
-  //
-  // NOTE ON THE THRESHOLD BELOW: each ring's 64 bins are normalized to
-  // sum to 1, so the maximum possible total difference across 3 rings
-  // is 6.0 (completely different images). The previous threshold of
-  // 0.12 effectively required a near pixel-identical frame — ordinary
-  // camera noise, auto-exposure micro-adjustments, or a slightly
-  // different hand angle will usually exceed that, which is why every
-  // scan was a cache miss. 0.45 is a starting point, not a verified
-  // value — watch the debug console (prints the actual diff for the
-  // closest cached match on every scan) and tune this up/down based on
-  // real numbers from your camera and lighting.
 
   @override
   void initState() {
@@ -102,6 +99,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
               _onAutoScanComplete();
             }
           });
+    unawaited(TfliteService.initialize());
     _initCamera();
   }
 
@@ -143,6 +141,61 @@ class _VisualSearchPageState extends State<VisualSearchPage>
         similarItems: [],
       );
     }
+  }
+  Widget _buildScanButton() {
+    final enabled = _isCameraInitialized;
+    return Center(
+      child: Opacity(
+        opacity: enabled ? 1 : 0.5,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(40),
+            gradient: const LinearGradient(
+              colors: [_lightBlue, _darkBlue],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _primaryBlue.withValues(alpha: 0.45),
+                blurRadius: 20,
+                spreadRadius: 1,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(40),
+              onTap: enabled
+                  ? () {
+                      HapticFeedback.mediumImpact();
+                      _captureAndAnalyze();
+                    }
+                  : null,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 40, vertical: 18),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(LucideIcons.scanLine, color: Colors.white, size: 26),
+                    SizedBox(width: 12),
+                    Text(
+                      "SCAN OBJECT",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -258,7 +311,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
 
       _lastSignature = signature;
     } catch (e) {
-      debugPrint('[stability check] skipped: $e');
+      // skip this tick
     } finally {
       _isCheckingStability = false;
     }
@@ -356,30 +409,43 @@ class _VisualSearchPageState extends State<VisualSearchPage>
     );
   }
 
+  // Inside _VisualSearchPageState in visual_search_page.dart
+
   Future<void> _captureAndAnalyze() async {
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
       return;
     }
     if (_isAnalyzing) return;
 
-    setState(() {
-      _isAnalyzing = true;
-    });
+    _stabilityTimer?.cancel();
+    _stabilityTimer = null;
+    _isCountingDown = false;
+    _autoScanController?.stop();
 
-    await Future.delayed(const Duration(milliseconds: 50));
+    final logger = ScanLogger();
+    logger.log('START (button pressed)');
+
+    // 1. Show UI analyzing state immediately
+    setState(() => _isAnalyzing = true);
+    if (!_isLiveMode) _radarController.repeat();
+
+    // 2. Allow two frames to render so the overlay and spinner start animating smoothly
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    Map<String, dynamic>? result;
+    String? errorText;
 
     try {
-      // 1. Capture the photo
       final XFile? photo = await _safeTakePicture();
       if (photo == null) throw Exception("Camera was busy, please try again.");
 
-      final bytes = await photo.readAsBytes();
+      // Yield control so spinner repaints right after camera hardware finishes capture
+      await Future.delayed(const Duration(milliseconds: 16));
 
-      // 2. Compute the real crop region (matches on-screen guide box on
-      // BOTH platforms now) BEFORE handing off to the isolate.
+      final bytes = await photo.readAsBytes();
       final cropRect = _computeCropRect();
 
-      // 3. Process the image
+      // 3. Process image in isolate
       final backgroundResult = await compute(processImageInBackground, {
         'bytes': bytes,
         'cropLeft': cropRect.left,
@@ -388,34 +454,41 @@ class _VisualSearchPageState extends State<VisualSearchPage>
         'cropHeight': cropRect.height,
       });
 
-      final currentHistogram = backgroundResult['histogram'] as List<double>;
-      final localBytes = backgroundResult['localBytes'] as Uint8List;
-      final apiBytes = backgroundResult['apiBytes'] as Uint8List;
+      // Yield UI frame before entering inference
+      await Future.delayed(const Duration(milliseconds: 16));
 
-      // 4. Run the hybrid architecture
-      final result = await VisionService.processHardwareScan(
-        rawBytes: bytes,
-        localBytes: localBytes,
-        apiBytes: apiBytes,
-        histogram: currentHistogram,
+      // 4. Run inference
+      result = await VisionService.processHardwareScan(
+        modelInput: backgroundResult['modelInput'] as Float32List,
+        apiBytes: backgroundResult['apiBytes'] as Uint8List,
+        histogram: backgroundResult['histogram'] as List<double>,
+        logger: logger,
       );
-
-      await _routeScanResult(result);
     } catch (e) {
+      errorText = e.toString();
+      logger.log('ERROR -> $e');
+      logger.log('END (source: error)');
+    } finally {
+      if (!_isLiveMode) {
+        _radarController.stop();
+        _radarController.reset();
+      }
+      if (mounted) setState(() => _isAnalyzing = false);
+    }
+
+    if (!mounted) return;
+    if (errorText != null) {
       await _showScanResultModal(
         detectedName: "Connection Error",
         isHardware: false,
-        errorMessage: e.toString(),
+        errorMessage: errorText,
         similarItems: [],
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isAnalyzing = false;
-        });
-      }
+    } else {
+      await _routeScanResult(result);
     }
   }
+  
 
   Future<void> _performInventorySearch(String detectedName) async {
     final String detectedLower = detectedName.toLowerCase().trim();
@@ -513,6 +586,52 @@ class _VisualSearchPageState extends State<VisualSearchPage>
     }
   }
 
+  Widget _buildAnalyzingOverlay() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.transparent,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 28),
+            decoration: BoxDecoration(
+              color: const Color(0xE61E293B),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _primaryBlue.withValues(alpha: 0.4)),
+            ),
+            child: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 72,
+                  height: 72,
+                  child: CircularProgressIndicator(
+                    color: _primaryBlue,
+                    backgroundColor: Colors.white12,
+                    strokeWidth: 6,
+                  ),
+                ),
+                SizedBox(height: 20),
+                Text(
+                  "Analyzing tool...",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  "Hold still for a moment",
+                  style: TextStyle(color: Colors.white60, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showScanResultModal({
     required String detectedName,
     required bool isHardware,
@@ -542,7 +661,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
       descriptionText =
           "We found a perfect match for '$detectedName' in your inventory.";
     } else if (hasSimilar) {
-      bannerColor = Colors.orange;
+      bannerColor = _primaryBlue;
       bannerTitle = "SIMILAR ITEMS IN STOCK";
       bannerIcon = LucideIcons.searchCode;
       descriptionText =
@@ -625,9 +744,9 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                             Navigator.pop(dialogContext);
                             widget.onSelectItem(item);
                           },
-                          hoverColor: Colors.white.withOpacity(0.05),
-                          splashColor: Colors.orange.withOpacity(0.3),
-                          highlightColor: Colors.orange.withOpacity(0.1),
+                          hoverColor: Colors.white.withValues(alpha: 0.05),
+                          splashColor: _primaryBlue.withValues(alpha: 0.3),
+                          highlightColor: _primaryBlue.withValues(alpha: 0.1),
                           child: Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
@@ -666,7 +785,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                                           Text(
                                             "₱${item.price.toStringAsFixed(2)}",
                                             style: const TextStyle(
-                                              color: Colors.orange,
+                                              color: Color(0xFF60A5FA),
                                               fontWeight: FontWeight.w900,
                                               fontSize: 16,
                                             ),
@@ -679,10 +798,10 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                                             ),
                                             decoration: BoxDecoration(
                                               color: item.quantity > 0
-                                                  ? Colors.green.withOpacity(
-                                                      0.2,
+                                                  ? Colors.green.withValues(
+                                                      alpha: 0.2,
                                                     )
-                                                  : Colors.red.withOpacity(0.2),
+                                                  : Colors.red.withValues(alpha: 0.2),
                                               borderRadius:
                                                   BorderRadius.circular(6),
                                             ),
@@ -704,7 +823,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                                 ),
                                 const Icon(
                                   LucideIcons.plusCircle,
-                                  color: Colors.orange,
+                                  color: _primaryBlue,
                                   size: 24,
                                 ),
                               ],
@@ -737,7 +856,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                     Expanded(
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
+                          backgroundColor: _primaryBlue,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
@@ -777,7 +896,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                         key: _previewBoundaryKey,
                         child: _buildFullScreenCameraPreview(),
                       ),
-                      if (_isLiveMode)
+                      if (_isLiveMode || _isAnalyzing)
                         AnimatedBuilder(
                           animation: _radarController,
                           builder: (context, child) {
@@ -801,7 +920,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                                 child: CircularProgressIndicator(
                                   value: _autoScanController!.value,
                                   strokeWidth: 4,
-                                  color: Colors.orange,
+                                  color: _primaryBlue,
                                   backgroundColor: Colors.white24,
                                 ),
                               );
@@ -811,52 +930,68 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                     ],
                   )
                 : const Center(
-                    child: CircularProgressIndicator(color: Colors.orange),
+                    child: CircularProgressIndicator(color: _primaryBlue),
                   ),
           ),
           // The web guide box is the crop boundary. On mobile it is only
           // a framing aid because the complete camera frame is analyzed.
           if (!_isLiveMode)
             Positioned.fill(
-              child: Container(
-                color: Colors.black.withOpacity(0.35),
-                child: Center(
-                  child: FractionallySizedBox(
-                    widthFactor: _isMobilePlatform
-                        ? _mobileCropWidth
-                        : _alignBoxFactor,
-                    heightFactor: _isMobilePlatform
-                        ? _mobileCropHeight
-                        : _alignBoxFactor,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Colors.orange.withOpacity(0.8),
-                          width: 2,
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Text(
-                            _isMobilePlatform
-                                ? "Keep the whole tool in view"
-                                : "Align Tool Here",
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white54,
-                              fontSize: 14,
-                            ),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.biggest;
+        final boxW = size.width * _boxWFactor;
+        final boxH = size.height * _boxHFactor;
+        final box = Rect.fromCenter(
+          center: Offset(size.width / 2, size.height / 2),
+          width: boxW,
+          height: boxH,
+        );
+        return Stack(
+          children: [
+            if (!kIsWeb)
+                        ClipPath(
+                          clipper: OutsideBoxClipper(box),
+                          child: BackdropFilter(
+                            filter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                            child: Container(color: Colors.transparent),
                           ),
                         ),
-                      ),
+                      CustomPaint(painter: ScanFramePainter(box), size: size),
+            Positioned(
+              left: box.left,
+              width: box.width,
+              top: box.bottom - 48,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: _primaryBlue.withValues(alpha: 0.6)),
+                  ),
+                  child: Text(
+                    _isMobilePlatform
+                        ? "Keep the whole tool in view"
+                        : "ALIGN TOOL HERE",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.0,
                     ),
                   ),
                 ),
               ),
             ),
+          ],
+        );
+      },
+    ),
+  ),
+    if (_isAnalyzing) _buildAnalyzingOverlay(),
           Positioned(
             top: 40,
             left: 16,
@@ -895,22 +1030,6 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                         await _setCamera(_selectedCameraIndex);
                       },
                     ),
-                    if (kDebugMode)
-                      IconButton(
-                        icon: const Icon(LucideIcons.bug, color: Colors.white),
-                        onPressed: () {
-                          final img = TfliteService.lastDebugImage;
-                          if (img == null) return;
-                          showDialog(
-                            context: context,
-                            builder: (_) => Dialog(
-                              child: InteractiveViewer(
-                                child: Image.memory(img),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
                   ],
                 ),
               ],
@@ -921,19 +1040,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
             left: 0,
             right: 0,
             child: _isAnalyzing
-                ? Column(
-                    children: const [
-                      CircularProgressIndicator(color: Colors.orange),
-                      SizedBox(height: 16),
-                      Text(
-                        "Analyzing tool...",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  )
+                ? const SizedBox.shrink() // the overlay below handles this state
                 : (_isLiveMode
                       ? Center(
                           child: Container(
@@ -954,26 +1061,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                             ),
                           ),
                         )
-                      : Center(
-                          child: ElevatedButton.icon(
-                            onPressed: _isCameraInitialized
-                                ? _captureAndAnalyze
-                                : null,
-                            icon: const Icon(LucideIcons.scanLine),
-                            label: const Text("Scan Object"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 32,
-                                vertical: 16,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                            ),
-                          ),
-                        )),
+                      : _buildScanButton()),
           ),
         ],
       ),
@@ -981,11 +1069,182 @@ class _VisualSearchPageState extends State<VisualSearchPage>
   }
 }
 
-// --- Scan-line sweep. `vertical: true` sweeps top-to-bottom (a
-// horizontal line) — used on phones. `vertical: false` (default) sweeps
-// left-to-right (a vertical line) — used on web/desktop. ---
+class ScanFramePainter extends CustomPainter {
+  final Rect box;
+  ScanFramePainter(this.box);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(box, const Radius.circular(16));
+
+    // Full-screen rect + box rect with even-odd fill = dim everywhere
+    // EXCEPT inside the box (the box stays 100% untouched).
+    final dim = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addRRect(rrect);
+    canvas.drawPath(dim, Paint()..color = Colors.black.withOpacity(0.6));
+
+    // Thin border
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = _primaryBlue.withValues(alpha: 0.6),
+    );
+
+    // Bold corner brackets
+    final p = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
+      ..color = _primaryBlue;
+    const len = 28.0;
+    final l = box.left, t = box.top, r = box.right, b = box.bottom;
+    canvas.drawPath(
+      Path()
+        ..moveTo(l, t + len)
+        ..lineTo(l, t)
+        ..lineTo(l + len, t),
+      p,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(r - len, t)
+        ..lineTo(r, t)
+        ..lineTo(r, t + len),
+      p,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(l, b - len)
+        ..lineTo(l, b)
+        ..lineTo(l + len, b),
+      p,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(r - len, b)
+        ..lineTo(r, b)
+        ..lineTo(r, b - len),
+      p,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant ScanFramePainter old) => old.box != box;
+}
+
+Map<String, dynamic> processImageInBackground(Map<String, dynamic> params) {
+  final decoded = img.decodeImage(params['bytes'] as Uint8List)!;
+
+  final cropped = img.copyCrop(
+    decoded,
+    x: (decoded.width * (params['cropLeft'] as double)).round(),
+    y: (decoded.height * (params['cropTop'] as double)).round(),
+    width: (decoded.width * (params['cropWidth'] as double)).round(),
+    height: (decoded.height * (params['cropHeight'] as double)).round(),
+  );
+
+  // One resize to fit 640x640. Everything below derives from this.
+  final ratio = math.min(640 / cropped.width, 640 / cropped.height);
+  final fitted = img.copyResize(
+    cropped,
+    width: math.max(1, (cropped.width * ratio).round()),
+    height: math.max(1, (cropped.height * ratio).round()),
+  );
+
+  // Spatial histogram for the cache (same logic as before).
+  final small = img.copyResize(fitted, width: 32, height: 32);
+  final bins = List<double>.filled(192, 0.0);
+  final ringCounts = List<int>.filled(3, 0);
+  final cx = small.width / 2;
+  final cy = small.height / 2;
+  final maxRadius = math.sqrt(cx * cx + cy * cy);
+
+  for (int y = 0; y < small.height; y++) {
+    for (int x = 0; x < small.width; x++) {
+      final p = small.getPixel(x, y);
+      final r = (p.r / 64).floor().clamp(0, 3);
+      final g = (p.g / 64).floor().clamp(0, 3);
+      final b = (p.b / 64).floor().clamp(0, 3);
+      final colorIndex = (r << 4) | (g << 2) | b;
+
+      final dx = x - cx;
+      final dy = y - cy;
+      final nr = math.sqrt(dx * dx + dy * dy) / maxRadius;
+      final ring = nr < 0.33 ? 0 : (nr < 0.66 ? 1 : 2);
+
+      bins[ring * 64 + colorIndex]++;
+      ringCounts[ring]++;
+    }
+  }
+  for (int ring = 0; ring < 3; ring++) {
+    if (ringCounts[ring] == 0) continue;
+    for (int c = 0; c < 64; c++) {
+      bins[ring * 64 + c] /= ringCounts[ring];
+    }
+  }
+
+  // Gemini image, derived from the already-small image.
+  final apiBytes = img.encodeJpg(_resizeToMaxEdge(fitted, 400), quality: 60);
+
+  return {
+    'histogram': bins,
+    'modelInput': _toModelInput(fitted),
+    'apiBytes': apiBytes,
+  };
+}
+
+/// Letterbox (gray 114 padding) + NCHW float tensor, built off the UI thread.
+Float32List _toModelInput(img.Image src) {
+  const size = 640;
+  const plane = size * size;
+  final input = Float32List(3 * plane)..fillRange(0, 3 * plane, 114 / 255.0);
+
+  final padX = ((size - src.width) / 2).round();
+  final padY = ((size - src.height) / 2).round();
+
+  for (int y = 0; y < src.height; y++) {
+    for (int x = 0; x < src.width; x++) {
+      final p = src.getPixel(x, y);
+      final pos = (y + padY) * size + (x + padX);
+      input[pos] = p.r / 255.0;
+      input[plane + pos] = p.g / 255.0;
+      input[2 * plane + pos] = p.b / 255.0;
+    }
+  }
+  return input;
+}
+
+img.Image _resizeToMaxEdge(img.Image source, int maxEdge) {
+  final longestEdge = math.max(source.width, source.height);
+  if (longestEdge <= maxEdge) return source;
+
+  final scale = maxEdge / longestEdge;
+  return img.copyResize(
+    source,
+    width: math.max(1, (source.width * scale).round()),
+    height: math.max(1, (source.height * scale).round()),
+  );
+}
+
+class OutsideBoxClipper extends CustomClipper<Path> {
+  final Rect box;
+  OutsideBoxClipper(this.box);
+
+  @override
+  Path getClip(Size size) => Path()
+    ..fillType = PathFillType.evenOdd
+    ..addRect(Offset.zero & size)
+    ..addRRect(RRect.fromRectAndRadius(box, const Radius.circular(16)));
+
+  @override
+  bool shouldReclip(covariant OutsideBoxClipper old) => old.box != box;
+}
 class ScanLinePainter extends CustomPainter {
-  final double progress; // 0.0 -> 1.0, loops via AnimationController.repeat()
+  final double progress;
   final bool vertical;
   ScanLinePainter(this.progress, {this.vertical = false});
 
@@ -1012,10 +1271,8 @@ class ScanLinePainter extends CustomPainter {
     }
   }
 
-  // Sweeps a vertical line left -> right.
   void _paintVerticalSweep(Canvas canvas, Size size) {
     final x = progress * size.width;
-
     const trailWidth = 140.0;
     final trailLeft = (x - trailWidth).clamp(0.0, size.width);
     final trailRect = Rect.fromLTRB(trailLeft, 0, x, size.height);
@@ -1037,10 +1294,8 @@ class ScanLinePainter extends CustomPainter {
     canvas.drawLine(Offset(x, 0), Offset(x, size.height), linePaint);
   }
 
-  // Sweeps a horizontal line top -> bottom.
   void _paintHorizontalSweep(Canvas canvas, Size size) {
     final y = progress * size.height;
-
     const trailHeight = 140.0;
     final trailTop = (y - trailHeight).clamp(0.0, size.height);
     final trailRect = Rect.fromLTRB(0, trailTop, size.width, y);
@@ -1065,92 +1320,6 @@ class ScanLinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant ScanLinePainter oldDelegate) {
-    return oldDelegate.progress != progress || oldDelegate.vertical != vertical;
-  }
-}
-
-// --- Background image processing for the capture+analyze flow ---
-Map<String, dynamic> processImageInBackground(Map<String, dynamic> params) {
-  final bytes = params['bytes'] as Uint8List;
-  final originalImage = img.decodeImage(bytes)!;
-
-  final cropLeft = params['cropLeft'] as double;
-  final cropTop = params['cropTop'] as double;
-  final cropWidthFrac = params['cropWidth'] as double;
-  final cropHeightFrac = params['cropHeight'] as double;
-
-  final cropX = (originalImage.width * cropLeft).round();
-  final cropY = (originalImage.height * cropTop).round();
-  final cropWidth = (originalImage.width * cropWidthFrac).round();
-  final cropHeight = (originalImage.height * cropHeightFrac).round();
-
-  img.Image croppedImage = img.copyCrop(
-    originalImage,
-    x: cropX,
-    y: cropY,
-    width: cropWidth,
-    height: cropHeight,
-  );
-
-  // Generate Spatial Histogram for Caching (unchanged logic, just reads
-  // from croppedImage as before)
-  final small = img.copyResize(croppedImage, width: 32, height: 32);
-  final List<double> bins = List.filled(192, 0.0);
-  final List<int> ringCounts = List.filled(3, 0);
-
-  final cx = small.width / 2;
-  final cy = small.height / 2;
-  final maxRadius = math.sqrt(cx * cx + cy * cy);
-
-  for (int y = 0; y < small.height; y++) {
-    for (int x = 0; x < small.width; x++) {
-      final p = small.getPixel(x, y);
-      int r = (p.r / 64).floor().clamp(0, 3);
-      int g = (p.g / 64).floor().clamp(0, 3);
-      int b = (p.b / 64).floor().clamp(0, 3);
-      int colorIndex = (r << 4) | (g << 2) | b;
-
-      final dx = x - cx;
-      final dy = y - cy;
-      final normalizedRadius = math.sqrt(dx * dx + dy * dy) / maxRadius;
-      final ring = normalizedRadius < 0.33
-          ? 0
-          : (normalizedRadius < 0.66 ? 1 : 2);
-
-      bins[ring * 64 + colorIndex]++;
-      ringCounts[ring]++;
-    }
-  }
-
-  for (int ring = 0; ring < 3; ring++) {
-    if (ringCounts[ring] == 0) continue;
-    for (int c = 0; c < 64; c++) {
-      bins[ring * 64 + c] /= ringCounts[ring];
-    }
-  }
-
-  // Bound the longest edge for predictable preprocessing cost in the model,
-  // while retaining enough detail for its 640px input.
-  final forLocal = _resizeToMaxEdge(croppedImage, 640);
-  final localBytes = img.encodeJpg(forLocal, quality: 95);
-
-  // Gemini only needs enough detail to identify the object, so its fallback
-  // image is intentionally smaller and more compressed.
-  final forApi = _resizeToMaxEdge(croppedImage, 400);
-  final apiBytes = img.encodeJpg(forApi, quality: 60);
-
-  return {'histogram': bins, 'localBytes': localBytes, 'apiBytes': apiBytes};
-}
-
-img.Image _resizeToMaxEdge(img.Image source, int maxEdge) {
-  final longestEdge = math.max(source.width, source.height);
-  if (longestEdge <= maxEdge) return source;
-
-  final scale = maxEdge / longestEdge;
-  return img.copyResize(
-    source,
-    width: math.max(1, (source.width * scale).round()),
-    height: math.max(1, (source.height * scale).round()),
-  );
+  bool shouldRepaint(covariant ScanLinePainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.vertical != vertical;
 }

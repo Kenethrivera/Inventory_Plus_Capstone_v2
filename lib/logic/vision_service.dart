@@ -1,74 +1,84 @@
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'scan_cache_service.dart';
 import 'tflite_service.dart';
 import 'gemini_service.dart';
+import 'scan_logger.dart';
 
 class VisionService {
   static const double _localModelThreshold = 0.70;
   static const double _nullSceneThreshold = 0.65;
 
   static Future<Map<String, dynamic>?> processHardwareScan({
-    required Uint8List rawBytes,
-    required Uint8List localBytes,
+    required Float32List modelInput,
     required Uint8List apiBytes,
     required List<double> histogram,
+    ScanLogger? logger,
   }) async {
-    // LAYER 1: CACHE FIRST
-    final cachedResult = ScanCacheService.findMatch(histogram);
-    if (cachedResult != null) {
-      return cachedResult;
+    final activeLogger = logger ?? ScanLogger.current;
+
+    // 1. Cache
+    final cached = ScanCacheService.findMatch(histogram);
+    if (cached != null) {
+      activeLogger?.log('CACHE HIT -> ${cached['item_name'] ?? 'cached'}');
+      activeLogger?.log('END (source: cache)');
+      return cached;
     }
+    activeLogger?.log('CACHE MISS');
 
-    // LAYER 2: LOCAL TFLITE DETECTOR
-    final localResult = await TfliteService.detectObject(localBytes);
+    // 2. Local YOLO
+    final local = await TfliteService.detectObject(modelInput);
+    if (local != null) {
+      final confPercent = (local.confidence * 100).toStringAsFixed(1);
+      activeLogger?.log('LOCAL MODEL -> ${local.label} ($confPercent%)');
 
-    if (localResult != null) {
-      if (localResult.label == 'background_null' &&
-          localResult.confidence >= _nullSceneThreshold) {
-        debugPrint(
-          '[VisionService] Empty Scene Detected locally (${localResult.confidence}).',
-        );
-        return {
+      final isNull = local.label == 'background_null';
+
+      if (isNull && local.confidence >= _nullSceneThreshold) {
+        final result = {
           'is_hardware': false,
           'item_name': 'Background',
           'error_message': 'No hardware tool detected in scene.',
           'source': 'local_model',
         };
+        activeLogger?.log('END (source: local_model)');
+        return result;
       }
 
-      if (localResult.confidence >= _localModelThreshold &&
-          localResult.label != 'background_null') {
-        debugPrint(
-          '[VisionService] Local Hit: ${localResult.label} (${localResult.confidence})',
-        );
-        final formattedResult = {
+      if (!isNull && local.confidence >= _localModelThreshold) {
+        final result = {
           'is_hardware': true,
-          'item_name': _formatLabel(localResult.label),
+          'item_name': _formatLabel(local.label),
           'source': 'local_model',
         };
-        ScanCacheService.add(histogram, formattedResult);
-        return formattedResult;
+        ScanCacheService.add(histogram, result);
+        activeLogger?.log('END (source: local_model)');
+        return result;
       }
+    } else {
+      activeLogger?.log('LOCAL MODEL -> null');
     }
 
-    // LAYER 3: CLOUD FALLBACK
-    debugPrint(
-      '[VisionService] Low local confidence or unknown tool. Routing to Gemini API...',
-    );
-    final cloudResult = await GeminiService.scanHardwareObject(apiBytes);
-    
-    if (cloudResult != null) {
-      cloudResult['source'] = 'gemini_cloud';
-      ScanCacheService.add(histogram, cloudResult);
+    activeLogger?.log('LOCAL CONFIDENCE TOO LOW -> falling back to Gemini');
+
+    // 3. Gemini
+    activeLogger?.log('GEMINI START');
+    final cloud = await GeminiService.scanHardwareObject(apiBytes);
+    if (cloud != null) {
+      cloud['source'] = 'gemini_cloud';
+      ScanCacheService.add(histogram, cloud);
+      activeLogger?.log('GEMINI END (result: ${jsonEncode(cloud)})');
+      activeLogger?.log('END (source: gemini)');
+    } else {
+      activeLogger?.log('GEMINI END (result: null)');
+      activeLogger?.log('END (source: gemini)');
     }
-
-    return cloudResult;
+    return cloud;
   }
 
-  static String _formatLabel(String rawLabel) {
-    return rawLabel
-        .split('_')
-        .map((word) => word[0].toUpperCase() + word.substring(1))
-        .join(' ');
-  }
+  static String _formatLabel(String raw) => raw
+      .split('_')
+      .where((w) => w.isNotEmpty)
+      .map((w) => w[0].toUpperCase() + w.substring(1))
+      .join(' ');
 }
