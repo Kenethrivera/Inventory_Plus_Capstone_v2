@@ -602,12 +602,12 @@ class _VisualSearchPageState extends State<VisualSearchPage>
               mainAxisSize: MainAxisSize.min,
               children: [
                 SizedBox(
-                  width: 72,
-                  height: 72,
+                  width: 60,
+                  height: 60,
                   child: CircularProgressIndicator(
                     color: _primaryBlue,
                     backgroundColor: Colors.white12,
-                    strokeWidth: 6,
+                    strokeWidth: 4, // Thinner stroke for a lighter feel
                   ),
                 ),
                 SizedBox(height: 20),
@@ -621,7 +621,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                 ),
                 SizedBox(height: 6),
                 Text(
-                  "Hold still for a moment",
+                  "Processing image data...",
                   style: TextStyle(color: Colors.white60, fontSize: 13),
                 ),
               ],
@@ -631,6 +631,8 @@ class _VisualSearchPageState extends State<VisualSearchPage>
       ),
     );
   }
+  
+  
 
   Future<void> _showScanResultModal({
     required String detectedName,
@@ -896,19 +898,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                         key: _previewBoundaryKey,
                         child: _buildFullScreenCameraPreview(),
                       ),
-                      if (_isLiveMode || _isAnalyzing)
-                        AnimatedBuilder(
-                          animation: _radarController,
-                          builder: (context, child) {
-                            return CustomPaint(
-                              painter: ScanLinePainter(
-                                _radarController.value,
-                                vertical: _isMobilePlatform,
-                              ),
-                              size: Size.infinite,
-                            );
-                          },
-                        ),
+                      
                       if (_isLiveMode && _isCountingDown)
                         Center(
                           child: AnimatedBuilder(
