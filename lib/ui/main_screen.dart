@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:inventory_plus/notifications/models/app_notification.dart';
@@ -31,6 +33,7 @@ import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 import '../services/staff_presence_service.dart';
 import 'widgets/active_staff_button.dart';
+import '../services/store_access_service.dart';
 
 class MainScreen extends StatefulWidget {
   final InventoryController controller;
@@ -56,6 +59,13 @@ class _MainScreenState extends State<MainScreen> {
   bool _isCheckingStockAlerts = false;
   bool _isCheckingExportReminders = false;
   StaffPresenceService? _staffPresenceService;
+  Timer? _storeAccessEndTimer;
+  bool _isForcingStoreLogout = false;
+
+  Timer? _storeLogoutCountdownTimer;
+  int _storeLogoutRemainingSeconds = 30;
+  bool _isStoreLogoutWarningVisible = false;
+  BuildContext? _storeLogoutDialogContext;
 
   static const Color _primaryBlue = Color(0xFF2563EB);
   static const Color _sidebarBg = Colors.white;
@@ -91,15 +101,17 @@ class _MainScreenState extends State<MainScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _startStaffPresence();
+      _scheduleStoreAccessEndLogout();
     });
   }
 
   @override
   void dispose() {
+    _storeAccessEndTimer?.cancel();
+    _storeLogoutCountdownTimer?.cancel();
     _notificationController?.dispose();
     _staffPresenceService?.stop(logoutReason: 'app_closed');
     super.dispose();
-
   }
 
   String _currentModuleName() {
@@ -152,6 +164,339 @@ class _MainScreenState extends State<MainScreen> {
       default:
         return 'Main Screen';
     }
+  }
+
+  Future<void> _scheduleStoreAccessEndLogout() async {
+    if (_isForcingStoreLogout) return;
+
+    final locationId = widget.controller.activeLocationId;
+    final role = widget.controller.currentUserRole?.toLowerCase();
+
+    if (locationId == null || locationId.isEmpty) return;
+    if (role == null || role.isEmpty) return;
+
+    final accessService = StoreAccessService(
+      supabase: widget.controller.supabase,
+      locationId: locationId,
+    );
+
+    final settings = await accessService.fetchSettings();
+
+    debugPrint('STORE ACCESS CHECK: role=$role');
+    debugPrint('OPENING: ${settings.openingTime}');
+    debugPrint('CLOSING: ${settings.closingTime}');
+    debugPrint('AFTER ALLOWANCE: ${settings.staffAccessAfterMinutes} minutes');
+
+    if (!settings.restrictStaffLogin) {
+      debugPrint('STORE ACCESS: restriction is OFF');
+      return;
+    }
+
+    if (role == 'admin' && settings.allowAdminAnytime) {
+      debugPrint('STORE ACCESS: admin allowed anytime');
+      return;
+    }
+
+    final now = DateTime.now();
+    final endTime = accessService.accessEndDateTime(settings, now: now);
+    final remaining = endTime.difference(now);
+
+    debugPrint('NOW: $now');
+    debugPrint('ACCESS ENDS AT: $endTime');
+    debugPrint('REMAINING: ${remaining.inSeconds} seconds');
+
+    _storeAccessEndTimer?.cancel();
+
+    if (remaining.isNegative || remaining.inSeconds <= 0) {
+      debugPrint('STORE ACCESS: expired already, forcing logout');
+      await _forceLogoutDueToStoreHours();
+      return;
+    }
+
+    _storeAccessEndTimer = Timer(remaining, () async {
+      debugPrint('STORE ACCESS: timer fired, rechecking access');
+
+      final latestResult = await accessService.canLogin(role: role);
+
+      if (latestResult.allowed) {
+        debugPrint('STORE ACCESS: access was extended, rescheduling');
+        _scheduleStoreAccessEndLogout();
+        return;
+      }
+
+      debugPrint('STORE ACCESS: access expired, forcing logout');
+      _forceLogoutDueToStoreHours();
+    });
+  }
+
+  Future<void> _forceLogoutDueToStoreHours() async {
+    if (_isForcingStoreLogout) return;
+
+    _isForcingStoreLogout = true;
+    _storeLogoutRemainingSeconds = 30;
+
+    _showStoreLogoutWarningModal();
+    _startStoreLogoutCountdown();
+  }
+
+  void _startStoreLogoutCountdown() {
+    _storeLogoutCountdownTimer?.cancel();
+
+    _storeLogoutCountdownTimer = Timer.periodic(const Duration(seconds: 1), (
+      timer,
+    ) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_storeLogoutRemainingSeconds <= 1) {
+        timer.cancel();
+        _completeForcedStoreLogout();
+        return;
+      }
+
+      setState(() {
+        _storeLogoutRemainingSeconds--;
+      });
+    });
+  }
+
+  void _showStoreLogoutWarningModal() {
+    if (!mounted) return;
+    if (_isStoreLogoutWarningVisible) return;
+
+    _isStoreLogoutWarningVisible = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        _storeLogoutDialogContext = dialogContext;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Timer.periodic(const Duration(seconds: 1), (timer) {
+              if (!_isStoreLogoutWarningVisible ||
+                  !mounted ||
+                  _storeLogoutDialogContext == null) {
+                timer.cancel();
+                return;
+              }
+
+              setDialogState(() {});
+            });
+
+            final progress = _storeLogoutRemainingSeconds / 30;
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Container(
+                width: 420,
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.14),
+                      blurRadius: 28,
+                      offset: const Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: _primaryBlue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            LucideIcons.clockAlert,
+                            color: _primaryBlue,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Shift access ended',
+                            style: TextStyle(
+                              color: _darkText,
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                              fontFamily: _fontFam,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 18,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'Automatic logout in',
+                            style: TextStyle(
+                              color: _inactiveText,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: _fontFam,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '$_storeLogoutRemainingSeconds',
+                            style: const TextStyle(
+                              color: _primaryBlue,
+                              fontSize: 44,
+                              fontWeight: FontWeight.w900,
+                              fontFamily: _fontFam,
+                              height: 1,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'seconds',
+                            style: TextStyle(
+                              color: _inactiveText,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: _fontFam,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              value: progress.clamp(0.0, 1.0),
+                              minHeight: 7,
+                              backgroundColor: const Color(0xFFE5E7EB),
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                _primaryBlue,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              _isStoreLogoutWarningVisible = false;
+                              _storeLogoutDialogContext = null;
+
+                              if (Navigator.canPop(dialogContext)) {
+                                Navigator.pop(dialogContext);
+                              }
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _darkText,
+                              side: const BorderSide(color: Color(0xFFE5E7EB)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            child: const Text(
+                              'Wait',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontFamily: _fontFam,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _completeForcedStoreLogout,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _primaryBlue,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            child: const Text(
+                              'Log out now',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontFamily: _fontFam,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).then((_) {
+      _isStoreLogoutWarningVisible = false;
+      _storeLogoutDialogContext = null;
+    });
+  }
+
+  Future<void> _completeForcedStoreLogout() async {
+    _storeLogoutCountdownTimer?.cancel();
+    _storeLogoutCountdownTimer = null;
+
+    if (_storeLogoutDialogContext != null) {
+      final dialogContext = _storeLogoutDialogContext!;
+
+      if (Navigator.canPop(dialogContext)) {
+        Navigator.pop(dialogContext);
+      }
+
+      _storeLogoutDialogContext = null;
+    }
+
+    await _staffPresenceService?.stop(logoutReason: 'store_hours_expired');
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+
+    if (!mounted) return;
+
+    AppToast.error(
+      context,
+      'Store access time has ended. You have been logged out.',
+    );
+
+    Navigator.pushReplacementNamed(context, '/login');
   }
 
   Future<void> _startStaffPresence() async {

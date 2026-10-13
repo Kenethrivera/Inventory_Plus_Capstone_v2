@@ -256,6 +256,69 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     final selected = await showTimePicker(
       context: context,
       initialTime: isOpening ? _openingTime : _closingTime,
+      helpText: isOpening ? 'Opening Time' : 'Closing Time',
+      cancelText: 'Cancel',
+      confirmText: 'Apply',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: _primaryBlue,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Color(0xFF0F172A),
+            ),
+            dialogTheme: DialogThemeData(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+            ),
+            timePickerTheme: TimePickerThemeData(
+              backgroundColor: Colors.white,
+              hourMinuteShape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              hourMinuteColor: const Color(0xFFF8FAFC),
+              hourMinuteTextColor: const Color(0xFF0F172A),
+              dialHandColor: _primaryBlue,
+              dialBackgroundColor: const Color(0xFFF1F5F9),
+              entryModeIconColor: _primaryBlue,
+              dayPeriodColor: WidgetStateColor.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return _primaryBlue;
+                }
+                return const Color(0xFFF8FAFC);
+              }),
+              dayPeriodTextColor: WidgetStateColor.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return Colors.white;
+                }
+                return const Color(0xFF0F172A);
+              }),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              helpTextStyle: const TextStyle(
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+                fontFamily: _fontFam,
+              ),
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: _primaryBlue,
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontFamily: _fontFam,
+                ),
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (selected == null) return;
@@ -268,7 +331,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       }
     });
   }
-
+  
   TimeOfDay _parseClockTime(String value) {
     final parts = value.split(':');
 

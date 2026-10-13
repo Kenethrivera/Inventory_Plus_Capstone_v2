@@ -51,28 +51,51 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
 
   Future<void> _loadActiveStaff() async {
     try {
-      final cutoff = DateTime.now()
-          .toUtc()
-          .subtract(const Duration(minutes: 2))
-          .toIso8601String();
+      final staffResponse = await widget.supabase
+          .from('profiles')
+          .select('id, name, role, location_id')
+          .eq('location_id', widget.locationId)
+          .inFilter('role', ['staff', 'helper'])
+          .order('role', ascending: true)
+          .order('name', ascending: true);
 
-      final response = await widget.supabase
+      final presenceResponse = await widget.supabase
           .from('staff_presence')
           .select()
-          .eq('location_id', widget.locationId)
-          .eq('is_online', true)
-          .gte('last_seen_at', cutoff)
-          .order('last_seen_at', ascending: false);
+          .eq('location_id', widget.locationId);
+
+      final staffRows = List<Map<String, dynamic>>.from(staffResponse);
+      final presenceRows = List<Map<String, dynamic>>.from(presenceResponse);
+
+      final presenceByUserId = {
+        for (final row in presenceRows) row['user_id'].toString(): row,
+      };
+
+      final merged = staffRows.map((staff) {
+        final userId = staff['id'].toString();
+        final presence = presenceByUserId[userId];
+
+        return {
+          'user_id': userId,
+          'user_name': staff['name']?.toString() ?? 'Unknown Staff',
+          'user_role': staff['role']?.toString() ?? 'staff',
+          'current_module': presence?['current_module'],
+          'is_online': presence?['is_online'] == true,
+          'last_seen_at': presence?['last_seen_at'],
+          'logged_in_at': presence?['logged_in_at'],
+          'logged_out_at': presence?['logged_out_at'],
+        };
+      }).toList();
 
       if (!mounted) return;
 
       setState(() {
-        _activeStaff = List<Map<String, dynamic>>.from(response);
+        _activeStaff = merged;
         _isLoading = false;
       });
 
       _overlayEntry?.markNeedsBuild();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
 
       setState(() {
@@ -98,7 +121,9 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
     }).toList();
   }
 
-  int get _activeCount => _cashiers.length + _helpers.length;
+  int get _activeCount {
+    return _activeStaff.where(_isActuallyActive).length;
+  }
 
   void _toggleOverlay() {
     if (_overlayEntry == null) {
@@ -317,7 +342,7 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
-                users.length.toString(),
+                users.where(_isActuallyActive).length.toString(),
                 style: const TextStyle(
                   color: _primaryBlue,
                   fontSize: 11,
@@ -357,7 +382,8 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
     final name = user['user_name']?.toString() ?? 'Unknown Staff';
     final role = user['user_role']?.toString().toUpperCase() ?? 'STAFF';
     final module = user['current_module']?.toString() ?? 'In system';
-    final lastSeenText = _lastSeenText(user['last_seen_at']);
+    final isActuallyActive = _isActuallyActive(user);
+    final lastSeenText = _lastSeenText(user['last_seen_at'], isActuallyActive);
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
 
     return Container(
@@ -385,19 +411,20 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
                   ),
                 ),
               ),
-              Positioned(
-                right: -1,
-                bottom: -1,
-                child: Container(
-                  width: 11,
-                  height: 11,
-                  decoration: BoxDecoration(
-                    color: Colors.green,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
+              if (isActuallyActive)
+                Positioned(
+                  right: -1,
+                  bottom: -1,
+                  child: Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      color: Colors.green,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
           const SizedBox(width: 12),
@@ -459,19 +486,52 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
     );
   }
 
-  String _lastSeenText(dynamic value) {
-    if (value == null) return 'Online';
+  bool _isActuallyActive(Map<String, dynamic> user) {
+    if (user['is_online'] != true) return false;
+
+    final value = user['last_seen_at'];
+    if (value == null) return false;
 
     try {
       final date = DateTime.parse(value.toString()).toLocal();
       final diff = DateTime.now().difference(date);
 
-      if (diff.inSeconds < 60) return 'Now';
-      if (diff.inMinutes < 2) return '${diff.inMinutes}m ago';
-
-      return 'Online';
+      return diff.inMinutes < 2;
     } catch (_) {
-      return 'Online';
+      return false;
     }
+  }
+
+  String _lastSeenText(dynamic value, bool isOnline) {
+    if (value == null) {
+      return 'Never active';
+    }
+
+    try {
+      final date = DateTime.parse(value.toString()).toLocal();
+      final diff = DateTime.now().difference(date);
+
+      if (isOnline && diff.inSeconds < 60) {
+        return 'Active now';
+      }
+
+      if (isOnline && diff.inMinutes < 2) {
+        return '${diff.inMinutes}m ago';
+      }
+
+      return 'Last seen ${_formatClockTime(date)}';
+    } catch (_) {
+      return isOnline ? 'Active now' : 'Last seen unknown';
+    }
+  }
+
+  String _formatClockTime(DateTime date) {
+    final hour = date.hour;
+    final minute = date.minute.toString().padLeft(2, '0');
+
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    final hour12 = hour % 12 == 0 ? 12 : hour % 12;
+
+    return '$hour12:$minute $suffix';
   }
 }

@@ -195,6 +195,43 @@ class StoreAccessService {
 
     return '$hour12:${minute.toString().padLeft(2, '0')} $suffix';
   }
+
+  DateTime accessEndDateTime(
+  StoreAccessSettings settings, {
+  DateTime? now,
+}) {
+  final current = now ?? DateTime.now();
+  final close = _parseTimeOfDay(settings.closingTime);
+
+  final closingDateTime = DateTime(
+    current.year,
+    current.month,
+    current.day,
+    close.hour,
+    close.minute,
+  );
+
+  return closingDateTime.add(
+    Duration(minutes: settings.staffAccessAfterMinutes),
+  );
+}
+DateTime accessStartDateTime(StoreAccessSettings settings, {DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final open = _parseTimeOfDay(settings.openingTime);
+
+    final openingDateTime = DateTime(
+      current.year,
+      current.month,
+      current.day,
+      open.hour,
+      open.minute,
+    );
+
+    return openingDateTime.subtract(
+      Duration(minutes: settings.staffAccessBeforeMinutes),
+    );
+  }
+
 }
 
 class _ClockTime {
