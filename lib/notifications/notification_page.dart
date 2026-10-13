@@ -63,7 +63,7 @@ class _NotificationPageState extends State<NotificationPage> {
         ? (screen.width * 0.46).clamp(430.0, 560.0)
         : screen.width;
 
-    final panelHeight = isDesktop ? screen.height - 36 : screen.height * 0.92;
+    final panelHeight = isDesktop ? screen.height - 120 : screen.height * 0.92;
 
     return AnimatedBuilder(
       animation: widget.controller,
@@ -77,7 +77,7 @@ class _NotificationPageState extends State<NotificationPage> {
           height: panelHeight,
           decoration: BoxDecoration(
             color: _softBg,
-            borderRadius: BorderRadius.circular(isDesktop ? 22 : 24),
+            borderRadius: BorderRadius.circular(isDesktop ? 18 : 24),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.14),
@@ -113,11 +113,8 @@ class _NotificationPageState extends State<NotificationPage> {
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 14, 12),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 18, 14, 10),
+      decoration: const BoxDecoration(color: Colors.white),
       child: Row(
         children: [
           const Expanded(
@@ -154,21 +151,22 @@ class _NotificationPageState extends State<NotificationPage> {
   }
 
   Widget _buildFilters() {
-    final filters = [
-      NotificationFilter.all,
-      NotificationFilter.unread,
-      NotificationFilter.orders,
-      NotificationFilter.stock,
-      NotificationFilter.reports,
-      NotificationFilter.transactions,
-      NotificationFilter.system,
-    ];
+    final filters = _availableFilters(widget.controller.notifications);
+
+    if (!filters.contains(_filter)) {
+      _filter = NotificationFilter.all;
+    }
 
     return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1)),
+      ),
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
         child: Row(
           children: filters.map((filter) {
             final selected = _filter == filter;
@@ -189,10 +187,10 @@ class _NotificationPageState extends State<NotificationPage> {
                     vertical: 9,
                   ),
                   decoration: BoxDecoration(
-                    color: selected ? _primaryBlue : const Color(0xFFF1F5F9),
+                    color: selected ? _primaryBlue : const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                      color: selected ? _primaryBlue : const Color(0xFFE5E7EB),
+                      color: selected ? _primaryBlue : const Color(0xFFE2E8F0),
                     ),
                   ),
                   child: Text(
@@ -211,6 +209,51 @@ class _NotificationPageState extends State<NotificationPage> {
         ),
       ),
     );
+  }
+
+  List<NotificationFilter> _availableFilters(
+    List<AppNotification> notifications,
+  ) {
+    final filters = <NotificationFilter>[NotificationFilter.all];
+
+    final hasUnread = notifications.any((n) => !n.isRead);
+
+    final hasOrders = notifications.any((n) {
+      return n.type == NotificationType.newOrder ||
+          n.type == NotificationType.orderPrepared ||
+          n.type == NotificationType.orderCancelled;
+    });
+
+    final hasStock = notifications.any((n) {
+      return n.type == NotificationType.stockAlert ||
+          n.type == NotificationType.lowStock ||
+          n.type == NotificationType.criticalStock ||
+          n.type == NotificationType.deadStock;
+    });
+
+    final hasReports = notifications.any((n) {
+      return n.type == NotificationType.exportReminder;
+    });
+
+    final hasTransactions = notifications.any((n) {
+      return n.type == NotificationType.transaction;
+    });
+
+    final hasSystem = notifications.any((n) {
+      return n.type == NotificationType.system ||
+          n.type == NotificationType.inventoryAdded ||
+          n.type == NotificationType.inventoryUpdated ||
+          n.type == NotificationType.inventoryDeleted;
+    });
+
+    if (hasUnread) filters.add(NotificationFilter.unread);
+    if (hasOrders) filters.add(NotificationFilter.orders);
+    if (hasStock) filters.add(NotificationFilter.stock);
+    if (hasReports) filters.add(NotificationFilter.reports);
+    if (hasTransactions) filters.add(NotificationFilter.transactions);
+    if (hasSystem) filters.add(NotificationFilter.system);
+
+    return filters;
   }
 
   Widget _buildBody(List<AppNotification> notifications) {

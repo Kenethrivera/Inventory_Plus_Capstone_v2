@@ -992,6 +992,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
       actions: [
         NotificationBell(
+          placement: NotificationPanelPlacement.belowBell,
           onValidateNotification: _validateNotificationTap,
           onNotificationSelected: (notification) {
             _handleNotificationSelected(
@@ -1171,6 +1172,7 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                         const SizedBox(width: 4),
                         NotificationBell(
+                          placement: NotificationPanelPlacement.besideSidebar,
                           onValidateNotification: _validateNotificationTap,
                           onNotificationSelected: (notification) {
                             _handleNotificationSelected(
@@ -1317,6 +1319,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
           const Spacer(),
           NotificationBell(
+            placement: NotificationPanelPlacement.belowBell,
             onValidateNotification: _validateNotificationTap,
             onNotificationSelected: (notification) {
               _handleNotificationSelected(
