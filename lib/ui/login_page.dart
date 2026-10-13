@@ -5,6 +5,8 @@ import '../login/auth_service.dart';
 import '../logic/inventory_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
+import '../services/store_access_service.dart';
+import '../services/staff_presence_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.controller});
@@ -53,30 +55,62 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final userProfile = await _authService.login(username, password);
 
-      if (userProfile != null) {
-        final String? assignedLocationId = userProfile['location_id'];
-        final String userId = userProfile['id'].toString();
+      if (userProfile == null) {
+        _showError("Invalid username or password");
+        return;
+      }
 
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('isLoggedIn', true);
-        await prefs.setString('userId', userId);
+      final String? assignedLocationId = userProfile['location_id'];
+      final String userId = userProfile['id'].toString();
+      final String userName = userProfile['name'] ?? username;
+      final String userRole = (userProfile['role'] ?? 'staff').toString();
+      final String? userEmail = userProfile['email'];
 
-        widget.controller.setLoggedInUser(
-          name: userProfile['name'] ?? username,
-          id: userId,
-          role: userProfile['role'] ?? 'staff',
-          email: userProfile['email'],
+      if (assignedLocationId == null || assignedLocationId.isEmpty) {
+        _showError("Account Error: No store assigned to this user.");
+        return;
+      }
+
+      final accessService = StoreAccessService(
+        supabase: widget.controller.supabase,
+        locationId: assignedLocationId,
+      );
+
+      final accessResult = await accessService.canLogin(role: userRole);
+
+      if (!accessResult.allowed) {
+        final reason =
+            accessResult.reason ??
+            'Staff login is not allowed outside store hours.';
+
+        await StaffPresenceService.logBlockedLogin(
+          supabase: widget.controller.supabase,
+          locationId: assignedLocationId,
+          userId: userId,
+          userName: userName,
+          userRole: userRole,
+          reason: reason,
         );
 
-        if (assignedLocationId != null && assignedLocationId.isNotEmpty) {
-          await widget.controller.loadAppData(assignedLocationId);
-          if (mounted) Navigator.pushReplacementNamed(context, '/main');
-        } else {
-          _showError("Account Error: No store assigned to this user.");
-          await prefs.clear();
-        }
-      } else {
-        _showError("Invalid username or password");
+        _showError(reason);
+        return;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isLoggedIn', true);
+      await prefs.setString('userId', userId);
+
+      widget.controller.setLoggedInUser(
+        name: userName,
+        id: userId,
+        role: userRole,
+        email: userEmail,
+      );
+
+      await widget.controller.loadAppData(assignedLocationId);
+
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/main');
       }
     } catch (e) {
       _showError("An unexpected error occurred during login.");

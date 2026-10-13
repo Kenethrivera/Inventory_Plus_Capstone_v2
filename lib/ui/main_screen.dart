@@ -29,6 +29,8 @@ import 'pos_monitor_page.dart';
 import 'order_queue_monitor_page.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
+import '../services/staff_presence_service.dart';
+import 'widgets/active_staff_button.dart';
 
 class MainScreen extends StatefulWidget {
   final InventoryController controller;
@@ -53,6 +55,7 @@ class _MainScreenState extends State<MainScreen> {
   NotificationController? _notificationController;
   bool _isCheckingStockAlerts = false;
   bool _isCheckingExportReminders = false;
+  StaffPresenceService? _staffPresenceService;
 
   static const Color _primaryBlue = Color(0xFF2563EB);
   static const Color _sidebarBg = Colors.white;
@@ -84,12 +87,103 @@ class _MainScreenState extends State<MainScreen> {
         _scanInventoryStockAlerts();
       });
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _startStaffPresence();
+    });
   }
 
   @override
   void dispose() {
     _notificationController?.dispose();
+    _staffPresenceService?.stop(logoutReason: 'app_closed');
     super.dispose();
+
+  }
+
+  String _currentModuleName() {
+    final role = widget.controller.currentUserRole?.toLowerCase();
+
+    if (_currentIndex == null) {
+      return 'Main Screen';
+    }
+
+    if (role == 'admin') {
+      switch (_currentIndex) {
+        case 0:
+          return 'Dashboard';
+        case 1:
+          return 'Forecasting';
+        case 2:
+          return 'POS Monitor';
+        case 3:
+          return 'Queue Monitor';
+        case 4:
+          return 'Inventory';
+        case 5:
+          return 'Transactions';
+        case 6:
+          return 'Store Map';
+        case 7:
+          return 'System Settings';
+        default:
+          return 'Main Screen';
+      }
+    }
+
+    if (role == 'helper') {
+      switch (_currentIndex) {
+        case 0:
+          return 'Order Queue';
+        case 1:
+          return 'Inventory';
+        default:
+          return 'Main Screen';
+      }
+    }
+
+    // staff / cashier
+    switch (_currentIndex) {
+      case 0:
+        return 'POS System';
+      case 1:
+        return 'Inventory';
+      default:
+        return 'Main Screen';
+    }
+  }
+
+  Future<void> _startStaffPresence() async {
+    final locationId = widget.controller.activeLocationId;
+    final userId = widget.controller.currentUserId;
+    final userName = widget.controller.currentUserName;
+    final userRole = widget.controller.currentUserRole;
+
+    if (locationId == null ||
+        locationId.isEmpty ||
+        userId == null ||
+        userId.isEmpty ||
+        userName == null ||
+        userName.isEmpty ||
+        userRole == null ||
+        userRole.isEmpty) {
+      return;
+    }
+
+    _staffPresenceService = StaffPresenceService(
+      supabase: widget.controller.supabase,
+      locationId: locationId,
+      userId: userId,
+      userName: userName,
+      userRole: userRole,
+    );
+
+    await _staffPresenceService!.start(currentModule: _currentModuleName());
+  }
+
+  Future<void> _updateStaffPresenceModule() async {
+    await _staffPresenceService?.updateModule(_currentModuleName());
   }
 
   void _handleSelectItem(InventoryItem item) {
@@ -958,7 +1052,22 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ],
             ),
-            floatingActionButton: _debugToolsButtons(),
+            floatingActionButton: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (isAdmin && widget.controller.activeLocationId != null)
+                  ActiveStaffButton(
+                    supabase: widget.controller.supabase,
+                    locationId: widget.controller.activeLocationId!,
+                  ),
+
+                if (!kReleaseMode) ...[
+                  const SizedBox(height: 12),
+                  _debugToolsButtons(),
+                ],
+              ],
+            ),
           );
         }
 
@@ -1583,6 +1692,7 @@ class _MainScreenState extends State<MainScreen> {
         child: InkWell(
           onTap: () {
             setState(() => _currentIndex = index);
+            _updateStaffPresenceModule();
           },
           borderRadius: BorderRadius.circular(12),
           child: AnimatedContainer(
@@ -1737,6 +1847,8 @@ class _MainScreenState extends State<MainScreen> {
     if (confirm != true || !mounted) return;
 
     try {
+
+      await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
 

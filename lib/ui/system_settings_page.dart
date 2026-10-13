@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../logic/inventory_controller.dart';
+import '../services/store_access_service.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 
@@ -35,6 +36,20 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   bool _isLoadingStaff = true;
   List<Map<String, dynamic>> _staffList = [];
 
+  // Store Hours & Staff Access State
+  bool _isLoadingStoreAccess = true;
+  bool _isSavingStoreAccess = false;
+  StoreAccessSettings? _storeAccessSettings;
+  TimeOfDay _openingTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay _closingTime = const TimeOfDay(hour: 21, minute: 0);
+  final TextEditingController _beforeMinutesCtrl =
+      TextEditingController(text: '30');
+  final TextEditingController _afterMinutesCtrl =
+      TextEditingController(text: '30');
+  bool _restrictStaffLogin = true;
+  bool _allowAdminAnytime = true;
+  String? _storeAccessError;
+
   // Global Threshold State
   final TextEditingController _lowPercentCtrl = TextEditingController();
   final TextEditingController _criticalPercentCtrl = TextEditingController();
@@ -45,11 +60,14 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   void initState() {
     super.initState();
     _fetchSettings();
+    _fetchStoreAccessSettings();
     _loadStaff();
   }
 
   @override
   void dispose() {
+    _beforeMinutesCtrl.dispose();
+    _afterMinutesCtrl.dispose();
     _lowPercentCtrl.dispose();
     _criticalPercentCtrl.dispose();
     super.dispose();
@@ -120,6 +138,530 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     isError
         ? AppToast.error(context, message)
         : AppToast.success(context, message);
+  }
+
+  // ─── STORE HOURS & STAFF ACCESS ─────────────────────────────────────────────
+  Future<void> _fetchStoreAccessSettings() async {
+    final locationId = widget.controller.activeLocationId;
+
+    if (locationId == null || locationId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _isLoadingStoreAccess = false;
+          _storeAccessError = 'No active store location found.';
+        });
+      }
+      return;
+    }
+
+    try {
+      final service = StoreAccessService(
+        supabase: widget.controller.supabase,
+        locationId: locationId,
+      );
+
+      final settings = await service.fetchSettings();
+
+      if (!mounted) return;
+
+      setState(() {
+        _storeAccessSettings = settings;
+        _openingTime = _parseClockTime(settings.openingTime);
+        _closingTime = _parseClockTime(settings.closingTime);
+        _beforeMinutesCtrl.text = settings.staffAccessBeforeMinutes.toString();
+        _afterMinutesCtrl.text = settings.staffAccessAfterMinutes.toString();
+        _restrictStaffLogin = settings.restrictStaffLogin;
+        _allowAdminAnytime = settings.allowAdminAnytime;
+        _isLoadingStoreAccess = false;
+        _storeAccessError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoadingStoreAccess = false;
+        _storeAccessError = 'Error loading store access settings: $e';
+      });
+    }
+  }
+
+  Future<void> _saveStoreAccessSettings() async {
+    final locationId = widget.controller.activeLocationId;
+
+    if (locationId == null || locationId.isEmpty) {
+      _showToast('No active store location found.', isError: true);
+      return;
+    }
+
+    final beforeMinutes = int.tryParse(_beforeMinutesCtrl.text.trim());
+    final afterMinutes = int.tryParse(_afterMinutesCtrl.text.trim());
+
+    if (beforeMinutes == null || afterMinutes == null) {
+      setState(() {
+        _storeAccessError = 'Allowance minutes must be valid whole numbers.';
+      });
+      return;
+    }
+
+    if (beforeMinutes < 0 || beforeMinutes > 240 ||
+        afterMinutes < 0 || afterMinutes > 240) {
+      setState(() {
+        _storeAccessError = 'Allowance must be between 0 and 240 minutes.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isSavingStoreAccess = true;
+      _storeAccessError = null;
+    });
+
+    try {
+      final service = StoreAccessService(
+        supabase: widget.controller.supabase,
+        locationId: locationId,
+      );
+
+      final settings = StoreAccessSettings(
+        locationId: locationId,
+        openingTime: _formatClockTime(_openingTime),
+        closingTime: _formatClockTime(_closingTime),
+        staffAccessBeforeMinutes: beforeMinutes,
+        staffAccessAfterMinutes: afterMinutes,
+        restrictStaffLogin: _restrictStaffLogin,
+        allowAdminAnytime: _allowAdminAnytime,
+      );
+
+      await service.saveSettings(settings);
+
+      if (!mounted) return;
+
+      setState(() {
+        _storeAccessSettings = settings;
+        _isSavingStoreAccess = false;
+      });
+
+      _showToast('Store hours and access settings updated.');
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isSavingStoreAccess = false;
+        _storeAccessError = 'Failed to save store access settings: $e';
+      });
+    }
+  }
+
+  Future<void> _pickStoreTime({required bool isOpening}) async {
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: isOpening ? _openingTime : _closingTime,
+    );
+
+    if (selected == null) return;
+
+    setState(() {
+      if (isOpening) {
+        _openingTime = selected;
+      } else {
+        _closingTime = selected;
+      }
+    });
+  }
+
+  TimeOfDay _parseClockTime(String value) {
+    final parts = value.split(':');
+
+    return TimeOfDay(
+      hour: int.tryParse(parts[0]) ?? 8,
+      minute: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
+    );
+  }
+
+  String _formatClockTime(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:00';
+  }
+
+  String _formatDisplayTime(TimeOfDay time) {
+    final suffix = time.hour >= 12 ? 'PM' : 'AM';
+    final hour12 = time.hour % 12 == 0 ? 12 : time.hour % 12;
+    return '$hour12:${time.minute.toString().padLeft(2, '0')} $suffix';
+  }
+
+  String _allowedWindowPreview() {
+    final before = int.tryParse(_beforeMinutesCtrl.text.trim()) ?? 0;
+    final after = int.tryParse(_afterMinutesCtrl.text.trim()) ?? 0;
+
+    final start = _toMinutes(_openingTime) - before;
+    final end = _toMinutes(_closingTime) + after;
+
+    return '${_formatMinutes(start)} to ${_formatMinutes(end)}';
+  }
+
+  int _toMinutes(TimeOfDay time) {
+    return time.hour * 60 + time.minute;
+  }
+
+  String _formatMinutes(int totalMinutes) {
+    var normalized = totalMinutes % (24 * 60);
+
+    if (normalized < 0) {
+      normalized += 24 * 60;
+    }
+
+    final hour = normalized ~/ 60;
+    final minute = normalized % 60;
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    final hour12 = hour % 12 == 0 ? 12 : hour % 12;
+
+    return '$hour12:${minute.toString().padLeft(2, '0')} $suffix';
+  }
+
+  Widget _buildStoreAccessSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.schedule,
+                  color: Colors.green.shade600,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Store Hours & Staff Access',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF0F172A),
+                        fontFamily: _fontFam,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Control when staff and helpers can access the system.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                        fontFamily: _fontFam,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          if (_isLoadingStoreAccess)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24.0),
+                child: CircularProgressIndicator(color: _primaryBlue),
+              ),
+            )
+          else ...[
+            if (_storeAccessError != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: Text(
+                  _storeAccessError!,
+                  style: const TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: _fontFam,
+                  ),
+                ),
+              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 760;
+
+                final timeFields = [
+                  Expanded(
+                    child: _buildTimePickerBox(
+                      label: 'Opening Time',
+                      value: _formatDisplayTime(_openingTime),
+                      icon: Icons.wb_sunny_outlined,
+                      onTap: () => _pickStoreTime(isOpening: true),
+                    ),
+                  ),
+                  SizedBox(width: isNarrow ? 0 : 16, height: isNarrow ? 16 : 0),
+                  Expanded(
+                    child: _buildTimePickerBox(
+                      label: 'Closing Time',
+                      value: _formatDisplayTime(_closingTime),
+                      icon: Icons.nights_stay_outlined,
+                      onTap: () => _pickStoreTime(isOpening: false),
+                    ),
+                  ),
+                ];
+
+                return Column(
+                  children: [
+                    if (isNarrow)
+                      Column(children: timeFields)
+                    else
+                      Row(children: timeFields),
+                    const SizedBox(height: 16),
+                    if (isNarrow)
+                      Column(
+                        children: [
+                          _buildMinutesField(
+                            controller: _beforeMinutesCtrl,
+                            label: 'Before Opening Allowance',
+                            hint: '30',
+                          ),
+                          const SizedBox(height: 16),
+                          _buildMinutesField(
+                            controller: _afterMinutesCtrl,
+                            label: 'After Closing Allowance',
+                            hint: '30',
+                          ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildMinutesField(
+                              controller: _beforeMinutesCtrl,
+                              label: 'Before Opening Allowance',
+                              hint: '30',
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _buildMinutesField(
+                              controller: _afterMinutesCtrl,
+                              label: 'After Closing Allowance',
+                              hint: '30',
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 18),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Text(
+                'Current staff access window: ${_allowedWindowPreview()}',
+                style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontWeight: FontWeight.w700,
+                  fontFamily: _fontFam,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            SwitchListTile.adaptive(
+              value: _restrictStaffLogin,
+              contentPadding: EdgeInsets.zero,
+              activeColor: _primaryBlue,
+              title: const Text(
+                'Restrict staff/helper login to store hours',
+                style: TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontWeight: FontWeight.w800,
+                  fontFamily: _fontFam,
+                ),
+              ),
+              subtitle: const Text(
+                'When enabled, staff and helpers can only login within the allowed access window.',
+                style: TextStyle(fontFamily: _fontFam),
+              ),
+              onChanged: (value) {
+                setState(() => _restrictStaffLogin = value);
+              },
+            ),
+            SwitchListTile.adaptive(
+              value: _allowAdminAnytime,
+              contentPadding: EdgeInsets.zero,
+              activeColor: _primaryBlue,
+              title: const Text(
+                'Allow admin login anytime',
+                style: TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontWeight: FontWeight.w800,
+                  fontFamily: _fontFam,
+                ),
+              ),
+              subtitle: const Text(
+                'Recommended: keep this on so admin can access settings outside store hours.',
+                style: TextStyle(fontFamily: _fontFam),
+              ),
+              onChanged: (value) {
+                setState(() => _allowAdminAnytime = value);
+              },
+            ),
+            const SizedBox(height: 18),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: _isSavingStoreAccess ? null : _saveStoreAccessSettings,
+                icon: _isSavingStoreAccess
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.save_outlined,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                label: const Text(
+                  'Save Access Settings',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: _fontFam,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primaryBlue,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 14,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimePickerBox({
+    required String label,
+    required String value,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey.shade600,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            fontFamily: _fontFam,
+          ),
+        ),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: const Color(0xFF8892A4), size: 16),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    value,
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontWeight: FontWeight.w700,
+                      fontFamily: _fontFam,
+                    ),
+                  ),
+                ),
+                const Icon(Icons.keyboard_arrow_down, size: 16),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMinutesField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey.shade600,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            fontFamily: _fontFam,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          style: const TextStyle(fontFamily: _fontFam),
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            hintText: hint,
+            suffixText: 'minutes',
+            filled: true,
+            fillColor: const Color(0xFFF8FAFC),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   // ─── THRESHOLD MANAGEMENT ──────────────────────────────────────────────────
@@ -1387,394 +1929,11 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                   ),
                   const SizedBox(height: 32),
 
-                  // ─── SECTION 1: GLOBAL STOCK THRESHOLDS ─────────────────────
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: Colors.red.shade50,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(
-                                LucideIcons.triangleAlert,
-                                color: Colors.red.shade600,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            const Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "Global Stock Thresholds",
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w900,
-                                    color: Color(0xFF0F172A),
-                                    fontFamily: _fontFam,
-                                  ),
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  "Set the percentage of an item's usual stock level that triggers stock alerts.",
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
-                                    fontFamily: _fontFam,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        if (_thresholdError != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12.0),
-                            child: Text(
-                              _thresholdError!,
-                              style: const TextStyle(
-                                color: Colors.redAccent,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: _fontFam,
-                              ),
-                            ),
-                          ),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "Low Stock Level (%)",
-                                    style: TextStyle(
-                                      color: Colors.grey.shade600,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      fontFamily: _fontFam,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  TextField(
-                                    controller: _lowPercentCtrl,
-                                    keyboardType: TextInputType.number,
-                                    style: const TextStyle(fontFamily: _fontFam),
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.allow(
-                                        RegExp(r'^\d*\.?\d*'),
-                                      ),
-                                    ],
-                                    decoration: InputDecoration(
-                                      suffixText: '%',
-                                      filled: true,
-                                      fillColor: const Color(0xFFF8FAFC),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(
-                                          color: Colors.grey.shade300,
-                                        ),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 14,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "Critical Stock Level (%)",
-                                    style: TextStyle(
-                                      color: Colors.grey.shade600,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      fontFamily: _fontFam,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  TextField(
-                                    controller: _criticalPercentCtrl,
-                                    keyboardType: TextInputType.number,
-                                    style: const TextStyle(fontFamily: _fontFam),
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.allow(
-                                        RegExp(r'^\d*\.?\d*'),
-                                      ),
-                                    ],
-                                    decoration: InputDecoration(
-                                      suffixText: '%',
-                                      filled: true,
-                                      fillColor: const Color(0xFFF8FAFC),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(
-                                          color: Colors.grey.shade300,
-                                        ),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 14,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            SizedBox(
-                              height: 48,
-                              child: ElevatedButton(
-                                onPressed: _isSavingThresholds
-                                    ? null
-                                    : _saveGlobalThresholds,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF0F172A),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 24,
-                                  ),
-                                ),
-                                child: _isSavingThresholds
-                                    ? const SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          color: Colors.white,
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Text(
-                                        "Save Thresholds",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontFamily: _fontFam,
-                                        ),
-                                      ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+                  // ─── SECTION 1: STORE HOURS & STAFF ACCESS ─────────────────────
+                  _buildStoreAccessSection(),
                   const SizedBox(height: 24),
 
-                  // ─── SECTION 2: MEASUREMENT UNITS ────────────────────────────
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(24.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.shade50,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Icon(
-                                      LucideIcons.ruler,
-                                      color: Colors.blue.shade600,
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  const Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        "Measurement Units",
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w900,
-                                          color: Color(0xFF0F172A),
-                                          fontFamily: _fontFam,
-                                        ),
-                                      ),
-                                      SizedBox(height: 4),
-                                      Text(
-                                        "Manage available units for inventory items.",
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey,
-                                          fontFamily: _fontFam,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              ElevatedButton.icon(
-                                onPressed: () => _showMeasurementModal(),
-                                icon: const Icon(
-                                  LucideIcons.plus,
-                                  size: 16,
-                                  color: Colors.white,
-                                ),
-                                label: const Text(
-                                  "Add Unit",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                    fontFamily: _fontFam,
-                                  ),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _primaryBlue,
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 14,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Divider(height: 1),
-                        if (_measurements.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.all(40.0),
-                            child: Center(
-                              child: Text(
-                                "No measurement units found.",
-                                style: TextStyle(color: Colors.grey, fontFamily: _fontFam),
-                              ),
-                            ),
-                          )
-                        else
-                          ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _measurements.length,
-                            separatorBuilder: (context, index) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              final item = _measurements[index];
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 24.0,
-                                  vertical: 16.0,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            item.name,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 15,
-                                              color: Color(0xFF0F172A),
-                                              fontFamily: _fontFam,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 4,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey.shade100,
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                            child: Text(
-                                              "Symbol: ${item.symbol}",
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.grey.shade700,
-                                                fontFamily: _fontFam,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Row(
-                                      children: [
-                                        IconButton(
-                                          icon: Icon(
-                                            LucideIcons.pencil,
-                                            size: 18,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                          onPressed: () =>
-                                              _showMeasurementModal(item),
-                                          tooltip: "Edit",
-                                        ),
-                                        IconButton(
-                                          icon: Icon(
-                                            LucideIcons.trash2,
-                                            size: 18,
-                                            color: Colors.red.shade400,
-                                          ),
-                                          onPressed: () =>
-                                              _confirmDeleteMeasurement(item),
-                                          tooltip: "Delete",
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // ─── SECTION 3: STAFF MANAGEMENT ───────────────────────────────
+                  // ─── SECTION 2: STAFF MANAGEMENT ───────────────────────────────
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -1972,9 +2131,397 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                               );
                             },
                           ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 24),
+
+                  // ─── SECTION 3: GLOBAL STOCK THRESHOLDS ─────────────────────
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                LucideIcons.triangleAlert,
+                                color: Colors.red.shade600,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Global Stock Thresholds",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF0F172A),
+                                    fontFamily: _fontFam,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  "Set the percentage of an item's usual stock level that triggers stock alerts.",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                    fontFamily: _fontFam,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        if (_thresholdError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12.0),
+                            child: Text(
+                              _thresholdError!,
+                              style: const TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: _fontFam,
+                              ),
+                            ),
+                          ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "Low Stock Level (%)",
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: _fontFam,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  TextField(
+                                    controller: _lowPercentCtrl,
+                                    keyboardType: TextInputType.number,
+                                    style: const TextStyle(fontFamily: _fontFam),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'^\d*\.?\d*'),
+                                      ),
+                                    ],
+                                    decoration: InputDecoration(
+                                      suffixText: '%',
+                                      filled: true,
+                                      fillColor: const Color(0xFFF8FAFC),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: BorderSide(
+                                          color: Colors.grey.shade300,
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "Critical Stock Level (%)",
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: _fontFam,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  TextField(
+                                    controller: _criticalPercentCtrl,
+                                    keyboardType: TextInputType.number,
+                                    style: const TextStyle(fontFamily: _fontFam),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'^\d*\.?\d*'),
+                                      ),
+                                    ],
+                                    decoration: InputDecoration(
+                                      suffixText: '%',
+                                      filled: true,
+                                      fillColor: const Color(0xFFF8FAFC),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: BorderSide(
+                                          color: Colors.grey.shade300,
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            SizedBox(
+                              height: 48,
+                              child: ElevatedButton(
+                                onPressed: _isSavingThresholds
+                                    ? null
+                                    : _saveGlobalThresholds,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0F172A),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                  ),
+                                ),
+                                child: _isSavingThresholds
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text(
+                                        "Save Thresholds",
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontFamily: _fontFam,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 24),
+
+                  // ─── SECTION 4: MEASUREMENT UNITS ────────────────────────────
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      LucideIcons.ruler,
+                                      color: Colors.blue.shade600,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  const Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "Measurement Units",
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                          color: Color(0xFF0F172A),
+                                          fontFamily: _fontFam,
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        "Manage available units for inventory items.",
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                          fontFamily: _fontFam,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: () => _showMeasurementModal(),
+                                icon: const Icon(
+                                  LucideIcons.plus,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                label: const Text(
+                                  "Add Unit",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    fontFamily: _fontFam,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _primaryBlue,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        if (_measurements.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(40.0),
+                            child: Center(
+                              child: Text(
+                                "No measurement units found.",
+                                style: TextStyle(color: Colors.grey, fontFamily: _fontFam),
+                              ),
+                            ),
+                          )
+                        else
+                          ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _measurements.length,
+                            separatorBuilder: (context, index) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final item = _measurements[index];
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24.0,
+                                  vertical: 16.0,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item.name,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 15,
+                                              color: Color(0xFF0F172A),
+                                              fontFamily: _fontFam,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.shade100,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              "Symbol: ${item.symbol}",
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.grey.shade700,
+                                                fontFamily: _fontFam,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          icon: Icon(
+                                            LucideIcons.pencil,
+                                            size: 18,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                          onPressed: () =>
+                                              _showMeasurementModal(item),
+                                          tooltip: "Edit",
+                                        ),
+                                        IconButton(
+                                          icon: Icon(
+                                            LucideIcons.trash2,
+                                            size: 18,
+                                            color: Colors.red.shade400,
+                                          ),
+                                          onPressed: () =>
+                                              _confirmDeleteMeasurement(item),
+                                          tooltip: "Delete",
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
