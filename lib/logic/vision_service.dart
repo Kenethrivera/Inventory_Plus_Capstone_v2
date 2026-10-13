@@ -49,6 +49,13 @@ class VisionService {
         final result = {
           'is_hardware': true,
           'item_name': _formatLabel(local.label),
+          'confidence': local.confidence,
+          'box': {
+            'x': local.x,
+            'y': local.y,
+            'w': local.width,
+            'h': local.height,
+          },
           'source': 'local_model',
         };
         ScanCacheService.add(histogram, result);

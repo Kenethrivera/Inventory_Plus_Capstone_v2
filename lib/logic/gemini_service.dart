@@ -29,12 +29,13 @@ class GeminiService {
       "identify the actual object, even if it isn't hardware.\n"
       "2. Set 'is_hardware' to true ONLY if the object is a construction, plumbing, electrical, or "
       "maintenance tool.\n"
-      "3. If 'is_hardware' is false, 'error_message' must be ONE short sentence (max 10 words) naming "
+      "3. Set 'confidence' to your estimated detection confidence score between 0.00 and 1.00.\n"
+      "4. If 'is_hardware' is false, 'error_message' must be ONE short sentence (max 10 words) naming "
       "the object's category, e.g. 'This is a writing instrument, not a hardware tool.' Do NOT "
       "describe people, hands, faces, or the composition of the image.\n"
-      "4. Do not guess exact measurements.\n\n"
+      "5. Do not guess exact measurements.\n\n"
       "Respond strictly in this JSON format: "
-      "{\"is_hardware\": true/false, \"item_name\": \"Specific Object Name\", \"error_message\": \"Short reason if not hardware\"}";
+      "{\"is_hardware\": true/false, \"item_name\": \"Specific Object Name\", \"confidence\": 0.95, \"error_message\": \"Short reason if not hardware\"}";
 
   static Future<Map<String, dynamic>?> scanHardwareObject(
     Uint8List imageBytes,

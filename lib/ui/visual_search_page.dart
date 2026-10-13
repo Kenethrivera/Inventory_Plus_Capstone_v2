@@ -41,6 +41,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
   int _selectedCameraIndex = 0;
   bool _isAnalyzing = false;
   bool _isCameraInitialized = false;
+  bool _isFlashOn = false;
 
   // Phones get a top-to-bottom scan line; everything else (web/desktop)
   // keeps the left-to-right sweep. kIsWeb is checked first because
@@ -142,6 +143,23 @@ class _VisualSearchPageState extends State<VisualSearchPage>
       );
     }
   }
+Future<void> _toggleFlash() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized)
+      return;
+    try {
+      if (_isFlashOn) {
+        await _cameraController!.setFlashMode(FlashMode.off);
+        setState(() => _isFlashOn = false);
+      } else {
+        await _cameraController!.setFlashMode(FlashMode.torch);
+        setState(() => _isFlashOn = true);
+      }
+    } catch (e) {
+      debugPrint("Failed to toggle flash: $e");
+    }
+  }
+
+
   Widget _buildScanButton() {
     final enabled = _isCameraInitialized;
     return Center(
@@ -342,29 +360,99 @@ class _VisualSearchPageState extends State<VisualSearchPage>
     }
   }
 
-  Future<void> _routeScanResult(Map<String, dynamic>? result) async {
+  Future<void> _routeScanResult(
+    Map<String, dynamic>? result,
+    Uint8List? capturedBytes,
+  ) async {
     if (result == null) {
       await _showScanResultModal(
         detectedName: "Scan Error",
         isHardware: false,
         errorMessage: "Failed to parse image result from Gemini.",
         similarItems: [],
+        capturedBytes: capturedBytes,
       );
       return;
     }
 
     final String detectedName = result['item_name'] ?? "Unknown Object";
+    final double? confidence = (result['confidence'] as num?)?.toDouble();
+    final Map<String, dynamic>? boxData =
+        result['box'] as Map<String, dynamic>?;
 
     if (result['is_hardware'] == true) {
-      await _performInventorySearch(detectedName);
+      await _performInventorySearch(
+        detectedName,
+        capturedBytes: capturedBytes,
+        boxData: boxData,
+        confidence: confidence,
+      );
     } else {
       await _showScanResultModal(
         detectedName: detectedName,
         isHardware: false,
-        errorMessage: "This is a $detectedName, not a hardware tool.",
+        errorMessage:
+            result['error_message'] ??
+            "This is a $detectedName, not a hardware tool.",
         similarItems: [],
+        capturedBytes: capturedBytes,
+        boxData: boxData,
+        confidence: confidence,
       );
     }
+  }
+
+  Future<void> _performInventorySearch(
+    String detectedName, {
+    Uint8List? capturedBytes,
+    Map<String, dynamic>? boxData,
+    double? confidence,
+  }) async {
+    final String detectedLower = detectedName.toLowerCase().trim();
+    final allItems = widget.controller.allItems;
+
+    final exactMatch = allItems
+        .where((item) => item.name.toLowerCase().trim() == detectedLower)
+        .firstOrNull;
+
+    List<InventoryItem> partialMatches = [];
+
+    if (exactMatch == null) {
+      const stopWords = {
+        'a',
+        'an',
+        'the',
+        'of',
+        'in',
+        'and',
+        'or',
+        'tool',
+        'tools',
+        'for',
+      };
+      final keywords = detectedLower
+          .split(RegExp(r'\s+'))
+          .map((w) => w.replaceAll(RegExp(r'[^\w\s]'), ''))
+          .where((w) => w.length > 2 && !stopWords.contains(w))
+          .toList();
+
+      if (keywords.isNotEmpty) {
+        partialMatches = allItems.where((item) {
+          final itemNameLower = item.name.toLowerCase();
+          return keywords.any((keyword) => itemNameLower.contains(keyword));
+        }).toList();
+      }
+    }
+
+    await _showScanResultModal(
+      detectedName: detectedName,
+      isHardware: true,
+      exactMatch: exactMatch,
+      similarItems: partialMatches,
+      capturedBytes: capturedBytes,
+      boxData: boxData,
+      confidence: confidence,
+    );
   }
 
   // Web scans crop to the visible guide box. Mobile scans retain the full
@@ -434,6 +522,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
 
     Map<String, dynamic>? result;
     String? errorText;
+    Uint8List? capturedImageBytes;
 
     try {
       final XFile? photo = await _safeTakePicture();
@@ -454,6 +543,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
         'cropHeight': cropRect.height,
       });
 
+      capturedImageBytes = backgroundResult['apiBytes'] as Uint8List;
       // Yield UI frame before entering inference
       await Future.delayed(const Duration(milliseconds: 16));
 
@@ -483,57 +573,11 @@ class _VisualSearchPageState extends State<VisualSearchPage>
         isHardware: false,
         errorMessage: errorText,
         similarItems: [],
+        capturedBytes: capturedImageBytes,
       );
     } else {
-      await _routeScanResult(result);
+      await _routeScanResult(result, capturedImageBytes);
     }
-  }
-  
-
-  Future<void> _performInventorySearch(String detectedName) async {
-    final String detectedLower = detectedName.toLowerCase().trim();
-    final allItems = widget.controller.allItems;
-
-    final exactMatch = allItems
-        .where((item) => item.name.toLowerCase().trim() == detectedLower)
-        .firstOrNull;
-
-    List<InventoryItem> partialMatches = [];
-
-    if (exactMatch == null) {
-      const stopWords = {
-        'a',
-        'an',
-        'the',
-        'of',
-        'in',
-        'and',
-        'or',
-        'tool',
-        'tools',
-        'for',
-      };
-
-      final keywords = detectedLower
-          .split(RegExp(r'\s+'))
-          .map((w) => w.replaceAll(RegExp(r'[^\w\s]'), ''))
-          .where((w) => w.length > 2 && !stopWords.contains(w))
-          .toList();
-
-      if (keywords.isNotEmpty) {
-        partialMatches = allItems.where((item) {
-          final itemNameLower = item.name.toLowerCase();
-          return keywords.any((keyword) => itemNameLower.contains(keyword));
-        }).toList();
-      }
-    }
-
-    await _showScanResultModal(
-      detectedName: detectedName,
-      isHardware: true,
-      exactMatch: exactMatch,
-      similarItems: partialMatches,
-    );
   }
 
   Widget _buildFullScreenCameraPreview() {
@@ -640,6 +684,9 @@ class _VisualSearchPageState extends State<VisualSearchPage>
     String? errorMessage,
     InventoryItem? exactMatch,
     required List<InventoryItem> similarItems,
+    Uint8List? capturedBytes,
+    Map<String, dynamic>? boxData,
+    double? confidence,
   }) {
     final bool isExactMatch = exactMatch != null;
     final bool hasSimilar = similarItems.isNotEmpty;
@@ -653,27 +700,23 @@ class _VisualSearchPageState extends State<VisualSearchPage>
       bannerColor = Colors.redAccent;
       bannerTitle = "NOT HARDWARE RELATED";
       bannerIcon = LucideIcons.shieldAlert;
-      descriptionText =
-          errorMessage ??
-          "The scanned object is not recognized as a hardware tool.";
+      descriptionText = errorMessage ?? "Not recognized as a hardware tool.";
     } else if (isExactMatch) {
       bannerColor = Colors.green;
       bannerTitle = "EXACT MATCH FOUND";
       bannerIcon = LucideIcons.checkCircle2;
-      descriptionText =
-          "We found a perfect match for '$detectedName' in your inventory.";
+      descriptionText = "Found a match in your inventory.";
     } else if (hasSimilar) {
       bannerColor = _primaryBlue;
       bannerTitle = "SIMILAR ITEMS IN STOCK";
       bannerIcon = LucideIcons.searchCode;
-      descriptionText =
-          "We don't have exactly '$detectedName', but we have these similar items:";
+      descriptionText = "We found similar items in stock:";
     } else {
-      bannerColor = Colors.redAccent;
+      bannerColor = Colors.orangeAccent;
       bannerTitle = "NOT IN INVENTORY";
       bannerIcon = LucideIcons.packageX;
       descriptionText =
-          "We detected a '$detectedName', but there are no matches in your database.";
+          "Detected '$detectedName', but there are no matches in your database.";
     }
 
     return showDialog(
@@ -683,161 +726,255 @@ class _VisualSearchPageState extends State<VisualSearchPage>
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 650),
+          constraints: const BoxConstraints(maxWidth: 720, maxHeight: 520),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // 1. Full-Width Top Status Banner
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
-                  vertical: 16,
+                  vertical: 12,
                 ),
-                color: bannerColor.withOpacity(0.15),
+                color: bannerColor.withOpacity(0.18),
                 child: Row(
                   children: [
-                    Icon(bannerIcon, color: bannerColor, size: 28),
-                    const SizedBox(width: 12),
+                    Icon(bannerIcon, color: bannerColor, size: 22),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         bannerTitle,
                         style: TextStyle(
                           color: bannerColor,
-                          fontSize: 16,
+                          fontSize: 14,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5,
+                          letterSpacing: 0.6,
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-                child: Text(
-                  descriptionText,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-              if (isHardware && (isExactMatch || hasSimilar))
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    itemCount: isExactMatch ? 1 : similarItems.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final item = isExactMatch
-                          ? exactMatch
-                          : similarItems[index];
-                      return Material(
-                        color: const Color(0xFF0F172A),
-                        borderRadius: BorderRadius.circular(12),
-                        clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          onTap: () {
-                            Navigator.pop(dialogContext);
-                            widget.onSelectItem(item);
-                          },
-                          hoverColor: Colors.white.withValues(alpha: 0.05),
-                          splashColor: _primaryBlue.withValues(alpha: 0.3),
-                          highlightColor: _primaryBlue.withValues(alpha: 0.1),
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.white10),
+
+              // 2. Main Content Split
+              Flexible(
+                // Replaced Expanded with Flexible
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isWide = constraints.maxWidth > 500;
+
+                    // Captured Image with Bounding Box Overlay
+                    final imageWidget = capturedBytes != null
+                        ? Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: BoundingBoxOverlay(
+                              imageBytes: capturedBytes,
+                              boxData: boxData,
+                              label: detectedName,
+                              confidence: confidence,
                             ),
-                            child: Row(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: SizedBox(
-                                    width: 60,
-                                    height: 60,
-                                    child: _buildItemImage(item.imageUrl),
+                          )
+                        : Container(
+                            height: 200,
+                            color: const Color(0xFF0F172A),
+                            child: const Center(
+                              child: Icon(
+                                LucideIcons.imageOff,
+                                color: Colors.white24,
+                                size: 40,
+                              ),
+                            ),
+                          );
+
+                    // Details Panel
+                    final detailsWidget = Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Column(
+                        mainAxisSize:
+                            MainAxisSize.min, // Hugs the content tightly
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  detectedName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.name,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        children: [
-                                          Text(
-                                            "₱${item.price.toStringAsFixed(2)}",
-                                            style: const TextStyle(
-                                              color: Color(0xFF60A5FA),
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 16,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: item.quantity > 0
-                                                  ? Colors.green.withValues(
-                                                      alpha: 0.2,
-                                                    )
-                                                  : Colors.red.withValues(alpha: 0.2),
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                            child: Text(
-                                              "Stock: ${item.quantity.toInt()} ${item.unit}",
-                                              style: TextStyle(
-                                                color: item.quantity > 0
-                                                    ? Colors.greenAccent
-                                                    : Colors.redAccent,
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
+                              ),
+                              if (confidence != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFF2563EB,
+                                    ).withOpacity(0.2),
+                                    border: Border.all(
+                                      color: const Color(0xFF2563EB),
+                                    ),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    "${(confidence * 100).toStringAsFixed(1)}%",
+                                    style: const TextStyle(
+                                      color: Color(0xFF60A5FA),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
-                                const Icon(
-                                  LucideIcons.plusCircle,
-                                  color: _primaryBlue,
-                                  size: 24,
-                                ),
-                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            descriptionText,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                              height: 1.3,
                             ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                          const SizedBox(height: 12),
+
+                          // Item List
+                          Flexible(
+                            // Allows list to shrink if empty or small
+                            child: (isHardware && (isExactMatch || hasSimilar))
+                                ? ListView.separated(
+                                    shrinkWrap:
+                                        true, // Eliminates empty space below list items
+                                    itemCount: isExactMatch
+                                        ? 1
+                                        : similarItems.length,
+                                    separatorBuilder: (_, _) =>
+                                        const SizedBox(height: 8),
+                                    itemBuilder: (context, index) {
+                                      final item = isExactMatch
+                                          ? exactMatch
+                                          : similarItems[index];
+                                      return Material(
+                                        color: const Color(0xFF0F172A),
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: InkWell(
+                                          onTap: () {
+                                            Navigator.pop(dialogContext);
+                                            widget.onSelectItem(item);
+                                          },
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(10),
+                                            child: Row(
+                                              children: [
+                                                ClipRRect(
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                  child: SizedBox(
+                                                    width: 42,
+                                                    height: 42,
+                                                    child: _buildItemImage(
+                                                      item.imageUrl,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        item.name,
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 13,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        "₱${item.price.toStringAsFixed(2)}  •  Stock: ${item.quantity.toInt()}",
+                                                        style: const TextStyle(
+                                                          color: Color(
+                                                            0xFF60A5FA,
+                                                          ),
+                                                          fontSize: 12,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const Icon(
+                                                  LucideIcons.chevronRight,
+                                                  color: Colors.white24,
+                                                  size: 18,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF0F172A),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Text(
+                                      "No matching stock items available.",
+                                      style: TextStyle(
+                                        color: Colors.white38,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    return isWide
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment
+                                .start, // Prevents stretching children vertically
+                            children: [
+                              SizedBox(width: 240, child: imageWidget),
+                              Expanded(child: detailsWidget),
+                            ],
+                          )
+                        : SingleChildScrollView(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(height: 200, child: imageWidget),
+                                detailsWidget,
+                              ],
+                            ),
+                          );
+                  },
                 ),
+              ),
+              // 3. Action Buttons
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 child: Row(
                   children: [
                     Expanded(
@@ -867,11 +1004,11 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                         ),
                         onPressed: () {
                           Navigator.pop(dialogContext);
-                          if (mounted) {
-                            Navigator.pop(context);
-                          }
+                          _cameraController?.dispose();
+                          _cameraController = null;
+                          if (mounted) Navigator.pop(context);
                         },
-                        child: const Text("Done Scanning"),
+                        child: const Text("Done"),
                       ),
                     ),
                   ],
@@ -987,8 +1124,9 @@ class _VisualSearchPageState extends State<VisualSearchPage>
             left: 16,
             right: 16,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                // Back Button
                 IconButton(
                   icon: const Icon(
                     LucideIcons.chevronLeft,
@@ -996,35 +1134,117 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                   ),
                   onPressed: () => Navigator.pop(context),
                 ),
+
+                // Disclaimer Banner
+                Expanded(
+                  child: Center(
+                    // <-- Added Center widget here to shrink-wrap the container
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal:
+                              16, // slightly wider inner padding for a nice pill shape
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _primaryBlue.withOpacity(0.85),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white24, width: 1),
+                        ),
+                        child: const Text(
+                          "The AI requires a well-lit background. Factors like low light, blur, and cluttered backgrounds can impact scan results.",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            height: 1.2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Camera Controls
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
+                    // 1. Highlighted Action Button (Web & Mobile)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        // Green to encourage Live mode, muted white24 to go back to Manual
+                        backgroundColor: _isLiveMode
+                            ? Colors.white24
+                            : Colors.green.shade600,
+                        foregroundColor: Colors.white,
+                        elevation: _isLiveMode ? 0 : 4,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 26, // Increased horizontal padding
+                          vertical:
+                              16, // Increased vertical padding for a taller button
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            30,
+                          ), // Smoother pill shape
+                        ),
+                      ),
                       icon: Icon(
-                        _isLiveMode ? LucideIcons.scanLine : LucideIcons.radar,
-                        color: Colors.white,
+                        // Radar icon when offering Live, Camera icon when offering Manual
+                        _isLiveMode ? LucideIcons.camera : LucideIcons.radar,
+                        size: 22, // Increased icon size
+                      ),
+                      label: Text(
+                        _isLiveMode ? "MANUAL" : "LIVE",
+                        style: const TextStyle(
+                          fontSize: 15, // Increased font size
+                          fontWeight:
+                              FontWeight.w900, // Extra bold for dominance
+                          letterSpacing: 1.2,
+                        ),
                       ),
                       onPressed: _isAnalyzing ? null : _toggleLiveMode,
                     ),
-                    IconButton(
-                      icon: const Icon(
-                        LucideIcons.switchCamera,
-                        color: Colors.white,
+
+                    // 2. Hardware Controls (Mobile Only)
+                    if (!kIsWeb) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: Icon(
+                          _isFlashOn
+                              ? LucideIcons.flashlightOff
+                              : LucideIcons.flashlight,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                        onPressed: _toggleFlash,
                       ),
-                      onPressed: () async {
-                        if (_cameras == null || _cameras!.length < 2) return;
-                        _selectedCameraIndex =
-                            (_selectedCameraIndex + 1) % _cameras!.length;
-                        setState(() {
-                          _isCameraInitialized = false;
-                        });
-                        await _setCamera(_selectedCameraIndex);
-                      },
-                    ),
+                      IconButton(
+                        icon: const Icon(
+                          LucideIcons.switchCamera,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                        onPressed: () async {
+                          if (_cameras == null || _cameras!.length < 2) return;
+                          _selectedCameraIndex =
+                              (_selectedCameraIndex + 1) % _cameras!.length;
+                          setState(() {
+                            _isCameraInitialized = false;
+                            _isFlashOn =
+                                false; // Reset flash state when swapping lenses
+                          });
+                          await _setCamera(_selectedCameraIndex);
+                        },
+                      ),
+                    ],
                   ],
                 ),
               ],
             ),
           ),
+
           Positioned(
             bottom: 40,
             left: 0,
@@ -1312,4 +1532,114 @@ class ScanLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant ScanLinePainter oldDelegate) =>
       oldDelegate.progress != progress || oldDelegate.vertical != vertical;
+}
+
+class BoundingBoxOverlay extends StatelessWidget {
+  final Uint8List imageBytes;
+  final Map<String, dynamic>? boxData;
+  final String label;
+  final double? confidence;
+
+  const BoundingBoxOverlay({
+    super.key,
+    required this.imageBytes,
+    this.boxData,
+    required this.label,
+    this.confidence,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.memory(
+            imageBytes,
+            fit: BoxFit.contain, // Prevents cutting off the edges of the tool
+          ),
+        ),
+        if (boxData != null)
+          Positioned.fill(
+            child: CustomPaint(
+              painter: BoxPainter(
+                box: boxData!,
+                label: label,
+                confidence: confidence,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class BoxPainter extends CustomPainter {
+  final Map<String, dynamic> box;
+  final String label;
+  final double? confidence;
+
+  BoxPainter({required this.box, required this.label, this.confidence});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double left = (box['x'] as double) * size.width;
+    final double top = (box['y'] as double) * size.height;
+    final double width = (box['w'] as double) * size.width;
+    final double height = (box['h'] as double) * size.height;
+
+    final rect = Rect.fromLTWH(left, top, width, height);
+
+    // Draw Box
+    final paint = Paint()
+      ..color = const Color(0xFF2563EB)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(6)),
+      paint,
+    );
+
+    // Build Label String
+    final confString = confidence != null
+        ? " ${(confidence! * 100).toStringAsFixed(1)}%"
+        : "";
+    final textSpan = TextSpan(
+      text: "$label$confString",
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    // Draw Tag Background
+    final tagBg = Paint()..color = const Color(0xFF2563EB);
+    final tagRect = Rect.fromLTWH(
+      left,
+      (top - 22 < 0) ? top : top - 22,
+      textPainter.width + 12,
+      22,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(tagRect, const Radius.circular(4)),
+      tagBg,
+    );
+
+    textPainter.paint(
+      canvas,
+      Offset(left + 6, (top - 22 < 0) ? top + 3 : top - 19),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant BoxPainter oldDelegate) => true;
 }

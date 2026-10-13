@@ -11,6 +11,8 @@ import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/order_checklist_view.dart';
 import 'visual_search_page.dart';
+import 'package:inventory_plus/notifications/notification_provider.dart';
+import 'package:inventory_plus/notifications/notification_provider.dart';
 
 const double _kSnapFull = 0.75;
 const double _kBaseChromeHeight = 320.0;
@@ -18,9 +20,15 @@ const Color _primaryBlue = Color(0xFF2563EB); // Centralized theme color
 
 class PosCartPage extends StatefulWidget {
   final InventoryController controller;
+  final String? targetOrderId;
+  final VoidCallback? onOrderOpened;
 
-  const PosCartPage({super.key, required this.controller});
-
+  const PosCartPage({
+    super.key,
+    required this.controller,
+    this.targetOrderId,
+    this.onOrderOpened,
+  });
   @override
   State<PosCartPage> createState() => _PosCartPageState();
 }
@@ -47,9 +55,12 @@ class _PosCartPageState extends State<PosCartPage>
 
   bool _soloMode = false;
 
+  String? _pendingAutoOpenOrderId;
+
   @override
   void initState() {
     super.initState();
+    _pendingAutoOpenOrderId = widget.targetOrderId;
     _snapAnim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 450),
@@ -70,6 +81,25 @@ class _PosCartPageState extends State<PosCartPage>
   void dispose() {
     _snapAnim.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant PosCartPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.targetOrderId != null &&
+        widget.targetOrderId != oldWidget.targetOrderId) {
+      _pendingAutoOpenOrderId = widget.targetOrderId;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+
+        _showPendingOrdersModal(
+          context,
+          targetOrderId: _pendingAutoOpenOrderId,
+        );
+      });
+    }
   }
 
   void _snapTo(double target) {
@@ -202,6 +232,19 @@ class _PosCartPageState extends State<PosCartPage>
         throw Exception('Order could not be created.');
       }
 
+      final notificationController = NotificationProvider.maybeOf(context);
+      final locationId = widget.controller.activeLocationId;
+      final createdByName = widget.controller.currentUserName ?? 'Unknown User';
+
+      if (notificationController != null && locationId != null) {
+        await notificationController.notifyNewOrder(
+          locationId: locationId,
+          orderId: createdOrder.id,
+          createdByName: createdByName,
+          createdAt: createdOrder.createdAt,
+        );
+      }
+
       if (!mounted) return;
 
       setState(() {
@@ -250,11 +293,42 @@ class _PosCartPageState extends State<PosCartPage>
         cashGiven: paymentData['cashReceived'],
         changeAmount: paymentData['change'],
       );
+
     } catch (e) {
       if (mounted) AppToast.error(context, "Couldn't complete the order: $e");
       return;
     }
-    if (times == null) return; 
+    if (times == null) return;
+
+    final notificationController = NotificationProvider.maybeOf(context);
+    final locationId = widget.controller.activeLocationId;
+    final processedByName = widget.controller.currentUserName ?? 'Unknown User';
+
+    if (notificationController != null) {
+      await notificationController.resolveNewOrderNotification(
+        orderId: order.id,
+      );
+    }
+
+    if (notificationController != null && locationId != null) {
+      await notificationController.notifyTransactionCompleted(
+        locationId: locationId,
+        orderId: order.id,
+        amount: order.totalAmount.toStringAsFixed(2),
+        processedByName: processedByName,
+        completedAt: times.completedAt,
+      );
+    }
+
+    if (notificationController != null) {
+      await notificationController.resolveNewOrderNotification(
+        orderId: order.id,
+      );
+
+      await notificationController.resolveOrderPreparedNotification(
+        orderId: order.id,
+      );
+    }
 
     onCompleted?.call();
 
@@ -1693,7 +1767,7 @@ class _PosCartPageState extends State<PosCartPage>
     );
   }
 
-  void _showPendingOrdersModal(BuildContext context) {
+  void _showPendingOrdersModal(BuildContext context, {String? targetOrderId}) {
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -1761,6 +1835,31 @@ class _PosCartPageState extends State<PosCartPage>
                                 o.status == 'prepared' || o.status == 'pending',
                           )
                           .toList();
+                      
+                      if (targetOrderId != null) {
+                        final allOrders = snapshot.data!;
+                        final matchingOrder = allOrders
+                            .where((order) => order.id == targetOrderId)
+                            .toList();
+
+                        if (matchingOrder.isNotEmpty &&
+                            matchingOrder.first.status == 'completed') {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!dialogContext.mounted) return;
+
+                            Navigator.pop(dialogContext);
+
+                            AppToast.error(
+                              context,
+                              'This order is already completed.',
+                            );
+
+                            widget.onOrderOpened?.call();
+                          });
+
+                          return const SizedBox.shrink();
+                        }
+                      }
 
                       if (pendingOrders.isEmpty) {
                         return const Center(
@@ -1813,6 +1912,11 @@ class _PosCartPageState extends State<PosCartPage>
                                         dividerColor: Colors.transparent,
                                       ),
                                       child: ExpansionTile(
+                                        key: ValueKey(
+                                          '${o.id}-${targetOrderId == o.id}',
+                                        ),
+                                        initiallyExpanded:
+                                            targetOrderId == o.id,
                                         tilePadding: const EdgeInsets.only(
                                           left: 12,
                                           right: 16,
@@ -2014,7 +2118,12 @@ class _PosCartPageState extends State<PosCartPage>
           ),
         );
       },
-    );
+    ).then((_) {
+        if (!mounted) return;
+
+        _pendingAutoOpenOrderId = null;
+        widget.onOrderOpened?.call();
+    });
   }
 
   Widget _buildImage(String imageUrl) {

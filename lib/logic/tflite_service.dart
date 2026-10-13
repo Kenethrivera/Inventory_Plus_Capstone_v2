@@ -8,7 +8,19 @@ import 'package:flutter_litert/flutter_litert.dart';
 class LocalDetectionResult {
   final String label;
   final double confidence;
-  LocalDetectionResult({required this.label, required this.confidence});
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  LocalDetectionResult({
+    required this.label,
+    required this.confidence,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
 }
 
 class TfliteService {
@@ -90,14 +102,13 @@ class TfliteService {
         0.0,
       ).reshape([1, 4 + numClasses, 8400]);
 
-      // Massive blocking C++ execution
       interpreter.run(input, output);
 
       final rows = output[0] as List;
       double best = 0.0;
       int bestClass = -1;
+      int bestAnchor = -1;
 
-      // Massive blocking nested loop (hundreds of thousands of lookups)
       for (int c = 0; c < numClasses; c++) {
         final row = rows[c + 4] as List;
         for (int a = 0; a < 8400; a++) {
@@ -105,12 +116,33 @@ class TfliteService {
           if (conf > best) {
             best = conf;
             bestClass = c;
+            bestAnchor = a;
           }
         }
       }
 
-      if (bestClass == -1) return null;
-      return LocalDetectionResult(label: labels[bestClass], confidence: best);
+      if (bestClass == -1 || bestAnchor == -1) return null;
+
+      // Extract raw YOLO v8 bounding box outputs (Center X, Center Y, Width, Height)
+      final rawCx = (rows[0] as List)[bestAnchor] as double;
+      final rawCy = (rows[1] as List)[bestAnchor] as double;
+      final rawW = (rows[2] as List)[bestAnchor] as double;
+      final rawH = (rows[3] as List)[bestAnchor] as double;
+
+      // Normalize coordinates to 0.0–1.0 (YOLO default output space is 640x640)
+      final normW = rawW / 640.0;
+      final normH = rawH / 640.0;
+      final normX = (rawCx / 640.0) - (normW / 2);
+      final normY = (rawCy / 640.0) - (normH / 2);
+
+      return LocalDetectionResult(
+        label: labels[bestClass],
+        confidence: best,
+        x: normX.clamp(0.0, 1.0),
+        y: normY.clamp(0.0, 1.0),
+        width: normW.clamp(0.0, 1.0),
+        height: normH.clamp(0.0, 1.0),
+      );
     } catch (_) {
       return null;
     }

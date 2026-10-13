@@ -8,6 +8,7 @@ import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'store_map.dart';
 import 'scanner_search_page.dart';
+import 'package:inventory_plus/notifications/notification_provider.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const String _fontFam = 'Hellix';
@@ -156,11 +157,23 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             final match = _cachedOrders
                 .where((o) => o.id.toString() == _pendingAutoOpenId)
                 .toList();
+
             if (match.isNotEmpty) {
               final orderToOpen = match.first;
               _pendingAutoOpenId = null;
+
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted) return;
+
+                if (orderToOpen.status != 'pending') {
+                  AppToast.error(
+                    context,
+                    'This order is already ${orderToOpen.status}.',
+                  );
+                  widget.onOrderOpened?.call();
+                  return;
+                }
+
                 _openOrderChecklist(orderToOpen);
                 widget.onOrderOpened?.call();
               });
@@ -432,6 +445,27 @@ class OrderChecklistPage extends StatelessWidget {
 
   Future<void> _markPrepared(BuildContext context) async {
     await controller.updateOrderStatus(order.id, 'prepared');
+
+    final notificationController = NotificationProvider.maybeOf(context);
+    final locationId = controller.activeLocationId;
+    final preparedByName = controller.currentUserName ?? 'Unknown User';
+    final preparedAt = DateTime.now();
+
+    if (notificationController != null) {
+      await notificationController.resolveNewOrderNotification(
+        orderId: order.id,
+      );
+    }
+
+    if (notificationController != null && locationId != null) {
+      await notificationController.notifyOrderPrepared(
+        locationId: locationId,
+        orderId: order.id,
+        preparedByName: preparedByName,
+        preparedAt: preparedAt,
+      );
+    }
+
     if (context.mounted) {
       final shortId = order.id.toString().substring(0, 8).toUpperCase();
       AppToast.success(context, 'Cashier notified for #ORD-$shortId');

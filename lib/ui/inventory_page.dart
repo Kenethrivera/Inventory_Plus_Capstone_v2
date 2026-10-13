@@ -25,6 +25,7 @@ class InventoryPage extends StatefulWidget {
   final Function(InventoryItem) onSelectItem;
   final bool exportDue;
   final VoidCallback? onExported;
+  final Future<void> Function()? onInventoryChanged;
 
   const InventoryPage({
     super.key,
@@ -32,6 +33,7 @@ class InventoryPage extends StatefulWidget {
     required this.onSelectItem,
     this.exportDue = false,
     this.onExported,
+    this.onInventoryChanged
   });
 
   @override
@@ -43,6 +45,7 @@ class _InventoryPageState extends State<InventoryPage> {
   String _selectedCategory = "All";
   bool _showDisabled = false;
   final TextEditingController _searchController = TextEditingController();
+  
 
   @override
   void initState() {
@@ -91,6 +94,11 @@ class _InventoryPageState extends State<InventoryPage> {
             query: _searchQuery,
             category: _selectedCategory,
           );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onInventoryChanged?.call();
+    });
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
