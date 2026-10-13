@@ -103,9 +103,15 @@ class NotificationBell extends StatelessWidget {
     Size screen,
   ) {
     const sidebarWidth = 250.0;
+    const gap = 16.0;
+    const topGap = 18.0;
+    const bottomGap = 18.0;
 
-    final panelWidth = (screen.width * 0.43).clamp(460.0, 600.0);
-    final panelHeight = screen.height - 36;
+    final panelWidth = (screen.width * 0.42).clamp(440.0, 560.0);
+    final panelHeight = screen.height - topGap - bottomGap;
+
+    final left = sidebarWidth + gap;
+    final top = topGap;
 
     return showGeneralDialog<AppNotification>(
       context: context,
@@ -117,8 +123,8 @@ class NotificationBell extends StatelessWidget {
         return Stack(
           children: [
             Positioned(
-              left: sidebarWidth + 18,
-              top: 18,
+              left: left,
+              top: top,
               width: panelWidth,
               height: panelHeight,
               child: Material(
@@ -141,7 +147,7 @@ class NotificationBell extends StatelessWidget {
 
         return SlideTransition(
           position: Tween<Offset>(
-            begin: const Offset(-0.08, 0),
+            begin: const Offset(-0.04, 0),
             end: Offset.zero,
           ).animate(curved),
           child: FadeTransition(opacity: curved, child: child),

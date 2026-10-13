@@ -25,6 +25,8 @@ import 'pos_cart_page.dart';
 import 'profile_info_page.dart';
 import 'system_settings_page.dart';
 import 'transaction_history_page.dart';
+import 'pos_monitor_page.dart';
+import 'order_queue_monitor_page.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 
@@ -305,6 +307,8 @@ class _MainScreenState extends State<MainScreen> {
     AppNotification notification,
   ) async {
     final orderId = notification.payload['orderId']?.toString();
+    final role = widget.controller.currentUserRole?.toLowerCase();
+    final isAdmin = role == 'admin';
 
     switch (notification.type) {
       case NotificationType.newOrder:
@@ -321,7 +325,10 @@ class _MainScreenState extends State<MainScreen> {
 
         final order = matches.first;
 
-        if (order.status != 'pending') {
+        // Admin uses Queue Monitor, so admin can still view non-pending orders.
+        // Helper uses the real Order Queue checklist, so helper must be blocked
+        // if the order is no longer pending/actionable.
+        if (!isAdmin && order.status != 'pending') {
           return 'This order is already ${order.status}.';
         }
 
@@ -340,6 +347,13 @@ class _MainScreenState extends State<MainScreen> {
         }
 
         final order = matches.first;
+
+        // Admin uses POS Monitor, so admin can still view prepared/completed orders.
+        // Cashier uses the real POS payment flow, so cashier must only open
+        // orders that are still prepared and ready for payment.
+        if (isAdmin) {
+          return null;
+        }
 
         if (order.status == 'completed') {
           return 'This order is already completed.';
@@ -808,7 +822,19 @@ class _MainScreenState extends State<MainScreen> {
           pages.add(ForecastingPage(controller: widget.controller));
         }
 
-        if (isCashier || isAdmin) {
+        if (isAdmin) {
+          pages.add(
+            PosMonitorPage(
+              controller: widget.controller,
+              targetOrderId: _targetPosOrderId,
+              onOrderOpened: () {
+                if (mounted) {
+                  setState(() => _targetPosOrderId = null);
+                }
+              },
+            ),
+          );
+        } else if (isCashier) {
           pages.add(
             PosCartPage(
               controller: widget.controller,
@@ -822,7 +848,19 @@ class _MainScreenState extends State<MainScreen> {
           );
         }
 
-        if (isHelper || isAdmin) {
+        if (isAdmin) {
+          pages.add(
+            OrderQueueMonitorPage(
+              controller: widget.controller,
+              targetOrderId: _targetOrderId,
+              onOrderOpened: () {
+                if (mounted) {
+                  setState(() => _targetOrderId = null);
+                }
+              },
+            ),
+          );
+        } else if (isHelper) {
           pages.add(
             OrderQueuePage(
               controller: widget.controller,
@@ -992,7 +1030,6 @@ class _MainScreenState extends State<MainScreen> {
       ),
       actions: [
         NotificationBell(
-          placement: NotificationPanelPlacement.belowBell,
           onValidateNotification: _validateNotificationTap,
           onNotificationSelected: (notification) {
             _handleNotificationSelected(
@@ -1200,12 +1237,12 @@ class _MainScreenState extends State<MainScreen> {
                   _buildSidebarItem(
                     posIndex,
                     LucideIcons.shoppingCart,
-                    'POS System',
+                    'POS Monitor',
                   ),
                   _buildSidebarItem(
                     orderQueueIndex,
                     LucideIcons.fileText,
-                    'Order Queue',
+                    'Queue Monitor',
                   ),
                   _buildSidebarItem(
                     inventoryIndex,
@@ -1319,7 +1356,6 @@ class _MainScreenState extends State<MainScreen> {
           ),
           const Spacer(),
           NotificationBell(
-            placement: NotificationPanelPlacement.belowBell,
             onValidateNotification: _validateNotificationTap,
             onNotificationSelected: (notification) {
               _handleNotificationSelected(
