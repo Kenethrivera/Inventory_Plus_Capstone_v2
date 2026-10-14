@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -7,13 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:camera/camera.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, compute;
+import 'package:flutter/foundation.dart' show kIsWeb, compute, defaultTargetPlatform, TargetPlatform;
 import 'package:image/image.dart' as img;
 import '../../data/inventory.dart';
 import '../../logic/inventory_controller.dart';
 import '../../logic/vision_service.dart';
 import '../../logic/tflite_service.dart';
 import '../../logic/scan_logger.dart';
+import '../../logic/gemini_service.dart';
 import 'package:flutter/services.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
@@ -44,10 +44,11 @@ class _VisualSearchPageState extends State<VisualSearchPage>
   bool _isFlashOn = false;
 
   // Phones get a top-to-bottom scan line; everything else (web/desktop)
-  // keeps the left-to-right sweep. kIsWeb is checked first because
-  // Platform.isAndroid/isIOS throws on web.
+  // keeps the left-to-right sweep. This avoids dart:io so the file builds on Web.
   bool get _isMobilePlatform =>
-      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   // --- Live mode ---
   bool _isLiveMode = false;
@@ -85,6 +86,26 @@ class _VisualSearchPageState extends State<VisualSearchPage>
       _isMobilePlatform ? _mobileCropHeight : _alignBoxFactor;
 
   String _liveStatusText = "Point camera at a tool";
+
+
+  // --- YOLO-first live mode ---
+  // Live mode uses cheap, throttled YOLO-only snapshots for bounding boxes.
+  // Gemini is called only after repeated weak local detections.
+  Timer? _liveYoloTimer;
+  bool _isLiveYoloRunning = false;
+  bool _isGeminiFallbackRunning = false;
+  LiveDetection? _currentLiveDetection;
+  DateTime? _lastGeminiFallbackAt;
+  String? _lastWeakLabel;
+  Rect? _lastWeakBox;
+  int _weakStableCount = 0;
+  int _noYoloStableCount = 0;
+  static const int _requiredNoYoloTicksForGemini = 4; 
+
+  static const Duration _liveYoloInterval = Duration(milliseconds: 700);
+  static const Duration _geminiLiveCooldown = Duration(seconds: 20);
+  static const double _strongYoloThreshold = 0.70;
+  static const double _weakYoloThreshold = 0.45;
 
   @override
   void initState() {
@@ -218,6 +239,7 @@ Future<void> _toggleFlash() async {
 
   @override
   void dispose() {
+    _liveYoloTimer?.cancel();
     _stabilityTimer?.cancel();
     _radarController.dispose();
     _autoScanController?.dispose();
@@ -226,25 +248,61 @@ Future<void> _toggleFlash() async {
   }
 
   void _toggleLiveMode() {
+    if (_isLiveMode) {
+      setState(() => _isLiveMode = false);
+      _stopLiveDetection();
+    } else {
+      setState(() => _isLiveMode = true);
+      _startLiveDetection();
+    }
+  }
+
+  void _startLiveDetection() {
+    _radarController.repeat();
+    _resetStabilityState();
+
+    _currentLiveDetection = null;
+    _weakStableCount = 0;
+    _noYoloStableCount = 0;
+    _lastWeakLabel = null;
+    _lastWeakBox = null;
+
+    _liveYoloTimer?.cancel();
+    _liveYoloTimer = Timer.periodic(
+      _liveYoloInterval,
+      (_) => _runLiveYoloTick(),
+    );
+
     setState(() {
-      _isLiveMode = !_isLiveMode;
-      if (_isLiveMode) {
-        _radarController.repeat();
-        _resetStabilityState();
-        _stabilityTimer?.cancel();
-        _stabilityTimer = Timer.periodic(
-          _stabilityPollInterval,
-          (_) => _pollStability(),
-        );
-      } else {
-        _radarController.stop();
-        _stabilityTimer?.cancel();
-        _stabilityTimer = null;
-        _isCountingDown = false;
-        _autoScanController?.stop();
-        _autoScanController?.reset();
-      }
+      _liveStatusText = "Scanning live...";
     });
+  }
+
+  void _stopLiveDetection() {
+    _radarController.stop();
+    _radarController.reset();
+
+    _liveYoloTimer?.cancel();
+    _liveYoloTimer = null;
+
+    _stabilityTimer?.cancel();
+    _stabilityTimer = null;
+
+    _isCountingDown = false;
+    _autoScanController?.stop();
+    _autoScanController?.reset();
+
+    _currentLiveDetection = null;
+    _weakStableCount = 0;
+    _noYoloStableCount = 0;
+    _lastWeakLabel = null;
+    _lastWeakBox = null;
+
+    if (mounted) {
+      setState(() {
+        _liveStatusText = "Point camera at a tool";
+      });
+    }
   }
 
   void _resetStabilityState() {
@@ -272,6 +330,224 @@ Future<void> _toggleFlash() async {
       return await _cameraController!.takePicture();
     } finally {
       _isCapturing = false;
+    }
+  }
+
+  Future<void> _runLiveYoloTick() async {
+    if (!_isLiveMode) return;
+    if (_isAnalyzing || _isLiveYoloRunning) return;
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return;
+    }
+
+    _isLiveYoloRunning = true;
+
+    try {
+      final XFile? photo = await _safeTakePicture();
+      if (photo == null) return;
+
+      final bytes = await photo.readAsBytes();
+      final cropRect = _computeCropRect();
+
+      final backgroundResult = await compute(processImageInBackground, {
+        'bytes': bytes,
+        'cropLeft': cropRect.left,
+        'cropTop': cropRect.top,
+        'cropWidth': cropRect.width,
+        'cropHeight': cropRect.height,
+      });
+
+      final local = await VisionService.processLocalOnly(
+        modelInput: backgroundResult['modelInput'] as Float32List,
+      );
+
+      if (!mounted || !_isLiveMode) return;
+
+      if (local == null || local['is_null'] == true) {
+        _weakStableCount = 0;
+        _lastWeakLabel = null;
+        _lastWeakBox = null;
+
+        _noYoloStableCount++;
+
+        setState(() {
+          _currentLiveDetection = null;
+          _liveStatusText = _noYoloStableCount >= 2
+              ? "Checking with AI soon..."
+              : "Hold steady / improve lighting";
+        });
+
+        if (_noYoloStableCount >= _requiredNoYoloTicksForGemini) {
+          await _runLiveGeminiFallback(
+            apiBytes: backgroundResult['apiBytes'] as Uint8List,
+            weakBox: null,
+          );
+
+          _noYoloStableCount = 0;
+        }
+
+        return;
+      }
+
+      final confidence = (local['confidence'] as num).toDouble();
+      final label = local['item_name']?.toString() ?? "Unknown Object";
+      final boxData = local['box'] as Map<String, dynamic>;
+      final box = Rect.fromLTWH(
+        (boxData['x'] as num).toDouble(),
+        (boxData['y'] as num).toDouble(),
+        (boxData['w'] as num).toDouble(),
+        (boxData['h'] as num).toDouble(),
+      );
+
+      if (confidence >= _strongYoloThreshold) {
+        _weakStableCount = 0;
+        _lastWeakLabel = null;
+        _lastWeakBox = null;
+        _noYoloStableCount = 0;
+
+        setState(() {
+          _currentLiveDetection = LiveDetection(
+            label: label,
+            confidence: confidence,
+            box: box,
+            source: LiveDetectionSource.yoloStrong,
+          );
+          _liveStatusText =
+              "$label ${(confidence * 100).toStringAsFixed(1)}%";
+        });
+        return;
+      }
+
+      if (confidence >= _weakYoloThreshold) {
+        _noYoloStableCount = 0;
+        _handleWeakLiveDetection(
+          label: label,
+          confidence: confidence,
+          box: box,
+          apiBytes: backgroundResult['apiBytes'] as Uint8List,
+        );
+        return;
+      }
+
+      _weakStableCount = 0;
+      _lastWeakLabel = null;
+      _lastWeakBox = null;
+
+      _noYoloStableCount++;
+
+      setState(() {
+        _currentLiveDetection = null;
+        _liveStatusText = _noYoloStableCount >= 2
+            ? "Checking with AI soon..."
+            : "Hold steady / improve lighting";
+      });
+
+      if (_noYoloStableCount >= _requiredNoYoloTicksForGemini) {
+        await _runLiveGeminiFallback(
+          apiBytes: backgroundResult['apiBytes'] as Uint8List,
+          weakBox: null,
+        );
+
+        _noYoloStableCount = 0;
+      }
+    } catch (e) {
+      debugPrint("Live YOLO tick failed: $e");
+    } finally {
+      _isLiveYoloRunning = false;
+    }
+  }
+
+  void _handleWeakLiveDetection({
+    required String label,
+    required double confidence,
+    required Rect box,
+    required Uint8List apiBytes,
+  }) {
+    final sameLabel = _lastWeakLabel == label;
+    final sameBox = _lastWeakBox != null && _boxDiff(_lastWeakBox!, box) < 0.08;
+
+    if (sameLabel && sameBox) {
+      _weakStableCount++;
+    } else {
+      _weakStableCount = 1;
+      _lastWeakLabel = label;
+      _lastWeakBox = box;
+    }
+
+    setState(() {
+      _currentLiveDetection = LiveDetection(
+        label: label,
+        confidence: confidence,
+        box: box,
+        source: LiveDetectionSource.yoloWeak,
+      );
+      _liveStatusText = "Checking $label...";
+    });
+
+    if (_weakStableCount >= 3) {
+      _runLiveGeminiFallback(apiBytes: apiBytes, weakBox: box);
+    }
+  }
+
+  double _boxDiff(Rect a, Rect b) {
+    return (a.left - b.left).abs() +
+        (a.top - b.top).abs() +
+        (a.width - b.width).abs() +
+        (a.height - b.height).abs();
+  }
+
+  Future<void> _runLiveGeminiFallback({
+    required Uint8List apiBytes,
+    required Rect? weakBox,
+  }) async {
+    if (_isGeminiFallbackRunning) return;
+
+    final now = DateTime.now();
+    if (_lastGeminiFallbackAt != null &&
+        now.difference(_lastGeminiFallbackAt!) < _geminiLiveCooldown) {
+      return;
+    }
+
+    _isGeminiFallbackRunning = true;
+    _lastGeminiFallbackAt = now;
+
+    try {
+      if (mounted && _isLiveMode) {
+        setState(() => _liveStatusText = "Confirming with AI...");
+      }
+
+      final cloud = await GeminiService.scanHardwareObject(apiBytes);
+      if (!mounted || !_isLiveMode) return;
+
+      if (cloud == null) {
+        setState(() => _liveStatusText = "AI confirmation failed");
+        return;
+      }
+
+      final isHardware = cloud['is_hardware'] == true;
+      final label = cloud['item_name']?.toString() ?? "Unknown Object";
+      final confidence = (cloud['confidence'] as num?)?.toDouble() ?? 0.0;
+
+      if (isHardware) {
+        setState(() {
+          _currentLiveDetection = LiveDetection(
+            label: label,
+            confidence: confidence,
+            box: weakBox,
+            source: LiveDetectionSource.geminiFallback,
+          );
+          _liveStatusText = "$label confirmed by AI";
+        });
+      } else {
+        setState(() {
+          _currentLiveDetection = null;
+          _liveStatusText = "Not a hardware tool";
+        });
+      }
+    } catch (e) {
+      debugPrint("Live Gemini fallback failed: $e");
+    } finally {
+      _isGeminiFallbackRunning = false;
     }
   }
 
@@ -609,25 +885,16 @@ Future<void> _toggleFlash() async {
         child: const Icon(LucideIcons.imageOff, color: Colors.grey, size: 24),
       );
     }
-    if (kIsWeb || imageUrl.startsWith('http')) {
-      return Image.network(
-        imageUrl,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Container(
-          color: const Color(0xFF334155),
-          child: const Icon(LucideIcons.imageOff, color: Colors.grey, size: 24),
-        ),
-      );
-    } else {
-      return Image.file(
-        File(imageUrl),
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Container(
-          color: const Color(0xFF334155),
-          child: const Icon(LucideIcons.imageOff, color: Colors.grey, size: 24),
-        ),
-      );
-    }
+    // Use network rendering here so this file remains Web-compatible.
+    // Product images uploaded through Supabase already use public URLs.
+    return Image.network(
+      imageUrl,
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => Container(
+        color: const Color(0xFF334155),
+        child: const Icon(LucideIcons.imageOff, color: Colors.grey, size: 24),
+      ),
+    );
   }
 
   Widget _buildAnalyzingOverlay() {
@@ -1035,7 +1302,18 @@ Future<void> _toggleFlash() async {
                         key: _previewBoundaryKey,
                         child: _buildFullScreenCameraPreview(),
                       ),
-                      
+
+                      if (_isLiveMode && _currentLiveDetection != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: LiveDetectionPainter(
+                                _currentLiveDetection!,
+                              ),
+                            ),
+                          ),
+                        ),
+
                       if (_isLiveMode && _isCountingDown)
                         Center(
                           child: AnimatedBuilder(
@@ -1534,6 +1812,179 @@ class ScanLinePainter extends CustomPainter {
       oldDelegate.progress != progress || oldDelegate.vertical != vertical;
 }
 
+
+enum LiveDetectionSource {
+  yoloStrong,
+  yoloWeak,
+  geminiFallback,
+}
+
+class LiveDetection {
+  final String label;
+  final double confidence;
+  final Rect? box;
+  final LiveDetectionSource source;
+
+  const LiveDetection({
+    required this.label,
+    required this.confidence,
+    required this.source,
+    this.box,
+  });
+}
+
+class LiveDetectionPainter extends CustomPainter {
+  final LiveDetection detection;
+
+  LiveDetectionPainter(this.detection);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final box = detection.box;
+    if (box == null) {
+      _drawCenterCard(canvas, size);
+      return;
+    }
+
+    final rect = Rect.fromLTWH(
+      box.left * size.width,
+      box.top * size.height,
+      box.width * size.width,
+      box.height * size.height,
+    );
+
+    final isWeak = detection.source == LiveDetectionSource.yoloWeak;
+    final isGemini = detection.source == LiveDetectionSource.geminiFallback;
+
+    final color = isGemini
+        ? Colors.orangeAccent
+        : isWeak
+            ? Colors.yellowAccent
+            : Colors.greenAccent;
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = isWeak ? 2.0 : 3.5
+      ..color = color;
+
+    if (isWeak || isGemini) {
+      _drawDashedRect(canvas, rect, paint);
+    } else {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(8)),
+        paint,
+      );
+    }
+
+    final sourceText = isGemini
+        ? "Gemini fallback"
+        : isWeak
+            ? "Checking..."
+            : "YOLO";
+
+    final label =
+        "${detection.label} ${(detection.confidence * 100).toStringAsFixed(1)}% · $sourceText";
+
+    _drawLabel(canvas, size, rect, label, color);
+  }
+
+  void _drawDashedRect(Canvas canvas, Rect rect, Paint paint) {
+    const dashWidth = 10.0;
+    const dashSpace = 6.0;
+
+    void drawDashedLine(Offset start, Offset end) {
+      final dx = end.dx - start.dx;
+      final dy = end.dy - start.dy;
+      final distance = math.sqrt(dx * dx + dy * dy);
+      if (distance == 0) return;
+      final unitX = dx / distance;
+      final unitY = dy / distance;
+
+      for (double current = 0; current < distance; current += dashWidth + dashSpace) {
+        final next = math.min(current + dashWidth, distance);
+        canvas.drawLine(
+          Offset(start.dx + unitX * current, start.dy + unitY * current),
+          Offset(start.dx + unitX * next, start.dy + unitY * next),
+          paint,
+        );
+      }
+    }
+
+    drawDashedLine(rect.topLeft, rect.topRight);
+    drawDashedLine(rect.topRight, rect.bottomRight);
+    drawDashedLine(rect.bottomRight, rect.bottomLeft);
+    drawDashedLine(rect.bottomLeft, rect.topLeft);
+  }
+
+  void _drawLabel(Canvas canvas, Size size, Rect rect, String text, Color color) {
+    final textSpan = TextSpan(
+      text: text,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 260);
+
+    final tagTop = rect.top - 28 < 0 ? rect.top + 4 : rect.top - 28;
+    final tagLeft = rect.left.clamp(0.0, math.max(0.0, size.width - textPainter.width - 14)).toDouble();
+    final tagRect = Rect.fromLTWH(
+      tagLeft,
+      tagTop,
+      textPainter.width + 14,
+      24,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(tagRect, const Radius.circular(6)),
+      Paint()..color = color.withOpacity(0.85),
+    );
+
+    textPainter.paint(canvas, Offset(tagRect.left + 7, tagRect.top + 4));
+  }
+
+  void _drawCenterCard(Canvas canvas, Size size) {
+    final textSpan = TextSpan(
+      text: "${detection.label}\nGemini fallback",
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 14,
+        fontWeight: FontWeight.bold,
+        height: 1.3,
+      ),
+    );
+
+    final textPainter = TextPainter(
+      text: textSpan,
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 220);
+
+    final rect = Rect.fromCenter(
+      center: Offset(size.width / 2, size.height / 2),
+      width: textPainter.width + 32,
+      height: textPainter.height + 24,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(14)),
+      Paint()..color = Colors.black.withOpacity(0.72),
+    );
+
+    textPainter.paint(canvas, Offset(rect.left + 16, rect.top + 12));
+  }
+
+  @override
+  bool shouldRepaint(covariant LiveDetectionPainter oldDelegate) {
+    return oldDelegate.detection != detection;
+  }
+}
+
 class BoundingBoxOverlay extends StatelessWidget {
   final Uint8List imageBytes;
   final Map<String, dynamic>? boxData;
@@ -1584,10 +2035,10 @@ class BoxPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double left = (box['x'] as double) * size.width;
-    final double top = (box['y'] as double) * size.height;
-    final double width = (box['w'] as double) * size.width;
-    final double height = (box['h'] as double) * size.height;
+    final double left = (box['x'] as num).toDouble() * size.width;
+    final double top = (box['y'] as num).toDouble() * size.height;
+    final double width = (box['w'] as num).toDouble() * size.width;
+    final double height = (box['h'] as num).toDouble() * size.height;
 
     final rect = Rect.fromLTWH(left, top, width, height);
 
