@@ -751,6 +751,7 @@ class _MainScreenState extends State<MainScreen> {
 
     switch (notification.type) {
       case NotificationType.newOrder:
+      case NotificationType.orderAssigned:
         if (orderId == null || orderId.isEmpty) {
           return 'Order ID not found in notification.';
         }
@@ -820,6 +821,7 @@ class _MainScreenState extends State<MainScreen> {
 
     switch (notification.type) {
       case NotificationType.newOrder:
+      case NotificationType.orderAssigned:
         if (orderId == null || orderId.isEmpty) {
           AppToast.error(context, 'Order ID not found in notification.');
           return;

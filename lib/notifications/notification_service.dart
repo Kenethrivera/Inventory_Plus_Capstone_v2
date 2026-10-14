@@ -61,6 +61,7 @@ class NotificationService {
 
       if (notification.type == NotificationType.transaction ||
           notification.type == NotificationType.newOrder ||
+          notification.type == NotificationType.orderAssigned ||
           notification.type == NotificationType.orderPrepared ||
           notification.type == NotificationType.stockAlert ||
           notification.type == NotificationType.exportReminder ||
@@ -298,6 +299,26 @@ class NotificationService {
       reportType: reportType,
       periodType: periodType,
       periodKey: periodKey,
+    );
+
+    await createNotification(notification);
+  }
+
+  Future<void> notifyOrderAssigned({
+    required String locationId,
+    required String orderId,
+    required String helperId,
+    required String helperName,
+    required String assignedByName,
+    required DateTime assignedAt,
+  }) async {
+    final notification = NotificationFactory.orderAssigned(
+      locationId: locationId,
+      orderId: orderId,
+      helperId: helperId,
+      helperName: helperName,
+      assignedByName: assignedByName,
+      assignedAt: assignedAt,
     );
 
     await createNotification(notification);

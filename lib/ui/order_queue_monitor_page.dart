@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import 'widgets/app_toast.dart';
+import 'package:inventory_plus/notifications/notification_provider.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const Color _darkText = Color(0xFF0F172A);
@@ -31,6 +33,8 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
   Timer? _timer;
   String? _selectedOrderId;
   String? _pendingAutoOpenId;
+  final Map<String, String> _assignedHelperIdOverrides = {};
+  final Map<String, String> _assignedHelperNameOverrides = {};
 
   @override
   void initState() {
@@ -111,7 +115,7 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
       case 'pending':
         return 'Waiting for helper';
       case 'prepared':
-        return 'Ready for payment';
+        return 'For payment';
       case 'completed':
         return 'Completed';
       case 'cancelled':
@@ -164,7 +168,7 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
           _handlePendingAutoOpen(orders);
 
           final waitingOrders = orders.where(_isWaiting).toList()
-            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
           final readyOrders = orders.where(_isReady).toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -179,7 +183,16 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
 
           final oldestWaiting = waitingOrders.isEmpty
               ? 'None'
-              : _timeAgo(waitingOrders.first.createdAt);
+              : _timeAgo(
+                  waitingOrders
+                      .reduce(
+                        (oldest, current) =>
+                            current.createdAt.isBefore(oldest.createdAt)
+                            ? current
+                            : oldest,
+                      )
+                      .createdAt,
+                );
 
           final selectedOrder = _selectedOrder(orders);
 
@@ -218,7 +231,7 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                       Expanded(
                         flex: 3,
                         child: _buildOrdersPanel(
-                          title: 'Ready for Payment',
+                          title: 'For Payment',
                           subtitle:
                               'Prepared orders waiting for cashier payment.',
                           count: readyOrders.length,
@@ -297,7 +310,7 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
               ),
               SizedBox(height: 4),
               Text(
-                'Read-only monitoring for helper preparation, waiting time, and queue delays.',
+                'Monitor order ownership, helper assignment, preparation time, and queue delays.',
                 style: TextStyle(
                   color: _mutedText,
                   fontSize: 14,
@@ -323,10 +336,14 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
       child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.visibility_outlined, size: 16, color: _primaryBlue),
+          Icon(
+            Icons.admin_panel_settings_outlined,
+            size: 16,
+            color: _primaryBlue,
+          ),
           SizedBox(width: 8),
           Text(
-            'Admin view only',
+            'Admin monitor',
             style: TextStyle(
               color: _primaryBlue,
               fontWeight: FontWeight.w800,
@@ -509,6 +526,79 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
     );
   }
 
+  String _personName(String? value, {String fallback = 'Not recorded'}) {
+    final text = value?.trim();
+
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
+      return fallback;
+    }
+
+    return text;
+  }
+
+  String _formatDateTime(DateTime? date) {
+    if (date == null) return 'Not recorded';
+
+    final hour = date.hour > 12
+        ? date.hour - 12
+        : (date.hour == 0 ? 12 : date.hour);
+    final minute = date.minute.toString().padLeft(2, '0');
+    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+
+    return '${date.month}/${date.day}/${date.year} $hour:$minute $suffix';
+  }
+
+  Widget _buildMiniInfoChip({
+    required IconData icon,
+    required String text,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                fontFamily: _fontFam,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _displayAssignedHelperId(CustomerOrder order) {
+    return _assignedHelperIdOverrides[order.id] ?? order.assignedHelperId;
+  }
+
+  String? _displayAssignedHelperName(CustomerOrder order) {
+    return _assignedHelperNameOverrides[order.id] ?? order.assignedHelperName;
+  }
+
+  bool _hasAssignedHelper(CustomerOrder order) {
+    final name = _displayAssignedHelperName(order);
+    final id = _displayAssignedHelperId(order);
+
+    return (name != null && name.trim().isNotEmpty) ||
+        (id != null && id.trim().isNotEmpty);
+  }
+
   Widget _buildOrderCard(CustomerOrder order) {
     final id = order.id.toString();
     final selected = _selectedOrderId == id;
@@ -572,7 +662,7 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    '$itemCount item${itemCount == 1 ? '' : 's'} • ${_timeAgo(order.createdAt)}',
+                    '$itemCount item${itemCount == 1 ? '' : 's'} • Created by ${_personName(order.createdByName)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -592,6 +682,32 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                       fontWeight: FontWeight.w800,
                       fontFamily: _fontFam,
                     ),
+                  ),
+
+                  const SizedBox(height: 7),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _buildMiniInfoChip(
+                        icon: Icons.access_time,
+                        text: _timeAgo(order.createdAt),
+                        color: _mutedText,
+                      ),
+                      if (_hasAssignedHelper(order))
+                        _buildMiniInfoChip(
+                          icon: Icons.person_pin_circle_outlined,
+                          text:
+                              'Assigned: ${_displayAssignedHelperName(order) ?? 'Helper'}',
+                          color: _primaryBlue,
+                        )
+                      else if (status == 'pending')
+                        _buildMiniInfoChip(
+                          icon: Icons.person_off_outlined,
+                          text: 'Unassigned',
+                          color: Colors.orange,
+                        ),
+                    ],
                   ),
                 ],
               ),
@@ -670,13 +786,75 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
         const SizedBox(height: 16),
         _buildInfoRow('Queue status', _statusLabel(status)),
         _buildInfoRow('Waiting time', _timeAgo(order.createdAt)),
-        _buildInfoRow('Created', order.createdAt.toString()),
+        _buildInfoRow('Created', _formatDateTime(order.createdAt)),
+        _buildInfoRow('Created by', _personName(order.createdByName)),
+
+        const SizedBox(height: 8),
+        _buildInfoRow(
+          'Assigned helper',
+          _personName(
+            _displayAssignedHelperName(order),
+            fallback: 'Unassigned',
+          ),
+        ),
+
+        if (order.assignedAt != null)
+          _buildInfoRow('Assigned at', _formatDateTime(order.assignedAt)),
+        if (order.assignedByAdminName != null)
+          _buildInfoRow('Assigned by', _personName(order.assignedByAdminName)),
+
+        const SizedBox(height: 8),
+        _buildInfoRow(
+          'Prepared by',
+          _personName(order.preparedByName, fallback: 'Not prepared yet'),
+        ),
+        if (order.preparedAt != null)
+          _buildInfoRow('Prepared at', _formatDateTime(order.preparedAt)),
+
+        if (order.completedByName != null) ...[
+          const SizedBox(height: 8),
+          _buildInfoRow('Completed by', _personName(order.completedByName)),
+        ],
+        if (order.completedAt != null)
+          _buildInfoRow('Completed at', _formatDateTime(order.completedAt)),
+
         _buildInfoRow('Item count', order.items.length.toString()),
         _buildInfoRow('Total amount', _money(order.totalAmount)),
+        
         if (isDelayed) ...[
           const SizedBox(height: 14),
           _buildWarningNotice(
             'This order is delayed because it has been waiting for 30 minutes or more.',
+          ),
+        ],
+        if (status == 'pending') ...[
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton.icon(
+              onPressed: () => _showAssignHelperDialog(order),
+              icon: const Icon(
+                Icons.assignment_ind_outlined,
+                color: Colors.white,
+                size: 18,
+              ),
+              label: Text(
+                _hasAssignedHelper(order) ? 'Reassign Helper' : 'Assign Helper',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontFamily: _fontFam,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryBlue,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
           ),
         ],
         const SizedBox(height: 20),
@@ -693,7 +871,7 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
         ...order.items.map(_buildItemRow),
         const SizedBox(height: 18),
         _buildLockedNotice(
-          'Preparation actions are disabled for admin. Only helpers can prepare orders.',
+          'Admin can assign helpers, but only helpers can mark orders as prepared.',
         ),
       ],
     );
@@ -759,6 +937,245 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showAssignHelperDialog(CustomerOrder order) async {
+    final pageContext = context;
+
+    final notificationController = NotificationProvider.maybeOf(pageContext);
+    final locationId = widget.controller.activeLocationId;
+
+    final staff = await widget.controller.fetchStaff();
+
+    final helpers = staff.where((person) {
+      final role = person['role']?.toString().toLowerCase() ?? '';
+      return role == 'helper';
+    }).toList();
+
+    if (!mounted) return;
+
+    if (helpers.isEmpty) {
+      AppToast.error(context, 'No helpers found for this store.');
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            width: 420,
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: _primaryBlue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.assignment_ind_outlined,
+                        color: _primaryBlue,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Assign Helper',
+                        style: TextStyle(
+                          color: _darkText,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          fontFamily: _fontFam,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: const Icon(Icons.close, color: _mutedText),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Order #${_shortOrderId(order.id)}',
+                  style: const TextStyle(
+                    color: _mutedText,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: _fontFam,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: helpers.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final helper = helpers[index];
+                      final helperId = helper['id'].toString();
+                      final helperName =
+                          helper['name']?.toString() ?? 'Unknown Helper';
+
+                      final currentHelperId = _displayAssignedHelperId(order);
+                      final isCurrent = currentHelperId?.toString() == helperId;
+
+                      return InkWell(
+                        onTap: () async {
+                          try {
+                            final currentHelperId = _displayAssignedHelperId(
+                              order,
+                            );
+
+                            if (currentHelperId?.toString() == helperId) {
+                              if (dialogContext.mounted) {
+                                Navigator.pop(dialogContext);
+                              }
+
+                              AppToast.error(
+                                pageContext,
+                                '$helperName is already assigned to this order.',
+                              );
+
+                              return;
+                            }
+
+                            final assignedByName =
+                                widget.controller.currentUserName ?? 'Admin';
+                            final assignedAt = DateTime.now();
+
+                            await widget.controller.assignOrderToHelper(
+                              orderId: order.id,
+                              helperId: helperId,
+                              helperName: helperName,
+                            );
+
+                            if (notificationController == null) {
+                              AppToast.error(
+                                pageContext,
+                                'Order assigned, but notification provider was not found.',
+                              );
+                            } else if (locationId == null) {
+                              AppToast.error(
+                                pageContext,
+                                'Order assigned, but location ID was not found.',
+                              );
+                            } else {
+                              await notificationController.notifyOrderAssigned(
+                                locationId: locationId,
+                                orderId: order.id,
+                                helperId: helperId,
+                                helperName: helperName,
+                                assignedByName: assignedByName,
+                                assignedAt: assignedAt,
+                              );
+                            }
+
+                            if (!mounted) return;
+
+                            setState(() {
+                              _selectedOrderId = order.id;
+                              _assignedHelperIdOverrides[order.id] = helperId;
+                              _assignedHelperNameOverrides[order.id] =
+                                  helperName;
+                            });
+
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                            }
+
+                            AppToast.success(
+                              pageContext,
+                              'Assigned to $helperName',
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+
+                            AppToast.error(
+                              pageContext,
+                              'Could not assign helper: $e',
+                            );
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: isCurrent
+                                ? _primaryBlue.withOpacity(0.08)
+                                : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isCurrent
+                                  ? _primaryBlue
+                                  : const Color(0xFFE5E7EB),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: _primaryBlue.withOpacity(0.12),
+                                child: Text(
+                                  helperName.isNotEmpty
+                                      ? helperName[0].toUpperCase()
+                                      : 'H',
+                                  style: const TextStyle(
+                                    color: _primaryBlue,
+                                    fontWeight: FontWeight.w900,
+                                    fontFamily: _fontFam,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  helperName,
+                                  style: const TextStyle(
+                                    color: _darkText,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    fontFamily: _fontFam,
+                                  ),
+                                ),
+                              ),
+                              if (isCurrent)
+                                const Icon(
+                                  Icons.check_circle,
+                                  color: _primaryBlue,
+                                  size: 20,
+                                )
+                              else
+                                const Icon(
+                                  Icons.chevron_right,
+                                  color: _mutedText,
+                                  size: 20,
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

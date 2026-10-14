@@ -11,10 +11,12 @@ enum NotificationType {
   newOrder,
   orderPrepared,
   orderCancelled,
+  orderAssigned,
 
   inventoryAdded,
   inventoryUpdated,
   inventoryDeleted,
 
   system,
+  
 }

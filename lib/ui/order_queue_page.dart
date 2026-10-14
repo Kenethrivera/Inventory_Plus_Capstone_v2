@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -34,19 +35,17 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   Duration? _timeOffset;
   String? _pendingAutoOpenId;
 
-  // Track the selected order to show the checklist inline
-  dynamic _selectedOrder;
-  List<dynamic> _cachedOrders = [];
+  CustomerOrder? _selectedOrder;
+  List<CustomerOrder> _cachedOrders = [];
 
-  // ===========================================================================
-  // STATE PERSISTENCE: Track picked items per order so we can "Continue" later
-  // ===========================================================================
   final Map<String, Set<String>> _pickedTracker = {};
 
   @override
   void initState() {
     super.initState();
+
     _pendingAutoOpenId = widget.targetOrderId;
+
     _timer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -55,6 +54,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   @override
   void didUpdateWidget(OrderQueuePage oldWidget) {
     super.didUpdateWidget(oldWidget);
+
     if (widget.targetOrderId != null &&
         widget.targetOrderId != oldWidget.targetOrderId) {
       _pendingAutoOpenId = widget.targetOrderId;
@@ -69,27 +69,32 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   String _timeAgo(DateTime date) {
     var now = DateTime.now();
+
     if (date.isAfter(now)) {
       final drift = date.difference(now);
+
       if (_timeOffset == null || drift > _timeOffset!) {
         _timeOffset = drift;
       }
     }
+
     if (_timeOffset != null) {
       now = now.add(_timeOffset!);
     }
+
     final diff = now.difference(date);
     final minutes = diff.inMinutes;
+
     if (minutes < 1) return 'Just now';
     if (minutes < 60) return '${minutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
+
     return '${diff.inDays}d ago';
   }
 
-  void _openOrderChecklist(dynamic order) {
+  void _openOrderChecklist(CustomerOrder order) {
     setState(() {
       _selectedOrder = order;
-      // Initialize tracking set for this order if it doesn't exist
       _pickedTracker[order.id] ??= {};
     });
   }
@@ -103,6 +108,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   void _togglePickedItem(String orderId, String productId, bool isPicked) {
     setState(() {
       _pickedTracker[orderId] ??= {};
+
       if (isPicked) {
         _pickedTracker[orderId]!.add(productId);
       } else {
@@ -113,23 +119,54 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   bool _isToday(DateTime date) {
     final now = DateTime.now();
+
     return date.year == now.year &&
         date.month == now.month &&
         date.day == now.day;
+  }
+
+  bool _isAssignedToCurrentHelper(CustomerOrder order) {
+    final currentUserId = widget.controller.currentUserId;
+
+    if (currentUserId == null) return false;
+
+    return order.assignedHelperId?.toString() == currentUserId.toString();
+  }
+
+  bool _isUnassigned(CustomerOrder order) {
+    return order.assignedHelperId == null ||
+        order.assignedHelperId.toString().trim().isEmpty;
+  }
+
+  bool _canCurrentHelperPrepare(CustomerOrder order) {
+    return _isUnassigned(order) || _isAssignedToCurrentHelper(order);
+  }
+
+  String _assignmentLabel(CustomerOrder order) {
+    if (_isAssignedToCurrentHelper(order)) {
+      return 'Assigned to you';
+    }
+
+    if (_isUnassigned(order)) {
+      return 'Unassigned';
+    }
+
+    return 'Assigned to ${order.assignedHelperName ?? 'another helper'}';
   }
 
   @override
   Widget build(BuildContext context) {
     if (_selectedOrder != null) {
       return OrderChecklistPage(
-        order: _selectedOrder,
+        order: _selectedOrder!,
         controller: widget.controller,
-        pickedItems: _pickedTracker[_selectedOrder.id] ?? {},
-        onToggleItem: (productId, isPicked) =>
-            _togglePickedItem(_selectedOrder.id, productId, isPicked),
+        pickedItems: _pickedTracker[_selectedOrder!.id] ?? {},
+        onToggleItem: (productId, isPicked) {
+          _togglePickedItem(_selectedOrder!.id, productId, isPicked);
+        },
         onBack: _closeOrderChecklist,
         onFinish: () {
-          _pickedTracker.remove(_selectedOrder.id); // Clear tracker on finish
+          _pickedTracker.remove(_selectedOrder!.id);
           _closeOrderChecklist();
         },
       );
@@ -146,9 +183,11 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
               child: CircularProgressIndicator(color: _primaryBlue),
             );
           }
+
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
           }
+
           if (snapshot.hasData) {
             _cachedOrders = snapshot.data!;
           }
@@ -170,6 +209,17 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                     context,
                     'This order is already ${orderToOpen.status}.',
                   );
+
+                  widget.onOrderOpened?.call();
+                  return;
+                }
+
+                if (!_canCurrentHelperPrepare(orderToOpen)) {
+                  AppToast.error(
+                    context,
+                    'This order is assigned to another helper.',
+                  );
+
                   widget.onOrderOpened?.call();
                   return;
                 }
@@ -180,17 +230,27 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             }
           }
 
-          // Compute Stats
-          final pendingOrders = _cachedOrders
-              .where((o) => o.status == 'pending')
-              .toList()
-            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          final pendingOrders =
+              _cachedOrders
+                  .where((o) => o.status == 'pending')
+                  .where(_canCurrentHelperPrepare)
+                  .toList()
+                ..sort((a, b) {
+                  final aAssignedToMe = _isAssignedToCurrentHelper(a);
+                  final bAssignedToMe = _isAssignedToCurrentHelper(b);
+
+                  if (aAssignedToMe && !bAssignedToMe) return -1;
+                  if (!aAssignedToMe && bAssignedToMe) return 1;
+
+                  return b.createdAt.compareTo(a.createdAt);
+                });
 
           int waitingCount = 0;
           int pickingCount = 0;
 
-          for (var o in pendingOrders) {
-            final picked = _pickedTracker[o.id]?.length ?? 0;
+          for (final order in pendingOrders) {
+            final picked = _pickedTracker[order.id]?.length ?? 0;
+
             if (picked > 0) {
               pickingCount++;
             } else {
@@ -198,7 +258,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             }
           }
 
-          int readyTodayCount = _cachedOrders
+          final readyTodayCount = _cachedOrders
               .where((o) => o.status == 'prepared' && _isToday(o.createdAt))
               .length;
 
@@ -208,7 +268,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  "Order queue",
+                  'Order queue',
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.w900,
@@ -218,7 +278,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "Pick each item, then notify the cashier.",
+                  'Pick each item, then notify the cashier.',
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey.shade600,
@@ -226,30 +286,24 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                   ),
                 ),
                 const SizedBox(height: 24),
-
-                // Stat Cards Row
                 Row(
                   children: [
                     Expanded(
                       child: _buildStatCard(
-                        "Waiting",
-                        "$waitingCount",
-                        isActive: true, // Matches blue highlight from screenshot
+                        'Waiting',
+                        '$waitingCount',
+                        isActive: true,
                       ),
                     ),
                     const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildStatCard("Picking", "$pickingCount"),
-                    ),
+                    Expanded(child: _buildStatCard('Picking', '$pickingCount')),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: _buildStatCard("Ready today", "$readyTodayCount"),
+                      child: _buildStatCard('Ready today', '$readyTodayCount'),
                     ),
                   ],
                 ),
                 const SizedBox(height: 24),
-
-                // Order List
                 Expanded(
                   child: pendingOrders.isEmpty
                       ? Center(
@@ -276,6 +330,8 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                               timeAgo: _timeAgo(order.createdAt),
                               pickedCount: pickedCount,
                               totalItems: totalItems,
+                              assignmentLabel: _assignmentLabel(order),
+                              assignedToMe: _isAssignedToCurrentHelper(order),
                               onPrepare: () => _openOrderChecklist(order),
                             );
                           },
@@ -329,10 +385,12 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 }
 
 class _OrderCard extends StatelessWidget {
-  final dynamic order;
+  final CustomerOrder order;
   final String timeAgo;
   final int pickedCount;
   final int totalItems;
+  final String assignmentLabel;
+  final bool assignedToMe;
   final VoidCallback onPrepare;
 
   const _OrderCard({
@@ -341,6 +399,8 @@ class _OrderCard extends StatelessWidget {
     required this.timeAgo,
     required this.pickedCount,
     required this.totalItems,
+    required this.assignmentLabel,
+    required this.assignedToMe,
     required this.onPrepare,
   });
 
@@ -348,6 +408,7 @@ class _OrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final String shortId = order.id.toString().substring(0, 8).toUpperCase();
     final bool isPicking = pickedCount > 0;
+    final Color assignmentColor = assignedToMe ? _primaryBlue : Colors.orange;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -368,30 +429,69 @@ class _OrderCard extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '#ORD-$shortId',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                    color: Color(0xFF0F172A),
-                    fontFamily: _fontFam,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '#ORD-$shortId',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                      color: Color(0xFF0F172A),
+                      fontFamily: _fontFam,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '$totalItems items · $timeAgo' +
-                      (isPicking ? ' · $pickedCount/$totalItems picked' : ''),
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 13,
-                    fontFamily: _fontFam,
+                  const SizedBox(height: 8),
+                  Text(
+                    '$totalItems items · $timeAgo'
+                    '${isPicking ? ' · $pickedCount/$totalItems picked' : ''}',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 13,
+                      fontFamily: _fontFam,
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: assignmentColor.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: assignmentColor.withOpacity(0.22),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          assignedToMe
+                              ? Icons.person_pin_circle_outlined
+                              : Icons.person_off_outlined,
+                          size: 14,
+                          color: assignmentColor,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          assignmentLabel,
+                          style: TextStyle(
+                            color: assignmentColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            fontFamily: _fontFam,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 16),
             ElevatedButton(
               onPressed: onPrepare,
               style: ElevatedButton.styleFrom(
@@ -422,11 +522,8 @@ class _OrderCard extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// FULL-SCREEN CHECKLIST 
-// ============================================================================
 class OrderChecklistPage extends StatelessWidget {
-  final dynamic order;
+  final CustomerOrder order;
   final InventoryController controller;
   final Set<String> pickedItems;
   final Function(String productId, bool isPicked) onToggleItem;
@@ -473,7 +570,11 @@ class OrderChecklistPage extends StatelessWidget {
     }
   }
 
-  void _showItemLocationMap(BuildContext context, String productId, String productName) {
+  void _showItemLocationMap(
+    BuildContext context,
+    String productId,
+    String productName,
+  ) {
     showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
@@ -486,18 +587,28 @@ class OrderChecklistPage extends StatelessWidget {
             children: [
               Container(
                 color: const Color(0xFF0F172A),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Location: $productName',
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: _fontFam),
+                    Expanded(
+                      child: Text(
+                        'Location: $productName',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: _fontFam,
+                        ),
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.close, color: Colors.white),
                       onPressed: () => Navigator.pop(dialogContext),
-                    )
+                    ),
                   ],
                 ),
               ),
@@ -516,7 +627,11 @@ class OrderChecklistPage extends StatelessWidget {
     );
   }
 
-  void _openScannerToCheckoff(BuildContext context, String expectedProductId, double targetQuantity) {
+  void _openScannerToCheckoff(
+    BuildContext context,
+    String expectedProductId,
+    double targetQuantity,
+  ) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -524,6 +639,7 @@ class OrderChecklistPage extends StatelessWidget {
           controller: controller,
           onSelectItem: (scannedItem) {
             Navigator.pop(context);
+
             if (scannedItem.id == expectedProductId) {
               showDialog(
                 context: context,
@@ -533,7 +649,10 @@ class OrderChecklistPage extends StatelessWidget {
                   onConfirm: () {
                     onToggleItem(expectedProductId, true);
                     Navigator.pop(context);
-                    AppToast.success(context, '${scannedItem.name} checked off!');
+                    AppToast.success(
+                      context,
+                      '${scannedItem.name} checked off!',
+                    );
                   },
                 ),
               );
@@ -560,10 +679,14 @@ class OrderChecklistPage extends StatelessWidget {
       backgroundColor: const Color(0xFFF4F6F8),
       body: Column(
         children: [
-          // Custom Header
           Container(
             color: const Color(0xFFF4F6F8),
-            padding: const EdgeInsets.only(left: 32, right: 32, top: 40, bottom: 20),
+            padding: const EdgeInsets.only(
+              left: 32,
+              right: 32,
+              top: 40,
+              bottom: 20,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -585,28 +708,30 @@ class OrderChecklistPage extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Order assignment",
-                          style: TextStyle(
-                            color: Colors.grey.shade500,
-                            fontSize: 14,
-                            fontFamily: _fontFam,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Order assignment',
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 14,
+                              fontFamily: _fontFam,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "#ORD-$shortId",
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF0F172A),
-                            fontFamily: _fontFam,
+                          const SizedBox(height: 4),
+                          Text(
+                            '#ORD-$shortId',
+                            style: const TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF0F172A),
+                              fontFamily: _fontFam,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     Row(
                       children: [
@@ -625,13 +750,15 @@ class OrderChecklistPage extends StatelessWidget {
                         const SizedBox(width: 12),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.blue.shade50,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            "$pickedCount/$totalCount",
+                            '$pickedCount/$totalCount',
                             style: const TextStyle(
                               color: _primaryBlue,
                               fontWeight: FontWeight.bold,
@@ -646,7 +773,10 @@ class OrderChecklistPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  "Ready for picking",
+                  order.assignedHelperName != null &&
+                          order.assignedHelperName.toString().trim().isNotEmpty
+                      ? 'Assigned to ${order.assignedHelperName}'
+                      : 'Unassigned order',
                   style: TextStyle(
                     color: Colors.grey.shade600,
                     fontSize: 14,
@@ -657,8 +787,6 @@ class OrderChecklistPage extends StatelessWidget {
               ],
             ),
           ),
-
-          // Items List
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -671,19 +799,23 @@ class OrderChecklistPage extends StatelessWidget {
                   item: item,
                   isPicked: isPicked,
                   onToggle: (val) => onToggleItem(item.productId, val!),
-                  onMapTap: () => _showItemLocationMap(context, item.productId, item.productName),
-                  onScanTap: () => _openScannerToCheckoff(context, item.productId, item.quantity),
+                  onMapTap: () => _showItemLocationMap(
+                    context,
+                    item.productId,
+                    item.productName,
+                  ),
+                  onScanTap: () => _openScannerToCheckoff(
+                    context,
+                    item.productId,
+                    item.quantity,
+                  ),
                 );
               },
             ),
           ),
-
-          // Bottom Action Bar
           Container(
             padding: const EdgeInsets.all(32),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF4F6F8),
-            ),
+            decoration: const BoxDecoration(color: Color(0xFFF4F6F8)),
             child: SizedBox(
               width: double.infinity,
               height: 56,
@@ -699,8 +831,8 @@ class OrderChecklistPage extends StatelessWidget {
                 ),
                 child: Text(
                   isAllPicked
-                      ? "Notify Cashier (Prepared)"
-                      : "Pick all items first ($pickedCount/$totalCount)",
+                      ? 'Notify Cashier (Prepared)'
+                      : 'Pick all items first ($pickedCount/$totalCount)',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -718,7 +850,7 @@ class OrderChecklistPage extends StatelessWidget {
 }
 
 class _ChecklistItemCard extends StatelessWidget {
-  final dynamic item;
+  final CustomerOrderItem item;
   final bool isPicked;
   final ValueChanged<bool?> onToggle;
   final VoidCallback onMapTap;
@@ -750,7 +882,6 @@ class _ChecklistItemCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Custom Checkbox
             Container(
               width: 24,
               height: 24,
@@ -776,20 +907,25 @@ class _ChecklistItemCard extends StatelessWidget {
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 16,
-                      color: isPicked ? Colors.grey.shade500 : const Color(0xFF0F172A),
+                      color: isPicked
+                          ? Colors.grey.shade500
+                          : const Color(0xFF0F172A),
                       decoration: isPicked ? TextDecoration.lineThrough : null,
                       fontFamily: _fontFam,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.blue.shade50,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      "QTY: ${item.quantity.truncateToDouble() == item.quantity ? item.quantity.toInt() : item.quantity}",
+                      'QTY: ${item.quantity.truncateToDouble() == item.quantity ? item.quantity.toInt() : item.quantity}',
                       style: const TextStyle(
                         color: _primaryBlue,
                         fontSize: 11,
@@ -803,10 +939,7 @@ class _ChecklistItemCard extends StatelessWidget {
             ),
             Row(
               children: [
-                _buildActionButton(
-                  icon: LucideIcons.mapPin, 
-                  onTap: onMapTap,
-                ),
+                _buildActionButton(icon: LucideIcons.mapPin, onTap: onMapTap),
                 const SizedBox(width: 8),
                 _buildActionButton(
                   icon: LucideIcons.scanLine,
@@ -820,7 +953,10 @@ class _ChecklistItemCard extends StatelessWidget {
     );
   }
 
-  Widget _buildActionButton({required IconData icon, required VoidCallback onTap}) {
+  Widget _buildActionButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -839,9 +975,6 @@ class _ChecklistItemCard extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// PICK CONFIRMATION DIALOG 
-// ============================================================================
 class PickConfirmationDialog extends StatelessWidget {
   final InventoryItem item;
   final double targetQuantity;
@@ -864,8 +997,8 @@ class PickConfirmationDialog extends StatelessWidget {
     return AppDialog(
       icon: LucideIcons.checkCircle2,
       color: Colors.green,
-      title: "Item Verified!",
-      subtitle: "SKU-${item.sku}",
+      title: 'Item Verified!',
+      subtitle: 'SKU-${item.sku}',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -935,9 +1068,9 @@ class PickConfirmationDialog extends StatelessWidget {
                         fontFamily: _fontFam,
                       ),
                       children: [
-                        const TextSpan(text: "Please pick exactly "),
+                        const TextSpan(text: 'Please pick exactly '),
                         TextSpan(
-                          text: "$displayQty ${item.unit}",
+                          text: '$displayQty ${item.unit}',
                           style: const TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: 16,
@@ -964,7 +1097,7 @@ class PickConfirmationDialog extends StatelessWidget {
             side: BorderSide(color: Colors.grey.shade300),
           ),
           child: const Text(
-            "Cancel",
+            'Cancel',
             style: TextStyle(
               color: Colors.black87,
               fontWeight: FontWeight.bold,
@@ -976,8 +1109,12 @@ class PickConfirmationDialog extends StatelessWidget {
           onPressed: onConfirm,
           icon: const Icon(LucideIcons.check, size: 18),
           label: const Text(
-            "Confirm Pick",
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontFamily: _fontFam),
+            'Confirm Pick',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              fontFamily: _fontFam,
+            ),
           ),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.green,

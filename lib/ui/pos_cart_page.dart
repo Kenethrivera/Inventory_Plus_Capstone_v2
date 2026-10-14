@@ -1270,7 +1270,10 @@ class _PosCartPageState extends State<PosCartPage>
       );
     }
 
-    String cashierName = widget.controller.currentUserName ?? "Admin";
+    final String cashierName =
+        o.completedByName ??
+        widget.controller.currentUserName ??
+        'Unknown Cashier';
 
     final DateTime completedTime = completedAt ?? DateTime.now();
     final String completedStr = _fmtReceiptDate(completedTime);

@@ -207,7 +207,33 @@ class CustomerOrder {
   final String status;
   final DateTime createdAt;
   final double totalAmount;
-  final double discountAmount; // <-- 1. ADD THIS
+  final double discountAmount;
+
+  final String? createdById;
+  final String? createdByName;
+
+  final String? assignedHelperId;
+  final String? assignedHelperName;
+  final DateTime? assignedAt;
+  final String? assignedByAdminId;
+  final String? assignedByAdminName;
+
+  final String? preparedById;
+  final String? preparedByName;
+  final DateTime? preparedAt;
+
+  final String? completedById;
+  final String? completedByName;
+  final DateTime? completedAt;
+
+  final String? cancelledById;
+  final String? cancelledByName;
+  final DateTime? cancelledAt;
+
+  final String? returnedById;
+  final String? returnedByName;
+  final DateTime? returnedAt;
+  final String? returnReason;
 
   CustomerOrder({
     required this.id,
@@ -215,21 +241,82 @@ class CustomerOrder {
     required this.status,
     required this.createdAt,
     this.totalAmount = 0.0,
-    this.discountAmount = 0.0, // <-- 2. ADD THIS
+    this.discountAmount = 0.0,
+    this.createdById,
+    this.createdByName,
+    this.assignedHelperId,
+    this.assignedHelperName,
+    this.assignedAt,
+    this.assignedByAdminId,
+    this.assignedByAdminName,
+    this.preparedById,
+    this.preparedByName,
+    this.preparedAt,
+    this.completedById,
+    this.completedByName,
+    this.completedAt,
+    this.cancelledById,
+    this.cancelledByName,
+    this.cancelledAt,
+    this.returnedById,
+    this.returnedByName,
+    this.returnedAt,
+    this.returnReason,
   });
 
   factory CustomerOrder.fromJson(Map<String, dynamic> json) {
     return CustomerOrder(
       id: json['id'].toString(),
       status: json['status'] ?? 'pending',
-      createdAt: DateTime.parse(json['created_at']).toLocal(),
-      totalAmount: (json['total_amount'] as num?)?.toDouble() ?? 0.0, 
-      // 3. READ IT FROM SUPABASE:
-      discountAmount: (json['discount_amount'] as num?)?.toDouble() ?? 0.0, 
-      items: (json['items'] as List<dynamic>?)
-              ?.map((i) => CustomerOrderItem.fromJson(i as Map<String, dynamic>))
+      createdAt: _parseDate(json['created_at']) ?? DateTime.now(),
+      totalAmount: (json['total_amount'] as num?)?.toDouble() ?? 0.0,
+      discountAmount: (json['discount_amount'] as num?)?.toDouble() ?? 0.0,
+
+      createdById: json['created_by_id']?.toString(),
+      createdByName: json['created_by_name']?.toString(),
+
+      assignedHelperId: json['assigned_helper_id']?.toString(),
+      assignedHelperName: json['assigned_helper_name']?.toString(),
+      assignedAt: _parseDate(json['assigned_at']),
+      assignedByAdminId: json['assigned_by_admin_id']?.toString(),
+      assignedByAdminName: json['assigned_by_admin_name']?.toString(),
+
+      preparedById: json['prepared_by_id']?.toString(),
+      preparedByName: json['prepared_by_name']?.toString(),
+      preparedAt: _parseDate(json['prepared_at']),
+
+      completedById: json['completed_by_id']?.toString(),
+      completedByName: json['completed_by_name']?.toString(),
+      completedAt: _parseDate(json['completed_at']),
+
+      cancelledById: json['cancelled_by_id']?.toString(),
+      cancelledByName: json['cancelled_by_name']?.toString(),
+      cancelledAt: _parseDate(json['cancelled_at']),
+
+      returnedById: json['returned_by_id']?.toString(),
+      returnedByName: json['returned_by_name']?.toString(),
+      returnedAt: _parseDate(json['returned_at']),
+      returnReason: json['return_reason']?.toString(),
+
+      items:
+          (json['items'] as List<dynamic>?)
+              ?.map(
+                (i) => CustomerOrderItem.fromJson(
+                  Map<String, dynamic>.from(i as Map),
+                ),
+              )
               .toList() ??
           [],
     );
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+
+    try {
+      return DateTime.parse(value.toString()).toLocal();
+    } catch (_) {
+      return null;
+    }
   }
 }

@@ -5,6 +5,7 @@ import 'models/app_notification.dart';
 import 'models/notification_type.dart';
 import 'notification_controller.dart';
 import 'notification_tile.dart';
+import '../ui/widgets/app_toast.dart';
 
 enum NotificationFilter {
   all,
@@ -220,6 +221,7 @@ class _NotificationPageState extends State<NotificationPage> {
 
     final hasOrders = notifications.any((n) {
       return n.type == NotificationType.newOrder ||
+          n.type == NotificationType.orderAssigned ||
           n.type == NotificationType.orderPrepared ||
           n.type == NotificationType.orderCancelled;
     });
@@ -349,13 +351,7 @@ class _NotificationPageState extends State<NotificationPage> {
                     if (errorMessage != null) {
                       if (!context.mounted) return;
 
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(errorMessage),
-                          backgroundColor: Colors.red,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
+                      AppToast.error(context, errorMessage);
 
                       return;
                     }
@@ -393,6 +389,7 @@ class _NotificationPageState extends State<NotificationPage> {
       case NotificationFilter.orders:
         return notifications.where((n) {
           return n.type == NotificationType.newOrder ||
+              n.type == NotificationType.orderAssigned ||
               n.type == NotificationType.orderPrepared ||
               n.type == NotificationType.orderCancelled;
         }).toList();

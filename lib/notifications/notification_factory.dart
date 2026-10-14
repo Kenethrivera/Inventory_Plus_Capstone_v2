@@ -259,6 +259,34 @@ class NotificationFactory {
     return '$month $day, $year, $hour:$minute $period';
   }
 
+  static AppNotification orderAssigned({
+    required String locationId,
+    required String orderId,
+    required String helperId,
+    required String helperName,
+    required String assignedByName,
+    required DateTime assignedAt,
+  }) {
+    final shortOrderId = _shortOrderId(orderId);
+    final formattedTime = _formatDateTime(assignedAt);
+
+    return create(
+      locationId: locationId,
+      targetRoles: const ['helper'],
+      title: 'Order Assigned #$shortOrderId',
+      body: '$assignedByName assigned this order to you • $formattedTime',
+      type: NotificationType.orderAssigned,
+      priority: NotificationPriority.high,
+      payload: {
+        'orderId': orderId,
+        'helperId': helperId,
+        'helperName': helperName,
+        'assignedByName': assignedByName,
+        'assignedAt': assignedAt.toUtc().toIso8601String(),
+      },
+    );
+  }
+
   static AppNotification orderPrepared({
     required String locationId,
     required String orderId,

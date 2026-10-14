@@ -889,7 +889,6 @@ class InventoryController {
     }
   }
 
-  // CHANGE 1: Update the signature to return Future<CustomerOrder?>
   Future<CustomerOrder?> createCustomerOrder(
     List<CustomerOrderItem> items, {
     required double totalAmount,
@@ -897,10 +896,10 @@ class InventoryController {
     String? paymentMode,
     double? cashGiven,
     double? changeAmount,
-    bool soloHandled = false,  
+    bool soloHandled = false,
   }) async {
     final locId = activeLocationId;
-    if (locId == null) return null; // CHANGE 2: return null
+    if (locId == null) return null;
 
     for (final oi in items) {
       if (!_items.any((i) => i.id == oi.productId)) {
@@ -912,36 +911,46 @@ class InventoryController {
     }
 
     try {
-      final response = await supabase.from('orders').insert({
-        'location_id': locId,
-        'status': 'pending',
-        'total_amount': totalAmount,
-        'discount_amount': discountAmount,
-        'payment_mode': paymentMode ?? 'Cash',
-        'cash_given': cashGiven,
-        'change_amount': changeAmount,
-        'items': items.map((i) => i.toJson()).toList(),
-        'created_by': currentUserNumericId,
-        'status': soloHandled ? 'solo_picking' : 'pending', 
-      }).select();
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      final response = await supabase
+          .from('orders')
+          .insert({
+            'location_id': locId,
+            'status': soloHandled ? 'solo_picking' : 'pending',
+            'total_amount': totalAmount,
+            'discount_amount': discountAmount,
+            'payment_mode': paymentMode ?? 'Cash',
+            'cash_given': cashGiven,
+            'change_amount': changeAmount,
+            'items': items.map((i) => i.toJson()).toList(),
+
+            // ownership
+            'created_by_id': currentUserId,
+            'created_by_name': currentUserName ?? 'Unknown User',
+
+            // optional old field, keep only if your old DB still uses it
+            'created_by': currentUserNumericId,
+          })
+          .select()
+          .single();
 
       for (var orderItem in items) {
         final index = _items.indexWhere((i) => i.id == orderItem.productId);
+
         if (index != -1) {
           final currentItem = _items[index];
+
           final updatedItem = calculateCheckout(
             currentItem,
             orderItem.quantity,
           );
+
           await updateItem(updatedItem);
         }
       }
 
-      // CHANGE 3: Return the created order object
-      if (response.isNotEmpty) {
-        return CustomerOrder.fromJson(response.first);
-      }
-      return null;
+      return CustomerOrder.fromJson(Map<String, dynamic>.from(response));
     } catch (e) {
       rethrow;
     }
@@ -953,27 +962,38 @@ class InventoryController {
         .select('status')
         .eq('id', order.id)
         .single();
+
     final status = row['status'];
+
     if (status == 'completed' || status == 'cancelled') {
       throw Exception('Order is already $status.');
     }
 
     await supabase
         .from('orders')
-        .update({'status': 'cancelled'})
+        .update({
+          'status': 'cancelled',
+          'cancelled_by_id': currentUserId,
+          'cancelled_by_name': currentUserName ?? 'Unknown User',
+          'cancelled_at': DateTime.now().toUtc().toIso8601String(),
+        })
         .eq('id', order.id);
 
     for (final oi in order.items) {
       final index = _items.indexWhere((i) => i.id == oi.productId);
       if (index == -1) continue;
+
       final restored = _items[index].copyWith(
         quantity: _items[index].quantity + oi.quantity,
       );
+
       await supabase
           .from('products')
           .update({'product_quantity': restored.quantity})
           .eq('id', restored.id);
+
       _items[index] = restored;
+
       await _logTransaction(
         productId: restored.id,
         type: 'order_cancelled',
@@ -1001,17 +1021,44 @@ Stream<List<CustomerOrder>> streamOrders() {
  Future<void> updateOrderStatus(String orderId, String newStatus) async {
     try {
       final Map<String, dynamic> updateData = {'status': newStatus};
+
       if (newStatus == 'prepared') {
-        updateData['prepared_by'] = currentUserNumericId;
+        updateData['prepared_by_id'] = currentUserId;
+        updateData['prepared_by_name'] = currentUserName ?? 'Unknown User';
         updateData['prepared_at'] = DateTime.now().toUtc().toIso8601String();
+
+        // optional old field, keep only if your old DB still uses it
+        updateData['prepared_by'] = currentUserNumericId;
       }
+
       await supabase
           .from('orders')
           .update(updateData)
           .eq('id', orderId)
           .neq('status', 'cancelled')
           .neq('status', 'completed');
-    } catch (e) {}
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<void> assignOrderToHelper({
+    required String orderId,
+    required String helperId,
+    required String helperName,
+  }) async {
+    await supabase
+        .from('orders')
+        .update({
+          'assigned_helper_id': helperId,
+          'assigned_helper_name': helperName,
+          'assigned_at': DateTime.now().toUtc().toIso8601String(),
+          'assigned_by_admin_id': currentUserId,
+          'assigned_by_admin_name': currentUserName ?? 'Unknown Admin',
+        })
+        .eq('id', orderId)
+        .neq('status', 'cancelled')
+        .neq('status', 'completed');
   }
 
   Set<String>? _processingOrders;
@@ -1023,7 +1070,9 @@ Stream<List<CustomerOrder>> streamOrders() {
     double? changeAmount,
   }) async {
     _processingOrders ??= {};
+
     if (_processingOrders!.contains(order.id)) return null;
+
     _processingOrders!.add(order.id);
 
     try {
@@ -1032,15 +1081,21 @@ Stream<List<CustomerOrder>> streamOrders() {
           .select('status')
           .eq('id', order.id)
           .single();
+
       final s = checkOrder['status'];
+
       if (s == 'completed') return null;
       if (s == 'cancelled') throw Exception('This order was cancelled.');
 
       final completedAt = DateTime.now().toUtc();
+
       final Map<String, dynamic> updateData = {
         'status': 'completed',
         'completed_at': completedAt.toIso8601String(),
+        'completed_by_id': currentUserId,
+        'completed_by_name': currentUserName ?? 'Unknown User',
       };
+
       if (paymentMode != null) updateData['payment_mode'] = paymentMode;
       if (cashGiven != null) updateData['cash_given'] = cashGiven;
       if (changeAmount != null) updateData['change_amount'] = changeAmount;

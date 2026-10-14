@@ -385,4 +385,34 @@ class NotificationController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> notifyOrderAssigned({
+    required String locationId,
+    required String orderId,
+    required String helperId,
+    required String helperName,
+    required String assignedByName,
+    required DateTime assignedAt,
+  }) async {
+    try {
+      _errorMessage = null;
+
+      await _service.notifyOrderAssigned(
+        locationId: locationId,
+        orderId: orderId,
+        helperId: helperId,
+        helperName: helperName,
+        assignedByName: assignedByName,
+        assignedAt: assignedAt,
+      );
+
+      await loadNotifications();
+    } catch (e) {
+      _errorMessage = 'Failed to create assigned order notification: $e';
+      notifyListeners();
+    }
+  }
+
+
+
 }

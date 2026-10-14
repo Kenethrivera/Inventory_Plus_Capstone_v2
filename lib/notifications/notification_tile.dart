@@ -240,6 +240,8 @@ class NotificationTile extends StatelessWidget {
         return LucideIcons.circleX;
       case NotificationType.newOrder:
         return LucideIcons.shoppingCart;
+      case NotificationType.orderAssigned:
+        return LucideIcons.packageCheck;
       case NotificationType.orderPrepared:
         return LucideIcons.packageCheck;
       case NotificationType.orderCancelled:
@@ -268,6 +270,8 @@ class NotificationTile extends StatelessWidget {
         return LucideIcons.box;
       case NotificationType.newOrder:
         return LucideIcons.plus;
+      case NotificationType.orderAssigned:
+        return LucideIcons.check;
       case NotificationType.orderPrepared:
         return LucideIcons.check;
       case NotificationType.orderCancelled:

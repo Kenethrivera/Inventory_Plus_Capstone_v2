@@ -109,7 +109,11 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
   }
 
   bool _isDelayedPayment(CustomerOrder order) {
-    return _isWaitingForPayment(order) && _ageOf(order).inMinutes >= 15;
+    if (!_isWaitingForPayment(order)) return false;
+
+    final referenceDate = order.preparedAt ?? order.createdAt;
+
+    return DateTime.now().difference(referenceDate).inMinutes >= 15;
   }
 
   String _statusLabel(String status) {
@@ -170,10 +174,15 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
           _handlePendingAutoOpen(orders);
 
           final waitingForPayment = orders.where(_isWaitingForPayment).toList()
-            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+            ..sort((a, b) {
+              final aDate = a.preparedAt ?? a.createdAt;
+              final bDate = b.preparedAt ?? b.createdAt;
+
+              return bDate.compareTo(aDate);
+            });
 
           final stillInQueue = orders.where(_isStillInQueue).toList()
-            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
           final paidToday = orders.where(_isPaidToday).toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -192,7 +201,14 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
 
           final oldestPaymentWaiting = waitingForPayment.isEmpty
               ? 'None'
-              : _timeAgo(waitingForPayment.first.createdAt);
+              : _timeAgo(
+                  waitingForPayment.reduce((oldest, current) {
+                    final oldestDate = oldest.preparedAt ?? oldest.createdAt;
+                    final currentDate = current.preparedAt ?? current.createdAt;
+
+                    return currentDate.isBefore(oldestDate) ? current : oldest;
+                  }).createdAt,
+                );
 
           final selectedOrder = _selectedOrder(orders);
 
@@ -310,7 +326,7 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
               ),
               SizedBox(height: 4),
               Text(
-                'Read-only monitoring for cashier payment flow and checkout delays.',
+                'Monitor payment readiness, cashier flow, ownership, and checkout delays.',
                 style: TextStyle(
                   color: _mutedText,
                   fontSize: 14,
@@ -339,7 +355,7 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
           Icon(Icons.visibility_outlined, size: 16, color: _primaryBlue),
           SizedBox(width: 8),
           Text(
-            'Admin view only',
+            'Admin Monitor',
             style: TextStyle(
               color: _primaryBlue,
               fontWeight: FontWeight.w800,
@@ -523,6 +539,33 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
     );
   }
 
+  String _personName(String? value, {String fallback = 'Not recorded'}) {
+    final text = value?.trim();
+
+    if (text == null || text.isEmpty || text.toLowerCase() == 'null') {
+      return fallback;
+    }
+
+    return text;
+  }
+
+  String _formatDateTime(DateTime? date) {
+    if (date == null) return 'Not recorded';
+
+    final hour = date.hour > 12
+        ? date.hour - 12
+        : (date.hour == 0 ? 12 : date.hour);
+
+    final minute = date.minute.toString().padLeft(2, '0');
+    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+
+    return '${date.month}/${date.day}/${date.year} $hour:$minute $suffix';
+  }
+
+  DateTime _paymentReferenceDate(CustomerOrder order) {
+    return order.preparedAt ?? order.createdAt;
+  }
+
   Widget _buildOrderCard(CustomerOrder order) {
     final id = order.id.toString();
     final selected = _selectedOrderId == id;
@@ -586,7 +629,7 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    '$itemCount item${itemCount == 1 ? '' : 's'} • ${_timeAgo(order.createdAt)}',
+                    '$itemCount item${itemCount == 1 ? '' : 's'} • Created by ${_personName(order.createdByName)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -604,6 +647,22 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
                       color: color,
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
+                      fontFamily: _fontFam,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    status == 'prepared'
+                        ? 'Prepared by ${_personName(order.preparedByName)}'
+                        : status == 'completed'
+                        ? 'Completed by ${_personName(order.completedByName)}'
+                        : 'Assigned to ${_personName(order.assignedHelperName, fallback: 'Unassigned')}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _mutedText,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
                       fontFamily: _fontFam,
                     ),
                   ),
@@ -683,10 +742,38 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
         ),
         const SizedBox(height: 16),
         _buildInfoRow('Payment status', _statusLabel(status)),
-        _buildInfoRow('Waiting time', _timeAgo(order.createdAt)),
-        _buildInfoRow('Created', order.createdAt.toString()),
+        _buildInfoRow('Waiting time', _timeAgo(_paymentReferenceDate(order))),
+        _buildInfoRow('Created', _formatDateTime(order.createdAt)),
+        _buildInfoRow('Created by', _personName(order.createdByName)),
+
+        const SizedBox(height: 8),
+        _buildInfoRow(
+          'Assigned helper',
+          _personName(order.assignedHelperName, fallback: 'Unassigned'),
+        ),
+        if (order.assignedAt != null)
+          _buildInfoRow('Assigned at', _formatDateTime(order.assignedAt)),
+        if (order.assignedByAdminName != null)
+          _buildInfoRow('Assigned by', _personName(order.assignedByAdminName)),
+
+        const SizedBox(height: 8),
+        _buildInfoRow(
+          'Prepared by',
+          _personName(order.preparedByName, fallback: 'Not prepared yet'),
+        ),
+        if (order.preparedAt != null)
+          _buildInfoRow('Prepared at', _formatDateTime(order.preparedAt)),
+
+        if (order.completedByName != null) ...[
+          const SizedBox(height: 8),
+          _buildInfoRow('Completed by', _personName(order.completedByName)),
+        ],
+        if (order.completedAt != null)
+          _buildInfoRow('Completed at', _formatDateTime(order.completedAt)),
+
         _buildInfoRow('Item count', order.items.length.toString()),
         _buildInfoRow('Total amount', _money(order.totalAmount)),
+
         if (isDelayed) ...[
           const SizedBox(height: 14),
           _buildWarningNotice(
