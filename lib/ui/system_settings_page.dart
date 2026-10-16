@@ -6,6 +6,9 @@ import '../logic/inventory_controller.dart';
 import '../services/store_access_service.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const String _fontFam = 'Hellix';
@@ -56,6 +59,9 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   String? _thresholdError;
   bool _isSavingThresholds = false;
 
+  //QR Uploader
+  bool _isUploadingQr = false;
+
   @override
   void initState() {
     super.initState();
@@ -86,6 +92,51 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
           ),
         )
         .toList();
+  }
+  Future<void> _uploadGcashQr() async {
+    final picker = ImagePicker();
+    final XFile? file = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (file == null) return;
+
+    setState(() => _isUploadingQr = true);
+
+    try {
+      String? uploadedUrl;
+      final String fileName = 'gcash_qr_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final path = 'public/$fileName';
+
+      // --- NEW: Upload explicitly to the 'store_assets' bucket ---
+      if (kIsWeb) {
+        final bytes = await file.readAsBytes();
+        await widget.controller.supabase.storage
+            .from('store_assets') // Change to 'store_asset' if you didn't add the 's'
+            .uploadBinary(path, bytes);
+      } else {
+        await widget.controller.supabase.storage
+            .from('store_assets') // Change to 'store_asset' if you didn't add the 's'
+            .upload(path, File(file.path));
+      }
+
+      // Fetch the public URL from the bucket
+      uploadedUrl = widget.controller.supabase.storage
+          .from('store_assets')
+          .getPublicUrl(path);
+      // -----------------------------------------------------------
+
+      if (uploadedUrl.isNotEmpty) {
+        await widget.controller.updateGcashQrUrl(uploadedUrl);
+        if (mounted) {
+          AppToast.success(context, "GCash QR Code updated successfully!");
+        }
+      } else {
+        if (mounted) AppToast.error(context, "Failed to generate image link.");
+      }
+    } catch (e) {
+      if (mounted) AppToast.error(context, "Upload error: $e");
+    } finally {
+      if (mounted) setState(() => _isUploadingQr = false);
+    }
   }
 
   Future<void> _fetchSettings() async {
@@ -139,7 +190,96 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         ? AppToast.error(context, message)
         : AppToast.success(context, message);
   }
-
+Widget _buildPaymentSettings() {
+    final qrUrl = widget.controller.gcashQrUrl;
+    
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Payment Settings",
+            style: TextStyle(
+              fontSize: 16, 
+              fontWeight: FontWeight.bold, 
+              color: Color(0xFF0F172A),
+              fontFamily: 'Hellix',
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            "Store GCash QR Code",
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade600, fontFamily: 'Hellix'),
+          ),
+          const SizedBox(height: 12),
+          
+          // --- QR Code Display Area ---
+          Container(
+            height: 240,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: qrUrl.isNotEmpty
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(qrUrl, fit: BoxFit.contain),
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(LucideIcons.qrCode, size: 40, color: Colors.grey.shade300),
+                      const SizedBox(height: 8),
+                      Text(
+                        "No QR code uploaded",
+                        style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Hellix'),
+                      ),
+                    ],
+                  ),
+          ),
+          const SizedBox(height: 16),
+          
+          // --- Upload Button ---
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _isUploadingQr ? null : _uploadGcashQr,
+              icon: _isUploadingQr 
+                  ? const SizedBox(
+                      width: 16, 
+                      height: 16, 
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue)
+                    )
+                  : const Icon(LucideIcons.uploadCloud, size: 18, color: Colors.blue),
+              label: Text(
+                _isUploadingQr ? "Uploading..." : "Upload GCash QR",
+                style: const TextStyle(
+                  fontFamily: 'Hellix', 
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                side: BorderSide(color: Colors.blue.shade100),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   // ─── STORE HOURS & STAFF ACCESS ─────────────────────────────────────────────
   Future<void> _fetchStoreAccessSettings() async {
     final locationId = widget.controller.activeLocationId;
@@ -2585,9 +2725,14 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                     ),
                   ),
                   const SizedBox(height: 24),
+                  // --- ADD THESE TWO LINES ---
+                  _buildPaymentSettings(),
+                  const SizedBox(height: 48),
+                  // ---------------------------
                 ],
               ),
             ),
     );
   }
+
 }

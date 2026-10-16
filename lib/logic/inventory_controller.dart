@@ -50,6 +50,38 @@ class InventoryController {
   static const int _baselineWindowDays = 180;
   Map<String, double> _baselineByProduct = {};
 
+  String gcashQrUrl = '';
+
+  Future<void> loadStoreSettings() async {
+    try {
+      final response = await supabase
+          .from('store_settings')
+          .select('gcash_qr_url')
+          .eq('id', 1)
+          .maybeSingle();
+
+      if (response != null && response['gcash_qr_url'] != null) {
+        gcashQrUrl = response['gcash_qr_url'] as String;
+      }
+    } catch (e) {
+      debugPrint("Error loading store settings: $e");
+    }
+  }
+
+  Future<void> updateGcashQrUrl(String newUrl) async {
+    try {
+      await supabase
+          .from('store_settings')
+          .update({'gcash_qr_url': newUrl})
+          .eq('id', 1);
+
+      gcashQrUrl = newUrl;
+    } catch (e) {
+      debugPrint("Error updating GCash QR: $e");
+      throw Exception("Failed to save QR URL to database.");
+    }
+  }
+
   Future<void> Function({
     required String locationId,
     required String transactionId,
@@ -254,6 +286,7 @@ class InventoryController {
 
       await _loadStockBaselines();
       await fetchMapLayout();
+      await loadStoreSettings();
     } catch (e) {
       _items = [];
       _disabledItems = [];
@@ -1328,6 +1361,7 @@ Stream<List<CustomerOrder>> streamOrders() async* {
     String? paymentMode,
     double? cashGiven,
     double? changeAmount,
+    String? paymentReference,
   }) async {
     _processingOrders ??= {};
 
@@ -1359,6 +1393,10 @@ Stream<List<CustomerOrder>> streamOrders() async* {
       if (paymentMode != null) updateData['payment_mode'] = paymentMode;
       if (cashGiven != null) updateData['cash_given'] = cashGiven;
       if (changeAmount != null) updateData['change_amount'] = changeAmount;
+
+      if (paymentReference != null && paymentReference.isNotEmpty) {
+        updateData['payment_reference'] = paymentReference; 
+      }
 
       final row = await supabase
           .from('orders')
