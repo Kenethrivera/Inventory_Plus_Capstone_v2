@@ -83,38 +83,21 @@ class VisionService {
     return cloud;
   }
 
-
-  /// YOLO-only path for Live Mode.
-  ///
-  /// This intentionally does NOT call Gemini and does NOT use the cache.
-  /// Live mode calls this often, so it must stay cheap and local.
+  /// Live-mode YOLO-only inference. Never contacts Gemini or the scan cache.
   static Future<Map<String, dynamic>?> processLocalOnly({
     required Float32List modelInput,
     ScanLogger? logger,
   }) async {
-    final activeLogger = logger ?? ScanLogger.current;
-    final local = await TfliteService.detectObject(modelInput);
-
-    if (local == null) {
-      activeLogger?.log('LIVE LOCAL MODEL -> null');
-      return null;
-    }
-
-    final isNull = local.label == 'background_null';
-    final confPercent = (local.confidence * 100).toStringAsFixed(1);
-    activeLogger?.log('LIVE LOCAL MODEL -> ${local.label} ($confPercent%)');
-
+    final local = await TfliteService.detectObjectLive(modelInput);
+    if (local == null) return null;
     return {
-      'is_hardware': !isNull,
-      'item_name': isNull ? 'Background' : _formatLabel(local.label),
-      'raw_label': local.label,
+      'is_null': local.label == 'background_null',
+      'is_hardware': local.label != 'background_null',
+      'item_name': _formatLabel(local.label),
       'confidence': local.confidence,
-      'is_null': isNull,
       'box': {
-        'x': local.x,
-        'y': local.y,
-        'w': local.width,
-        'h': local.height,
+        'x': local.x, 'y': local.y,
+        'w': local.width, 'h': local.height,
       },
       'source': 'local_model_live',
     };
@@ -126,3 +109,4 @@ class VisionService {
       .map((w) => w[0].toUpperCase() + w.substring(1))
       .join(' ');
 }
+

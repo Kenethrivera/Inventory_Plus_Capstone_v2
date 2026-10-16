@@ -1,6 +1,6 @@
 import 'dart:isolate';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/services.dart'
     show rootBundle, RootIsolateToken, BackgroundIsolateBinaryMessenger;
 import 'package:flutter_litert/flutter_litert.dart';
@@ -27,6 +27,8 @@ class TfliteService {
   static Interpreter? _mainInterpreter;
   static List<String> _classes = [];
   static Future<void>? _initFuture;
+  // Reuse the interpreter/output buffer for high-frequency live inference.
+  static List<dynamic>? _mainOutput;
 
   /// Safe to call many times / concurrently; loads only once.
   static Future<void> initialize() => _initFuture ??= _load();
@@ -47,9 +49,29 @@ class TfliteService {
       _mainInterpreter = await Interpreter.fromAsset(
         'assets/models/best_v1.2.tflite',
       );
-    } catch (_) {
+      debugPrint('[YOLO] Model ready: ${_classes.length} classes, web=$kIsWeb');
+    } catch (e, st) {
+      debugPrint('[YOLO] Model initialization failed: $e\n$st');
       _initFuture = null;
     }
+  }
+
+  /// Live inference reuses the model instead of reloading it for every frame.
+  /// This is significantly faster on mobile than the manual method's
+  /// per-scan isolate startup, at the cost of brief synchronous UI work.
+  /// On web inference already executes on the main browser thread.
+  static Future<LocalDetectionResult?> detectObjectLive(Float32List input) async {
+    await initialize();
+    if (_mainInterpreter == null || _classes.isEmpty) {
+      debugPrint('[YOLO] Live model unavailable; verify model assets and runtime');
+      return null;
+    }
+    _mainOutput ??= List<double>.filled(
+      1 * (4 + _classes.length) * 8400, 0.0,
+    ).reshape([1, 4 + _classes.length, 8400]);
+    return _runInference(
+      _mainInterpreter, input, _classes, outputBuffer: _mainOutput,
+    );
   }
 
   /// [input] is the ready 1x3x640x640 letterboxed tensor.
@@ -91,13 +113,14 @@ class TfliteService {
   static LocalDetectionResult? _runInference(
     Interpreter? interpreter,
     Float32List input,
-    List<String> labels,
-  ) {
+    List<String> labels, {
+    List<dynamic>? outputBuffer,
+  }) {
     if (interpreter == null) return null;
 
     try {
       final numClasses = labels.length;
-      final output = List.filled(
+      final output = outputBuffer ?? List<double>.filled(
         1 * (4 + numClasses) * 8400,
         0.0,
       ).reshape([1, 4 + numClasses, 8400]);
@@ -143,7 +166,8 @@ class TfliteService {
         width: normW.clamp(0.0, 1.0),
         height: normH.clamp(0.0, 1.0),
       );
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[YOLO] Inference failed: $e\n$st');
       return null;
     }
   }

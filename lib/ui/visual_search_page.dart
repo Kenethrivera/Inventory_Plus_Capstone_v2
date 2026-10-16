@@ -88,22 +88,39 @@ class _VisualSearchPageState extends State<VisualSearchPage>
   String _liveStatusText = "Point camera at a tool";
 
 
-  // --- YOLO-first live mode ---
-  // Live mode uses cheap, throttled YOLO-only snapshots for bounding boxes.
-  // Gemini is called only after repeated weak local detections.
+  // --- YOLO-FIRST live mode ---
+  // Give local inference several attempts, but stop immediately for a strong
+  // result. Gemini runs only after exhausted YOLO attempts, or when the user
+  // explicitly presses Verify with Gemini.
   Timer? _liveYoloTimer;
+  Timer? _liveFallbackTimer;
   bool _isLiveYoloRunning = false;
   bool _isGeminiFallbackRunning = false;
+  bool _geminiAttemptedForScene = false;
+  bool _strongYoloSeen = false;
+  bool _yoloDeadlineReached = false;
   LiveDetection? _currentLiveDetection;
   DateTime? _lastGeminiFallbackAt;
-  String? _lastWeakLabel;
-  Rect? _lastWeakBox;
-  int _weakStableCount = 0;
-  int _noYoloStableCount = 0;
-  static const int _requiredNoYoloTicksForGemini = 4; 
+  DateTime? _liveScanStartedAt;
+  Uint8List? _lastLiveApiBytes;
+  Size? _liveImageSize;
+  // Scores are kept separately: Gemini's estimate never replaces YOLO's score.
+  String? _lastYoloCandidateName;
+  double? _lastYoloCandidateScore;
+  String? _liveError;
+  int _liveGeneration = 0;
+  int _yoloSamples = 0;
 
-  static const Duration _liveYoloInterval = Duration(milliseconds: 700);
-  static const Duration _geminiLiveCooldown = Duration(seconds: 20);
+  // Tune these values to balance latency and Gemini consumption.
+  // Most warm YOLO samples take ~2.5-3s on the tested browser, so 3 samples
+  // usually finish in ~8-10s. The first sample may take much longer.
+  static const Duration _liveYoloInterval = Duration(milliseconds: 650);
+  static const Duration _liveYoloWindow = Duration(seconds: 15);
+  static const int _targetYoloSamples = 3;
+  // If the 15-second deadline is reached, finish at least two attempts
+  // before falling back (unless a camera error prevents it).
+  static const int _minimumYoloSamples = 2;
+  static const Duration _geminiLiveCooldown = Duration(seconds: 30);
   static const double _strongYoloThreshold = 0.70;
   static const double _weakYoloThreshold = 0.45;
 
@@ -146,7 +163,9 @@ class _VisualSearchPageState extends State<VisualSearchPage>
     final previousController = _cameraController;
     _cameraController = CameraController(
       _cameras![index],
-      ResolutionPreset.high,
+      // Web webcams can be slow to capture/decode at full resolution.
+      // The YOLO input is 640x640 anyway; keep mobile camera quality high.
+      kIsWeb ? ResolutionPreset.medium : ResolutionPreset.high,
       enableAudio: false,
     );
     await previousController?.dispose();
@@ -240,6 +259,7 @@ Future<void> _toggleFlash() async {
   @override
   void dispose() {
     _liveYoloTimer?.cancel();
+    _liveFallbackTimer?.cancel();
     _stabilityTimer?.cancel();
     _radarController.dispose();
     _autoScanController?.dispose();
@@ -258,58 +278,167 @@ Future<void> _toggleFlash() async {
   }
 
   void _startLiveDetection() {
-    _radarController.repeat();
-    _resetStabilityState();
-
+    _liveGeneration++;
+    _liveScanStartedAt = DateTime.now();
+    _geminiAttemptedForScene = false;
+    _strongYoloSeen = false;
+    _yoloDeadlineReached = false;
     _currentLiveDetection = null;
-    _weakStableCount = 0;
-    _noYoloStableCount = 0;
-    _lastWeakLabel = null;
-    _lastWeakBox = null;
+    _lastLiveApiBytes = null;
+    _liveImageSize = null;
+    _lastYoloCandidateName = null;
+    _lastYoloCandidateScore = null;
+    _liveError = null;
+    _yoloSamples = 0;
+    _radarController.repeat();
+    _stabilityTimer?.cancel();
+    _autoScanController?.stop();
+    _autoScanController?.reset();
+    _isCountingDown = false;
 
     _liveYoloTimer?.cancel();
+    _liveFallbackTimer?.cancel();
     _liveYoloTimer = Timer.periodic(
-      _liveYoloInterval,
-      (_) => _runLiveYoloTick(),
+      _liveYoloInterval, (_) => unawaited(_runLiveYoloTick()),
     );
-
-    setState(() {
-      _liveStatusText = "Scanning live...";
+    _liveFallbackTimer = Timer(_liveYoloWindow, () {
+      // Do NOT run Gemini while a YOLO inference is still executing.
+      // Wait for its result; it may still be confidently correct.
+      _yoloDeadlineReached = true;
+      if (!_isLiveYoloRunning) _tryAutomaticGemini();
     });
+    setState(() => _liveStatusText = 'Scanning...');
+    // Do not wait for the 650ms periodic timer's first tick.
+    unawaited(_runLiveYoloTick());
   }
 
   void _stopLiveDetection() {
-    _radarController.stop();
-    _radarController.reset();
-
+    _liveGeneration++;
+    // Old HTTP completions are discarded by the generation guard.
+    _isGeminiFallbackRunning = false;
     _liveYoloTimer?.cancel();
     _liveYoloTimer = null;
-
+    _liveFallbackTimer?.cancel();
+    _liveFallbackTimer = null;
     _stabilityTimer?.cancel();
     _stabilityTimer = null;
-
-    _isCountingDown = false;
+    _radarController.stop();
+    _radarController.reset();
     _autoScanController?.stop();
     _autoScanController?.reset();
-
+    _isCountingDown = false;
+    _geminiAttemptedForScene = false;
+    _yoloDeadlineReached = false;
     _currentLiveDetection = null;
-    _weakStableCount = 0;
-    _noYoloStableCount = 0;
-    _lastWeakLabel = null;
-    _lastWeakBox = null;
-
-    if (mounted) {
-      setState(() {
-        _liveStatusText = "Point camera at a tool";
-      });
-    }
+    _liveError = null;
+    _lastLiveApiBytes = null;
+    _liveImageSize = null;
+    _lastYoloCandidateName = null;
+    _lastYoloCandidateScore = null;
+    if (mounted) setState(() => _liveStatusText = 'Point camera at a tool');
   }
 
   void _resetStabilityState() {
     _lastSignature = null;
     _stableCheckCount = 0;
     _isCountingDown = false;
-    _liveStatusText = "Point camera at a tool";
+    _liveStatusText = 'Point camera at a tool';
+  }
+
+  // YOLO coordinates are normalized relative to a 640x640 letterboxed image;
+  // undo the padding before projecting into the BoxFit.cover camera preview.
+  Rect? _modelToFrameBox(Rect box, Map<String, dynamic> preprocessed) {
+    const modelSize = 640.0;
+    final fittedW = (preprocessed['fittedWidth'] as num).toDouble();
+    final fittedH = (preprocessed['fittedHeight'] as num).toDouble();
+    if (fittedW <= 0 || fittedH <= 0) return null;
+    final padX = ((modelSize - fittedW) / 2).roundToDouble();
+    final padY = ((modelSize - fittedH) / 2).roundToDouble();
+    final left = ((box.left * modelSize - padX) / fittedW).clamp(0.0, 1.0).toDouble();
+    final top = ((box.top * modelSize - padY) / fittedH).clamp(0.0, 1.0).toDouble();
+    final right = ((box.right * modelSize - padX) / fittedW).clamp(0.0, 1.0).toDouble();
+    final bottom = ((box.bottom * modelSize - padY) / fittedH).clamp(0.0, 1.0).toDouble();
+    if (right - left < 0.015 || bottom - top < 0.015) return null;
+    if ((right - left) * (bottom - top) > 0.78) return null;
+    return Rect.fromLTRB(left, top, right, bottom);
+  }
+
+  // A strong YOLO result is final even if the model's box coordinates are
+  // malformed. Bounding-box validity affects drawing, not classification.
+  // These checks only decide WHEN to give up on local YOLO.
+  bool _shouldTryGeminiAfterYolo() {
+    if (_yoloSamples >= _targetYoloSamples) return true;
+    final start = _liveScanStartedAt;
+    final pastDeadline = _yoloDeadlineReached ||
+        (start != null && DateTime.now().difference(start) >= _liveYoloWindow);
+    return pastDeadline && _yoloSamples >= _minimumYoloSamples;
+  }
+
+  void _tryAutomaticGemini() {
+    if (!mounted || !_isLiveMode || _strongYoloSeen ||
+        _geminiAttemptedForScene || _isGeminiFallbackRunning ||
+        _isLiveYoloRunning) return;
+    if (!_shouldTryGeminiAfterYolo()) return;
+
+    final basis = _currentLiveDetection;
+    final bytes = basis?.snapshotBytes ?? _lastLiveApiBytes;
+    if (bytes == null) {
+      _liveYoloTimer?.cancel();
+      _liveFallbackTimer?.cancel();
+      setState(() {
+        _liveError = 'Could not obtain a usable camera frame for Gemini.';
+        _liveStatusText = 'Camera capture failed';
+      });
+      return;
+    }
+    final last = _lastGeminiFallbackAt;
+    if (last != null && DateTime.now().difference(last) < _geminiLiveCooldown) {
+      _liveYoloTimer?.cancel();
+      _liveFallbackTimer?.cancel();
+      setState(() {
+        _liveError = 'Gemini cooling down to protect the free-tier quota. '
+            'YOLO had no confident result; you can scan again or wait.';
+        _liveStatusText = 'Gemini cooldown active';
+      });
+      return;
+    }
+    debugPrint('[LIVE] YOLO finished $_yoloSamples sample(s) without '
+        'a strong classification: Gemini fallback');
+    unawaited(_runLiveGeminiFallback(
+      apiBytes: bytes,
+      weakBox: basis?.box,
+      snapshotSize: basis?.snapshotSize ?? _liveImageSize,
+      yoloCandidateName: basis?.yoloCandidateName ?? _lastYoloCandidateName,
+      yoloCandidateScore: basis?.yoloCandidateScore ?? _lastYoloCandidateScore,
+    ));
+  }
+
+  Future<void> _verifyWithGemini() async {
+    if (!_isLiveMode || _isGeminiFallbackRunning) return;
+    final basis = _currentLiveDetection;
+    final bytes = basis?.snapshotBytes ?? _lastLiveApiBytes;
+    if (bytes == null) {
+      setState(() => _liveError = 'No captured frame is available yet.');
+      return;
+    }
+    final last = _lastGeminiFallbackAt;
+    if (last != null && DateTime.now().difference(last) < _geminiLiveCooldown) {
+      setState(() => _liveError = 'Gemini cooldown: try again in a few seconds.');
+      return;
+    }
+    await _runLiveGeminiFallback(
+      apiBytes: bytes,
+      weakBox: basis?.box,
+      snapshotSize: basis?.snapshotSize ?? _liveImageSize,
+      yoloCandidateName: basis?.yoloCandidateName ?? _lastYoloCandidateName,
+      yoloCandidateScore: basis?.yoloCandidateScore ?? _lastYoloCandidateScore,
+      force: true,
+    );
+  }
+
+  void _restartLiveDetection() {
+    if (!_isLiveMode || _isGeminiFallbackRunning) return;
+    _startLiveDetection();
   }
 
   bool _isCapturing = false;
@@ -334,220 +463,198 @@ Future<void> _toggleFlash() async {
   }
 
   Future<void> _runLiveYoloTick() async {
-    if (!_isLiveMode) return;
-    if (_isAnalyzing || _isLiveYoloRunning) return;
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
-      return;
-    }
+    if (!_isLiveMode || _isAnalyzing || _isLiveYoloRunning ||
+        _isGeminiFallbackRunning || _geminiAttemptedForScene ||
+        _strongYoloSeen) return;
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
 
+    final generation = _liveGeneration;
     _isLiveYoloRunning = true;
-
+    final watch = Stopwatch()..start();
     try {
-      final XFile? photo = await _safeTakePicture();
-      if (photo == null) return;
-
-      final bytes = await photo.readAsBytes();
-      final cropRect = _computeCropRect();
-
-      final backgroundResult = await compute(processImageInBackground, {
-        'bytes': bytes,
-        'cropLeft': cropRect.left,
-        'cropTop': cropRect.top,
-        'cropWidth': cropRect.width,
-        'cropHeight': cropRect.height,
-      });
-
-      final local = await VisionService.processLocalOnly(
-        modelInput: backgroundResult['modelInput'] as Float32List,
+      final photo = await _safeTakePicture().timeout(
+        const Duration(seconds: 4),
       );
+      if (photo == null) throw StateError('Camera image unavailable');
+      final bytes = await photo.readAsBytes();
+      // Allow Gemini to proceed even if preprocessing or YOLO crashes.
+      _lastLiveApiBytes = bytes;
 
-      if (!mounted || !_isLiveMode) return;
+      final prepared = await compute(processImageInBackground, {
+        'bytes': bytes,
+        'cropLeft': 0.0, 'cropTop': 0.0,
+        'cropWidth': 1.0, 'cropHeight': 1.0,
+        'liveFast': true,
+      });
+      if (!mounted || !_isLiveMode || generation != _liveGeneration ||
+          _isGeminiFallbackRunning) return;
 
-      if (local == null || local['is_null'] == true) {
-        _weakStableCount = 0;
-        _lastWeakLabel = null;
-        _lastWeakBox = null;
+      _lastLiveApiBytes = prepared['apiBytes'] as Uint8List;
+      _liveImageSize = Size(
+        (prepared['frameWidth'] as num).toDouble(),
+        (prepared['frameHeight'] as num).toDouble(),
+      );
+      final local = await VisionService.processLocalOnly(
+        modelInput: prepared['modelInput'] as Float32List,
+      );
+      if (!mounted || !_isLiveMode || generation != _liveGeneration ||
+          _isGeminiFallbackRunning || _geminiAttemptedForScene) return;
+      _yoloSamples++;
+      debugPrint('[LIVE] YOLO sample $_yoloSamples in ${watch.elapsedMilliseconds}ms: '
+          '${local?['item_name'] ?? 'none'} ${local?['confidence'] ?? ''}');
 
-        _noYoloStableCount++;
+      final isNull = local == null || local['is_null'] == true;
+      final confidence = isNull ? 0.0 : (local['confidence'] as num).toDouble();
+      Rect? box;
+      if (!isNull && local['box'] is Map) {
+        final raw = local['box'] as Map;
+        box = _modelToFrameBox(Rect.fromLTWH(
+          (raw['x'] as num).toDouble(),
+          (raw['y'] as num).toDouble(),
+          (raw['w'] as num).toDouble(),
+          (raw['h'] as num).toDouble(),
+        ), prepared);
+      }
+      final name = isNull ? '' : local['item_name'].toString();
+      _lastYoloCandidateName = isNull ? null : name;
+      _lastYoloCandidateScore = isNull ? null : confidence;
+      if (!isNull && box == null) {
+        debugPrint('[LIVE BOX] YOLO returned $name '
+            '${(confidence * 100).toStringAsFixed(1)}%, '
+            'but its coordinates were unusable. Showing the snapshot without a box.');
+      }
+      if (!isNull && confidence >= _strongYoloThreshold) {
+        // A missing/invalid box must NOT force a high-confidence YOLO
+        // classification through Gemini (it only disables the overlay).
+        _strongYoloSeen = true;
+        _liveYoloTimer?.cancel();
+        _liveFallbackTimer?.cancel();
+        debugPrint('[LIVE] YOLO ACCEPTED at '
+            '${(confidence * 100).toStringAsFixed(1)}% '
+            '(usable box: ${box != null}). Gemini NOT called.');
+        setState(() {
+          _liveError = null;
+          _currentLiveDetection = LiveDetection(
+            label: name, confidence: confidence, box: box,
+            source: LiveDetectionSource.yoloStrong,
+            snapshotBytes: prepared['apiBytes'] as Uint8List,
+            snapshotSize: _liveImageSize,
+            yoloCandidateName: name,
+            yoloCandidateScore: confidence,
+          );
+          _liveStatusText = 'Item found';
+        });
+        return;
+      }
 
+      if (!isNull && confidence >= _weakYoloThreshold) {
+        // Between 45% and 70% is only a candidate, not a final result.
+        setState(() {
+          _liveError = null;
+          _currentLiveDetection = LiveDetection(
+            label: name, confidence: confidence, box: box,
+            source: LiveDetectionSource.yoloWeak,
+            snapshotBytes: prepared['apiBytes'] as Uint8List,
+            snapshotSize: _liveImageSize,
+            yoloCandidateName: name,
+            yoloCandidateScore: confidence,
+          );
+          _liveStatusText = 'Checking item...';
+        });
+      } else {
         setState(() {
           _currentLiveDetection = null;
-          _liveStatusText = _noYoloStableCount >= 2
-              ? "Checking with AI soon..."
-              : "Hold steady / improve lighting";
+          _liveStatusText = 'Scanning...';
         });
-
-        if (_noYoloStableCount >= _requiredNoYoloTicksForGemini) {
-          await _runLiveGeminiFallback(
-            apiBytes: backgroundResult['apiBytes'] as Uint8List,
-            weakBox: null,
-          );
-
-          _noYoloStableCount = 0;
-        }
-
-        return;
       }
-
-      final confidence = (local['confidence'] as num).toDouble();
-      final label = local['item_name']?.toString() ?? "Unknown Object";
-      final boxData = local['box'] as Map<String, dynamic>;
-      final box = Rect.fromLTWH(
-        (boxData['x'] as num).toDouble(),
-        (boxData['y'] as num).toDouble(),
-        (boxData['w'] as num).toDouble(),
-        (boxData['h'] as num).toDouble(),
-      );
-
-      if (confidence >= _strongYoloThreshold) {
-        _weakStableCount = 0;
-        _lastWeakLabel = null;
-        _lastWeakBox = null;
-        _noYoloStableCount = 0;
-
+      // Gemini is evaluated in finally, only AFTER this inference releases
+      // the single-inference guard. No fallback races a running YOLO call.
+    } catch (e, st) {
+      debugPrint('[LIVE] YOLO / camera failed after ${watch.elapsedMilliseconds}ms: $e\n$st');
+      if (mounted && _isLiveMode && generation == _liveGeneration &&
+          !_isGeminiFallbackRunning) {
+        _yoloSamples++; // A failed attempt also counts toward the limit.
         setState(() {
-          _currentLiveDetection = LiveDetection(
-            label: label,
-            confidence: confidence,
-            box: box,
-            source: LiveDetectionSource.yoloStrong,
-          );
-          _liveStatusText =
-              "$label ${(confidence * 100).toStringAsFixed(1)}%";
+          _liveError = 'YOLO camera/model error: $e';
+          _liveStatusText = 'Scanning...';
         });
-        return;
       }
-
-      if (confidence >= _weakYoloThreshold) {
-        _noYoloStableCount = 0;
-        _handleWeakLiveDetection(
-          label: label,
-          confidence: confidence,
-          box: box,
-          apiBytes: backgroundResult['apiBytes'] as Uint8List,
-        );
-        return;
-      }
-
-      _weakStableCount = 0;
-      _lastWeakLabel = null;
-      _lastWeakBox = null;
-
-      _noYoloStableCount++;
-
-      setState(() {
-        _currentLiveDetection = null;
-        _liveStatusText = _noYoloStableCount >= 2
-            ? "Checking with AI soon..."
-            : "Hold steady / improve lighting";
-      });
-
-      if (_noYoloStableCount >= _requiredNoYoloTicksForGemini) {
-        await _runLiveGeminiFallback(
-          apiBytes: backgroundResult['apiBytes'] as Uint8List,
-          weakBox: null,
-        );
-
-        _noYoloStableCount = 0;
-      }
-    } catch (e) {
-      debugPrint("Live YOLO tick failed: $e");
     } finally {
       _isLiveYoloRunning = false;
+      if (mounted && _isLiveMode && generation == _liveGeneration &&
+          !_strongYoloSeen && !_geminiAttemptedForScene &&
+          !_isGeminiFallbackRunning && _shouldTryGeminiAfterYolo()) {
+        _tryAutomaticGemini();
+      }
     }
-  }
-
-  void _handleWeakLiveDetection({
-    required String label,
-    required double confidence,
-    required Rect box,
-    required Uint8List apiBytes,
-  }) {
-    final sameLabel = _lastWeakLabel == label;
-    final sameBox = _lastWeakBox != null && _boxDiff(_lastWeakBox!, box) < 0.08;
-
-    if (sameLabel && sameBox) {
-      _weakStableCount++;
-    } else {
-      _weakStableCount = 1;
-      _lastWeakLabel = label;
-      _lastWeakBox = box;
-    }
-
-    setState(() {
-      _currentLiveDetection = LiveDetection(
-        label: label,
-        confidence: confidence,
-        box: box,
-        source: LiveDetectionSource.yoloWeak,
-      );
-      _liveStatusText = "Checking $label...";
-    });
-
-    if (_weakStableCount >= 3) {
-      _runLiveGeminiFallback(apiBytes: apiBytes, weakBox: box);
-    }
-  }
-
-  double _boxDiff(Rect a, Rect b) {
-    return (a.left - b.left).abs() +
-        (a.top - b.top).abs() +
-        (a.width - b.width).abs() +
-        (a.height - b.height).abs();
   }
 
   Future<void> _runLiveGeminiFallback({
     required Uint8List apiBytes,
     required Rect? weakBox,
+    Size? snapshotSize,
+    String? yoloCandidateName,
+    double? yoloCandidateScore,
+    bool force = false,
   }) async {
-    if (_isGeminiFallbackRunning) return;
-
-    final now = DateTime.now();
-    if (_lastGeminiFallbackAt != null &&
-        now.difference(_lastGeminiFallbackAt!) < _geminiLiveCooldown) {
-      return;
-    }
-
+    if (!mounted || !_isLiveMode || _isGeminiFallbackRunning) return;
+    if (!force && (_geminiAttemptedForScene || _strongYoloSeen)) return;
+    _geminiAttemptedForScene = true;
     _isGeminiFallbackRunning = true;
-    _lastGeminiFallbackAt = now;
+    _lastGeminiFallbackAt = DateTime.now();
+    _liveFallbackTimer?.cancel();
+    _liveYoloTimer?.cancel();
+    final generation = _liveGeneration;
 
+    setState(() {
+      _liveError = null;
+      _liveStatusText = 'Checking item...';
+    });
+    final watch = Stopwatch()..start();
     try {
-      if (mounted && _isLiveMode) {
-        setState(() => _liveStatusText = "Confirming with AI...");
-      }
-
-      final cloud = await GeminiService.scanHardwareObject(apiBytes);
-      if (!mounted || !_isLiveMode) return;
-
+      final response = await GeminiService.scanHardwareObjectLive(apiBytes);
+      if (!mounted || !_isLiveMode || generation != _liveGeneration) return;
+      final cloud = response.data;
       if (cloud == null) {
-        setState(() => _liveStatusText = "AI confirmation failed");
+        setState(() {
+          _liveError = response.error ?? 'Gemini returned no result.';
+          _liveStatusText = 'Gemini unavailable — ${response.error ?? 'No result'}';
+        });
         return;
       }
-
       final isHardware = cloud['is_hardware'] == true;
-      final label = cloud['item_name']?.toString() ?? "Unknown Object";
+      final name = cloud['item_name']?.toString() ?? 'Unknown object';
       final confidence = (cloud['confidence'] as num?)?.toDouble() ?? 0.0;
-
-      if (isHardware) {
+      debugPrint('[LIVE] Gemini completed in ${watch.elapsedMilliseconds}ms: $name');
+      setState(() {
+        _liveError = null;
+        _currentLiveDetection = LiveDetection(
+          label: name, confidence: confidence,
+          // These coordinates come from the matching YOLO frame, not Gemini.
+          box: isHardware ? weakBox : null,
+          source: LiveDetectionSource.geminiFallback,
+          isHardware: isHardware,
+          snapshotBytes: apiBytes,
+          snapshotSize: snapshotSize,
+          yoloCandidateName: yoloCandidateName,
+          yoloCandidateScore: yoloCandidateScore,
+        );
+        _liveStatusText = 'Item found';
+      });
+    } catch (e, st) {
+      debugPrint('[LIVE] Gemini crashed: $e\n$st');
+      if (mounted && _isLiveMode && generation == _liveGeneration) {
         setState(() {
-          _currentLiveDetection = LiveDetection(
-            label: label,
-            confidence: confidence,
-            box: weakBox,
-            source: LiveDetectionSource.geminiFallback,
-          );
-          _liveStatusText = "$label confirmed by AI";
-        });
-      } else {
-        setState(() {
-          _currentLiveDetection = null;
-          _liveStatusText = "Not a hardware tool";
+          _liveError = 'Gemini error: $e';
+          _liveStatusText = 'Gemini request failed';
         });
       }
-    } catch (e) {
-      debugPrint("Live Gemini fallback failed: $e");
     } finally {
-      _isGeminiFallbackRunning = false;
+      if (generation == _liveGeneration) {
+        _isGeminiFallbackRunning = false;
+        if (mounted) setState(() {}); // Immediately update the right panel.
+      }
     }
   }
 
@@ -894,6 +1001,68 @@ Future<void> _toggleFlash() async {
         color: const Color(0xFF334155),
         child: const Icon(LucideIcons.imageOff, color: Colors.grey, size: 24),
       ),
+    );
+  }
+
+  // UI-only feedback for live scanning. This reuses the existing radar
+  // animation controller and does not request any additional camera frames.
+  Widget _buildAnimatedLiveStatus() {
+    final bool isChecking = _isGeminiFallbackRunning ||
+        _currentLiveDetection?.source == LiveDetectionSource.yoloWeak;
+    final bool isActive = _liveError == null &&
+        (isChecking || _currentLiveDetection == null);
+    final String action = isChecking ? 'Checking item' : 'Scanning';
+
+    return AnimatedBuilder(
+      animation: _radarController,
+      builder: (context, _) {
+        final int dotCount = 1 + (_radarController.value * 3).floor().clamp(0, 2);
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.68),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isActive) ...[
+                const SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF93C5FD),
+                    backgroundColor: Colors.white12,
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Text(
+                isActive ? action : _liveStatusText,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              if (isActive)
+                SizedBox(
+                  width: 19, // Keeps the pill from shifting as dots animate.
+                  child: Text(
+                    '.' * dotCount,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -1288,6 +1457,351 @@ Future<void> _toggleFlash() async {
     );
   }
 
+  // Simplified live result. The final model's confidence is shown ONCE,
+  // without exposing model names or secondary predictions to shop staff.
+  // Inference decisions and API usage are unchanged.
+  Widget _buildLiveInventoryPanel(LiveDetection detection) {
+    final isPending = detection.source == LiveDetectionSource.yoloWeak ||
+        _isGeminiFallbackRunning;
+    final normalized = detection.label.toLowerCase().trim();
+    final inventory = widget.controller.allItems;
+    final exact = inventory
+        .where((item) => item.name.toLowerCase().trim() == normalized)
+        .firstOrNull;
+    final stopWords = {'a', 'an', 'the', 'and', 'tool', 'tools'};
+    final terms = normalized.split(RegExp(r'\s+'))
+        .where((word) => word.length > 2 && !stopWords.contains(word))
+        .toList();
+    final similar = inventory.where((item) =>
+        exact?.id != item.id &&
+        (item.name.toLowerCase().contains(normalized) ||
+            terms.any((word) => item.name.toLowerCase().contains(word))))
+        .take(3).toList();
+    final choices = exact == null ? similar : [exact];
+
+    final Color statusColor;
+    final IconData statusIcon;
+    final String statusText;
+    if (isPending) {
+      statusColor = Colors.amberAccent;
+      statusIcon = LucideIcons.scanLine;
+      statusText = 'Checking item...';
+    } else if (!detection.isHardware) {
+      statusColor = Colors.redAccent;
+      statusIcon = LucideIcons.shieldAlert;
+      statusText = 'Not a hardware item';
+    } else if (exact != null) {
+      statusColor = const Color(0xFF6EE7B7);
+      statusIcon = LucideIcons.checkCircle2;
+      statusText = 'Found in inventory';
+    } else if (similar.isNotEmpty) {
+      statusColor = const Color(0xFF93C5FD);
+      statusIcon = LucideIcons.searchCode;
+      statusText = 'Possible matches';
+    } else {
+      statusColor = Colors.orangeAccent;
+      statusIcon = LucideIcons.packageX;
+      statusText = 'Not in inventory';
+    }
+
+    final rawScore = detection.confidence;
+    final score = rawScore.isFinite ? rawScore.clamp(0.0, 1.0) : 0.0;
+    final scoreLabel = '${(score * 100).toStringAsFixed(1)}%';
+    final previewItem = exact ?? (similar.isNotEmpty ? similar.first : null);
+    final Widget thumbnail;
+    if (previewItem != null && previewItem.imageUrl.isNotEmpty) {
+      thumbnail = _buildItemImage(previewItem.imageUrl);
+    } else if (detection.snapshotBytes != null) {
+      thumbnail = Image.memory(
+        detection.snapshotBytes!,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      );
+    } else {
+      thumbnail = const Icon(LucideIcons.package, color: Colors.white54, size: 28);
+    }
+
+    return Material(
+      elevation: 10,
+      color: const Color(0xFF1E293B),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.white24),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.zero,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                color: statusColor.withValues(alpha: 0.16),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                child: Row(children: [
+                  Icon(statusIcon, color: statusColor, size: 17),
+                  const SizedBox(width: 7),
+                  Expanded(child: Text(statusText,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: statusColor, fontSize: 12,
+                        fontWeight: FontWeight.w800))),
+                  PopupMenuButton<String>(
+                    tooltip: 'More options',
+                    enabled: !_isGeminiFallbackRunning,
+                    icon: const Icon(Icons.more_horiz, size: 19,
+                        color: Colors.white70),
+                    padding: EdgeInsets.zero,
+                    onSelected: (choice) {
+                      if (choice == 'photo') {
+                        _showLiveScanPhoto(detection);
+                      } else if (choice == 'check') {
+                        _verifyWithGemini();
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      if (detection.snapshotBytes != null)
+                        const PopupMenuItem<String>(
+                            value: 'photo', child: Text('View scan photo')),
+                      if (!isPending)
+                        const PopupMenuItem<String>(
+                            value: 'check', child: Text('Check result')),
+                    ],
+                  ),
+                  IconButton(
+                    tooltip: 'Close result',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close, size: 18,
+                        color: Colors.white70),
+                    onPressed: () => setState(() {
+                      _currentLiveDetection = null;
+                      _geminiAttemptedForScene = true;
+                      _liveYoloTimer?.cancel();
+                      _liveFallbackTimer?.cancel();
+                    }),
+                  ),
+                ]),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(9),
+                        child: SizedBox(width: 72, height: 72,
+                            child: ColoredBox(
+                              color: const Color(0xFF0F172A),
+                              child: thumbnail,
+                            )),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(detection.label,
+                            maxLines: 2, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white,
+                              fontWeight: FontWeight.w800, fontSize: 16)),
+                          const SizedBox(height: 6),
+                          // Only ONE score is displayed: the final result's score.
+                          if (!isPending)
+                            Tooltip(
+                              message: 'AI confidence estimate; not a guarantee.',
+                              child: Text('Confidence: $scoreLabel',
+                                style: const TextStyle(color: Color(0xFF93C5FD),
+                                  fontWeight: FontWeight.w700, fontSize: 12)),
+                            )
+                          else
+                            const Text('Checking...', style: TextStyle(
+                                color: Colors.white70, fontSize: 12)),
+                          if (exact != null && !isPending) ...[
+                            const SizedBox(height: 5),
+                            Text('₱${exact.price.toStringAsFixed(2)}',
+                              style: const TextStyle(color: Color(0xFF93C5FD),
+                                  fontWeight: FontWeight.w700, fontSize: 12)),
+                            Text('${exact.quantity.toInt()} in stock',
+                              style: const TextStyle(color: Colors.white70,
+                                  fontSize: 11)),
+                          ],
+                        ],
+                      )),
+                    ]),
+                    if (_isGeminiFallbackRunning) ...[
+                      const SizedBox(height: 12),
+                      const LinearProgressIndicator(minHeight: 3),
+                    ],
+                    if (_liveError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_liveError!, style: const TextStyle(
+                          color: Colors.orangeAccent, fontSize: 11)),
+                    ],
+                    if (!isPending && detection.isHardware && exact != null) ...[
+                      const SizedBox(height: 14),
+                      SizedBox(width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => widget.onSelectItem(exact),
+                          icon: const Icon(LucideIcons.shoppingCart, size: 18),
+                          label: const Text('Add to cart'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _primaryBlue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(9)),
+                          ),
+                        ),
+                      ),
+                    ] else if (!isPending && detection.isHardware && similar.isNotEmpty) ...[
+                      const SizedBox(height: 13),
+                      const Text('Choose an item', style: TextStyle(
+                          color: Colors.white70, fontSize: 12)),
+                      const SizedBox(height: 6),
+                      ...choices.map((item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Material(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(8),
+                          child: InkWell(
+                            onTap: () => widget.onSelectItem(item),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 9, vertical: 9),
+                              child: Row(children: [
+                                Expanded(child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(item.name,
+                                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(color: Colors.white,
+                                          fontSize: 11, fontWeight: FontWeight.bold)),
+                                    Text('₱${item.price.toStringAsFixed(2)} · '
+                                        '${item.quantity.toInt()} in stock',
+                                      style: const TextStyle(
+                                          color: Colors.white60, fontSize: 10)),
+                                  ],
+                                )),
+                                const SizedBox(width: 5),
+                                const Icon(Icons.add_circle_outline,
+                                    color: Color(0xFF93C5FD), size: 19),
+                              ]),
+                            ),
+                          ),
+                        ),
+                      )),
+                    ] else if (!isPending) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        detection.isHardware
+                            ? 'This item is not in your inventory.'
+                            : 'No hardware item found.',
+                        style: const TextStyle(color: Colors.white70,
+                            fontSize: 12),
+                      ),
+                    ],
+                    if (!isPending) ...[
+                      const SizedBox(height: 4),
+                      Center(child: TextButton.icon(
+                        onPressed: _restartLiveDetection,
+                        icon: const Icon(LucideIcons.scanLine, size: 15),
+                        label: const Text('Scan another item'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          textStyle: const TextStyle(fontSize: 12)),
+                      )),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Scan-photo verification is optional, so it doesn't crowd the cart action.
+  void _showLiveScanPhoto(LiveDetection detection) {
+    if (detection.snapshotBytes == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: const Color(0xFF1E293B),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                const Expanded(child: Text('Scan photo', style: TextStyle(
+                    color: Colors.white, fontSize: 16,
+                    fontWeight: FontWeight.bold))),
+                IconButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  icon: const Icon(Icons.close, color: Colors.white70),
+                ),
+              ]),
+              LiveCapturedFramePreview(
+                imageBytes: detection.snapshotBytes,
+                imageSize: detection.snapshotSize,
+                box: detection.box,
+                label: detection.label,
+                confidence: detection.source == LiveDetectionSource.yoloStrong
+                    ? detection.confidence : detection.yoloCandidateScore,
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLiveFallbackPanel() {
+    return Card(
+      elevation: 8,
+      color: const Color(0xF21E293B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Colors.white24)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('LIVE SCAN', style: TextStyle(
+            color: Colors.white, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          if (_isGeminiFallbackRunning) ...[
+            const LinearProgressIndicator(),
+            const SizedBox(height: 12),
+            const Text('YOLO did not find a confident match.\n'
+              'Gemini is checking one frame (bounded request).',
+              style: TextStyle(color: Colors.white70)),
+          ] else ...[
+            const Icon(Icons.error_outline, size: 25, color: Colors.orangeAccent),
+            const SizedBox(height: 8),
+            Text(_liveError ?? 'The scan could not be completed.',
+              style: const TextStyle(color: Colors.white70)),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _restartLiveDetection,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Scan again'),
+            ),
+            if (_lastLiveApiBytes != null)
+              OutlinedButton.icon(
+                onPressed: _verifyWithGemini,
+                icon: const Icon(Icons.auto_awesome, size: 18),
+                label: const Text('Retry Gemini'),
+              ),
+          ],
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1303,16 +1817,6 @@ Future<void> _toggleFlash() async {
                         child: _buildFullScreenCameraPreview(),
                       ),
 
-                      if (_isLiveMode && _currentLiveDetection != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: CustomPaint(
-                              painter: LiveDetectionPainter(
-                                _currentLiveDetection!,
-                              ),
-                            ),
-                          ),
-                        ),
 
                       if (_isLiveMode && _isCountingDown)
                         Center(
@@ -1397,6 +1901,21 @@ Future<void> _toggleFlash() async {
     ),
   ),
     if (_isAnalyzing) _buildAnalyzingOverlay(),
+    if (_isLiveMode && (_currentLiveDetection != null ||
+        _isGeminiFallbackRunning || _liveError != null))
+      Positioned(
+        right: 12,
+        top: 112,
+        bottom: 94,
+        width: math.min(318.0, MediaQuery.sizeOf(context).width *
+            (MediaQuery.sizeOf(context).width > 700 ? 0.34 : 0.82)),
+        child: Align(
+          alignment: Alignment.topRight,
+          child: _currentLiveDetection != null
+              ? _buildLiveInventoryPanel(_currentLiveDetection!)
+              : _buildLiveFallbackPanel(),
+        ),
+      ),
           Positioned(
             top: 40,
             left: 16,
@@ -1530,25 +2049,12 @@ Future<void> _toggleFlash() async {
             child: _isAnalyzing
                 ? const SizedBox.shrink() // the overlay below handles this state
                 : (_isLiveMode
-                      ? Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              _liveStatusText,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        )
+                      ? (_currentLiveDetection != null &&
+                                  _currentLiveDetection!.source !=
+                                      LiveDetectionSource.yoloWeak &&
+                                  !_isGeminiFallbackRunning
+                              ? const SizedBox.shrink()
+                              : Center(child: _buildAnimatedLiveStatus()))
                       : _buildScanButton()),
           ),
         ],
@@ -1643,35 +2149,35 @@ Map<String, dynamic> processImageInBackground(Map<String, dynamic> params) {
     height: math.max(1, (cropped.height * ratio).round()),
   );
 
-  // Spatial histogram for the cache (same logic as before).
-  final small = img.copyResize(fitted, width: 32, height: 32);
+  // Manual scan uses a histogram cache; live YOLO does not use the cache.
+  final fastLive = params['liveFast'] == true;
+  final small = fastLive ? null : img.copyResize(fitted, width: 32, height: 32);
   final bins = List<double>.filled(192, 0.0);
-  final ringCounts = List<int>.filled(3, 0);
-  final cx = small.width / 2;
-  final cy = small.height / 2;
-  final maxRadius = math.sqrt(cx * cx + cy * cy);
-
-  for (int y = 0; y < small.height; y++) {
-    for (int x = 0; x < small.width; x++) {
-      final p = small.getPixel(x, y);
-      final r = (p.r / 64).floor().clamp(0, 3);
-      final g = (p.g / 64).floor().clamp(0, 3);
-      final b = (p.b / 64).floor().clamp(0, 3);
-      final colorIndex = (r << 4) | (g << 2) | b;
-
-      final dx = x - cx;
-      final dy = y - cy;
-      final nr = math.sqrt(dx * dx + dy * dy) / maxRadius;
-      final ring = nr < 0.33 ? 0 : (nr < 0.66 ? 1 : 2);
-
-      bins[ring * 64 + colorIndex]++;
-      ringCounts[ring]++;
+  if (small != null) {
+    final ringCounts = List<int>.filled(3, 0);
+    final cx = small.width / 2;
+    final cy = small.height / 2;
+    final maxRadius = math.sqrt(cx * cx + cy * cy);
+    for (int y = 0; y < small.height; y++) {
+      for (int x = 0; x < small.width; x++) {
+        final p = small.getPixel(x, y);
+        final r = (p.r / 64).floor().clamp(0, 3);
+        final g = (p.g / 64).floor().clamp(0, 3);
+        final b = (p.b / 64).floor().clamp(0, 3);
+        final colorIndex = (r << 4) | (g << 2) | b;
+        final dx = x - cx;
+        final dy = y - cy;
+        final nr = math.sqrt(dx * dx + dy * dy) / maxRadius;
+        final ring = nr < 0.33 ? 0 : (nr < 0.66 ? 1 : 2);
+        bins[ring * 64 + colorIndex]++;
+        ringCounts[ring]++;
+      }
     }
-  }
-  for (int ring = 0; ring < 3; ring++) {
-    if (ringCounts[ring] == 0) continue;
-    for (int c = 0; c < 64; c++) {
-      bins[ring * 64 + c] /= ringCounts[ring];
+    for (int ring = 0; ring < 3; ring++) {
+      if (ringCounts[ring] == 0) continue;
+      for (int c = 0; c < 64; c++) {
+        bins[ring * 64 + c] /= ringCounts[ring];
+      }
     }
   }
 
@@ -1681,7 +2187,11 @@ Map<String, dynamic> processImageInBackground(Map<String, dynamic> params) {
   return {
     'histogram': bins,
     'modelInput': _toModelInput(fitted),
-    'apiBytes': apiBytes,
+    'apiBytes': Uint8List.fromList(apiBytes),
+    'frameWidth': cropped.width,
+    'frameHeight': cropped.height,
+    'fittedWidth': fitted.width,
+    'fittedHeight': fitted.height,
   };
 }
 
@@ -1824,19 +2334,30 @@ class LiveDetection {
   final double confidence;
   final Rect? box;
   final LiveDetectionSource source;
+  final bool isHardware;
+  final Uint8List? snapshotBytes;
+  final Size? snapshotSize;
+  final String? yoloCandidateName;
+  final double? yoloCandidateScore;
 
   const LiveDetection({
     required this.label,
     required this.confidence,
     required this.source,
     this.box,
+    this.isHardware = true,
+    this.snapshotBytes,
+    this.snapshotSize,
+    this.yoloCandidateName,
+    this.yoloCandidateScore,
   });
 }
 
 class LiveDetectionPainter extends CustomPainter {
   final LiveDetection detection;
+  final Size frameSize;
 
-  LiveDetectionPainter(this.detection);
+  LiveDetectionPainter(this.detection, {required this.frameSize});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1846,12 +2367,19 @@ class LiveDetectionPainter extends CustomPainter {
       return;
     }
 
+    // CameraPreview is displayed using BoxFit.cover, so a normalized
+    // image-space box needs that same scale AND the centered crop offset.
+    final scale = math.max(size.width / frameSize.width,
+        size.height / frameSize.height);
+    final cropX = (frameSize.width * scale - size.width) / 2;
+    final cropY = (frameSize.height * scale - size.height) / 2;
     final rect = Rect.fromLTWH(
-      box.left * size.width,
-      box.top * size.height,
-      box.width * size.width,
-      box.height * size.height,
-    );
+      box.left * frameSize.width * scale - cropX,
+      box.top * frameSize.height * scale - cropY,
+      box.width * frameSize.width * scale,
+      box.height * frameSize.height * scale,
+    ).intersect(Offset.zero & size);
+    if (rect.isEmpty) return;
 
     final isWeak = detection.source == LiveDetectionSource.yoloWeak;
     final isGemini = detection.source == LiveDetectionSource.geminiFallback;
@@ -1983,6 +2511,113 @@ class LiveDetectionPainter extends CustomPainter {
   bool shouldRepaint(covariant LiveDetectionPainter oldDelegate) {
     return oldDelegate.detection != detection;
   }
+}
+
+// The manual and live preview share the same capture-and-box visual idea,
+// but here the overlay is constrained to the *actual letterboxed photo rect*.
+// The normalised box came from YOLO and is only shown if validated.
+class LiveCapturedFramePreview extends StatelessWidget {
+  final Uint8List? imageBytes;
+  final Size? imageSize;
+  final Rect? box;
+  final String label;
+  final double? confidence;
+
+  const LiveCapturedFramePreview({
+    super.key,
+    required this.imageBytes,
+    required this.imageSize,
+    required this.box,
+    required this.label,
+    required this.confidence,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 144,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: imageBytes == null
+          ? const Center(child: Icon(LucideIcons.imageOff,
+                color: Colors.white24, size: 30))
+          : Stack(children: [
+              Positioned.fill(child: Image.memory(
+                imageBytes!, fit: BoxFit.contain, gaplessPlayback: true)),
+              if (box != null && imageSize != null &&
+                  imageSize!.width > 0 && imageSize!.height > 0)
+                Positioned.fill(child: IgnorePointer(child: CustomPaint(
+                  painter: _LiveSnapshotBoxPainter(
+                    box: box!, frameSize: imageSize!, label: label,
+                    confidence: confidence,
+                  ),
+                ))),
+            ]),
+    );
+  }
+}
+
+class _LiveSnapshotBoxPainter extends CustomPainter {
+  final Rect box;
+  final Size frameSize;
+  final String label;
+  final double? confidence;
+
+  const _LiveSnapshotBoxPainter({
+    required this.box,
+    required this.frameSize,
+    required this.label,
+    this.confidence,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Align the bounding coordinates with Image.memory's BoxFit.contain.
+    final fit = applyBoxFit(BoxFit.contain, frameSize, size);
+    final imageRect = Alignment.center.inscribe(
+      fit.destination, Offset.zero & size);
+    final rect = Rect.fromLTRB(
+      imageRect.left + box.left * imageRect.width,
+      imageRect.top + box.top * imageRect.height,
+      imageRect.left + box.right * imageRect.width,
+      imageRect.top + box.bottom * imageRect.height,
+    ).intersect(imageRect);
+    if (rect.isEmpty) return;
+
+    final stroke = Paint()
+      ..color = Colors.greenAccent
+      ..strokeWidth = 2.2
+      ..style = PaintingStyle.stroke;
+    canvas.drawRRect(RRect.fromRectAndRadius(
+      rect, const Radius.circular(4)), stroke);
+    final scoreText = confidence == null
+        ? ''
+        : ' ${(confidence! * 100).toStringAsFixed(1)}%';
+    final tag = '$label$scoreText · YOLO box';
+    final painter = TextPainter(
+      text: TextSpan(text: tag, style: const TextStyle(
+        color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+      maxLines: 1,
+      ellipsis: '…',
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: math.max(40.0, size.width - 16));
+    final tagX = rect.left.clamp(0.0,
+        math.max(0.0, size.width - painter.width - 10)).toDouble();
+    final tagY = rect.top >= 21 ? rect.top - 19 : rect.top + 2;
+    final labelBg = Rect.fromLTWH(tagX, tagY,
+        painter.width + 10, painter.height + 4);
+    canvas.drawRRect(RRect.fromRectAndRadius(labelBg,
+        const Radius.circular(3)), Paint()..color = const Color(0xD9000000));
+    painter.paint(canvas, Offset(tagX + 5, tagY + 2));
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiveSnapshotBoxPainter old) =>
+      old.box != box || old.frameSize != frameSize ||
+      old.label != label || old.confidence != confidence;
 }
 
 class BoundingBoxOverlay extends StatelessWidget {
