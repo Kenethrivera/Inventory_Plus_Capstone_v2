@@ -119,24 +119,17 @@ class StoreAccessService {
       return StoreAccessResult(allowed: true, reason: null, settings: settings);
     }
 
-    final allowed = _isWithinAllowedWindow(
-      now: currentTime,
-      openingTime: settings.openingTime,
-      closingTime: settings.closingTime,
-      beforeMinutes: settings.staffAccessBeforeMinutes,
-      afterMinutes: settings.staffAccessAfterMinutes,
-    );
+    final bool allowed = _isWithinAllowedWindow(settings, now: currentTime);
 
     if (allowed) {
       return StoreAccessResult(allowed: true, reason: null, settings: settings);
     }
 
-    final window = allowedWindowText(settings);
-
     return StoreAccessResult(
       allowed: false,
       reason:
-          'Store is currently closed. Staff access is allowed only from $window.',
+          'Store is currently closed. Staff access is allowed only from '
+          '${allowedWindowText(settings)}.',
       settings: settings,
     );
   }
@@ -145,30 +138,165 @@ class StoreAccessService {
     final open = _parseTimeOfDay(settings.openingTime);
     final close = _parseTimeOfDay(settings.closingTime);
 
-    final openMinutes =
+    final int openMinutes =
         open.hour * 60 + open.minute - settings.staffAccessBeforeMinutes;
-    final closeMinutes =
+
+    final int closeMinutes =
         close.hour * 60 + close.minute + settings.staffAccessAfterMinutes;
 
-    return '${_formatMinutes(openMinutes)} to ${_formatMinutes(closeMinutes)}';
+    return '${_formatMinutes(openMinutes)} to '
+        '${_formatMinutes(closeMinutes)}';
   }
 
-  bool _isWithinAllowedWindow({
-    required DateTime now,
-    required String openingTime,
-    required String closingTime,
-    required int beforeMinutes,
-    required int afterMinutes,
+  bool _isWithinAllowedWindow(StoreAccessSettings settings, {DateTime? now}) {
+    final DateTime current = now ?? DateTime.now();
+
+    final _ResolvedAccessWindow window = _resolveAccessWindow(
+      settings,
+      now: current,
+    );
+
+    return !current.isBefore(window.start) && !current.isAfter(window.end);
+  }
+
+  /// Builds one store-access session using [openingDate] as the calendar
+  /// date on which the store opens.
+  ///
+  /// Example:
+  /// opening = 20:00
+  /// closing = 10:00
+  ///
+  /// openingDate = Oct 17
+  ///
+  /// Result:
+  /// opening = Oct 17 20:00
+  /// closing = Oct 18 10:00
+  _ResolvedAccessWindow _buildAccessWindowForOpeningDate(
+    StoreAccessSettings settings,
+    DateTime openingDate,
+  ) {
+    final _ClockTime open = _parseTimeOfDay(settings.openingTime);
+
+    final _ClockTime close = _parseTimeOfDay(settings.closingTime);
+
+    final int openingMinutes = open.hour * 60 + open.minute;
+
+    final int closingMinutes = close.hour * 60 + close.minute;
+
+    // If closing is earlier than opening, the store closes
+    // on the following calendar day.
+    //
+    // Example:
+    // 20:00 -> 10:00
+    final bool crossesMidnight = closingMinutes < openingMinutes;
+
+    final DateTime openingDateTime = DateTime(
+      openingDate.year,
+      openingDate.month,
+      openingDate.day,
+      open.hour,
+      open.minute,
+    );
+
+    final DateTime closingCalendarDate = crossesMidnight
+        ? openingDate.add(const Duration(days: 1))
+        : openingDate;
+
+    final DateTime closingDateTime = DateTime(
+      closingCalendarDate.year,
+      closingCalendarDate.month,
+      closingCalendarDate.day,
+      close.hour,
+      close.minute,
+    );
+
+    final DateTime accessStart = openingDateTime.subtract(
+      Duration(minutes: settings.staffAccessBeforeMinutes),
+    );
+
+    final DateTime accessEnd = closingDateTime.add(
+      Duration(minutes: settings.staffAccessAfterMinutes),
+    );
+
+    return _ResolvedAccessWindow(
+      opening: openingDateTime,
+      closing: closingDateTime,
+      start: accessStart,
+      end: accessEnd,
+    );
+  }
+
+  /// Resolves the access session that contains [now].
+  ///
+  /// If [now] is outside all current sessions, it returns the next
+  /// upcoming session. We inspect yesterday, today, and tomorrow because
+  /// overnight store hours can belong to the previous day's opening.
+  ///
+  /// Example:
+  ///
+  /// Opening: 20:00
+  /// Closing: 10:00
+  /// Now:     05:48 on Oct 18
+  ///
+  /// Correct window:
+  /// Oct 17 20:00 -> Oct 18 10:00
+  _ResolvedAccessWindow _resolveAccessWindow(
+    StoreAccessSettings settings, {
+    DateTime? now,
   }) {
-    final open = _parseTimeOfDay(openingTime);
-    final close = _parseTimeOfDay(closingTime);
+    final DateTime current = now ?? DateTime.now();
 
-    final currentMinutes = now.hour * 60 + now.minute;
+    final DateTime today = DateTime(current.year, current.month, current.day);
 
-    final startMinutes = open.hour * 60 + open.minute - beforeMinutes;
-    final endMinutes = close.hour * 60 + close.minute + afterMinutes;
+    final _ResolvedAccessWindow yesterdayWindow =
+        _buildAccessWindowForOpeningDate(
+          settings,
+          today.subtract(const Duration(days: 1)),
+        );
 
-    return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    final _ResolvedAccessWindow todayWindow = _buildAccessWindowForOpeningDate(
+      settings,
+      today,
+    );
+
+    final _ResolvedAccessWindow tomorrowWindow =
+        _buildAccessWindowForOpeningDate(
+          settings,
+          today.add(const Duration(days: 1)),
+        );
+
+    final List<_ResolvedAccessWindow> candidates = [
+      yesterdayWindow,
+      todayWindow,
+      tomorrowWindow,
+    ];
+
+    // First, find the session that currently contains "now".
+    for (final window in candidates) {
+      final bool inside =
+          !current.isBefore(window.start) && !current.isAfter(window.end);
+
+      if (inside) {
+        return window;
+      }
+    }
+
+    // Otherwise, return the next upcoming session.
+    for (final window in candidates) {
+      if (window.start.isAfter(current)) {
+        return window;
+      }
+    }
+
+    return tomorrowWindow;
+  }
+
+  DateTime accessStartDateTime(StoreAccessSettings settings, {DateTime? now}) {
+    return _resolveAccessWindow(settings, now: now).start;
+  }
+
+  DateTime accessEndDateTime(StoreAccessSettings settings, {DateTime? now}) {
+    return _resolveAccessWindow(settings, now: now).end;
   }
 
   _ClockTime _parseTimeOfDay(String value) {
@@ -187,51 +315,18 @@ class StoreAccessService {
       normalized += 24 * 60;
     }
 
-    final hour = normalized ~/ 60;
-    final minute = normalized % 60;
+    final int hour = normalized ~/ 60;
 
-    final suffix = hour >= 12 ? 'PM' : 'AM';
-    final hour12 = hour % 12 == 0 ? 12 : hour % 12;
+    final int minute = normalized % 60;
 
-    return '$hour12:${minute.toString().padLeft(2, '0')} $suffix';
+    final String suffix = hour >= 12 ? 'PM' : 'AM';
+
+    final int hour12 = hour % 12 == 0 ? 12 : hour % 12;
+
+    return '$hour12:'
+        '${minute.toString().padLeft(2, '0')} '
+        '$suffix';
   }
-
-  DateTime accessEndDateTime(
-  StoreAccessSettings settings, {
-  DateTime? now,
-}) {
-  final current = now ?? DateTime.now();
-  final close = _parseTimeOfDay(settings.closingTime);
-
-  final closingDateTime = DateTime(
-    current.year,
-    current.month,
-    current.day,
-    close.hour,
-    close.minute,
-  );
-
-  return closingDateTime.add(
-    Duration(minutes: settings.staffAccessAfterMinutes),
-  );
-}
-DateTime accessStartDateTime(StoreAccessSettings settings, {DateTime? now}) {
-    final current = now ?? DateTime.now();
-    final open = _parseTimeOfDay(settings.openingTime);
-
-    final openingDateTime = DateTime(
-      current.year,
-      current.month,
-      current.day,
-      open.hour,
-      open.minute,
-    );
-
-    return openingDateTime.subtract(
-      Duration(minutes: settings.staffAccessBeforeMinutes),
-    );
-  }
-
 }
 
 class _ClockTime {
@@ -239,4 +334,18 @@ class _ClockTime {
   final int minute;
 
   const _ClockTime({required this.hour, required this.minute});
+}
+
+class _ResolvedAccessWindow {
+  final DateTime opening;
+  final DateTime closing;
+  final DateTime start;
+  final DateTime end;
+
+  const _ResolvedAccessWindow({
+    required this.opening,
+    required this.closing,
+    required this.start,
+    required this.end,
+  });
 }
