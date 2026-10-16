@@ -418,7 +418,8 @@ class _NotificationPageState extends State<NotificationPage> {
           return n.type == NotificationType.system ||
               n.type == NotificationType.inventoryAdded ||
               n.type == NotificationType.inventoryUpdated ||
-              n.type == NotificationType.inventoryDeleted;
+              n.type == NotificationType.inventoryDeleted ||
+              n.type == NotificationType.inventoryRestocked;
         }).toList();
     }
   }

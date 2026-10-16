@@ -34,8 +34,12 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   Timer? _timer;
   Duration? _timeOffset;
   String? _pendingAutoOpenId;
+  String _pendingFilter = 'All';
+  String _searchQuery = '';
 
-  CustomerOrder? _selectedOrder;
+  final TextEditingController _searchController = TextEditingController();
+
+  String? _selectedOrderId;
   List<CustomerOrder> _cachedOrders = [];
 
   final Map<String, Set<String>> _pickedTracker = {};
@@ -64,6 +68,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   @override
   void dispose() {
     _timer?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -92,16 +97,52 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
     return '${diff.inDays}d ago';
   }
 
-  void _openOrderChecklist(CustomerOrder order) {
+  Future<bool> _claimAndOpenOrderChecklist(CustomerOrder order) async {
+    final bool claimed = await widget.controller.claimOrderForCurrentHelper(
+      order.id,
+    );
+
+    if (!mounted) {
+      return false;
+    }
+
+    if (!claimed) {
+      AppToast.error(
+        context,
+        'This order was already claimed by another helper.',
+      );
+      return false;
+    }
+
+    final CustomerOrder? latestOrder = widget.controller.orderById(order.id);
+
+    if (latestOrder == null ||
+        latestOrder.status != 'pending' ||
+        !_canCurrentHelperPrepare(latestOrder)) {
+      AppToast.error(
+        context,
+        'This order is no longer available for preparation.',
+      );
+      return false;
+    }
+
+    _openOrderChecklist(latestOrder);
+
+    return true;
+  }
+
+  
+
+  void _openOrderChecklist(dynamic order) {
     setState(() {
-      _selectedOrder = order;
+      _selectedOrderId = order.id.toString();
       _pickedTracker[order.id] ??= {};
     });
   }
 
   void _closeOrderChecklist() {
     setState(() {
-      _selectedOrder = null;
+      _selectedOrderId = null;
     });
   }
 
@@ -144,7 +185,11 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   String _assignmentLabel(CustomerOrder order) {
     if (_isAssignedToCurrentHelper(order)) {
-      return 'Assigned to you';
+      final bool assignedByAdmin =
+          order.assignedByAdminId != null ||
+          (order.assignedByAdminName?.trim().isNotEmpty ?? false);
+
+      return assignedByAdmin ? 'Assigned to you' : 'Claimed by you';
     }
 
     if (_isUnassigned(order)) {
@@ -156,22 +201,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_selectedOrder != null) {
-      return OrderChecklistPage(
-        order: _selectedOrder!,
-        controller: widget.controller,
-        pickedItems: _pickedTracker[_selectedOrder!.id] ?? {},
-        onToggleItem: (productId, isPicked) {
-          _togglePickedItem(_selectedOrder!.id, productId, isPicked);
-        },
-        onBack: _closeOrderChecklist,
-        onFinish: () {
-          _pickedTracker.remove(_selectedOrder!.id);
-          _closeOrderChecklist();
-        },
-      );
-    }
-
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),
       body: StreamBuilder<List<CustomerOrder>>(
@@ -192,6 +222,36 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             _cachedOrders = snapshot.data!;
           }
 
+          CustomerOrder? selectedOrder;
+
+          if (_selectedOrderId != null) {
+            for (final CustomerOrder order in _cachedOrders) {
+              if (order.id.toString() == _selectedOrderId) {
+                selectedOrder = order;
+                break;
+              }
+            }
+
+            final bool selectedOrderStillValid =
+                selectedOrder != null &&
+                selectedOrder.status == 'pending' &&
+                _canCurrentHelperPrepare(selectedOrder);
+
+            if (!selectedOrderStillValid) {
+              selectedOrder = null;
+
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted || _selectedOrderId == null) {
+                  return;
+                }
+
+                setState(() {
+                  _selectedOrderId = null;
+                });
+              });
+            }
+          }
+
           if (_pendingAutoOpenId != null) {
             final match = _cachedOrders
                 .where((o) => o.id.toString() == _pendingAutoOpenId)
@@ -201,39 +261,44 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
               final orderToOpen = match.first;
               _pendingAutoOpenId = null;
 
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+  if (!mounted) return;
 
-                if (orderToOpen.status != 'pending') {
-                  AppToast.error(
-                    context,
-                    'This order is already ${orderToOpen.status}.',
-                  );
+  final bool opened =
+      await _claimAndOpenOrderChecklist(orderToOpen);
 
-                  widget.onOrderOpened?.call();
-                  return;
-                }
-
-                if (!_canCurrentHelperPrepare(orderToOpen)) {
-                  AppToast.error(
-                    context,
-                    'This order is assigned to another helper.',
-                  );
-
-                  widget.onOrderOpened?.call();
-                  return;
-                }
-
-                _openOrderChecklist(orderToOpen);
-                widget.onOrderOpened?.call();
-              });
+  if (opened) {
+    widget.onOrderOpened?.call();
+  }
+});
             }
           }
 
-          final pendingOrders =
+          if (selectedOrder != null) {
+            final CustomerOrder currentOrder = selectedOrder;
+
+            return OrderChecklistPage(
+              order: currentOrder,
+              controller: widget.controller,
+              pickedItems: _pickedTracker[currentOrder.id] ?? {},
+              onToggleItem: (productId, isPicked) {
+                _togglePickedItem(currentOrder.id, productId, isPicked);
+              },
+              onBack: _closeOrderChecklist,
+              onFinish: () {
+                _pickedTracker.remove(currentOrder.id);
+                _closeOrderChecklist();
+              },
+            );
+          }
+
+         final pendingOrders =
               _cachedOrders
-                  .where((o) => o.status == 'pending')
-                  .where(_canCurrentHelperPrepare)
+                  .where(
+                    (o) =>
+                        o.status == 'pending' &&
+                        (_isUnassigned(o) || _isAssignedToCurrentHelper(o)),
+                  )
                   .toList()
                 ..sort((a, b) {
                   final aAssignedToMe = _isAssignedToCurrentHelper(a);
@@ -244,6 +309,49 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
                   return b.createdAt.compareTo(a.createdAt);
                 });
+
+          final normalizedSearchQuery = _searchQuery.trim().toLowerCase();
+
+          final visiblePendingOrders = pendingOrders.where((order) {
+            final bool matchesPendingFilter;
+
+            switch (_pendingFilter) {
+              case 'Unassigned':
+                matchesPendingFilter = _isUnassigned(order);
+                break;
+
+              case 'Mine':
+                matchesPendingFilter = _isAssignedToCurrentHelper(order);
+                break;
+
+              case 'All':
+              default:
+                matchesPendingFilter = true;
+                break;
+            }
+
+            if (!matchesPendingFilter) {
+              return false;
+            }
+
+            if (normalizedSearchQuery.isEmpty) {
+              return true;
+            }
+
+            final orderId = order.id.toString().toLowerCase();
+            final helperName =
+                order.assignedHelperName?.toString().toLowerCase() ?? '';
+
+            final bool matchesItem = order.items.any(
+              (item) => item.productName
+                  .toLowerCase()
+                  .contains(normalizedSearchQuery),
+            );
+
+            return orderId.contains(normalizedSearchQuery) ||
+                helperName.contains(normalizedSearchQuery) ||
+                matchesItem;
+          }).toList();
 
           int waitingCount = 0;
           int pickingCount = 0;
@@ -261,6 +369,18 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
           final readyTodayCount = _cachedOrders
               .where((o) => o.status == 'prepared' && _isToday(o.createdAt))
               .length;
+
+          final String emptyQueueMessage;
+          if (_searchQuery.trim().isNotEmpty) {
+            emptyQueueMessage =
+                'No pending orders match "${_searchQuery.trim()}".';
+          } else if (_pendingFilter == 'Mine') {
+            emptyQueueMessage = 'No orders assigned or claimed by you.';
+          } else if (_pendingFilter == 'Unassigned') {
+            emptyQueueMessage = 'No unassigned pending orders right now.';
+          } else {
+            emptyQueueMessage = 'No pending orders right now!';
+          }
 
           return Padding(
             padding: const EdgeInsets.all(32.0),
@@ -303,12 +423,18 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 18),
+
+                _buildQueueToolbar(),
+
+                const SizedBox(height: 18),
+
+                // Order List
                 Expanded(
-                  child: pendingOrders.isEmpty
+                  child: visiblePendingOrders.isEmpty
                       ? Center(
                           child: Text(
-                            'No pending orders right now!',
+                            emptyQueueMessage,
                             style: TextStyle(
                               fontSize: 16,
                               color: Colors.grey.shade500,
@@ -317,9 +443,9 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                           ),
                         )
                       : ListView.builder(
-                          itemCount: pendingOrders.length,
+                          itemCount: visiblePendingOrders.length,
                           itemBuilder: (context, index) {
-                            final order = pendingOrders[index];
+                            final order = visiblePendingOrders[index];
                             final pickedCount =
                                 _pickedTracker[order.id]?.length ?? 0;
                             final totalItems = order.items.length;
@@ -332,7 +458,9 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                               totalItems: totalItems,
                               assignmentLabel: _assignmentLabel(order),
                               assignedToMe: _isAssignedToCurrentHelper(order),
-                              onPrepare: () => _openOrderChecklist(order),
+                              onPrepare: () {
+                                _claimAndOpenOrderChecklist(order);
+                              },
                             );
                           },
                         ),
@@ -380,6 +508,161 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildQueueToolbar() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool compact = constraints.maxWidth < 820;
+
+        final Widget searchField = SizedBox(
+          width: compact ? double.infinity : 360,
+          height: 44,
+          child: TextField(
+            controller: _searchController,
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value;
+              });
+            },
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              fontFamily: _fontFam,
+            ),
+            decoration: InputDecoration(
+              hintText: 'Search orders or items',
+              hintStyle: const TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 13,
+                fontFamily: _fontFam,
+              ),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                size: 20,
+                color: Color(0xFF64748B),
+              ),
+              suffixIcon: _searchQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {
+                          _searchQuery = '';
+                        });
+                      },
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(
+                  color: Color(0xFFE2E8F0),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(
+                  color: Color(0xFFE2E8F0),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(
+                  color: _primaryBlue,
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+        );
+
+        final Widget filterControls = Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(right: 4),
+              child: Text(
+                'Pending filter',
+                style: TextStyle(
+                  color: Color(0xFF475569),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  fontFamily: _fontFam,
+                ),
+              ),
+            ),
+            _buildPendingFilterChip('All'),
+            _buildPendingFilterChip('Unassigned'),
+            _buildPendingFilterChip('Mine'),
+          ],
+        );
+
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              searchField,
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: filterControls,
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            searchField,
+            const Spacer(),
+            filterControls,
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPendingFilterChip(String label) {
+    final bool selected = _pendingFilter == label;
+
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          color: selected ? Colors.white : const Color(0xFF475569),
+          fontWeight: FontWeight.w700,
+          fontFamily: _fontFam,
+        ),
+      ),
+      selected: selected,
+      onSelected: (_) {
+        setState(() {
+          _pendingFilter = label;
+        });
+      },
+      selectedColor: _primaryBlue,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: selected ? _primaryBlue : const Color(0xFFE2E8F0),
+      ),
+      showCheckmark: false,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
     );
   }
 }

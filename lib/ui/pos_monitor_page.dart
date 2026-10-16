@@ -170,8 +170,30 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
           }
 
           final orders = snapshot.data ?? <CustomerOrder>[];
+          final selectedOrder = _selectedOrder(orders);
 
           _handlePendingAutoOpen(orders);
+
+          if (_selectedOrderId != null) {
+            final String selectedId = _selectedOrderId!;
+
+            final bool orderNoLongerInPosQueue =
+                selectedOrder == null ||
+                selectedOrder.status.toString().toLowerCase() != 'prepared';
+
+            if (orderNoLongerInPosQueue) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+
+                // Do not clear a different order selected while this callback waited.
+                if (_selectedOrderId != selectedId) return;
+
+                setState(() {
+                  _selectedOrderId = null;
+                });
+              });
+            }
+          }
 
           final waitingForPayment = orders.where(_isWaitingForPayment).toList()
             ..sort((a, b) {
@@ -209,8 +231,6 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
                     return currentDate.isBefore(oldestDate) ? current : oldest;
                   }).createdAt,
                 );
-
-          final selectedOrder = _selectedOrder(orders);
 
           return Padding(
             padding: const EdgeInsets.all(28),

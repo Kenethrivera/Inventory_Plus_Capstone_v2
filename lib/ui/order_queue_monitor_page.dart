@@ -32,9 +32,9 @@ class OrderQueueMonitorPage extends StatefulWidget {
 class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
   Timer? _timer;
   String? _selectedOrderId;
+  String? _selectedOrderStatusAtOpen;
+
   String? _pendingAutoOpenId;
-  final Map<String, String> _assignedHelperIdOverrides = {};
-  final Map<String, String> _assignedHelperNameOverrides = {};
 
   @override
   void initState() {
@@ -196,6 +196,30 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
 
           final selectedOrder = _selectedOrder(orders);
 
+          if (_selectedOrderId != null) {
+            final String selectedId = _selectedOrderId!;
+
+            final bool orderDisappeared = selectedOrder == null;
+
+            final bool orderMovedToAnotherStage =
+                selectedOrder != null &&
+                _selectedOrderStatusAtOpen != null &&
+                selectedOrder.status.toLowerCase() !=
+                    _selectedOrderStatusAtOpen!.toLowerCase();
+
+            if (orderDisappeared || orderMovedToAnotherStage) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+
+                // Do not clear a different order that the Admin selected
+                // while this callback was waiting.
+                if (_selectedOrderId != selectedId) return;
+
+                _clearSelectedOrder();
+              });
+            }
+          }
+
           return Padding(
             padding: const EdgeInsets.all(28),
             child: Column(
@@ -269,6 +293,26 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
     return matches.first;
   }
 
+  void _selectOrder(CustomerOrder order) {
+    setState(() {
+      _selectedOrderId = order.id.toString();
+      _selectedOrderStatusAtOpen = order.status;
+    });
+
+    widget.onOrderOpened?.call();
+  }
+
+  void _clearSelectedOrder() {
+    if (_selectedOrderId == null && _selectedOrderStatusAtOpen == null) {
+      return;
+    }
+
+    setState(() {
+      _selectedOrderId = null;
+      _selectedOrderStatusAtOpen = null;
+    });
+  }
+
   void _handlePendingAutoOpen(List<CustomerOrder> orders) {
     if (_pendingAutoOpenId == null) return;
 
@@ -278,17 +322,14 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
 
     if (matches.isEmpty) return;
 
-    final id = _pendingAutoOpenId!;
+    final CustomerOrder order = matches.first;
+
     _pendingAutoOpenId = null;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
-      setState(() {
-        _selectedOrderId = id;
-      });
-
-      widget.onOrderOpened?.call();
+      _selectOrder(order);
     });
   }
 
@@ -584,11 +625,11 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
   }
 
   String? _displayAssignedHelperId(CustomerOrder order) {
-    return _assignedHelperIdOverrides[order.id] ?? order.assignedHelperId;
+    return order.assignedHelperId;
   }
 
   String? _displayAssignedHelperName(CustomerOrder order) {
-    return _assignedHelperNameOverrides[order.id] ?? order.assignedHelperName;
+    return order.assignedHelperName;
   }
 
   bool _hasAssignedHelper(CustomerOrder order) {
@@ -610,9 +651,7 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
 
     return InkWell(
       onTap: () {
-        setState(() {
-          _selectedOrderId = id;
-        });
+        _selectOrder(order);
       },
       borderRadius: BorderRadius.circular(16),
       child: AnimatedContainer(
@@ -1086,12 +1125,6 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
 
                             if (!mounted) return;
 
-                            setState(() {
-                              _selectedOrderId = order.id;
-                              _assignedHelperIdOverrides[order.id] = helperId;
-                              _assignedHelperNameOverrides[order.id] =
-                                  helperName;
-                            });
 
                             if (dialogContext.mounted) {
                               Navigator.pop(dialogContext);

@@ -35,13 +35,16 @@ import '../services/staff_presence_service.dart';
 import 'widgets/active_staff_button.dart';
 import '../services/store_access_service.dart';
 import 'staff_history_page.dart';
+import '../services/realtime/realtime_sync_service.dart';
 
 class MainScreen extends StatefulWidget {
   final InventoryController controller;
+  final RealtimeSyncService realtimeSync;
 
   const MainScreen({
     super.key,
     required this.controller,
+    required this.realtimeSync,
   });
 
   @override
@@ -76,6 +79,21 @@ class _MainScreenState extends State<MainScreen> {
   static const Color _darkText = Color(0xFF0F172A);
   static const Color _inactiveText = Color(0xFF64748B);
   static const String _fontFam = 'Hellix';
+
+  Future<void> _startRealtimeSync() async {
+    final locationId = widget.controller.activeLocationId;
+    final userId = widget.controller.currentUserId;
+
+    if (locationId == null ||
+        locationId.isEmpty ||
+        userId == null ||
+        userId.isEmpty) {
+      debugPrint('[RealtimeSync] Not started: missing location or user.');
+      return;
+    }
+
+    await widget.realtimeSync.start(locationId: locationId, userId: userId);
+  }
 
   @override
   void initState() {
@@ -135,6 +153,9 @@ class _MainScreenState extends State<MainScreen> {
       _startStaffPresence();
       _scheduleStoreAccessEndLogout();
     });
+
+    unawaited(_startRealtimeSync());
+    
   }
 
   @override
@@ -538,6 +559,7 @@ class _MainScreenState extends State<MainScreen> {
     await _staffPresenceService?.stop(logoutReason: 'store_hours_expired');
 
     final prefs = await SharedPreferences.getInstance();
+    await widget.realtimeSync.stop();
     await prefs.clear();
 
     if (!mounted) return;
@@ -2370,6 +2392,7 @@ class _MainScreenState extends State<MainScreen> {
 
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       final prefs = await SharedPreferences.getInstance();
+      await widget.realtimeSync.stop();
       await prefs.clear();
 
       if (mounted) {

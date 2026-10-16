@@ -7,6 +7,7 @@ import 'ui/main_screen.dart';
 import 'logic/inventory_controller.dart'; 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'services/realtime/realtime_sync_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,8 +29,16 @@ try {
   }
 
   final inventoryController = InventoryController();
+  final realtimeSyncService = RealtimeSyncService();
 
-  runApp(InventoryApp(controller: inventoryController));
+  inventoryController.bindRealtimeSync(realtimeSyncService);
+
+  runApp(
+    InventoryApp(
+      controller: inventoryController,
+      realtimeSync: realtimeSyncService,
+    ),
+  );
 }
 
 Future<void> initDetectorRuntime() async {
@@ -40,8 +49,13 @@ Future<void> initDetectorRuntime() async {
 
 class InventoryApp extends StatelessWidget {
   final InventoryController controller;
+  final RealtimeSyncService realtimeSync;
 
-  const InventoryApp({super.key, required this.controller});
+  const InventoryApp({
+    super.key,
+    required this.controller,
+    required this.realtimeSync,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +70,9 @@ class InventoryApp extends StatelessWidget {
       routes: {
         '/': (context) => AuthWrapper(controller: controller),
         '/login': (context) => LoginPage(controller: controller),
-        '/main': (context) => MainScreen(controller: controller),
+        '/main': (context) =>
+            MainScreen(controller: controller, realtimeSync: realtimeSync),
+        
       },
     );
   }

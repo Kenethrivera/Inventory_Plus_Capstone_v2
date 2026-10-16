@@ -4,11 +4,32 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:crypto/crypto.dart';
 import '../data/inventory.dart';
+import '../services/realtime/realtime_sync_service.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'dart:convert';
+import 'dart:async';
+
 enum StockStatus { ok, low, critical, out }
 
 class InventoryController {
+
+  // shared realtime controlelrs
+  final StreamController<List<CustomerOrder>> _ordersController =
+      StreamController<List<CustomerOrder>>.broadcast();
+
+  StreamSubscription<void>? _orderChangesSubscription;
+
+  List<CustomerOrder> _ordersSnapshot = const <CustomerOrder>[];
+
+  String? _ordersSnapshotLocationId;
+
+  bool _ordersSnapshotLoaded = false;
+
+  Future<void>? _ordersRefreshInFlight;
+
+  bool _ordersRefreshQueued = false;
+
   final SupabaseClient supabase = Supabase.instance.client;
   int? currentUserNumericId;
   List<InventoryItem> _items = [];
@@ -1050,19 +1071,127 @@ class InventoryController {
     }
   }
 
-Stream<List<CustomerOrder>> streamOrders() {
-    final locId = activeLocationId;
-    if (locId == null) return Stream.value([]);
+  void bindRealtimeSync(RealtimeSyncService realtimeSync) {
+    // Prevent accidentally registering the same listener twice.
+    if (_orderChangesSubscription != null) {
+      return;
+    }
 
-    return supabase
-        .from('orders')
-        .stream(primaryKey: ['id'])
-        .eq('location_id', locId)
-        .order('created_at', ascending: false)
-        .map(
-          (list) =>
-              list.map((item) => CustomerOrder.fromJson(item)).toList(),
-        );
+    _orderChangesSubscription = realtimeSync.orderChanges.listen(
+      (_) {
+        unawaited(_refreshOrdersFromDatabase());
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('[InventoryController] Order realtime error: $error');
+      },
+    );
+  }
+
+Stream<List<CustomerOrder>> streamOrders() async* {
+    final String? locationId = activeLocationId;
+
+    if (!_ordersSnapshotLoaded || _ordersSnapshotLocationId != locationId) {
+      await _refreshOrdersFromDatabase();
+    }
+
+    // Send the latest known state immediately to the new subscriber.
+    yield List<CustomerOrder>.unmodifiable(_ordersSnapshot);
+
+    // Then keep the subscriber updated from the shared stream.
+    yield* _ordersController.stream;
+  }
+
+  Future<void> _refreshOrdersFromDatabase() {
+    // If a refresh is already running, do not start another query.
+    // Remember that another refresh is needed afterward.
+    if (_ordersRefreshInFlight != null) {
+      _ordersRefreshQueued = true;
+      return _ordersRefreshInFlight!;
+    }
+
+    final Future<void> refresh = _performOrdersRefresh();
+
+    _ordersRefreshInFlight = refresh;
+
+    return refresh.whenComplete(() {
+      if (identical(_ordersRefreshInFlight, refresh)) {
+        _ordersRefreshInFlight = null;
+      }
+
+      if (_ordersRefreshQueued) {
+        _ordersRefreshQueued = false;
+
+        unawaited(_refreshOrdersFromDatabase());
+      }
+    });
+  }
+
+  Future<void> _performOrdersRefresh() async {
+    final String? locationId = activeLocationId;
+
+    if (locationId == null || locationId.isEmpty) {
+      _ordersSnapshot = const <CustomerOrder>[];
+      _ordersSnapshotLocationId = null;
+      _ordersSnapshotLoaded = true;
+
+      _ordersController.add(_ordersSnapshot);
+
+      return;
+    }
+
+    try {
+      final rows = await supabase
+          .from('orders')
+          .select()
+          .eq('location_id', locationId)
+          .order('created_at', ascending: false);
+
+      // The active store may have changed while the query was running.
+      // Never publish results from the previous location.
+      if (activeLocationId != locationId) {
+        _ordersRefreshQueued = true;
+        return;
+      }
+
+      final List<CustomerOrder> orders = rows
+          .map((row) => CustomerOrder.fromJson(Map<String, dynamic>.from(row)))
+          .toList(growable: false);
+
+      _ordersSnapshot = List<CustomerOrder>.unmodifiable(orders);
+
+      _ordersSnapshotLocationId = locationId;
+      _ordersSnapshotLoaded = true;
+
+      _ordersController.add(_ordersSnapshot);
+
+      debugPrint(
+        '[InventoryController] ORDERS REFRESHED '
+        'location=$locationId count=${orders.length}',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[InventoryController] Failed to refresh orders: $error');
+
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  List<CustomerOrder> get currentOrders =>
+      List<CustomerOrder>.unmodifiable(_ordersSnapshot);
+
+  CustomerOrder? orderById(Object? orderId) {
+    if (orderId == null) {
+      return null;
+    }
+
+    final String targetId = orderId.toString();
+
+    for (final CustomerOrder order in _ordersSnapshot) {
+      if (order.id.toString() == targetId) {
+        return order;
+      }
+    }
+
+    return null;
   }
 
  Future<void> updateOrderStatus(String orderId, String newStatus) async {
@@ -1086,6 +1215,90 @@ Stream<List<CustomerOrder>> streamOrders() {
           .neq('status', 'completed');
     } catch (e) {
       rethrow;
+    }
+  }
+
+  Future<bool> claimOrderForCurrentHelper(Object orderId) async {
+    final locationId = activeLocationId;
+    final helperId = currentUserNumericId;
+    final helperName = currentUserName;
+
+    if (locationId == null ||
+        locationId.toString().isEmpty ||
+        helperId == null ||
+        helperName == null ||
+        helperName.toString().trim().isEmpty) {
+      debugPrint(
+        '[Orders] CLAIM FAILED order=$orderId '
+        'reason=missing helper/location information',
+      );
+      return false;
+    }
+
+    final CustomerOrder? currentOrder = orderById(orderId);
+
+    // If this Helper already owns the order, allow them to reopen it.
+    if (currentOrder != null &&
+        currentOrder.assignedHelperId != null &&
+        currentOrder.assignedHelperId.toString() == helperId.toString() &&
+        currentOrder.status == 'pending') {
+      return true;
+    }
+
+    // Do not steal an order already assigned to another Helper.
+    if (currentOrder != null &&
+        currentOrder.assignedHelperId != null &&
+        currentOrder.assignedHelperId.toString() != helperId.toString()) {
+      return false;
+    }
+
+    // Only pending orders can be claimed.
+    if (currentOrder != null && currentOrder.status != 'pending') {
+      return false;
+    }
+
+    try {
+      final updatedRows = await supabase
+          .from('orders')
+          .update({
+            'assigned_helper_id': helperId,
+            'assigned_helper_name': helperName.toString().trim(),
+            'assigned_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', orderId)
+          .eq('location_id', locationId)
+          .eq('status', 'pending')
+          .isFilter('assigned_helper_id', null)
+          .select('id');
+
+      if (updatedRows.isNotEmpty) {
+        debugPrint(
+          '[Orders] CLAIMED order=$orderId '
+          'helper=$helperId '
+          'name=${helperName.toString().trim()}',
+        );
+
+        // Do not wait for the realtime round trip before updating this client.
+        await _refreshOrdersFromDatabase();
+
+        return true;
+      }
+
+      // No row matched. Usually this means another Helper claimed it first.
+      await _refreshOrdersFromDatabase();
+
+      final CustomerOrder? refreshedOrder = orderById(orderId);
+
+      // Allow another tab/session belonging to the same Helper.
+      return refreshedOrder != null &&
+          refreshedOrder.status == 'pending' &&
+          refreshedOrder.assignedHelperId != null &&
+          refreshedOrder.assignedHelperId.toString() == helperId.toString();
+    } catch (error, stackTrace) {
+      debugPrint('[Orders] CLAIM ERROR order=$orderId error=$error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      return false;
     }
   }
 
