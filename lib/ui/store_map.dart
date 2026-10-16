@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
 import 'models_3d.dart';
+import 'widgets/app_toast.dart';
 
 enum MapMode { view, manage, selection, pick }
 
@@ -62,6 +63,35 @@ class _StoreMapState extends State<StoreMap>
   // NEW: State for the left toolbar
   // ==========================================
   bool _isToolbarExpanded = false;
+
+  // --- NEW: Map Centering Variables & Function ---
+  double _currentMapWidth = 1000.0;
+  double _currentMapHeight = 1000.0;
+  Size _currentViewportSize = Size.zero;
+
+  void _recenterMap({bool preserveScale = false}) {
+    if (_currentViewportSize == Size.zero) return;
+    
+    double scale;
+    if (preserveScale) {
+      // Use the current zoom level
+      scale = _transformationController.value.getMaxScaleOnAxis();
+    } else {
+      // Calculate initial fit-to-screen scale
+      double scaleX = _currentViewportSize.width / _currentMapWidth;
+      double scaleY = _currentViewportSize.height / _currentMapHeight;
+      scale = math.min(scaleX, scaleY) * 0.9;
+      scale = scale.clamp(0.1, 2.5);
+    }
+
+    double dx = (_currentViewportSize.width - (_currentMapWidth * scale)) / 2;
+    double dy = (_currentViewportSize.height - (_currentMapHeight * scale)) / 2;
+
+    _transformationController.value = Matrix4.identity()
+      ..translate(dx, dy)
+      ..scale(scale);
+  }
+  // -----------------------------------------------
 
   @override
   void initState() {
@@ -501,6 +531,20 @@ class _StoreMapState extends State<StoreMap>
               icon: const Icon(Icons.remove, color: Colors.white),
               onPressed: () => _zoom(0.8), // Zoom out
             ),
+            Container(
+              height: 1,
+              width: 40,
+              color: Colors.blueGrey.withOpacity(0.5),
+            ),
+            IconButton(
+              icon: const Icon(LucideIcons.focus, color: Colors.white, size: 20),
+              onPressed: () {
+                setState(() {
+                  _recenterMap(preserveScale: true);
+                });
+              },
+              tooltip: 'Recenter Map',
+            ),
           ],
         ),
       ),
@@ -572,13 +616,7 @@ class _StoreMapState extends State<StoreMap>
     final Offset newPosition = el.position + delta;
 
     if (_hasCollision(el, newPosition, el.size, el.rotation)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Cannot nudge. It would overlap another element."),
-          backgroundColor: Colors.redAccent,
-          duration: Duration(seconds: 1),
-        ),
-      );
+      AppToast.error(context, "Cannot nudge. It would overlap another element.");
       return;
     }
 
@@ -622,15 +660,7 @@ class _StoreMapState extends State<StoreMap>
 
     // Check collision before applying the resize.
     if (_hasCollision(el, newPosition, newSize, el.rotation)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Cannot change width. It would overlap another element.",
-          ),
-          backgroundColor: Colors.redAccent,
-          duration: Duration(seconds: 1),
-        ),
-      );
+      AppToast.error(context, "Cannot change width. It would overlap another element.");
       return;
     }
 
@@ -702,9 +732,7 @@ class _StoreMapState extends State<StoreMap>
                   activeEl.position = newPos;
                   activeEl.rotation = 0.0; // Force matrix rotation to 0
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Cannot rotate. Overlaps with another element."), backgroundColor: Colors.redAccent),
-                  );
+                  AppToast.error(context, "Cannot rotate. Overlaps with another element.");
                 }
               } else {
                 // Normal 3D rotation for objects
@@ -1184,6 +1212,9 @@ class _StoreMapState extends State<StoreMap>
 
     Widget map = LayoutBuilder(
       builder: (context, constraints) {
+        _currentViewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+        _currentMapWidth = mapWidth;
+        _currentMapHeight = mapHeight;
         if (!_isInitialScaleSet && constraints.maxWidth > 0) {
           _isInitialScaleSet = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1206,6 +1237,7 @@ class _StoreMapState extends State<StoreMap>
         return InteractiveViewer(
           transformationController: _transformationController,
           constrained: false,
+          scaleEnabled: false,
           minScale: 0.1,
           maxScale: 2.5,
           boundaryMargin: const EdgeInsets.all(double.infinity),
@@ -1292,14 +1324,7 @@ class _StoreMapState extends State<StoreMap>
                       widget.controller.storeLayout.add(newEl);
                     });
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          "Cannot place element here. It overlaps with another.",
-                        ),
-                        backgroundColor: Colors.redAccent,
-                      ),
-                    );
+                    AppToast.error(context, "Cannot place element here. It overlaps with another.");
                   }
 
                   setState(() {
@@ -1423,8 +1448,9 @@ class _StoreMapState extends State<StoreMap>
         // ==========================================
         if (widget.mode == MapMode.manage) ...[
           _buildLeftToolbar(),
-          _buildZoomControls(),
         ],
+        
+          _buildZoomControls(),
       ],
     );
 
@@ -1795,28 +1821,14 @@ class _StoreMapState extends State<StoreMap>
                           widget.onSelectionAssigned!();
                         }
                         setState(() {});
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              "Item assigned to location!",
-                              style: TextStyle(color: Colors.white),
-                            ),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
+                        AppToast.success(context, "Item assigned to location!");
                       }
-                    } else if (widget.mode == MapMode.pick) {
+
+                  } else if (widget.mode == MapMode.pick) {
                       if (el.type == ElementType.door ||
                           el.type == ElementType.cashier ||
                           el.type == ElementType.wall) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              "Cannot assign items to ${el.type.name}s.",
-                            ),
-                            backgroundColor: Colors.redAccent,
-                          ),
-                        );
+                        AppToast.error(context, "Cannot assign items to ${el.type.name}s.");
                         return;
                       }
                       if (widget.onElementSelected != null) {

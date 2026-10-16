@@ -5,6 +5,7 @@ import '../logic/inventory_controller.dart';
 import '../data/inventory.dart';
 import '../data/ai_insights_service.dart';
 import 'widgets/app_dialog.dart';
+import 'widgets/app_toast.dart';
 
 class DashboardPage extends StatefulWidget {
   final InventoryController controller;
@@ -865,14 +866,20 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildSalesChart(Map<String, dynamic> metrics) {
+ Widget _buildSalesChart(Map<String, dynamic> metrics) {
     final List<double> dailyRev = metrics['dailyRevenue'];
     final double maxRev = metrics['maxDailyRevenue'];
-    final List<String> days = [
-      'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Today',
-    ];
-
+    
     final now = DateTime.now();
+    final List<String> weekDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    
+    // Dynamically generate the last 7 days ending in "Today"
+    final List<String> days = List.generate(7, (index) {
+      if (index == 6) return 'Today';
+      final pastDate = now.subtract(Duration(days: 6 - index));
+      return weekDayNames[pastDate.weekday - 1];
+    });
+    
     int bestDayIndexOffset = 6 - metrics['bestDayIndex'] as int;
     String bestDayStr = bestDayIndexOffset == 0
         ? "Today"
@@ -1019,6 +1026,293 @@ class _DashboardPageState extends State<DashboardPage> {
   // Note: Omitted the full `_showRestockDialog` from this rewrite since it's an overlay and large, 
   // but I have ensured `fontFamily` is used in the parts shown below.
 
+  Future<void> _showRestockDialog(InventoryItem item) async {
+    final qtyCtrl = TextEditingController();
+    final unit = item.unit;
+    final allowDecimals = const {'kg', 'g', 'l', 'ml'}.contains(unit.toLowerCase());
+    bool saving = false;
+    bool touched = false;
+    String? error;
+
+    String? validate(String text) {
+      final t = text.trim();
+      if (t.isEmpty) return 'Enter the quantity received';
+      final v = double.tryParse(t);
+      if (v == null) return 'Enter a valid number';
+      if (v <= 0) return 'Must be greater than 0';
+      return null;
+    }
+
+    String _fmt(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final value = double.tryParse(qtyCtrl.text.trim());
+          final newQty = (value != null && value > 0) ? item.quantity + value : null;
+
+          Future<void> submit() async {
+            touched = true;
+            final err = validate(qtyCtrl.text);
+            if (err != null) {
+              setDialogState(() => error = err);
+              return;
+            }
+            setDialogState(() {
+              error = null;
+              saving = true;
+            });
+            try {
+              final qty = double.parse(qtyCtrl.text.trim());
+              final updated = item.copyWith(
+                quantity: item.quantity + qty,
+              );
+              await widget.controller.updateItem(updated);
+              
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+              
+              if (mounted) {
+                AppToast.success(context, 'Restocked ${item.name}: +${_fmt(qty)} $unit');
+                setState(() {}); // Refresh dashboard state
+              }
+            } catch (e) {
+              if (dialogContext.mounted) setDialogState(() => saving = false);
+              if (mounted) AppToast.error(context, 'Restock failed: $e');
+            }
+          }
+
+          void addChip(int n) {
+            final next = (double.tryParse(qtyCtrl.text.trim()) ?? 0) + n;
+            final text = _fmt(next);
+            qtyCtrl.value = TextEditingValue(
+              text: text,
+              selection: TextSelection.collapsed(offset: text.length),
+            );
+            setDialogState(() {
+              if (touched) error = validate(text);
+            });
+          }
+
+          OutlineInputBorder border(Color c, [double w = 1]) =>
+              OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: c, width: w),
+              );
+
+          Widget stockSummary(String label, String value, Color color, {bool alignEnd = false}) {
+            return Column(
+              crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                    color: Colors.grey.shade500,
+                    fontFamily: fontFam,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                    fontFamily: fontFam,
+                  ),
+                ),
+              ],
+            );
+          }
+
+          return AppDialog(
+            icon: LucideIcons.packagePlus,
+            color: primaryBlue,
+            title: 'Restock',
+            subtitle: item.name,
+            actions: [
+              OutlinedButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.black87,
+                  side: BorderSide(color: Colors.grey.shade300),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text('Cancel', style: TextStyle(fontFamily: fontFam)),
+              ),
+              ElevatedButton(
+                onPressed: saving ? null : submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryBlue,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text(
+                        'Add stock',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontFamily: fontFam),
+                      ),
+              ),
+            ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: stockSummary(
+                          'CURRENT',
+                          '${_fmt(item.quantity)} $unit',
+                          const Color(0xFF0F172A),
+                        ),
+                      ),
+                      Icon(
+                        LucideIcons.arrowRight,
+                        size: 18,
+                        color: Colors.grey.shade400,
+                      ),
+                      Expanded(
+                        child: stockSummary(
+                          'NEW',
+                          newQty == null ? '—' : '${_fmt(newQty)} $unit',
+                          newQty == null ? Colors.grey : primaryBlue,
+                          alignEnd: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Quantity received',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFamily: fontFam),
+                ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          LucideIcons.alertCircle,
+                          size: 13,
+                          color: Colors.red,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            error!,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: fontFam,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: qtyCtrl,
+                  autofocus: true,
+                  keyboardType: TextInputType.numberWithOptions(decimal: allowDecimals),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                      RegExp(allowDecimals ? r'[0-9.]' : r'[0-9]'),
+                    ),
+                  ],
+                  onChanged: (text) => setDialogState(() {
+                    if (touched) error = validate(text);
+                  }),
+                  onSubmitted: (_) => saving ? null : submit(),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: fontFam,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '0',
+                    hintStyle: const TextStyle(fontFamily: fontFam),
+                    suffixText: unit,
+                    suffixStyle: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade600,
+                      fontFamily: fontFam,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 14,
+                    ),
+                    enabledBorder: border(
+                      error != null ? Colors.red : Colors.grey.shade300,
+                    ),
+                    focusedBorder: border(
+                      error != null ? Colors.red : primaryBlue,
+                      1.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: [1, 5, 10, 50]
+                      .map(
+                        (n) => ActionChip(
+                          label: Text('+$n'),
+                          labelStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: fontFam,
+                          ),
+                          backgroundColor: primaryBlue.withOpacity(0.1),
+                          side: BorderSide.none,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          onPressed: saving ? null : () => addChip(n),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    qtyCtrl.dispose();
+  }
+
   Widget _buildRestockPriority(List<InventoryItem> criticalItems) {
     return Container(
       height: 380,
@@ -1066,81 +1360,88 @@ class _DashboardPageState extends State<DashboardPage> {
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade50,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            LucideIcons.arrowDown,
-                            size: 16,
-                            color: Colors.red.shade600,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.name,
-                                style: const TextStyle(
-                                  fontFamily: fontFam,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                  color: darkColor,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                    child: InkWell(
+                      onTap: () => _showRestockDialog(item),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                shape: BoxShape.circle,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                "$locStr · ${item.quantity.toInt()} left",
-                                style: TextStyle(
-                                  fontFamily: fontFam,
-                                  fontSize: 12,
-                                  color: Colors.grey.shade500,
-                                ),
+                              child: Icon(
+                                LucideIcons.arrowDown,
+                                size: 16,
+                                color: Colors.red.shade600,
                               ),
-                              const SizedBox(height: 12),
-                              Stack(
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Container(
-                                    height: 4,
-                                    width: double.infinity,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade100,
-                                      borderRadius: BorderRadius.circular(2),
+                                  Text(
+                                    item.name,
+                                    style: const TextStyle(
+                                      fontFamily: fontFam,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                      color: darkColor,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    "$locStr · ${item.quantity.toInt()} left",
+                                    style: TextStyle(
+                                      fontFamily: fontFam,
+                                      fontSize: 12,
+                                      color: Colors.grey.shade500,
                                     ),
                                   ),
-                                  Container(
-                                    height: 4,
-                                    width: 48,
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade600,
-                                      borderRadius: BorderRadius.circular(2),
-                                    ),
+                                  const SizedBox(height: 12),
+                                  Stack(
+                                    children: [
+                                      Container(
+                                        height: 4,
+                                        width: double.infinity,
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade100,
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
+                                      ),
+                                      Container(
+                                        height: 4,
+                                        width: 48,
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade600,
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 16),
+                            Text(
+                              "${item.quantity.toInt()} ${item.unit}",
+                              style: TextStyle(
+                                fontFamily: fontFam,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.red.shade700,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 16),
-                        Text(
-                          "${item.quantity.toInt()} ${item.unit}",
-                          style: TextStyle(
-                            fontFamily: fontFam,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.red.shade700,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   );
                 },

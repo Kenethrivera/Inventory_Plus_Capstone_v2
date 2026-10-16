@@ -524,6 +524,16 @@ class _PosCartPageState extends State<PosCartPage>
               return;
             }
 
+            final currentSubtotal = _calculateTotal();
+            final discountAmt = isPercent ? (currentSubtotal * (val / 100)) : val;
+            
+            if (discountAmt > currentSubtotal) {
+              setModalState(
+                () => errorMessage = 'Discount cannot exceed subtotal (₱${currentSubtotal.toStringAsFixed(2)}).',
+              );
+              return;
+            }
+
             setState(() {
               _discountValue = val;
               _isDiscountPercentage = isPercent;
@@ -1139,18 +1149,34 @@ class _PosCartPageState extends State<PosCartPage>
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: (paymentMode == 'Cash' && cashReceived < totalDue)
-                                ? null
-                                : () => Navigator.pop(context, {
-                                      'confirmed': true,
-                                      'paymentMode': paymentMode,
-                                      'cashReceived': paymentMode == 'Cash'
-                                          ? cashReceived
-                                          : totalDue,
-                                      'change': paymentMode == 'Cash'
-                                          ? (cashReceived - totalDue)
-                                          : 0.0,
-                                    }),
+                            onPressed: () {
+                              if (paymentMode == 'Cash') {
+                                if (cashReceived < totalDue) {
+                                  AppToast.error(context, "Cash received cannot be less than ₱${totalDue.toStringAsFixed(2)}");
+                                  return;
+                                }
+                                
+                                // Calculate the next 1000 multiple based on the total due
+                                double maxAllowedCash = (totalDue / 1000).ceil() * 1000.0;
+                                if (maxAllowedCash == 0) maxAllowedCash = 1000.0;
+
+                                if (cashReceived > maxAllowedCash) {
+                                  AppToast.error(context, "Maximum cash allowed is ₱${maxAllowedCash.toStringAsFixed(0)}.");
+                                  return;
+                                }
+                              }
+
+                              Navigator.pop(context, {
+                                'confirmed': true,
+                                'paymentMode': paymentMode,
+                                'cashReceived': paymentMode == 'Cash'
+                                    ? cashReceived
+                                    : totalDue,
+                                'change': paymentMode == 'Cash'
+                                    ? (cashReceived - totalDue)
+                                    : 0.0,
+                              });
+                            },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
                               disabledBackgroundColor: Colors.green.shade200,

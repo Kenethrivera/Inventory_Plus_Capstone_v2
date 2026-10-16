@@ -4,6 +4,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
 import 'store_map.dart';
+import 'widgets/app_toast.dart';
+import 'widgets/app_dialog.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const Color _lightBg = Color(0xFFF4F6F8);
@@ -101,26 +103,52 @@ class _MapEditorPageState extends State<MapEditorPage> {
               onPressed: () {
                 showDialog(
                   context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text("Clear Map?", style: TextStyle(fontFamily: _fontFam, fontWeight: FontWeight.bold)),
-                    content: const Text(
-                        "Are you sure you want to delete the entire map layout?", style: TextStyle(fontFamily: _fontFam)),
+                  builder: (dialogContext) => AppDialog(
+                    icon: LucideIcons.trash2,
+                    color: Colors.red.shade600,
+                    title: "Clear Map?",
+                    subtitle: "Delete entire map layout",
+                    child: const Text(
+                      "Are you sure you want to delete the entire map layout? All items will be unassigned.",
+                      style: TextStyle(fontFamily: _fontFam, fontSize: 13),
+                    ),
                     actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
+                      OutlinedButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.black87,
+                          side: BorderSide(color: Colors.grey.shade300),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam, fontWeight: FontWeight.bold)),
                       ),
                       ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red.shade600),
                         onPressed: () {
-                          Navigator.pop(context);
+                          Navigator.pop(dialogContext);
                           widget.controller.clearMapLayout().then((_) {
                             if (mounted) setState(() {});
+                            if (mounted) AppToast.success(context, "Map layout cleared");
                           });
                         },
-                        child: const Text("Delete",
-                            style: TextStyle(color: Colors.white, fontFamily: _fontFam, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade600,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text(
+                          "Delete",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontFamily: _fontFam,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -143,32 +171,53 @@ class _MapEditorPageState extends State<MapEditorPage> {
               onPressed: () {
                 showDialog(
                   context: context,
-                  builder: (dialogContext) => AlertDialog(
-                    title: const Text("Save Map?", style: TextStyle(fontFamily: _fontFam, fontWeight: FontWeight.bold)),
-                    content: const Text(
-                        "Are you sure you want to save the current map layout?", style: TextStyle(fontFamily: _fontFam)),
+                  builder: (dialogContext) => AppDialog(
+                    icon: LucideIcons.save,
+                    color: _primaryBlue,
+                    title: "Save Map Layout?",
+                    subtitle: "Apply changes to store map",
+                    child: const Text(
+                      "Are you sure you want to save the current map layout? This will lock in the new item locations.",
+                      style: TextStyle(fontFamily: _fontFam, fontSize: 13),
+                    ),
                     actions: [
-                      TextButton(
+                      OutlinedButton(
                         onPressed: () => Navigator.pop(dialogContext),
-                        child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.black87,
+                          side: BorderSide(color: Colors.grey.shade300),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam, fontWeight: FontWeight.bold)),
                       ),
                       ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: _primaryBlue),
                         onPressed: () async {
                           Navigator.pop(dialogContext);
                           setState(() => _isSaved = true);
                           await widget.controller.saveLayout();
                           if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text("Store layout saved successfully!", style: TextStyle(fontFamily: _fontFam)),
-                                  backgroundColor: Colors.green),
-                            );
+                            AppToast.success(context, "Store layout saved successfully!");
                           }
                         },
-                        child: const Text("Save",
-                            style: TextStyle(color: Colors.white, fontFamily: _fontFam, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryBlue,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text(
+                          "Save Layout",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontFamily: _fontFam,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ],
                   ),
