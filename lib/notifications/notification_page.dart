@@ -234,7 +234,8 @@ class _NotificationPageState extends State<NotificationPage> {
     });
 
     final hasReports = notifications.any((n) {
-      return n.type == NotificationType.exportReminder;
+      return n.type == NotificationType.exportReminder ||
+          n.type == NotificationType.inventoryRestocked;
     });
 
     final hasTransactions = notifications.any((n) {

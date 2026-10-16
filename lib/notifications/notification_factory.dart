@@ -390,4 +390,43 @@ class NotificationFactory {
       },
     );
   }
+
+  static AppNotification inventoryRestocked({
+    required String locationId,
+    required String transactionId,
+    required String productId,
+    required String productName,
+    required String staffId,
+    required String staffName,
+    required double quantityAdded,
+    required double newQuantity,
+  }) {
+    String qty(double value) {
+      if (value == value.roundToDouble()) {
+        return value.toInt().toString();
+      }
+      return value.toStringAsFixed(2);
+    }
+
+    return create(
+      locationId: locationId,
+      targetRoles: const ['admin'],
+      title: 'Inventory Restocked',
+      body:
+          '$staffName restocked $productName '
+          '(+${qty(quantityAdded)}). '
+          'New stock: ${qty(newQuantity)}.',
+      type: NotificationType.inventoryRestocked,
+      priority: NotificationPriority.low,
+      payload: {
+        'transactionId': transactionId,
+        'productId': productId,
+        'productName': productName,
+        'staffId': staffId,
+        'staffName': staffName,
+        'quantityAdded': quantityAdded,
+        'newQuantity': newQuantity,
+      },
+    );
+  }
 }

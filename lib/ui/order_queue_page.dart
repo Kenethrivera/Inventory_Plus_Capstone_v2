@@ -669,101 +669,174 @@ class OrderChecklistPage extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final String shortId = order.id.toString().substring(0, 8).toUpperCase();
-    final int pickedCount = pickedItems.length;
-    final int totalCount = order.items.length;
-    final bool isAllPicked = pickedCount == totalCount;
+Widget build(BuildContext context) {
+  final String shortId = order.id
+      .toString()
+      .substring(0, 8)
+      .toUpperCase();
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F8),
-      body: Column(
-        children: [
-          Container(
-            color: const Color(0xFFF4F6F8),
-            padding: const EdgeInsets.only(
-              left: 32,
-              right: 32,
-              top: 40,
-              bottom: 20,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                InkWell(
-                  onTap: onBack,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: const Icon(LucideIcons.arrowLeft, size: 20),
-                  ),
+  final int pickedCount =
+      pickedItems.length;
+
+  final int totalCount =
+      order.items.length;
+
+  final bool isAllPicked =
+      pickedCount == totalCount;
+
+  final assignedHelperName =
+      order.assignedHelperName
+          ?.toString()
+          .trim();
+
+  return Scaffold(
+    backgroundColor:
+        const Color(0xFFF4F6F8),
+
+    body: Column(
+      children: [
+        // =====================================================
+        // COMPACT HEADER
+        // Back button + order information share one row.
+        // =====================================================
+        Container(
+          width: double.infinity,
+          color:
+              const Color(0xFFF4F6F8),
+          padding:
+              const EdgeInsets.fromLTRB(
+            32,
+            24,
+            32,
+            18,
+          ),
+          child: Row(
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
+            children: [
+              // -------------------------------
+              // BACK BUTTON
+              // -------------------------------
+              InkWell(
+                onTap: onBack,
+                borderRadius:
+                    BorderRadius.circular(
+                  10,
                 ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Order assignment',
-                            style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 14,
-                              fontFamily: _fontFam,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '#ORD-$shortId',
-                            style: const TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF0F172A),
-                              fontFamily: _fontFam,
-                            ),
-                          ),
-                        ],
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration:
+                      BoxDecoration(
+                    color: Colors.white,
+                    borderRadius:
+                        BorderRadius
+                            .circular(
+                      10,
+                    ),
+                    border:
+                        Border.all(
+                      color:
+                          const Color(
+                        0xFFE2E8F0,
                       ),
                     ),
+                  ),
+                  alignment:
+                      Alignment.center,
+                  child: const Icon(
+                    LucideIcons.arrowLeft,
+                    size: 20,
+                    color:
+                        Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 16),
+
+              // -------------------------------
+              // ORDER HEADING
+              // -------------------------------
+              Expanded(
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment
+                          .start,
+                  children: [
+                    Text(
+                      'Order assignment',
+                      style: TextStyle(
+                        color: Colors
+                            .grey.shade500,
+                        fontSize: 13,
+                        fontFamily:
+                            _fontFam,
+                      ),
+                    ),
+
+                    const SizedBox(
+                      height: 3,
+                    ),
+
+                    Text(
+                      '#ORD-$shortId',
+                      style:
+                          const TextStyle(
+                        fontSize: 28,
+                        height: 1.1,
+                        fontWeight:
+                            FontWeight
+                                .w900,
+                        color: Color(
+                          0xFF0F172A,
+                        ),
+                        fontFamily:
+                            _fontFam,
+                      ),
+                    ),
+
+                    const SizedBox(
+                      height: 7,
+                    ),
+
                     Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF0F172A),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.question_mark,
-                            color: Colors.white,
-                            size: 16,
-                          ),
+                        Icon(
+                          Icons
+                              .person_pin_circle_outlined,
+                          size: 15,
+                          color: Colors
+                              .grey.shade500,
                         ),
-                        const SizedBox(width: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
+
+                        const SizedBox(
+                          width: 6,
+                        ),
+
+                        Flexible(
                           child: Text(
-                            '$pickedCount/$totalCount',
-                            style: const TextStyle(
-                              color: _primaryBlue,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              fontFamily: _fontFam,
+                            assignedHelperName !=
+                                        null &&
+                                    assignedHelperName
+                                        .isNotEmpty
+                                ? 'Assigned to $assignedHelperName'
+                                : 'Ready for picking',
+                            maxLines: 1,
+                            overflow:
+                                TextOverflow
+                                    .ellipsis,
+                            style:
+                                TextStyle(
+                              color: Colors
+                                  .grey
+                                  .shade600,
+                              fontSize: 13,
+                              fontWeight:
+                                  FontWeight
+                                      .w600,
+                              fontFamily:
+                                  _fontFam,
                             ),
                           ),
                         ),
@@ -771,82 +844,194 @@ class OrderChecklistPage extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  order.assignedHelperName != null &&
-                          order.assignedHelperName.toString().trim().isNotEmpty
-                      ? 'Assigned to ${order.assignedHelperName}'
-                      : 'Unassigned order',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: _fontFam,
+              ),
+
+              const SizedBox(width: 16),
+
+              // -------------------------------
+              // HELP BUTTON
+              // -------------------------------
+              Container(
+                width: 38,
+                height: 38,
+                decoration:
+                    const BoxDecoration(
+                  color:
+                      Color(0xFF0F172A),
+                  shape: BoxShape.circle,
+                ),
+                alignment:
+                    Alignment.center,
+                child: const Icon(
+                  Icons.question_mark,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // -------------------------------
+              // PICK PROGRESS
+              // -------------------------------
+              Container(
+                height: 40,
+                constraints:
+                    const BoxConstraints(
+                  minWidth: 58,
+                ),
+                padding:
+                    const EdgeInsets
+                        .symmetric(
+                  horizontal: 16,
+                ),
+                decoration:
+                    BoxDecoration(
+                  color: Colors
+                      .blue.shade50,
+                  borderRadius:
+                      BorderRadius
+                          .circular(
+                    20,
                   ),
                 ),
-              ],
-            ),
+                alignment:
+                    Alignment.center,
+                child: Text(
+                  '$pickedCount/$totalCount',
+                  style:
+                      const TextStyle(
+                    color: _primaryBlue,
+                    fontWeight:
+                        FontWeight.w900,
+                    fontSize: 15,
+                    fontFamily:
+                        _fontFam,
+                  ),
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              itemCount: order.items.length,
-              itemBuilder: (context, index) {
-                final item = order.items[index];
-                final isPicked = pickedItems.contains(item.productId);
+        ),
 
-                return _ChecklistItemCard(
-                  item: item,
-                  isPicked: isPicked,
-                  onToggle: (val) => onToggleItem(item.productId, val!),
-                  onMapTap: () => _showItemLocationMap(
+        // =====================================================
+        // ITEM CHECKLIST
+        // =====================================================
+        Expanded(
+          child: ListView.builder(
+            padding:
+                const EdgeInsets.fromLTRB(
+              32,
+              8,
+              32,
+              8,
+            ),
+            itemCount:
+                order.items.length,
+            itemBuilder:
+                (context, index) {
+              final item =
+                  order.items[index];
+
+              final isPicked =
+                  pickedItems.contains(
+                item.productId,
+              );
+
+              return _ChecklistItemCard(
+                item: item,
+                isPicked: isPicked,
+                onToggle: (val) {
+                  onToggleItem(
+                    item.productId,
+                    val ?? false,
+                  );
+                },
+                onMapTap: () {
+                  _showItemLocationMap(
                     context,
                     item.productId,
                     item.productName,
-                  ),
-                  onScanTap: () => _openScannerToCheckoff(
+                  );
+                },
+                onScanTap: () {
+                  _openScannerToCheckoff(
                     context,
                     item.productId,
                     item.quantity,
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              );
+            },
           ),
-          Container(
-            padding: const EdgeInsets.all(32),
-            decoration: const BoxDecoration(color: Color(0xFFF4F6F8)),
-            child: SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: isAllPicked ? () => _markPrepared(context) : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryBlue,
-                  disabledBackgroundColor: Colors.blue.shade200,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+        ),
+
+        // =====================================================
+        // BOTTOM ACTION BAR
+        // =====================================================
+        Container(
+          padding:
+              const EdgeInsets.fromLTRB(
+            32,
+            14,
+            32,
+            32,
+          ),
+          decoration:
+              const BoxDecoration(
+            color:
+                Color(0xFFF4F6F8),
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            height: 56,
+            child:
+                ElevatedButton(
+              onPressed: isAllPicked
+                  ? () =>
+                      _markPrepared(
+                        context,
+                      )
+                  : null,
+              style:
+                  ElevatedButton
+                      .styleFrom(
+                backgroundColor:
+                    _primaryBlue,
+                disabledBackgroundColor:
+                    Colors
+                        .blue.shade200,
+                elevation: 0,
+                shape:
+                    RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius
+                          .circular(
+                    12,
                   ),
                 ),
-                child: Text(
-                  isAllPicked
-                      ? 'Notify Cashier (Prepared)'
-                      : 'Pick all items first ($pickedCount/$totalCount)',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    fontFamily: _fontFam,
-                  ),
+              ),
+              child: Text(
+                isAllPicked
+                    ? 'Notify Cashier (Prepared)'
+                    : 'Pick all items first ($pickedCount/$totalCount)',
+                style:
+                    const TextStyle(
+                  fontSize: 16,
+                  fontWeight:
+                      FontWeight.bold,
+                  color: Colors.white,
+                  fontFamily:
+                      _fontFam,
                 ),
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 }
 
 class _ChecklistItemCard extends StatelessWidget {

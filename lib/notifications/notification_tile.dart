@@ -254,6 +254,8 @@ class NotificationTile extends StatelessWidget {
         return LucideIcons.trash2;
       case NotificationType.system:
         return LucideIcons.info;
+      case NotificationType.inventoryRestocked:
+        return Icons.add_box_outlined;
     }
   }
 
@@ -284,6 +286,8 @@ class NotificationTile extends StatelessWidget {
         return LucideIcons.trash2;
       case NotificationType.system:
         return LucideIcons.info;
+      case NotificationType.inventoryRestocked:
+        return Icons.add_box_outlined;
     }
   }
 

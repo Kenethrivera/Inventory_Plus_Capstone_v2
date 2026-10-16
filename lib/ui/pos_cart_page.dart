@@ -2244,6 +2244,155 @@ class _PosCartPageState extends State<PosCartPage>
     );
   }
 
+  Widget _buildPrimaryPosAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    int? badgeCount,
+    bool emphasized = false,
+  }) {
+    final foregroundColor = emphasized ? Colors.white : _primaryBlue;
+    final backgroundColor = emphasized ? _primaryBlue : const Color(0xFFEFF6FF);
+
+    final borderColor = emphasized
+        ? _primaryBlue
+        : _primaryBlue.withOpacity(0.28);
+
+    return SizedBox(
+      height: 48,
+      child: Material(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: borderColor, width: emphasized ? 0 : 1),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 18, color: foregroundColor),
+                const SizedBox(width: 9),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foregroundColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (badgeCount != null && badgeCount > 0) ...[
+                  const SizedBox(width: 8),
+
+                  Container(
+                    height: 24,
+                    constraints: const BoxConstraints(minWidth: 24),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: badgeCount > 9 ? 7 : 0,
+                    ),
+                    decoration: BoxDecoration(
+                      color: emphasized ? Colors.white : _primaryBlue,
+                      shape: badgeCount < 10
+                          ? BoxShape.circle
+                          : BoxShape.rectangle,
+                      borderRadius: badgeCount < 10
+                          ? null
+                          : BorderRadius.circular(999),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      badgeCount > 99 ? '99+' : '$badgeCount',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: emphasized ? _primaryBlue : Colors.white,
+                        fontSize: 11,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewModeToggle() {
+    return Container(
+      height: 48,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _isGridView = false),
+            borderRadius: const BorderRadius.horizontal(
+              left: Radius.circular(10),
+            ),
+            child: Container(
+              width: 42,
+              height: 46,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: !_isGridView!
+                    ? const Color(0xFFF1F5F9)
+                    : Colors.transparent,
+                borderRadius: const BorderRadius.horizontal(
+                  left: Radius.circular(10),
+                ),
+              ),
+              child: Icon(
+                LucideIcons.list,
+                size: 18,
+                color: !_isGridView! ? _primaryBlue : Colors.grey.shade500,
+              ),
+            ),
+          ),
+          Container(width: 1, height: 24, color: const Color(0xFFE2E8F0)),
+          InkWell(
+            onTap: () => setState(() => _isGridView = true),
+            borderRadius: const BorderRadius.horizontal(
+              right: Radius.circular(10),
+            ),
+            child: Container(
+              width: 42,
+              height: 46,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: _isGridView!
+                    ? const Color(0xFFF1F5F9)
+                    : Colors.transparent,
+                borderRadius: const BorderRadius.horizontal(
+                  right: Radius.circular(10),
+                ),
+              ),
+              child: Icon(
+                LucideIcons.layoutGrid,
+                size: 18,
+                color: _isGridView! ? _primaryBlue : Colors.grey.shade500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildItemList() {
     final categories = [
       'All',
@@ -2257,15 +2406,15 @@ class _PosCartPageState extends State<PosCartPage>
       children: [
         Padding(
           padding: const EdgeInsets.only(
-            left: 16.0,
-            right: 16.0,
-            top: 16.0,
-            bottom: 8.0,
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: 8,
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              Widget buildSearchField() {
+                return TextField(
                   decoration: InputDecoration(
                     hintText: 'Search items...',
                     prefixIcon: const Icon(Icons.search, color: Colors.grey),
@@ -2276,141 +2425,138 @@ class _PosCartPageState extends State<PosCartPage>
                       horizontal: 16,
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(
+                        color: _primaryBlue,
+                        width: 1.5,
+                      ),
                     ),
                   ),
-                  onChanged: (val) => setState(() => _searchQuery = val),
-                ),
-              ),
-              const SizedBox(width: 12),
-              StreamBuilder<List<CustomerOrder>>(
-                stream: widget.controller.streamOrders(),
-                builder: (context, snapshot) {
-                  final pendingCount = snapshot.hasData
-                      ? snapshot.data!
-                            .where(
-                              (o) =>
-                                  o.status == 'prepared' ||
-                                  o.status == 'pending',
-                            )
-                            .length
-                      : 0;
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value;
+                    });
+                  },
+                );
+              }
 
-                  return OutlinedButton.icon(
-                    onPressed: () => _showPendingOrdersModal(context),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _primaryBlue,
-                      side: BorderSide(color: Colors.blue.shade200),
-                      backgroundColor: Colors.blue.shade50,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                    ),
-                    icon: const Icon(LucideIcons.clock, size: 16),
-                    label: Row(
+              Widget buildActions() {
+                return StreamBuilder<List<CustomerOrder>>(
+                  stream: widget.controller.streamOrders(),
+                  builder: (context, snapshot) {
+                    final pendingCount = snapshot.hasData
+                        ? snapshot.data!
+                              .where(
+                                (order) =>
+                                    order.status == 'prepared' ||
+                                    order.status == 'pending',
+                              )
+                              .length
+                        : 0;
+
+                    return Row(
                       children: [
-                        const Text(
-                          "Pending Orders",
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        if (pendingCount > 0) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(
-                              color: _primaryBlue,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Text(
-                              '$pendingCount',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                        Expanded(
+                          child: _buildPrimaryPosAction(
+                            icon: LucideIcons.clock,
+                            label: 'Pending Orders',
+                            badgeCount: pendingCount,
+                            onPressed: () {
+                              _showPendingOrdersModal(context);
+                            },
                           ),
-                        ],
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildPrimaryPosAction(
+                            icon: LucideIcons.scanLine,
+                            label: 'Object Scanner',
+                            emphasized: true,
+                            onPressed: _openAIObjectScanner,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              }
+
+              // Smaller layouts: search first, primary actions below.
+              if (constraints.maxWidth < 760) {
+                return Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: buildSearchField()),
+                        const SizedBox(width: 10),
+                        _buildViewModeToggle(),
                       ],
                     ),
-                  );
-                },
-              ),
-              const SizedBox(width: 12),
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    InkWell(
-                      onTap: () => setState(() => _isGridView = false),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: !_isGridView!
-                              ? Colors.grey.shade100
-                              : Colors.white,
-                          borderRadius: const BorderRadius.horizontal(
-                            left: Radius.circular(8),
-                          ),
-                        ),
-                        child: Icon(
-                          LucideIcons.list,
-                          size: 18,
-                          color: !_isGridView! ? Colors.black : Colors.grey,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      width: 1,
-                      height: 24,
-                      color: Colors.grey.shade300,
-                    ),
-                    InkWell(
-                      onTap: () => setState(() => _isGridView = true),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: _isGridView!
-                              ? Colors.grey.shade100
-                              : Colors.white,
-                          borderRadius: const BorderRadius.horizontal(
-                            right: Radius.circular(8),
-                          ),
-                        ),
-                        child: Icon(
-                          LucideIcons.layoutGrid,
-                          size: 18,
-                          color: _isGridView! ? Colors.black : Colors.grey,
-                        ),
-                      ),
-                    ),
+                    const SizedBox(height: 10),
+                    buildActions(),
                   ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                decoration: BoxDecoration(
-                  color: _primaryBlue,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: IconButton(
-                  icon: const Icon(LucideIcons.scanLine, color: Colors.white),
-                  onPressed: _openAIObjectScanner,
-                ),
-              ),
-            ],
+                );
+              }
+
+              // Desktop layout.
+              return Row(
+                children: [
+                  Expanded(child: buildSearchField()),
+                  const SizedBox(width: 12),
+
+                  SizedBox(
+                    width: 190,
+                    child: StreamBuilder<List<CustomerOrder>>(
+                      stream: widget.controller.streamOrders(),
+                      builder: (context, snapshot) {
+                        final pendingCount = snapshot.hasData
+                            ? snapshot.data!
+                                  .where(
+                                    (order) =>
+                                        order.status == 'prepared' ||
+                                        order.status == 'pending',
+                                  )
+                                  .length
+                            : 0;
+
+                        return _buildPrimaryPosAction(
+                          icon: LucideIcons.clock,
+                          label: 'Pending Orders',
+                          badgeCount: pendingCount,
+                          onPressed: () {
+                            _showPendingOrdersModal(context);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  SizedBox(
+                    width: 180,
+                    child: _buildPrimaryPosAction(
+                      icon: LucideIcons.scanLine,
+                      label: 'Object Scanner',
+                      emphasized: true,
+                      onPressed: _openAIObjectScanner,
+                    ),
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  _buildViewModeToggle(),
+                ],
+              );
+            },
           ),
         ),
         SizedBox(

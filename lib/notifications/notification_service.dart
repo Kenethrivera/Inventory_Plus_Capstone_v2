@@ -55,6 +55,15 @@ class NotificationService {
   Future<bool> _shouldCreateNotification(AppNotification notification) async {
     final existingNotifications = await _repository.fetchNotifications();
 
+    if (notification.type == NotificationType.inventoryRestocked) {
+      return !existingNotifications.any((existing) {
+        return existing.type == NotificationType.inventoryRestocked &&
+            existing.locationId == notification.locationId &&
+            existing.payload['transactionId']?.toString() ==
+                notification.payload['transactionId']?.toString();
+      });
+    }
+
     final hasDuplicate = existingNotifications.any((existing) {
       final sameType = existing.type == notification.type;
       final samePayload = _payloadMatches(existing, notification);
@@ -67,7 +76,8 @@ class NotificationService {
           notification.type == NotificationType.exportReminder ||
           notification.type == NotificationType.lowStock ||
           notification.type == NotificationType.criticalStock ||
-          notification.type == NotificationType.deadStock) {
+          notification.type == NotificationType.deadStock ||
+          notification.type == NotificationType.inventoryRestocked) {
         return sameType && samePayload;
       }
 
@@ -324,4 +334,27 @@ class NotificationService {
     await createNotification(notification);
   }
 
+  Future<void> notifyInventoryRestocked({
+    required String locationId,
+    required String transactionId,
+    required String productId,
+    required String productName,
+    required String staffId,
+    required String staffName,
+    required double quantityAdded,
+    required double newQuantity,
+  }) async {
+    final notification = NotificationFactory.inventoryRestocked(
+      locationId: locationId,
+      transactionId: transactionId,
+      productId: productId,
+      productName: productName,
+      staffId: staffId,
+      staffName: staffName,
+      quantityAdded: quantityAdded,
+      newQuantity: newQuantity,
+    );
+
+    await createNotification(notification);
+  }
 }

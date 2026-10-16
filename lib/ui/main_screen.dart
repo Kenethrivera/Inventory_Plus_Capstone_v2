@@ -34,6 +34,7 @@ import 'widgets/app_toast.dart';
 import '../services/staff_presence_service.dart';
 import 'widgets/active_staff_button.dart';
 import '../services/store_access_service.dart';
+import 'staff_history_page.dart';
 
 class MainScreen extends StatefulWidget {
   final InventoryController controller;
@@ -56,6 +57,8 @@ class _MainScreenState extends State<MainScreen> {
   String? _targetPosOrderId;
 
   NotificationController? _notificationController;
+
+  
   bool _isCheckingStockAlerts = false;
   bool _isCheckingExportReminders = false;
   StaffPresenceService? _staffPresenceService;
@@ -91,6 +94,35 @@ class _MainScreenState extends State<MainScreen> {
 
       _notificationController!.loadNotifications();
 
+      widget.controller.onRestockRecorded =
+          ({
+            required String locationId,
+            required String transactionId,
+            required String productId,
+            required String productName,
+            required String staffId,
+            required String staffName,
+            required double quantityAdded,
+            required double newQuantity,
+          }) async {
+            final controller = _notificationController;
+
+            if (controller == null) {
+              throw StateError('Notification controller not initialized.');
+            }
+
+            await controller.notifyInventoryRestocked(
+              locationId: locationId,
+              transactionId: transactionId,
+              productId: productId,
+              productName: productName,
+              staffId: staffId,
+              staffName: staffName,
+              quantityAdded: quantityAdded,
+              newQuantity: newQuantity,
+            );
+          };
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _scanExportReminderNotifications();
@@ -111,6 +143,7 @@ class _MainScreenState extends State<MainScreen> {
     _storeLogoutCountdownTimer?.cancel();
     _notificationController?.dispose();
     _staffPresenceService?.stop(logoutReason: 'app_closed');
+    widget.controller.onRestockRecorded = null;
     super.dispose();
   }
 
@@ -125,20 +158,28 @@ class _MainScreenState extends State<MainScreen> {
       switch (_currentIndex) {
         case 0:
           return 'Dashboard';
+
         case 1:
           return 'Forecasting';
+
         case 2:
           return 'POS Monitor';
+
         case 3:
           return 'Queue Monitor';
+
         case 4:
           return 'Inventory';
+
         case 5:
           return 'Transactions';
+
         case 6:
           return 'Store Map';
+
         case 7:
           return 'System Settings';
+
         default:
           return 'Main Screen';
       }
@@ -148,19 +189,29 @@ class _MainScreenState extends State<MainScreen> {
       switch (_currentIndex) {
         case 0:
           return 'Order Queue';
+
         case 1:
           return 'Inventory';
+
+        case 2:
+          return 'History';
+
         default:
           return 'Main Screen';
       }
     }
 
-    // staff / cashier
+    // Staff / cashier.
     switch (_currentIndex) {
       case 0:
         return 'POS System';
+
       case 1:
         return 'Inventory';
+
+      case 2:
+        return 'History';
+
       default:
         return 'Main Screen';
     }
@@ -774,6 +825,32 @@ class _MainScreenState extends State<MainScreen> {
 
         return null;
 
+      case NotificationType.inventoryRestocked:
+        final role = widget.controller.currentUserRole?.toLowerCase();
+
+        if (role != 'admin') {
+          return 'Only administrators can open restock notifications.';
+        }
+
+        final productId = notification.payload['productId']?.toString();
+
+        if (productId == null || productId.isEmpty) {
+          return 'Product ID not found in notification.';
+        }
+
+        final items = [
+          ...widget.controller.filterInventory(query: '', category: 'All'),
+          ...widget.controller.filterDisabled(query: '', category: 'All'),
+        ];
+
+        final exists = items.any((item) => item.id.toString() == productId);
+
+        if (!exists) {
+          return 'This product no longer exists.';
+        }
+
+        return null;
+
       case NotificationType.orderPrepared:
         if (orderId == null || orderId.isEmpty) {
           return 'Order ID not found in notification.';
@@ -929,6 +1006,49 @@ class _MainScreenState extends State<MainScreen> {
           if (!mounted) return;
           _handleSelectItem(matches.first);
         });
+        break;
+
+      case NotificationType.inventoryRestocked:
+        final productId = notification.payload['productId']?.toString();
+
+        final role = widget.controller.currentUserRole?.toLowerCase();
+
+        if (role != 'admin') {
+          AppToast.error(
+            context,
+            'Restock monitoring is available to administrators only.',
+          );
+          return;
+        }
+
+        if (productId == null || productId.isEmpty) {
+          AppToast.error(context, 'Product information is missing.');
+          return;
+        }
+
+        final items = [
+          ...widget.controller.filterInventory(query: '', category: 'All'),
+          ...widget.controller.filterDisabled(query: '', category: 'All'),
+        ];
+
+        final matches = items
+            .where((item) => item.id.toString() == productId)
+            .toList();
+
+        if (matches.isEmpty) {
+          AppToast.error(context, 'This product no longer exists.');
+          return;
+        }
+
+        setState(() {
+          _currentIndex = inventoryIndex;
+        });
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _handleSelectItem(matches.first);
+        });
+
         break;
 
       default:
@@ -1221,12 +1341,23 @@ class _MainScreenState extends State<MainScreen> {
         int pageIndex = 0;
 
         final int dashboardIndex = isAdmin ? pageIndex++ : -1;
+
         final int forecastingIndex = isAdmin ? pageIndex++ : -1;
+
         final int posIndex = (isCashier || isAdmin) ? pageIndex++ : -1;
+
         final int orderQueueIndex = (isHelper || isAdmin) ? pageIndex++ : -1;
+
         final int inventoryIndex = pageIndex++;
+
+        final int staffHistoryIndex = (isHelper || isCashier)
+            ? pageIndex++
+            : -1;
+
         final int transactionIndex = isAdmin ? pageIndex++ : -1;
+
         final int mapIndex = isAdmin ? pageIndex++ : -1;
+
         final int systemSettingsIndex = isAdmin ? pageIndex++ : -1;
 
         final pages = <Widget>[];
@@ -1326,6 +1457,10 @@ class _MainScreenState extends State<MainScreen> {
           ),
         );
 
+        if (isHelper || isCashier) {
+          pages.add(StaffHistoryPage(controller: widget.controller));
+        }
+
         if (isAdmin) {
           pages.add(
             TransactionHistoryPage(
@@ -1348,7 +1483,7 @@ class _MainScreenState extends State<MainScreen> {
         }
 
         if ((isHelper || isCashier) && isDesktop) {
-          if (_currentIndex! > 1) {
+          if (_currentIndex! > 2) {
             _currentIndex = 0;
           }
 
@@ -1362,6 +1497,7 @@ class _MainScreenState extends State<MainScreen> {
                   posIndex: posIndex,
                   transactionIndex: transactionIndex,
                   inventoryIndex: inventoryIndex,
+                  staffHistoryIndex: staffHistoryIndex,
                 ),
                 Expanded(
                   child: IndexedStack(
@@ -1578,6 +1714,12 @@ class _MainScreenState extends State<MainScreen> {
             selectedIcon: Icon(LucideIcons.box, color: _primaryBlue),
             label: 'Inventory',
           ),
+          if (isHelper || isCashier)
+            const NavigationDestination(
+              icon: Icon(LucideIcons.history, color: _inactiveText),
+              selectedIcon: Icon(LucideIcons.history, color: _primaryBlue),
+              label: 'History',
+            ),
           if (isAdmin)
             const NavigationDestination(
               icon: Icon(LucideIcons.history, color: _inactiveText),
@@ -1736,14 +1878,13 @@ class _MainScreenState extends State<MainScreen> {
     required int posIndex,
     required int transactionIndex,
     required int inventoryIndex,
+    required int staffHistoryIndex,
   }) {
     return Container(
       height: 60,
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Colors.grey.shade200),
-        ),
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Row(
@@ -1775,42 +1916,72 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ],
           ),
+
           const SizedBox(width: 56),
+
           StreamBuilder<List<CustomerOrder>>(
             stream: widget.controller.streamOrders(),
             builder: (context, snapshot) {
+              final currentUserId = widget.controller.currentUserId;
+
               final pendingCount = snapshot.hasData
-                  ? snapshot.data!
-                      .where((order) => order.status == 'pending')
-                      .length
+                  ? snapshot.data!.where((order) {
+                      if (order.status != 'pending') {
+                        return false;
+                      }
+
+                      if (!isHelper) {
+                        return true;
+                      }
+
+                      final assignedId = order.assignedHelperId?.toString();
+
+                      // Helper sees unassigned orders
+                      // and orders assigned to them.
+                      return assignedId == null ||
+                          assignedId.isEmpty ||
+                          assignedId == currentUserId?.toString();
+                    }).length
                   : 0;
 
               return Row(
                 children: [
                   if (isHelper)
                     _buildTopNavTabItem(
-                      index: 0,
+                      index: orderQueueIndex,
                       icon: LucideIcons.fileText,
                       label: 'Order queue',
                       badgeCount: pendingCount,
                     )
                   else
                     _buildTopNavTabItem(
-                      index: 0,
+                      index: posIndex,
                       icon: LucideIcons.shoppingCart,
                       label: 'POS System',
                     ),
+
                   const SizedBox(width: 24),
+
                   _buildTopNavTabItem(
-                    index: 1,
+                    index: inventoryIndex,
                     icon: LucideIcons.box,
                     label: 'Inventory',
+                  ),
+
+                  const SizedBox(width: 24),
+
+                  _buildTopNavTabItem(
+                    index: staffHistoryIndex,
+                    icon: LucideIcons.history,
+                    label: 'History',
                   ),
                 ],
               );
             },
           ),
+
           const Spacer(),
+
           NotificationBell(
             onValidateNotification: _validateNotificationTap,
             onNotificationSelected: (notification) {
@@ -1823,7 +1994,9 @@ class _MainScreenState extends State<MainScreen> {
               );
             },
           ),
+
           const SizedBox(width: 12),
+
           _buildTopProfileChip(),
         ],
       ),

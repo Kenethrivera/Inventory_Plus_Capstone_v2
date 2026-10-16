@@ -414,5 +414,38 @@ class NotificationController extends ChangeNotifier {
   }
 
 
+  Future<void> notifyInventoryRestocked({
+    required String locationId,
+    required String transactionId,
+    required String productId,
+    required String productName,
+    required String staffId,
+    required String staffName,
+    required double quantityAdded,
+    required double newQuantity,
+  }) async {
+    _errorMessage = null;
+
+    try {
+      await _service.notifyInventoryRestocked(
+        locationId: locationId,
+        transactionId: transactionId,
+        productId: productId,
+        productName: productName,
+        staffId: staffId,
+        staffName: staffName,
+        quantityAdded: quantityAdded,
+        newQuantity: newQuantity,
+      );
+
+      await loadNotifications();
+    } catch (e) {
+      _errorMessage = 'Could not create restock notification: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+
 
 }

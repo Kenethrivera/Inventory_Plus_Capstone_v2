@@ -18,5 +18,6 @@ enum NotificationType {
   inventoryDeleted,
 
   system,
+  inventoryRestocked
   
 }

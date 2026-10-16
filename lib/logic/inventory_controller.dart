@@ -29,6 +29,18 @@ class InventoryController {
   static const int _baselineWindowDays = 180;
   Map<String, double> _baselineByProduct = {};
 
+  Future<void> Function({
+    required String locationId,
+    required String transactionId,
+    required String productId,
+    required String productName,
+    required String staffId,
+    required String staffName,
+    required double quantityAdded,
+    required double newQuantity,
+  })?
+  onRestockRecorded;
+
   Future<void> _loadStockBaselines() async {
     final locId = activeLocationId;
     if (locId == null) return;
@@ -281,7 +293,7 @@ class InventoryController {
     }
   }
 
-  Future<void> _logTransaction({
+  Future<String?> _logTransaction({
     String? productId,
     required String type,
     required double quantityChange,
@@ -292,21 +304,28 @@ class InventoryController {
     final userId = currentUserId;
     final userName = currentUserName ?? 'Unknown User';
 
-    if (locId == null || userId == null) return;
-    try {
-      final Map<String, dynamic> insertData = {
-        'product_id': productId,
-        'transaction_type': type,
-        'quantity_change': quantityChange,
-        'new_quantity': newQuantity,
-        'location_id': locId,
-        'user_id': int.tryParse(userId) ?? userId,
-        'user_name': userName,
-        if (note != null && note.isNotEmpty) 'note': note,
-      };
+    if (locId == null || userId == null) {
+      throw StateError('Cannot log transaction without a user and location.');
+    }
 
-      await supabase.from('transaction_history').insert(insertData);
-    } catch (e) {}
+    final insertData = <String, dynamic>{
+      'product_id': productId,
+      'transaction_type': type,
+      'quantity_change': quantityChange,
+      'new_quantity': newQuantity,
+      'location_id': locId,
+      'user_id': int.tryParse(userId) ?? userId,
+      'user_name': userName,
+      if (note != null && note.isNotEmpty) 'note': note,
+    };
+
+    final saved = await supabase
+        .from('transaction_history')
+        .insert(insertData)
+        .select('id')
+        .single();
+
+    return saved['id']?.toString();
   }
 
   Future<String?> uploadProductImage(File imageFile, String fileName) async {
@@ -398,13 +417,41 @@ class InventoryController {
       _items[index] = updatedItem;
 
       if (quantityChange != 0) {
-        await _logTransaction(
+        final transactionId = await _logTransaction(
           productId: updatedItem.id,
           type: quantityChange > 0 ? 'stock_in' : 'checkout',
           quantityChange: quantityChange,
           newQuantity: updatedItem.quantity,
         );
-        if (quantityChange > 0) await _loadStockBaselines();
+
+        if (quantityChange > 0) {
+          await _loadStockBaselines();
+
+          final callback = onRestockRecorded;
+          final locationId = activeLocationId;
+          final userId = currentUserId;
+
+          if (callback != null &&
+              transactionId != null &&
+              locationId != null &&
+              userId != null) {
+            try {
+              await callback(
+                locationId: locationId,
+                transactionId: transactionId,
+                productId: updatedItem.id,
+                productName: updatedItem.name,
+                staffId: userId,
+                staffName: currentUserName ?? 'Unknown User',
+                quantityAdded: quantityChange,
+                newQuantity: updatedItem.quantity,
+              );
+            } catch (e, stackTrace) {
+              debugPrint('RESTOCK NOTIFICATION ERROR: $e');
+              debugPrintStack(stackTrace: stackTrace);
+            }
+          }
+        }
       }
     }
   }
@@ -1253,6 +1300,44 @@ Stream<List<CustomerOrder>> streamOrders() {
       debugPrint("Error assigning item to location: $e");
       rethrow;
     }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMyRestockHistory({
+    int page = 0,
+    int pageSize = 25,
+  }) async {
+    final locationId = activeLocationId;
+    final userId = currentUserNumericId;
+
+    if (locationId == null || userId == null) {
+      return [];
+    }
+
+    final from = page * pageSize;
+    final to = from + pageSize - 1;
+
+    final response = await supabase
+        .from('transaction_history')
+        .select('''
+        id,
+        product_id,
+        transaction_type,
+        quantity_change,
+        new_quantity,
+        user_id,
+        user_name,
+        created_at,
+        note,
+        products(product_name, sku)
+      ''')
+        .eq('location_id', locationId)
+        .eq('user_id', userId)
+        .eq('transaction_type', 'stock_in')
+        .gt('quantity_change', 0)
+        .order('created_at', ascending: false)
+        .range(from, to);
+
+    return List<Map<String, dynamic>>.from(response);
   }
   
 }
