@@ -39,8 +39,10 @@ class ItemDetailPage extends StatefulWidget {
 
 class _ItemDetailPageState extends State<ItemDetailPage> {
   late InventoryItem _currentItem;
+  StreamSubscription<List<InventoryItem>>? _inventorySubscription;
   List<Map<String, dynamic>> _transactionHistory = [];
   bool _isLoadingHistory = true;
+  bool _isClosing = false;
 
   bool _isEditing = false;
   bool isReadOnly = false;
@@ -79,6 +81,50 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     _currentItem = widget.item;
     _initControllers();
     _loadHistory();
+    _bindInventoryStream();
+  }
+
+  void _bindInventoryStream() {
+    _inventorySubscription?.cancel();
+    _inventorySubscription = widget.controller.streamInventory().listen(
+      (_) => _resolveCurrentItem(),
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('[ItemDetailPage] Inventory stream error: $error');
+      },
+    );
+  }
+
+  void _resolveCurrentItem() {
+    if (!mounted || _isClosing) return;
+
+    final InventoryItem? latest =
+        widget.controller.findAnyItemById(_currentItem.id);
+
+    if (latest == null) {
+      _isClosing = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onBack();
+      });
+      return;
+    }
+
+    setState(() {
+      _currentItem = latest;
+      if (!_isEditing) {
+        _setControllerValues(latest);
+      }
+    });
+  }
+
+  void _setControllerValues(InventoryItem item) {
+    _nameController.text = item.name;
+    _priceController.text = item.price.toString();
+    _stockController.text = item.quantity.toString();
+    _skuController.text = item.sku;
+    _descController.text = item.description;
+    _manufacturerController.text = item.manufacturer ?? '';
+    _modelController.text = item.model ?? '';
+    _sizeController.text = item.productSize ?? '';
   }
 
   Future<void> _showRestockDialog() async {
@@ -424,15 +470,19 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   @override
   void didUpdateWidget(ItemDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.item != widget.item) {
+    if (oldWidget.item.id != widget.item.id) {
       _currentItem = widget.item;
-      _initControllers(); 
+      _setControllerValues(widget.item);
       _loadHistory();
+    }
+    if (oldWidget.controller != widget.controller) {
+      _bindInventoryStream();
     }
   }
 
   @override
   void dispose() {
+    _inventorySubscription?.cancel();
     _nameController.dispose();
     _priceController.dispose();
     _stockController.dispose();
@@ -1893,9 +1943,11 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     final overlay = Overlay.of(context, rootOverlay: true);
     final name = _currentItem.name;
     try {
+      _isClosing = true;
       await widget.onDelete(_currentItem.id);
       AppToast.showOn(overlay, '"$name" deleted');
     } catch (e) {
+      _isClosing = false;
       AppToast.showOn(overlay, 'Could not delete "$name": $e', isError: true);
     }
   }

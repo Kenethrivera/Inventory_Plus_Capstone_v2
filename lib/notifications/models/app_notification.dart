@@ -9,7 +9,7 @@ class AppNotification {
   /// Example: ['admin'], ['helper'], ['admin', 'helper']
   final List<String> targetRoles;
 
-  final title;
+  final String title;
   final String body;
 
   final NotificationType type;

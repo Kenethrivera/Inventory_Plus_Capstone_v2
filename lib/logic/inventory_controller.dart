@@ -17,8 +17,11 @@ class InventoryController {
   // shared realtime controlelrs
   final StreamController<List<CustomerOrder>> _ordersController =
       StreamController<List<CustomerOrder>>.broadcast();
+  final StreamController<List<InventoryItem>> _inventoryController =
+      StreamController<List<InventoryItem>>.broadcast();
 
   StreamSubscription<void>? _orderChangesSubscription;
+  StreamSubscription<void>? _inventoryChangesSubscription;
 
   List<CustomerOrder> _ordersSnapshot = const <CustomerOrder>[];
 
@@ -30,10 +33,15 @@ class InventoryController {
 
   bool _ordersRefreshQueued = false;
 
+  String? _inventorySnapshotLocationId;
+  bool _inventorySnapshotLoaded = false;
+  Future<void>? _inventoryRefreshInFlight;
+  bool _inventoryRefreshQueued = false;
+
   final SupabaseClient supabase = Supabase.instance.client;
   int? currentUserNumericId;
   List<InventoryItem> _items = [];
-  List<InventoryItem> get allItems => _items;
+  List<InventoryItem> get allItems => List<InventoryItem>.unmodifiable(_items);
   List<InventoryItem> _disabledItems = [];
   String? activeLocationId;
   String? currentUserRole;
@@ -159,7 +167,11 @@ class InventoryController {
   }
 
   /// Active + disabled. Only meant for reports.
-  List<InventoryItem> get reportableItems => [..._items, ..._disabledItems];
+  List<InventoryItem> get reportableItems =>
+      List<InventoryItem>.unmodifiable(<InventoryItem>[
+        ..._items,
+        ..._disabledItems,
+      ]);
 
   void setLoggedInUser({
     required String name,
@@ -263,33 +275,18 @@ class InventoryController {
   }
 
   Future<void> loadAppData(String userLocationId) async {
+    if (activeLocationId != userLocationId) {
+      _clearInventorySnapshot();
+    }
     activeLocationId = userLocationId;
 
     try {
-      final productsResponse = await supabase
-          .from('products')
-          .select()
-          .eq('location_id', userLocationId);
-
-      final active = <InventoryItem>[];
-      final disabled = <InventoryItem>[];
-      for (final p in productsResponse as List) {
-        final item = InventoryItem.fromSupabase(p);
-        if (p['is_active'] == false) {
-          disabled.add(item);
-        } else {
-          active.add(item);
-        }
-      }
-      _items = active;
-      _disabledItems = disabled;
-
+      await _refreshInventoryFromDatabase();
       await _loadStockBaselines();
       await fetchMapLayout();
       await loadStoreSettings();
     } catch (e) {
-      _items = [];
-      _disabledItems = [];
+      _clearInventorySnapshot();
     }
   }
 
@@ -335,6 +332,7 @@ class InventoryController {
       final savedItem = InventoryItem.fromSupabase(response);
       _items.add(savedItem);
       _baselineByProduct[savedItem.id] = savedItem.quantity; 
+      _publishInventorySnapshot();
 
       await _logTransaction(
         productId: savedItem.id,
@@ -414,6 +412,7 @@ class InventoryController {
         .eq('id', id);
 
     _items[index] = item.copyWith(quantity: newQty);
+    _publishInventorySnapshot();
 
     await _logTransaction(
       productId: id,
@@ -469,6 +468,7 @@ class InventoryController {
     if (index != -1 && oldItem != null) {
       final quantityChange = updatedItem.quantity - oldItem.quantity;
       _items[index] = updatedItem;
+      _publishInventorySnapshot();
 
       if (quantityChange != 0) {
         final transactionId = await _logTransaction(
@@ -543,6 +543,7 @@ class InventoryController {
 
     final item = _items.removeAt(index);
     _disabledItems.add(item);
+    _publishInventorySnapshot();
 
     await _logTransaction(
       productId: id,
@@ -560,6 +561,7 @@ class InventoryController {
 
     final item = _disabledItems.removeAt(index);
     _items.add(item);
+    _publishInventorySnapshot();
 
     await _logTransaction(
       productId: id,
@@ -580,6 +582,7 @@ class InventoryController {
     await supabase.from('products').delete().eq('id', id); // throws on failure
 
     final itemToDelete = _disabledItems.removeAt(index);
+    _publishInventorySnapshot();
     await _logTransaction(
       productId: null,
       type: 'delete',
@@ -608,6 +611,7 @@ class InventoryController {
           shelfLevel: shelf.toString(),
           binNumber: layer,
         );
+        _publishInventorySnapshot();
       }
     } catch (e) {}
   }
@@ -1002,11 +1006,23 @@ class InventoryController {
     final locId = activeLocationId;
     if (locId == null) return null;
 
+    // Reconcile immediately before checkout so a cart that was built before a
+    // remote stock change cannot sell more than the latest canonical snapshot.
+    await _refreshInventoryFromDatabase();
+
     for (final oi in items) {
-      if (!_items.any((i) => i.id == oi.productId)) {
+      final int index = _items.indexWhere((i) => i.id == oi.productId);
+      if (index == -1) {
         throw Exception(
           'An item in this order is no longer available. '
           'Remove it from the cart and try again.',
+        );
+      }
+
+      if (oi.quantity > _items[index].quantity) {
+        throw Exception(
+          'There is not enough stock for ${_items[index].name}. '
+          'Update the cart quantity and try again.',
         );
       }
     }
@@ -1094,6 +1110,7 @@ class InventoryController {
           .eq('id', restored.id);
 
       _items[index] = restored;
+      _publishInventorySnapshot();
 
       await _logTransaction(
         productId: restored.id,
@@ -1105,12 +1122,7 @@ class InventoryController {
   }
 
   void bindRealtimeSync(RealtimeSyncService realtimeSync) {
-    // Prevent accidentally registering the same listener twice.
-    if (_orderChangesSubscription != null) {
-      return;
-    }
-
-    _orderChangesSubscription = realtimeSync.orderChanges.listen(
+    _orderChangesSubscription ??= realtimeSync.orderChanges.listen(
       (_) {
         unawaited(_refreshOrdersFromDatabase());
       },
@@ -1118,6 +1130,119 @@ class InventoryController {
         debugPrint('[InventoryController] Order realtime error: $error');
       },
     );
+
+    _inventoryChangesSubscription ??= realtimeSync.inventoryChanges.listen(
+      (_) {
+        unawaited(_refreshInventoryFromDatabase());
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('[InventoryController] Inventory realtime error: $error');
+      },
+    );
+  }
+
+  Stream<List<InventoryItem>> streamInventory() {
+    final String? locationId = activeLocationId;
+
+    if (!_inventorySnapshotLoaded ||
+        _inventorySnapshotLocationId != locationId) {
+      unawaited(_refreshInventoryFromDatabase());
+    }
+
+    return _inventoryController.stream;
+  }
+
+  List<InventoryItem> get currentInventory => _inventorySnapshot;
+
+  List<InventoryItem> get _inventorySnapshot =>
+      List<InventoryItem>.unmodifiable(<InventoryItem>[
+        ..._items,
+        ..._disabledItems,
+      ]);
+
+  void _publishInventorySnapshot() {
+    _inventoryController.add(_inventorySnapshot);
+  }
+
+  void _clearInventorySnapshot() {
+    _items = <InventoryItem>[];
+    _disabledItems = <InventoryItem>[];
+    _baselineByProduct = <String, double>{};
+    _inventorySnapshotLocationId = null;
+    _inventorySnapshotLoaded = false;
+    _publishInventorySnapshot();
+  }
+
+  Future<void> _refreshInventoryFromDatabase() {
+    if (_inventoryRefreshInFlight != null) {
+      _inventoryRefreshQueued = true;
+      return _inventoryRefreshInFlight!;
+    }
+
+    final Future<void> refresh = _performInventoryRefresh();
+    _inventoryRefreshInFlight = refresh;
+
+    return refresh.whenComplete(() {
+      if (identical(_inventoryRefreshInFlight, refresh)) {
+        _inventoryRefreshInFlight = null;
+      }
+
+      if (_inventoryRefreshQueued) {
+        _inventoryRefreshQueued = false;
+        unawaited(_refreshInventoryFromDatabase());
+      }
+    });
+  }
+
+  Future<void> _performInventoryRefresh() async {
+    final String? locationId = activeLocationId;
+
+    if (locationId == null || locationId.isEmpty) {
+      _clearInventorySnapshot();
+      _inventorySnapshotLoaded = true;
+      return;
+    }
+
+    try {
+      final rows = await supabase
+          .from('products')
+          .select()
+          .eq('location_id', locationId);
+
+      if (activeLocationId != locationId) {
+        _inventoryRefreshQueued = true;
+        return;
+      }
+
+      final List<InventoryItem> active = <InventoryItem>[];
+      final List<InventoryItem> disabled = <InventoryItem>[];
+
+      for (final dynamic row in rows) {
+        final Map<String, dynamic> product =
+            Map<String, dynamic>.from(row as Map);
+        final InventoryItem item = InventoryItem.fromSupabase(product);
+
+        if (product['is_active'] == false) {
+          disabled.add(item);
+        } else {
+          active.add(item);
+        }
+      }
+
+      _items = active;
+      _disabledItems = disabled;
+      _inventorySnapshotLocationId = locationId;
+      _inventorySnapshotLoaded = true;
+      _publishInventorySnapshot();
+
+      debugPrint(
+        '[InventoryController] INVENTORY REFRESHED '
+        'location=$locationId count=${active.length + disabled.length}',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[InventoryController] Failed to refresh inventory: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
 Stream<List<CustomerOrder>> streamOrders() async* {
@@ -1543,9 +1668,10 @@ Stream<List<CustomerOrder>> streamOrders() async* {
           .update({'map_element_id': mapElementId})
           .eq('id', itemId);
       
-      final index = allItems.indexWhere((item) => item.id == itemId);
+      final index = _items.indexWhere((item) => item.id == itemId);
       if (index != -1) {
-        allItems[index] = allItems[index].copyWith(locationId: mapElementId);
+        _items[index] = _items[index].copyWith(locationId: mapElementId);
+        _publishInventorySnapshot();
       }
     } catch (e) {
       debugPrint("Error assigning item to location: $e");

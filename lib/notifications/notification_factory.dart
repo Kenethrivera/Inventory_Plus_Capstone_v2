@@ -272,7 +272,7 @@ class NotificationFactory {
 
     return create(
       locationId: locationId,
-      targetRoles: const ['helper'],
+      targetRoles: const ['admin', 'helper'],
       title: 'Order Assigned #$shortOrderId',
       body: '$assignedByName assigned this order to you • $formattedTime',
       type: NotificationType.orderAssigned,
@@ -309,7 +309,7 @@ class NotificationFactory {
         'preparedAt': preparedAt.toUtc().toIso8601String(),
       },
     );
-  } 
+  }
 
   static AppNotification stockAlert({
     required String locationId,

@@ -5,7 +5,13 @@ import 'models/app_notification.dart';
 abstract class NotificationRepository {
   Future<List<AppNotification>> fetchNotifications();
 
+  /// Active rows used only by lifecycle-aware persistence. User-specific read
+  /// and delete state is intentionally not part of logical event identity.
+  Future<List<AppNotification>> fetchActiveLifecycleNotifications();
+
   Future<void> createNotification(AppNotification notification);
+
+  Future<void> updateNotification(AppNotification notification);
 
   Future<void> markAsRead(String notificationId);
 
@@ -34,12 +40,14 @@ class SupabaseNotificationRepository implements NotificationRepository {
   final String locationId;
   final String userId;
   final String userRole;
+  final String recipientId;
 
   SupabaseNotificationRepository({
     required SupabaseClient supabase,
     required this.locationId,
     required this.userId,
     required this.userRole,
+    required this.recipientId,
   }) : _supabase = supabase;
 
   @override
@@ -82,7 +90,19 @@ class SupabaseNotificationRepository implements NotificationRepository {
           return AppNotification.fromJson(row, readState: readState);
         })
         .where((notification) {
-          return !notification.isDeleted;
+          if (notification.isDeleted) return false;
+
+          // orderAssigned is role-visible in the schema, while the intended
+          // recipient is carried by the existing payload.
+          final helperId = notification.payload['helperId']?.toString();
+          if (userRole == 'helper' &&
+              notification.type.name == 'orderAssigned' &&
+              helperId != null &&
+              helperId != recipientId) {
+            return false;
+          }
+
+          return true;
         })
         .toList();
 
@@ -92,6 +112,29 @@ class SupabaseNotificationRepository implements NotificationRepository {
   @override
   Future<void> createNotification(AppNotification notification) async {
     await _supabase.from('notifications').insert(notification.toInsertJson());
+  }
+
+  @override
+  Future<List<AppNotification>> fetchActiveLifecycleNotifications() async {
+    final rows = await _supabase
+        .from('notifications')
+        .select()
+        .eq('location_id', locationId)
+        .eq('is_resolved', false)
+        .order('created_at', ascending: true);
+
+    return List<Map<String, dynamic>>.from(
+      rows,
+    ).map(AppNotification.fromJson).toList(growable: false);
+  }
+
+  @override
+  Future<void> updateNotification(AppNotification notification) async {
+    await _supabase
+        .from('notifications')
+        .update(notification.toInsertJson())
+        .eq('location_id', locationId)
+        .eq('id', notification.id);
   }
 
   @override

@@ -54,14 +54,13 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int? _currentIndex;
   bool _isDetailView = false;
-  InventoryItem? _selectedItem;
+  String? _selectedItemId;
   String _txTargetTab = 'Sales History';
   String? _targetOrderId;
   String? _targetPosOrderId;
 
   NotificationController? _notificationController;
 
-  
   bool _isCheckingStockAlerts = false;
   bool _isCheckingExportReminders = false;
   StaffPresenceService? _staffPresenceService;
@@ -108,6 +107,9 @@ class _MainScreenState extends State<MainScreen> {
         locationId: locationId,
         userId: userId,
         userRole: role,
+        recipientId:
+            widget.controller.currentUserNumericId?.toString() ?? userId,
+        realtimeSync: widget.realtimeSync,
       );
 
       _notificationController!.loadNotifications();
@@ -155,7 +157,6 @@ class _MainScreenState extends State<MainScreen> {
     });
 
     unawaited(_startRealtimeSync());
-    
   }
 
   @override
@@ -645,7 +646,7 @@ class _MainScreenState extends State<MainScreen> {
       );
     } else {
       setState(() {
-        _selectedItem = item;
+        _selectedItemId = item.id;
         _isDetailView = true;
       });
     }
@@ -654,7 +655,7 @@ class _MainScreenState extends State<MainScreen> {
   void _handleBackToMain() {
     setState(() {
       _isDetailView = false;
-      _selectedItem = null;
+      _selectedItemId = null;
     });
   }
 
@@ -679,19 +680,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  String _stockStatusLabel(StockStatus status) {
-    switch (status) {
-      case StockStatus.low:
-        return 'Low Stock';
-      case StockStatus.critical:
-        return 'Critical Stock';
-      case StockStatus.out:
-        return 'Dead Stock';
-      case StockStatus.ok:
-        return 'OK';
-    }
-  }
-
   Future<void> _scanInventoryStockAlerts() async {
     if (_isCheckingStockAlerts) return;
 
@@ -708,10 +696,13 @@ class _MainScreenState extends State<MainScreen> {
         category: 'All',
       );
 
-      final previousStates =
-          await notificationController.fetchStockNotificationStates();
+      final previousStates = await notificationController
+          .fetchStockNotificationStates();
 
-      final itemsToNotify = <Map<String, dynamic>>[];
+      // Older builds created multi-item aggregate rows that cannot represent
+      // one product lifecycle. Resolve them before publishing per-item state.
+      await notificationController.resolveStockAlertNotifications();
+
       final statesToSave = <Map<String, dynamic>>[];
       final now = DateTime.now().toUtc().toIso8601String();
 
@@ -730,39 +721,69 @@ class _MainScreenState extends State<MainScreen> {
         // First scan only records the state. It should not flood notifications.
         if (previousStatus == null) continue;
 
-        // Same state means no new notification.
-        if (previousStatus == currentStatus) continue;
+        // Healthy items need no lifecycle work. For an ongoing alert, an
+        // idempotent transition updates quantity/content on the same row.
+        if (previousStatus == currentStatus && currentStatus == 'ok') continue;
 
-        // Returning to healthy stock is only a state update, not a notification.
-        if (currentStatus == 'ok') continue;
+        if (currentStatus == 'ok') {
+          await notificationController.resolveAllStockNotifications(
+            itemId: item.id,
+          );
+          continue;
+        }
 
-        itemsToNotify.add({
-          'itemId': item.id,
-          'itemName': item.name,
-          'status': currentStatus,
-          'statusLabel': _stockStatusLabel(stockStatus),
-          'quantity': _formatQty(item.quantity),
-          'unit': item.unit,
-          'previousStatus': previousStatus,
-        });
+        final triggeredByName =
+            widget.controller.currentUserName ?? 'Unknown User';
+        final triggeredAt = DateTime.now();
+
+        switch (stockStatus) {
+          case StockStatus.low:
+            await notificationController.notifyLowStock(
+              locationId: locationId,
+              itemId: item.id,
+              itemName: item.name,
+              quantity: _formatQty(item.quantity),
+              unit: item.unit,
+              triggeredByName: triggeredByName,
+              triggeredAt: triggeredAt,
+            );
+            break;
+          case StockStatus.critical:
+            await notificationController.notifyCriticalStock(
+              locationId: locationId,
+              itemId: item.id,
+              itemName: item.name,
+              quantity: _formatQty(item.quantity),
+              unit: item.unit,
+              triggeredByName: triggeredByName,
+              triggeredAt: triggeredAt,
+            );
+            break;
+          case StockStatus.out:
+            await notificationController.notifyDeadStock(
+              locationId: locationId,
+              itemId: item.id,
+              itemName: item.name,
+              unit: item.unit,
+              triggeredByName: triggeredByName,
+              triggeredAt: triggeredAt,
+            );
+            break;
+          case StockStatus.ok:
+            break;
+        }
+      }
+
+      final currentItemIds = items.map((item) => item.id).toSet();
+      for (final missingItemId in previousStates.keys.where(
+        (itemId) => !currentItemIds.contains(itemId),
+      )) {
+        await notificationController.resolveAllStockNotifications(
+          itemId: missingItemId,
+        );
       }
 
       await notificationController.upsertStockNotificationStates(statesToSave);
-
-      if (itemsToNotify.isEmpty) return;
-
-      itemsToNotify.sort((a, b) {
-        final aId = a['itemId'].toString();
-        final bId = b['itemId'].toString();
-        return aId.compareTo(bId);
-      });
-
-      await notificationController.notifyStockAlert(
-        locationId: locationId,
-        items: itemsToNotify,
-        triggeredByName: widget.controller.currentUserName ?? 'Unknown User',
-        triggeredAt: DateTime.now(),
-      );
     } finally {
       _isCheckingStockAlerts = false;
     }
@@ -815,12 +836,9 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  Future<String?> _validateNotificationTap(
-    AppNotification notification,
-  ) async {
+  Future<String?> _validateNotificationTap(AppNotification notification) async {
     final orderId = notification.payload['orderId']?.toString();
-    final role = widget.controller.currentUserRole?.toLowerCase();
-    final isAdmin = role == 'admin';
+    final currentRole = widget.controller.currentUserRole?.toLowerCase();
 
     switch (notification.type) {
       case NotificationType.newOrder:
@@ -833,16 +851,29 @@ class _MainScreenState extends State<MainScreen> {
         final matches = orders.where((order) => order.id == orderId).toList();
 
         if (matches.isEmpty) {
+          await _notificationController?.resolveOrderWorkflowNotification(
+            orderId: orderId,
+          );
           return 'This order no longer exists.';
         }
 
         final order = matches.first;
 
-        // Admin uses Queue Monitor, so admin can still view non-pending orders.
-        // Helper uses the real Order Queue checklist, so helper must be blocked
-        // if the order is no longer pending/actionable.
-        if (!isAdmin && order.status != 'pending') {
+        if (order.status != 'pending') {
+          await _notificationController?.resolveOrderWorkflowNotification(
+            orderId: orderId,
+          );
           return 'This order is already ${order.status}.';
+        }
+
+        final assignedHelperId = order.assignedHelperId?.toString();
+        final currentHelperId = widget.controller.currentUserNumericId
+            ?.toString();
+        if (currentRole == 'helper' &&
+            assignedHelperId != null &&
+            assignedHelperId.isNotEmpty &&
+            assignedHelperId != currentHelperId) {
+          return 'This order is assigned to another helper.';
         }
 
         return null;
@@ -882,24 +913,68 @@ class _MainScreenState extends State<MainScreen> {
         final matches = orders.where((order) => order.id == orderId).toList();
 
         if (matches.isEmpty) {
+          await _notificationController?.resolveOrderWorkflowNotification(
+            orderId: orderId,
+          );
           return 'This order no longer exists.';
         }
 
         final order = matches.first;
 
-        // Admin uses POS Monitor, so admin can still view prepared/completed orders.
-        // Cashier uses the real POS payment flow, so cashier must only open
-        // orders that are still prepared and ready for payment.
-        if (isAdmin) {
-          return null;
-        }
-
-        if (order.status == 'completed') {
-          return 'This order is already completed.';
-        }
-
         if (order.status != 'prepared') {
+          if (order.status == 'completed' || order.status == 'cancelled') {
+            await _notificationController?.resolveOrderWorkflowNotification(
+              orderId: orderId,
+            );
+          }
           return 'This order is not ready for payment yet.';
+        }
+
+        return null;
+
+      case NotificationType.orderCancelled:
+        if (orderId != null && orderId.isNotEmpty) {
+          await _notificationController?.resolveOrderWorkflowNotification(
+            orderId: orderId,
+          );
+        }
+        return 'This order has been cancelled.';
+
+      case NotificationType.lowStock:
+      case NotificationType.criticalStock:
+      case NotificationType.deadStock:
+      case NotificationType.stockAlert:
+        String? itemId = notification.payload['itemId']?.toString();
+        final rawItems = notification.payload['items'];
+        if ((itemId == null || itemId.isEmpty) &&
+            rawItems is List &&
+            rawItems.isNotEmpty &&
+            rawItems.first is Map) {
+          itemId = (rawItems.first as Map)['itemId']?.toString();
+        }
+
+        if (itemId == null || itemId.isEmpty) {
+          return 'Product information is missing.';
+        }
+
+        final stockItems = [
+          ...widget.controller.filterInventory(query: '', category: 'All'),
+          ...widget.controller.filterDisabled(query: '', category: 'All'),
+        ];
+        final matchingItems = stockItems.where((item) => item.id == itemId);
+        if (matchingItems.isEmpty) {
+          await _notificationController?.resolveAllStockNotifications(
+            itemId: itemId,
+          );
+          return 'This product no longer exists.';
+        }
+
+        if (widget.controller.stockStatusFor(matchingItems.first) ==
+            StockStatus.ok) {
+          await _notificationController?.resolveAllStockNotifications(
+            itemId: itemId,
+          );
+          return 'This stock alert has already been resolved.';
         }
 
         return null;
@@ -927,7 +1002,10 @@ class _MainScreenState extends State<MainScreen> {
         }
 
         if (orderQueueIndex < 0) {
-          AppToast.error(context, 'Order Queue is not available for this role.');
+          AppToast.error(
+            context,
+            'Order Queue is not available for this role.',
+          );
           return;
         }
 
@@ -1030,6 +1108,26 @@ class _MainScreenState extends State<MainScreen> {
         });
         break;
 
+      case NotificationType.lowStock:
+      case NotificationType.criticalStock:
+      case NotificationType.deadStock:
+        final itemId = notification.payload['itemId']?.toString();
+        final items = [
+          ...widget.controller.filterInventory(query: '', category: 'All'),
+          ...widget.controller.filterDisabled(query: '', category: 'All'),
+        ];
+        final matches = items.where((item) => item.id == itemId).toList();
+        if (matches.isEmpty) {
+          AppToast.error(context, 'This product no longer exists.');
+          return;
+        }
+
+        setState(() => _currentIndex = inventoryIndex);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _handleSelectItem(matches.first);
+        });
+        break;
+
       case NotificationType.inventoryRestocked:
         final productId = notification.payload['productId']?.toString();
 
@@ -1085,7 +1183,7 @@ class _MainScreenState extends State<MainScreen> {
 
     if (mounted) {
       setState(() {
-        _selectedItem = item;
+        _selectedItemId = item.id;
       });
     }
   }
@@ -1098,7 +1196,7 @@ class _MainScreenState extends State<MainScreen> {
 
     setState(() {
       _isDetailView = false;
-      _selectedItem = null;
+      _selectedItemId = null;
     });
   }
 
@@ -1143,20 +1241,14 @@ class _MainScreenState extends State<MainScreen> {
           heroTag: 'debugClockFab',
           backgroundColor: DebugClock.isOverridden ? Colors.red : Colors.grey,
           onPressed: _showDebugClockDialog,
-          child: const Icon(
-            Icons.schedule,
-            color: Colors.white,
-          ),
+          child: const Icon(Icons.schedule, color: Colors.white),
         ),
         const SizedBox(height: 12),
         FloatingActionButton.small(
           heroTag: 'testNotificationFab',
           backgroundColor: _primaryBlue,
           onPressed: _createTestNotification,
-          child: const Icon(
-            LucideIcons.bellPlus,
-            color: Colors.white,
-          ),
+          child: const Icon(LucideIcons.bellPlus, color: Colors.white),
         ),
       ],
     );
@@ -1308,9 +1400,7 @@ class _MainScreenState extends State<MainScreen> {
     if (widget.controller.currentUserId == null) {
       return const Scaffold(
         backgroundColor: Colors.white,
-        body: Center(
-          child: CircularProgressIndicator(color: _primaryBlue),
-        ),
+        body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
       );
     }
 
@@ -1319,9 +1409,7 @@ class _MainScreenState extends State<MainScreen> {
     if (notificationController == null) {
       return const Scaffold(
         backgroundColor: Colors.white,
-        body: Center(
-          child: CircularProgressIndicator(color: _primaryBlue),
-        ),
+        body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
       );
     }
 
@@ -1332,9 +1420,13 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildMainContent() {
-    if (_isDetailView && _selectedItem != null) {
+    final InventoryItem? selectedItem = widget.controller.findAnyItemById(
+      _selectedItemId ?? '',
+    );
+
+    if (_isDetailView && selectedItem != null) {
       return ItemDetailPage(
-        item: _selectedItem!,
+        item: selectedItem,
         controller: widget.controller,
         onBack: _handleBackToMain,
         onUpdate: _handleUpdateItem,
@@ -1352,7 +1444,8 @@ class _MainScreenState extends State<MainScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 600;
-        final role = widget.controller.currentUserRole?.toLowerCase() ?? 'staff';
+        final role =
+            widget.controller.currentUserRole?.toLowerCase() ?? 'staff';
 
         final isAdmin = role == 'admin';
         final isHelper = role == 'helper';
@@ -1522,10 +1615,7 @@ class _MainScreenState extends State<MainScreen> {
                   staffHistoryIndex: staffHistoryIndex,
                 ),
                 Expanded(
-                  child: IndexedStack(
-                    index: _currentIndex,
-                    children: pages,
-                  ),
+                  child: IndexedStack(index: _currentIndex, children: pages),
                 ),
               ],
             ),
@@ -1550,10 +1640,7 @@ class _MainScreenState extends State<MainScreen> {
                   systemSettingsIndex: systemSettingsIndex,
                 ),
                 Expanded(
-                  child: IndexedStack(
-                    index: _currentIndex,
-                    children: pages,
-                  ),
+                  child: IndexedStack(index: _currentIndex, children: pages),
                 ),
               ],
             ),
@@ -1584,10 +1671,7 @@ class _MainScreenState extends State<MainScreen> {
             transactionIndex: transactionIndex,
             inventoryIndex: inventoryIndex,
           ),
-          body: IndexedStack(
-            index: _currentIndex,
-            children: pages,
-          ),
+          body: IndexedStack(index: _currentIndex, children: pages),
           bottomNavigationBar: _buildMobileNavigationBar(
             isAdmin: isAdmin,
             isHelper: isHelper,
@@ -1660,10 +1744,7 @@ class _MainScreenState extends State<MainScreen> {
       ],
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(1.0),
-        child: Container(
-          color: Colors.grey.shade200,
-          height: 1.0,
-        ),
+        child: Container(color: Colors.grey.shade200, height: 1.0),
       ),
     );
   }
@@ -1676,24 +1757,24 @@ class _MainScreenState extends State<MainScreen> {
     return NavigationBarTheme(
       data: NavigationBarThemeData(
         indicatorColor: _primaryBlue.withOpacity(0.1),
-        labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>(
-          (Set<WidgetState> states) {
-            if (states.contains(WidgetState.selected)) {
-              return const TextStyle(
-                color: _primaryBlue,
-                fontWeight: FontWeight.bold,
-                fontSize: 11,
-                fontFamily: _fontFam,
-              );
-            }
-
+        labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((
+          Set<WidgetState> states,
+        ) {
+          if (states.contains(WidgetState.selected)) {
             return const TextStyle(
-              color: _inactiveText,
+              color: _primaryBlue,
+              fontWeight: FontWeight.bold,
               fontSize: 11,
               fontFamily: _fontFam,
             );
-          },
-        ),
+          }
+
+          return const TextStyle(
+            color: _inactiveText,
+            fontSize: 11,
+            fontFamily: _fontFam,
+          );
+        }),
       ),
       child: NavigationBar(
         height: 66,
@@ -1710,7 +1791,10 @@ class _MainScreenState extends State<MainScreen> {
           if (isAdmin)
             const NavigationDestination(
               icon: Icon(LucideIcons.layoutDashboard, color: _inactiveText),
-              selectedIcon: Icon(LucideIcons.layoutDashboard, color: _primaryBlue),
+              selectedIcon: Icon(
+                LucideIcons.layoutDashboard,
+                color: _primaryBlue,
+              ),
               label: 'Home',
             ),
           if (isAdmin)
@@ -1779,9 +1863,7 @@ class _MainScreenState extends State<MainScreen> {
       width: 250,
       decoration: BoxDecoration(
         color: _sidebarBg,
-        border: Border(
-          right: BorderSide(color: Colors.grey.shade200),
-        ),
+        border: Border(right: BorderSide(color: Colors.grey.shade200)),
       ),
       child: Column(
         children: [
@@ -1874,11 +1956,7 @@ class _MainScreenState extends State<MainScreen> {
                     LucideIcons.history,
                     'Transactions',
                   ),
-                  _buildSidebarItem(
-                    mapIndex,
-                    LucideIcons.map,
-                    'Store Map',
-                  ),
+                  _buildSidebarItem(mapIndex, LucideIcons.map, 'Store Map'),
                   _buildSidebarItem(
                     systemSettingsIndex,
                     LucideIcons.settings,
@@ -2040,12 +2118,7 @@ class _MainScreenState extends State<MainScreen> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: isSelected
-              ? const Border(
-                  bottom: BorderSide(
-                    color: _primaryBlue,
-                    width: 3,
-                  ),
-                )
+              ? const Border(bottom: BorderSide(color: _primaryBlue, width: 3))
               : null,
         ),
         child: Row(
@@ -2068,10 +2141,7 @@ class _MainScreenState extends State<MainScreen> {
             if (badgeCount != null && badgeCount > 0) ...[
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: _primaryBlue,
                   borderRadius: BorderRadius.circular(12),
@@ -2127,10 +2197,7 @@ class _MainScreenState extends State<MainScreen> {
       onTap: _showProfileDialog,
       borderRadius: BorderRadius.circular(30),
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 6,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
           border: Border.all(color: Colors.grey.shade200),
           borderRadius: BorderRadius.circular(30),
@@ -2195,9 +2262,7 @@ class _MainScreenState extends State<MainScreen> {
     showDialog(
       context: context,
       builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         clipBehavior: Clip.antiAlias,
         child: SizedBox(
           width: 500,
@@ -2214,21 +2279,15 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildSidebarItem(
-    int index,
-    IconData icon,
-    String label,
-  ) {
+  Widget _buildSidebarItem(int index, IconData icon, String label) {
     final isSelected = _currentIndex == index;
     final contentColor = isSelected ? _primaryBlue : _inactiveText;
-    final bgColor =
-        isSelected ? _primaryBlue.withOpacity(0.08) : Colors.transparent;
+    final bgColor = isSelected
+        ? _primaryBlue.withOpacity(0.08)
+        : Colors.transparent;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16.0,
-        vertical: 4.0,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -2239,29 +2298,23 @@ class _MainScreenState extends State<MainScreen> {
           borderRadius: BorderRadius.circular(12),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(
-              vertical: 14,
-              horizontal: 16,
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
             decoration: BoxDecoration(
               color: bgColor,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  color: contentColor,
-                  size: 20,
-                ),
+                Icon(icon, color: contentColor, size: 20),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Text(
                     label,
                     style: TextStyle(
                       color: contentColor,
-                      fontWeight:
-                          isSelected ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.w500,
                       fontSize: 15,
                       fontFamily: _fontFam,
                     ),
@@ -2286,14 +2339,9 @@ class _MainScreenState extends State<MainScreen> {
       child: InkWell(
         onTap: _showProfileDialog,
         child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 16,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(color: Colors.grey.shade200),
-            ),
+            border: Border(top: BorderSide(color: Colors.grey.shade200)),
           ),
           child: Row(
             children: [
@@ -2363,22 +2411,14 @@ class _MainScreenState extends State<MainScreen> {
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(fontFamily: _fontFam),
-            ),
+            child: const Text('Cancel', style: TextStyle(fontFamily: _fontFam)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text(
               'Log Out',
-              style: TextStyle(
-                color: Colors.white,
-                fontFamily: _fontFam,
-              ),
+              style: TextStyle(color: Colors.white, fontFamily: _fontFam),
             ),
           ),
         ],
@@ -2389,7 +2429,6 @@ class _MainScreenState extends State<MainScreen> {
     if (confirm != true || !mounted) return;
 
     try {
-
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();

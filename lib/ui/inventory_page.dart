@@ -8,11 +8,12 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
-import '../services/export_period.dart'; 
-import '../services/export_reminder_service.dart';  
+import '../services/export_period.dart';
+import '../services/export_reminder_service.dart';
 import 'reports/inventory_report_generator.dart';
 import 'reports/report_range.dart';
 import 'reports/report_period_dialog.dart';
+import '../notifications/notification_provider.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const String _fontFam = 'Hellix';
@@ -33,7 +34,7 @@ class InventoryPage extends StatefulWidget {
     required this.onSelectItem,
     this.exportDue = false,
     this.onExported,
-    this.onInventoryChanged
+    this.onInventoryChanged,
   });
 
   @override
@@ -45,7 +46,6 @@ class _InventoryPageState extends State<InventoryPage> {
   String _selectedCategory = "All";
   bool _showDisabled = false;
   final TextEditingController _searchController = TextEditingController();
-  
 
   @override
   void initState() {
@@ -79,6 +79,14 @@ class _InventoryPageState extends State<InventoryPage> {
 
   @override
   Widget build(BuildContext context) {
+    return StreamBuilder<List<InventoryItem>>(
+      stream: widget.controller.streamInventory(),
+      initialData: widget.controller.currentInventory,
+      builder: (context, snapshot) => _buildInventoryView(context),
+    );
+  }
+
+  Widget _buildInventoryView(BuildContext context) {
     // Fetch categories and immediately remove 'Unassigned'
     final categories = widget.controller
         .getUniqueCategories()
@@ -225,7 +233,7 @@ class _InventoryPageState extends State<InventoryPage> {
                                           _showToast(
                                             '"${newItem.name}" added to inventory',
                                           );
-                                        }
+                                        },
                                       ),
                                     ),
                                   ),
@@ -241,14 +249,17 @@ class _InventoryPageState extends State<InventoryPage> {
                                         _showToast(
                                           '"${newItem.name}" added to inventory',
                                         );
-                                      }
+                                      },
                                     ),
                                   ),
                                 );
                               }
                             },
                             icon: const Icon(LucideIcons.plus, size: 14),
-                            label: const Text("New Item", style: TextStyle(fontFamily: _fontFam)),
+                            label: const Text(
+                              "New Item",
+                              style: TextStyle(fontFamily: _fontFam),
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _primaryBlue,
                               foregroundColor: Colors.white,
@@ -685,14 +696,21 @@ class _InventoryPageState extends State<InventoryPage> {
   Future<void> _markExported(ExportPeriodType type) async {
     final locId = widget.controller.activeLocationId;
     if (locId == null) return;
+    final notificationController = NotificationProvider.maybeOf(context);
     final service = ExportReminderService(
       supabase: widget.controller.supabase,
       locationId: locId,
     );
+    final period = ExportPeriod.current(type);
     await service.logExport(
       reportType: 'inventory',
-      period: ExportPeriod.current(type),
+      period: period,
       exportedBy: widget.controller.currentUserNumericId,
+    );
+    await notificationController?.resolveExportReminder(
+      reportType: 'inventory',
+      periodType: type.name,
+      periodKey: period.key,
     );
     widget.onExported
         ?.call(); // clears both the button dot and sidebar dot instantly

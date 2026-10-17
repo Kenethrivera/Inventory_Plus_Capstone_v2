@@ -1303,7 +1303,11 @@ Future<void> _toggleFlash() async {
                                         child: InkWell(
                                           onTap: () {
                                             Navigator.pop(dialogContext);
-                                            widget.onSelectItem(item);
+                                            final current = widget.controller
+                                                .findAnyItemById(item.id);
+                                            if (current != null) {
+                                              widget.onSelectItem(current);
+                                            }
                                           },
                                           borderRadius: BorderRadius.circular(
                                             8,
@@ -1912,7 +1916,12 @@ Future<void> _toggleFlash() async {
         child: Align(
           alignment: Alignment.topRight,
           child: _currentLiveDetection != null
-              ? _buildLiveInventoryPanel(_currentLiveDetection!)
+              ? StreamBuilder<List<InventoryItem>>(
+                  stream: widget.controller.streamInventory(),
+                  initialData: widget.controller.currentInventory,
+                  builder: (context, snapshot) =>
+                      _buildLiveInventoryPanel(_currentLiveDetection!),
+                )
               : _buildLiveFallbackPanel(),
         ),
       ),

@@ -43,8 +43,6 @@ class _NotificationPageState extends State<NotificationPage> {
 
   NotificationFilter _filter = NotificationFilter.all;
 
-  
-
   @override
   void initState() {
     super.initState();
@@ -346,6 +344,12 @@ class _NotificationPageState extends State<NotificationPage> {
                 child: NotificationTile(
                   notification: notification,
                   onTap: () async {
+                    // A deliberate tap consumes the unread state even when the
+                    // linked target has since become stale or non-actionable.
+                    if (!notification.isRead) {
+                      await widget.controller.markAsRead(notification.id);
+                    }
+
                     final errorMessage = await widget.onValidateNotification
                         ?.call(notification);
 
@@ -355,10 +359,6 @@ class _NotificationPageState extends State<NotificationPage> {
                       AppToast.error(context, errorMessage);
 
                       return;
-                    }
-
-                    if (!notification.isRead) {
-                      await widget.controller.markAsRead(notification.id);
                     }
 
                     if (context.mounted) {

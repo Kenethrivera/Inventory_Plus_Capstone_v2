@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../logic/inventory_controller.dart';
 import '../../services/export_period.dart';
 import '../../services/export_reminder_service.dart';
+import '../../notifications/notification_provider.dart';
 import '../widgets/app_toast.dart';
 
 mixin ExportReminderMixin<T extends StatefulWidget> on State<T> {
@@ -31,12 +32,19 @@ mixin ExportReminderMixin<T extends StatefulWidget> on State<T> {
 
   /// Call this right after a successful export for [type].
   Future<void> markExported(ExportPeriodType type) async {
+    final notificationController = NotificationProvider.maybeOf(context);
+    final period = ExportPeriod.current(type);
     await _service.logExport(
       reportType: exportReportType,
-      period: ExportPeriod.current(type),
+      period: period,
       exportedBy: controller.currentUserNumericId,
     );
     if (!mounted) return;
+    await notificationController?.resolveExportReminder(
+      reportType: exportReportType,
+      periodType: type.name,
+      periodKey: period.key,
+    );
     setState(() {
       dueExportTypes.remove(type);
       exportDue = dueExportTypes.isNotEmpty;

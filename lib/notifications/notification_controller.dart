@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
+import '../services/realtime/realtime_sync_service.dart';
 import 'models/app_notification.dart';
 import 'notification_service.dart';
 
@@ -11,6 +14,10 @@ class NotificationController extends ChangeNotifier {
   List<AppNotification> _notifications = [];
   bool _isLoading = false;
   String? _errorMessage;
+  StreamSubscription<void>? _realtimeSubscription;
+  bool _refreshInFlight = false;
+  bool _refreshQueued = false;
+  bool _disposed = false;
 
   List<AppNotification> get notifications {
     return List.unmodifiable(_notifications);
@@ -27,20 +34,51 @@ class NotificationController extends ChangeNotifier {
   bool get hasUnread => unreadCount > 0;
 
   Future<void> loadNotifications() async {
-    _setLoading(true);
-
-    try {
-      _errorMessage = null;
-      _notifications = await _service.fetchNotifications();
-    } catch (e) {
-      _errorMessage = 'Failed to load notifications: $e';
-    } finally {
-      _setLoading(false);
-    }
+    return _refreshNotifications(showLoading: true);
   }
 
   Future<void> refresh() {
-    return loadNotifications();
+    return _refreshNotifications(showLoading: true);
+  }
+
+  void bindRealtimeSync(RealtimeSyncService realtimeSync) {
+    _realtimeSubscription?.cancel();
+    _realtimeSubscription = realtimeSync.notificationChanges.listen((_) {
+      unawaited(_refreshNotifications());
+    });
+  }
+
+  Future<void> _refreshNotifications({bool showLoading = false}) async {
+    if (_disposed) return;
+    if (_refreshInFlight) {
+      _refreshQueued = true;
+      return;
+    }
+
+    _refreshInFlight = true;
+    if (showLoading) _setLoading(true);
+
+    do {
+      _refreshQueued = false;
+      try {
+        _errorMessage = null;
+        final notifications = await _service.fetchNotifications();
+        if (_disposed) return;
+        _notifications = notifications;
+        debugPrint(
+          '[NotificationController] NOTIFICATIONS REFRESHED '
+          'count=${notifications.length}',
+        );
+        notifyListeners();
+      } catch (e) {
+        if (_disposed) return;
+        _errorMessage = 'Failed to load notifications: $e';
+        notifyListeners();
+      }
+    } while (_refreshQueued && !_disposed);
+
+    _refreshInFlight = false;
+    if (showLoading && !_disposed) _setLoading(false);
   }
 
   Future<void> createNotification(AppNotification notification) async {
@@ -413,7 +451,6 @@ class NotificationController extends ChangeNotifier {
     }
   }
 
-
   Future<void> notifyInventoryRestocked({
     required String locationId,
     required String transactionId,
@@ -446,6 +483,42 @@ class NotificationController extends ChangeNotifier {
     }
   }
 
+  Future<void> resolveOrderWorkflowNotification({
+    required String orderId,
+  }) async {
+    try {
+      _errorMessage = null;
+      await _service.resolveOrderWorkflowNotification(orderId: orderId);
+      await _refreshNotifications();
+    } catch (e) {
+      _errorMessage = 'Failed to resolve order notification: $e';
+      notifyListeners();
+    }
+  }
 
+  Future<void> resolveExportReminder({
+    required String reportType,
+    required String periodType,
+    required String periodKey,
+  }) async {
+    try {
+      _errorMessage = null;
+      await _service.resolveExportReminder(
+        reportType: reportType,
+        periodType: periodType,
+        periodKey: periodKey,
+      );
+      await _refreshNotifications();
+    } catch (e) {
+      _errorMessage = 'Failed to resolve export reminder: $e';
+      notifyListeners();
+    }
+  }
 
+  @override
+  void dispose() {
+    _disposed = true;
+    unawaited(_realtimeSubscription?.cancel());
+    super.dispose();
+  }
 }

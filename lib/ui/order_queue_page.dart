@@ -126,12 +126,27 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
       return false;
     }
 
+    final notificationController = NotificationProvider.maybeOf(context);
+    final locationId = widget.controller.activeLocationId;
+    final helperId = widget.controller.currentUserNumericId?.toString();
+    final helperName = widget.controller.currentUserName ?? 'Helper';
+    if (notificationController != null &&
+        locationId != null &&
+        helperId != null) {
+      await notificationController.notifyOrderAssigned(
+        locationId: locationId,
+        orderId: order.id,
+        helperId: helperId,
+        helperName: helperName,
+        assignedByName: helperName,
+        assignedAt: DateTime.now(),
+      );
+    }
+
     _openOrderChecklist(latestOrder);
 
     return true;
   }
-
-  
 
   void _openOrderChecklist(dynamic order) {
     setState(() {
@@ -201,7 +216,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   @override
   Widget build(BuildContext context) {
-    
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),
       body: StreamBuilder<List<CustomerOrder>>(
@@ -262,15 +276,16 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
               _pendingAutoOpenId = null;
 
               WidgetsBinding.instance.addPostFrameCallback((_) async {
-  if (!mounted) return;
+                if (!mounted) return;
 
-  final bool opened =
-      await _claimAndOpenOrderChecklist(orderToOpen);
+                final bool opened = await _claimAndOpenOrderChecklist(
+                  orderToOpen,
+                );
 
-  if (opened) {
-    widget.onOrderOpened?.call();
-  }
-});
+                if (opened) {
+                  widget.onOrderOpened?.call();
+                }
+              });
             }
           }
 
@@ -292,7 +307,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             );
           }
 
-         final pendingOrders =
+          final pendingOrders =
               _cachedOrders
                   .where(
                     (o) =>
@@ -343,9 +358,9 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                 order.assignedHelperName?.toString().toLowerCase() ?? '';
 
             final bool matchesItem = order.items.any(
-              (item) => item.productName
-                  .toLowerCase()
-                  .contains(normalizedSearchQuery),
+              (item) => item.productName.toLowerCase().contains(
+                normalizedSearchQuery,
+              ),
             );
 
             return orderId.contains(normalizedSearchQuery) ||
@@ -568,22 +583,15 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(
-                  color: Color(0xFFE2E8F0),
-                ),
+                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(
-                  color: Color(0xFFE2E8F0),
-                ),
+                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(
-                  color: _primaryBlue,
-                  width: 1.5,
-                ),
+                borderSide: const BorderSide(color: _primaryBlue, width: 1.5),
               ),
             ),
           ),
@@ -618,21 +626,12 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             children: [
               searchField,
               const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: filterControls,
-              ),
+              Align(alignment: Alignment.centerRight, child: filterControls),
             ],
           );
         }
 
-        return Row(
-          children: [
-            searchField,
-            const Spacer(),
-            filterControls,
-          ],
-        );
+        return Row(children: [searchField, const Spacer(), filterControls]);
       },
     );
   }
@@ -831,12 +830,6 @@ class OrderChecklistPage extends StatelessWidget {
     final preparedByName = controller.currentUserName ?? 'Unknown User';
     final preparedAt = DateTime.now();
 
-    if (notificationController != null) {
-      await notificationController.resolveNewOrderNotification(
-        orderId: order.id,
-      );
-    }
-
     if (notificationController != null && locationId != null) {
       await notificationController.notifyOrderPrepared(
         locationId: locationId,
@@ -952,369 +945,243 @@ class OrderChecklistPage extends StatelessWidget {
   }
 
   @override
-Widget build(BuildContext context) {
-  final String shortId = order.id
-      .toString()
-      .substring(0, 8)
-      .toUpperCase();
+  Widget build(BuildContext context) {
+    final String shortId = order.id.toString().substring(0, 8).toUpperCase();
 
-  final int pickedCount =
-      pickedItems.length;
+    final int pickedCount = pickedItems.length;
 
-  final int totalCount =
-      order.items.length;
+    final int totalCount = order.items.length;
 
-  final bool isAllPicked =
-      pickedCount == totalCount;
+    final bool isAllPicked = pickedCount == totalCount;
 
-  final assignedHelperName =
-      order.assignedHelperName
-          ?.toString()
-          .trim();
+    final assignedHelperName = order.assignedHelperName?.toString().trim();
 
-  return Scaffold(
-    backgroundColor:
-        const Color(0xFFF4F6F8),
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F6F8),
 
-    body: Column(
-      children: [
-        // =====================================================
-        // COMPACT HEADER
-        // Back button + order information share one row.
-        // =====================================================
-        Container(
-          width: double.infinity,
-          color:
-              const Color(0xFFF4F6F8),
-          padding:
-              const EdgeInsets.fromLTRB(
-            32,
-            24,
-            32,
-            18,
-          ),
-          child: Row(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
-            children: [
-              // -------------------------------
-              // BACK BUTTON
-              // -------------------------------
-              InkWell(
-                onTap: onBack,
-                borderRadius:
-                    BorderRadius.circular(
-                  10,
-                ),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration:
-                      BoxDecoration(
-                    color: Colors.white,
-                    borderRadius:
-                        BorderRadius
-                            .circular(
-                      10,
+      body: Column(
+        children: [
+          // =====================================================
+          // COMPACT HEADER
+          // Back button + order information share one row.
+          // =====================================================
+          Container(
+            width: double.infinity,
+            color: const Color(0xFFF4F6F8),
+            padding: const EdgeInsets.fromLTRB(32, 24, 32, 18),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // -------------------------------
+                // BACK BUTTON
+                // -------------------------------
+                InkWell(
+                  onTap: onBack,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    border:
-                        Border.all(
-                      color:
-                          const Color(
-                        0xFFE2E8F0,
-                      ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      LucideIcons.arrowLeft,
+                      size: 20,
+                      color: Color(0xFF0F172A),
                     ),
                   ),
-                  alignment:
-                      Alignment.center,
-                  child: const Icon(
-                    LucideIcons.arrowLeft,
-                    size: 20,
-                    color:
-                        Color(0xFF0F172A),
-                  ),
                 ),
-              ),
 
-              const SizedBox(width: 16),
+                const SizedBox(width: 16),
 
-              // -------------------------------
-              // ORDER HEADING
-              // -------------------------------
-              Expanded(
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment
-                          .start,
-                  children: [
-                    Text(
-                      'Order assignment',
-                      style: TextStyle(
-                        color: Colors
-                            .grey.shade500,
-                        fontSize: 13,
-                        fontFamily:
-                            _fontFam,
+                // -------------------------------
+                // ORDER HEADING
+                // -------------------------------
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Order assignment',
+                        style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontSize: 13,
+                          fontFamily: _fontFam,
+                        ),
                       ),
-                    ),
 
-                    const SizedBox(
-                      height: 3,
-                    ),
+                      const SizedBox(height: 3),
 
-                    Text(
-                      '#ORD-$shortId',
-                      style:
-                          const TextStyle(
-                        fontSize: 28,
-                        height: 1.1,
-                        fontWeight:
-                            FontWeight
-                                .w900,
-                        color: Color(
-                          0xFF0F172A,
+                      Text(
+                        '#ORD-$shortId',
+                        style: const TextStyle(
+                          fontSize: 28,
+                          height: 1.1,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                          fontFamily: _fontFam,
                         ),
-                        fontFamily:
-                            _fontFam,
                       ),
-                    ),
 
-                    const SizedBox(
-                      height: 7,
-                    ),
+                      const SizedBox(height: 7),
 
-                    Row(
-                      children: [
-                        Icon(
-                          Icons
-                              .person_pin_circle_outlined,
-                          size: 15,
-                          color: Colors
-                              .grey.shade500,
-                        ),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.person_pin_circle_outlined,
+                            size: 15,
+                            color: Colors.grey.shade500,
+                          ),
 
-                        const SizedBox(
-                          width: 6,
-                        ),
+                          const SizedBox(width: 6),
 
-                        Flexible(
-                          child: Text(
-                            assignedHelperName !=
-                                        null &&
-                                    assignedHelperName
-                                        .isNotEmpty
-                                ? 'Assigned to $assignedHelperName'
-                                : 'Ready for picking',
-                            maxLines: 1,
-                            overflow:
-                                TextOverflow
-                                    .ellipsis,
-                            style:
-                                TextStyle(
-                              color: Colors
-                                  .grey
-                                  .shade600,
-                              fontSize: 13,
-                              fontWeight:
-                                  FontWeight
-                                      .w600,
-                              fontFamily:
-                                  _fontFam,
+                          Flexible(
+                            child: Text(
+                              assignedHelperName != null &&
+                                      assignedHelperName.isNotEmpty
+                                  ? 'Assigned to $assignedHelperName'
+                                  : 'Ready for picking',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                fontFamily: _fontFam,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(width: 16),
+
+                // -------------------------------
+                // HELP BUTTON
+                // -------------------------------
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF0F172A),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.question_mark,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                // -------------------------------
+                // PICK PROGRESS
+                // -------------------------------
+                Container(
+                  height: 40,
+                  constraints: const BoxConstraints(minWidth: 58),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '$pickedCount/$totalCount',
+                    style: const TextStyle(
+                      color: _primaryBlue,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                      fontFamily: _fontFam,
                     ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 16),
-
-              // -------------------------------
-              // HELP BUTTON
-              // -------------------------------
-              Container(
-                width: 38,
-                height: 38,
-                decoration:
-                    const BoxDecoration(
-                  color:
-                      Color(0xFF0F172A),
-                  shape: BoxShape.circle,
-                ),
-                alignment:
-                    Alignment.center,
-                child: const Icon(
-                  Icons.question_mark,
-                  color: Colors.white,
-                  size: 16,
-                ),
-              ),
-
-              const SizedBox(width: 12),
-
-              // -------------------------------
-              // PICK PROGRESS
-              // -------------------------------
-              Container(
-                height: 40,
-                constraints:
-                    const BoxConstraints(
-                  minWidth: 58,
-                ),
-                padding:
-                    const EdgeInsets
-                        .symmetric(
-                  horizontal: 16,
-                ),
-                decoration:
-                    BoxDecoration(
-                  color: Colors
-                      .blue.shade50,
-                  borderRadius:
-                      BorderRadius
-                          .circular(
-                    20,
                   ),
                 ),
-                alignment:
-                    Alignment.center,
+              ],
+            ),
+          ),
+
+          // =====================================================
+          // ITEM CHECKLIST
+          // =====================================================
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(32, 8, 32, 8),
+              itemCount: order.items.length,
+              itemBuilder: (context, index) {
+                final item = order.items[index];
+
+                final isPicked = pickedItems.contains(item.productId);
+
+                return _ChecklistItemCard(
+                  item: item,
+                  isPicked: isPicked,
+                  onToggle: (val) {
+                    onToggleItem(item.productId, val ?? false);
+                  },
+                  onMapTap: () {
+                    _showItemLocationMap(
+                      context,
+                      item.productId,
+                      item.productName,
+                    );
+                  },
+                  onScanTap: () {
+                    _openScannerToCheckoff(
+                      context,
+                      item.productId,
+                      item.quantity,
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+
+          // =====================================================
+          // BOTTOM ACTION BAR
+          // =====================================================
+          Container(
+            padding: const EdgeInsets.fromLTRB(32, 14, 32, 32),
+            decoration: const BoxDecoration(color: Color(0xFFF4F6F8)),
+            child: SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: isAllPicked ? () => _markPrepared(context) : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primaryBlue,
+                  disabledBackgroundColor: Colors.blue.shade200,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
                 child: Text(
-                  '$pickedCount/$totalCount',
-                  style:
-                      const TextStyle(
-                    color: _primaryBlue,
-                    fontWeight:
-                        FontWeight.w900,
-                    fontSize: 15,
-                    fontFamily:
-                        _fontFam,
+                  isAllPicked
+                      ? 'Notify Cashier (Prepared)'
+                      : 'Pick all items first ($pickedCount/$totalCount)',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontFamily: _fontFam,
                   ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // =====================================================
-        // ITEM CHECKLIST
-        // =====================================================
-        Expanded(
-          child: ListView.builder(
-            padding:
-                const EdgeInsets.fromLTRB(
-              32,
-              8,
-              32,
-              8,
-            ),
-            itemCount:
-                order.items.length,
-            itemBuilder:
-                (context, index) {
-              final item =
-                  order.items[index];
-
-              final isPicked =
-                  pickedItems.contains(
-                item.productId,
-              );
-
-              return _ChecklistItemCard(
-                item: item,
-                isPicked: isPicked,
-                onToggle: (val) {
-                  onToggleItem(
-                    item.productId,
-                    val ?? false,
-                  );
-                },
-                onMapTap: () {
-                  _showItemLocationMap(
-                    context,
-                    item.productId,
-                    item.productName,
-                  );
-                },
-                onScanTap: () {
-                  _openScannerToCheckoff(
-                    context,
-                    item.productId,
-                    item.quantity,
-                  );
-                },
-              );
-            },
-          ),
-        ),
-
-        // =====================================================
-        // BOTTOM ACTION BAR
-        // =====================================================
-        Container(
-          padding:
-              const EdgeInsets.fromLTRB(
-            32,
-            14,
-            32,
-            32,
-          ),
-          decoration:
-              const BoxDecoration(
-            color:
-                Color(0xFFF4F6F8),
-          ),
-          child: SizedBox(
-            width: double.infinity,
-            height: 56,
-            child:
-                ElevatedButton(
-              onPressed: isAllPicked
-                  ? () =>
-                      _markPrepared(
-                        context,
-                      )
-                  : null,
-              style:
-                  ElevatedButton
-                      .styleFrom(
-                backgroundColor:
-                    _primaryBlue,
-                disabledBackgroundColor:
-                    Colors
-                        .blue.shade200,
-                elevation: 0,
-                shape:
-                    RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius
-                          .circular(
-                    12,
-                  ),
-                ),
-              ),
-              child: Text(
-                isAllPicked
-                    ? 'Notify Cashier (Prepared)'
-                    : 'Pick all items first ($pickedCount/$totalCount)',
-                style:
-                    const TextStyle(
-                  fontSize: 16,
-                  fontWeight:
-                      FontWeight.bold,
-                  color: Colors.white,
-                  fontFamily:
-                      _fontFam,
                 ),
               ),
             ),
           ),
-        ),
-      ],
-    ),
-  );
-}
+        ],
+      ),
+    );
+  }
 }
 
 class _ChecklistItemCard extends StatelessWidget {

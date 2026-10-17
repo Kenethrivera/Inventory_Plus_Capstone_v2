@@ -3,14 +3,12 @@ import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../logic/inventory_controller.dart';
 import 'package:printing/printing.dart';
-import 'reports/sales_report_generator.dart'; 
+import 'reports/sales_report_generator.dart';
 import '../services/export_period.dart';
 import '../services/export_reminder_service.dart'; // add
 import 'reports/report_range.dart';
 import 'reports/report_period_dialog.dart';
-
-
-
+import '../notifications/notification_provider.dart';
 
 String _fmtQty(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
@@ -30,7 +28,6 @@ class TransactionHistoryPage extends StatefulWidget {
     this.onExported,
     this.onCompleteOrder,
   });
-  
 
   @override
   State<TransactionHistoryPage> createState() => _TransactionHistoryPageState();
@@ -39,17 +36,16 @@ class TransactionHistoryPage extends StatefulWidget {
 class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   late Future<List<_OrderGroup>> _groupedFuture;
 
-  
   // Sales History State
   String _filterStatus = 'All';
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
-  
+
   // Activity Log State
-  late String _activeTab; 
+  late String _activeTab;
   List<Map<String, dynamic>> _activityLog = [];
   bool _isLoadingLog = true;
-  String _logFilter = 'All'; 
+  String _logFilter = 'All';
 
   @override
   void initState() {
@@ -58,7 +54,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     _load();
   }
 
-@override
+  @override
   void didUpdateWidget(TransactionHistoryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     // If the MainScreen tells us to change tabs, update it!
@@ -68,6 +64,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       });
     }
   }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -212,7 +209,20 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     final yesterday = today.subtract(const Duration(days: 1));
     final target = DateTime(date.year, date.month, date.day);
 
-    const months = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+    const months = [
+      'JANUARY',
+      'FEBRUARY',
+      'MARCH',
+      'APRIL',
+      'MAY',
+      'JUNE',
+      'JULY',
+      'AUGUST',
+      'SEPTEMBER',
+      'OCTOBER',
+      'NOVEMBER',
+      'DECEMBER',
+    ];
     final dateString = "${months[date.month - 1]} ${date.day}, ${date.year}";
 
     if (target == today) return "TODAY — $dateString";
@@ -236,7 +246,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _activeTab == 'Sales History' ? 'Transaction History' : 'Activity Log',
+                      _activeTab == 'Sales History'
+                          ? 'Transaction History'
+                          : 'Activity Log',
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -247,13 +259,16 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                       FutureBuilder<List<_OrderGroup>>(
                         future: _groupedFuture,
                         builder: (context, snapshot) {
-                          final count = snapshot.data
+                          final count =
+                              snapshot.data
                                   ?.where(
                                     (g) =>
-                                        g.eventAt.month == DateTime.now().month &&
+                                        g.eventAt.month ==
+                                            DateTime.now().month &&
                                         g.eventAt.year == DateTime.now().year,
                                   )
-                                  .length ?? 0;
+                                  .length ??
+                              0;
                           return Text(
                             '$count orders this month',
                             style: TextStyle(
@@ -266,7 +281,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                     else
                       Text(
                         '${_activityLog.length} inventory changes this month',
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 13,
+                        ),
                       ),
                   ],
                 ),
@@ -349,10 +367,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
             child: FutureBuilder<List<_OrderGroup>>(
               future: _groupedFuture,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting && _activeTab == 'Sales History') {
-                  return const Center(child: CircularProgressIndicator(color: Colors.orange));
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    _activeTab == 'Sales History') {
+                  return const Center(
+                    child: CircularProgressIndicator(color: Colors.orange),
+                  );
                 }
-                
+
                 final all = snapshot.data ?? [];
 
                 // Sales Stats
@@ -367,16 +388,28 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                 final totalOrders = thisMonth
                     .where((g) => g.status != 'cancelled')
                     .length;
-                final pendingOrders = thisMonth.where((g) => g.status == 'pending' || g.status == 'prepared').length;
-                final revenue = thisMonth.where((g) => g.status == 'completed').fold(0.0, (sum, g) => sum + g.totalAmount);
+                final pendingOrders = thisMonth
+                    .where(
+                      (g) => g.status == 'pending' || g.status == 'prepared',
+                    )
+                    .length;
+                final revenue = thisMonth
+                    .where((g) => g.status == 'completed')
+                    .fold(0.0, (sum, g) => sum + g.totalAmount);
 
-                var filteredOrders = _filterStatus == 'All' ? all : all.where((g) => g.status == _filterStatus.toLowerCase()).toList();
+                var filteredOrders = _filterStatus == 'All'
+                    ? all
+                    : all
+                          .where((g) => g.status == _filterStatus.toLowerCase())
+                          .toList();
 
                 if (_searchQuery.isNotEmpty && _activeTab == 'Sales History') {
                   filteredOrders = filteredOrders.where((g) {
                     final query = _searchQuery.toLowerCase();
                     final matchId = g.id.toLowerCase().contains(query);
-                    final matchItem = g.items.any((item) => item.productName.toLowerCase().contains(query));
+                    final matchItem = g.items.any(
+                      (item) => item.productName.toLowerCase().contains(query),
+                    );
                     return matchId || matchItem;
                   }).toList();
                 }
@@ -399,13 +432,29 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                       child: Row(
                         children: [
                           if (_activeTab == 'Sales History') ...[
-                            _buildStatCard("TOTAL ORDERS", "$totalOrders", Colors.black87),
+                            _buildStatCard(
+                              "TOTAL ORDERS",
+                              "$totalOrders",
+                              Colors.black87,
+                            ),
                             const SizedBox(width: 16),
-                            _buildStatCard("PENDING", "$pendingOrders", Colors.orange),
+                            _buildStatCard(
+                              "PENDING",
+                              "$pendingOrders",
+                              Colors.orange,
+                            ),
                             const SizedBox(width: 16),
-                            _buildStatCard("REVENUE (MONTH)", "₱${revenue.toStringAsFixed(2)}", Colors.green),
+                            _buildStatCard(
+                              "REVENUE (MONTH)",
+                              "₱${revenue.toStringAsFixed(2)}",
+                              Colors.green,
+                            ),
                           ] else ...[
-                            _buildStatCard("TOTAL CHANGES", "${_activityLog.length}", Colors.black87),
+                            _buildStatCard(
+                              "TOTAL CHANGES",
+                              "${_activityLog.length}",
+                              Colors.black87,
+                            ),
                             const SizedBox(width: 16),
                             _buildStatCard(
                               "STOCK IN",
@@ -418,24 +467,31 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                               "-${_fmtQty(stockOutTotal)}",
                               Colors.red,
                             ),
-                          ]
+                          ],
                         ],
                       ),
                     ),
                     Divider(height: 1, color: Colors.grey.shade200),
-                    
+
                     // --- TABS & FILTERS ---
                     Padding(
-                      padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 16.0),
+                      padding: const EdgeInsets.only(
+                        left: 24.0,
+                        right: 24.0,
+                        top: 16.0,
+                      ),
                       child: _buildTabToggle(),
                     ),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24.0,
+                        vertical: 16.0,
+                      ),
                       child: Row(
                         children: [
-                          if (_activeTab == 'Sales History') 
+                          if (_activeTab == 'Sales History')
                             _buildFilterPills()
-                          else 
+                          else
                             _buildLogFilterPills(),
 
                           const Spacer(),
@@ -444,22 +500,39 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                             child: TextField(
                               controller: _searchController,
                               decoration: InputDecoration(
-                                hintText: _activeTab == 'Sales History' ? 'Search order # or item...' : 'Search item name...',
-                                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                                prefixIcon: Icon(LucideIcons.search, size: 16, color: Colors.grey.shade500),
+                                hintText: _activeTab == 'Sales History'
+                                    ? 'Search order # or item...'
+                                    : 'Search item name...',
+                                hintStyle: TextStyle(
+                                  color: Colors.grey.shade400,
+                                  fontSize: 13,
+                                ),
+                                prefixIcon: Icon(
+                                  LucideIcons.search,
+                                  size: 16,
+                                  color: Colors.grey.shade500,
+                                ),
                                 filled: true,
                                 fillColor: Colors.grey.shade50,
-                                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 0,
+                                  horizontal: 16,
+                                ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                  borderSide: BorderSide(
+                                    color: Colors.grey.shade300,
+                                  ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                  borderSide: BorderSide(
+                                    color: Colors.grey.shade300,
+                                  ),
                                 ),
                               ),
-                              onChanged: (val) => setState(() => _searchQuery = val),
+                              onChanged: (val) =>
+                                  setState(() => _searchQuery = val),
                             ),
                           ),
                         ],
@@ -589,7 +662,12 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                   color: isSelected ? Colors.grey.shade300 : Colors.transparent,
                 ),
                 boxShadow: isSelected
-                    ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)]
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 4,
+                        ),
+                      ]
                     : [],
               ),
               child: Text(
@@ -626,7 +704,12 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                   color: isSelected ? Colors.grey.shade300 : Colors.transparent,
                 ),
                 boxShadow: isSelected
-                    ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)]
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 4,
+                        ),
+                      ]
                     : [],
               ),
               child: Text(
@@ -643,7 +726,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       }).toList(),
     );
   }
-Widget _buildSalesHistoryList(List<_OrderGroup> filteredOrders) {
+
+  Widget _buildSalesHistoryList(List<_OrderGroup> filteredOrders) {
     if (filteredOrders.isEmpty) return _buildEmptyState();
 
     // Group the orders by Date
@@ -679,7 +763,7 @@ Widget _buildSalesHistoryList(List<_OrderGroup> filteredOrders) {
               ),
             ),
             // Build the cards for this specific date group
-                        ...orders.map(
+            ...orders.map(
               (order) => _OrderCard(
                 group: order,
                 onCompleteOrder: widget.onCompleteOrder,
@@ -690,9 +774,12 @@ Widget _buildSalesHistoryList(List<_OrderGroup> filteredOrders) {
       },
     );
   }
+
   Widget _buildActivityLogList() {
     if (_isLoadingLog) {
-      return const Center(child: CircularProgressIndicator(color: Colors.orange));
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.orange),
+      );
     }
 
     var filteredLogs = _activityLog;
@@ -712,13 +799,17 @@ Widget _buildSalesHistoryList(List<_OrderGroup> filteredOrders) {
     // Apply Search
     if (_searchQuery.isNotEmpty) {
       filteredLogs = filteredLogs.where((tx) {
-        final pName = (tx['products']?['product_name'] ?? "").toString().toLowerCase();
+        final pName = (tx['products']?['product_name'] ?? "")
+            .toString()
+            .toLowerCase();
         return pName.contains(_searchQuery.toLowerCase());
       }).toList();
     }
 
     if (filteredLogs.isEmpty) {
-      return const Center(child: Text("No activity found.", style: TextStyle(color: Colors.grey)));
+      return const Center(
+        child: Text("No activity found.", style: TextStyle(color: Colors.grey)),
+      );
     }
 
     // Group by Date
@@ -759,10 +850,11 @@ Widget _buildSalesHistoryList(List<_OrderGroup> filteredOrders) {
               final type = tx['transaction_type'] as String;
               final pName = tx['products']?['product_name'] ?? "Unknown Item";
               final uName = tx['profiles']?['name'] ?? "Admin";
-              
+
               final date = DateTime.parse(tx['created_at']).toLocal();
-              final timeStr = "${date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour)}:${date.minute.toString().padLeft(2, '0')} ${date.hour >= 12 ? 'PM' : 'AM'}";
-              
+              final timeStr =
+                  "${date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour)}:${date.minute.toString().padLeft(2, '0')} ${date.hour >= 12 ? 'PM' : 'AM'}";
+
               Color typeColor = isPositive ? Colors.green : Colors.red;
               if (type == 'manual_adjustment') typeColor = Colors.blue;
 
@@ -809,7 +901,10 @@ Widget _buildSalesHistoryList(List<_OrderGroup> filteredOrders) {
                               ),
                               const SizedBox(width: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
                                   color: typeColor.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(4),
@@ -841,7 +936,8 @@ Widget _buildSalesHistoryList(List<_OrderGroup> filteredOrders) {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          "${isPositive ? '+' : ''}${_fmtQty((tx['quantity_change'] as num).toDouble())}",  style: TextStyle(
+                          "${isPositive ? '+' : ''}${_fmtQty((tx['quantity_change'] as num).toDouble())}",
+                          style: TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: 16,
                             color: typeColor,
@@ -850,7 +946,10 @@ Widget _buildSalesHistoryList(List<_OrderGroup> filteredOrders) {
                         const SizedBox(height: 4),
                         Text(
                           "New qty: ${_fmtQty((tx['new_quantity'] as num).toDouble())}",
-                          style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey.shade500,
+                          ),
                         ),
                       ],
                     ),
@@ -934,14 +1033,21 @@ Widget _buildSalesHistoryList(List<_OrderGroup> filteredOrders) {
   Future<void> _markExported(ExportPeriodType type) async {
     final locId = widget.controller.activeLocationId;
     if (locId == null) return;
+    final notificationController = NotificationProvider.maybeOf(context);
     final service = ExportReminderService(
       supabase: widget.controller.supabase,
       locationId: locId,
     );
+    final period = ExportPeriod.current(type);
     await service.logExport(
       reportType: 'sales',
-      period: ExportPeriod.current(type),
+      period: period,
       exportedBy: widget.controller.currentUserNumericId,
+    );
+    await notificationController?.resolveExportReminder(
+      reportType: 'sales',
+      periodType: type.name,
+      periodKey: period.key,
     );
     widget.onExported?.call();
   }
@@ -1009,8 +1115,18 @@ IconData _statusIcon(String status) {
 
 String _formatDate(DateTime date) {
   const months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
   final month = months[date.month - 1];
   final hour = date.hour > 12
@@ -1103,7 +1219,7 @@ class _OrderCardState extends State<_OrderCard>
     setState(() => _expanded = !_expanded);
   }
 
-    void _showReceiptModal(BuildContext context, _OrderGroup g) {
+  void _showReceiptModal(BuildContext context, _OrderGroup g) {
     if (g.status != 'completed') return;
     showDialog(
       context: context,
@@ -1161,7 +1277,7 @@ class _OrderCardState extends State<_OrderCard>
                       ],
                     ),
                     const SizedBox(height: 4),
-                                        Row(
+                    Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
