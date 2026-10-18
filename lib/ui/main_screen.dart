@@ -107,8 +107,9 @@ class _MainScreenState extends State<MainScreen> {
         locationId: locationId,
         userId: userId,
         userRole: role,
-        recipientId:
-            widget.controller.currentUserNumericId?.toString() ?? userId,
+        // Order assignment payloads use profiles.id, which is the same ID
+        // stored as currentUserId by the custom login flow.
+        recipientId: userId,
         realtimeSync: widget.realtimeSync,
       );
 
@@ -867,8 +868,7 @@ class _MainScreenState extends State<MainScreen> {
         }
 
         final assignedHelperId = order.assignedHelperId?.toString();
-        final currentHelperId = widget.controller.currentUserNumericId
-            ?.toString();
+        final currentHelperId = widget.controller.currentUserId;
         if (currentRole == 'helper' &&
             assignedHelperId != null &&
             assignedHelperId.isNotEmpty &&

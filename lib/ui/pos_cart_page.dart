@@ -2651,6 +2651,8 @@ class _PosCartPageState extends State<PosCartPage>
   }
 
   void _showPendingOrdersModal(BuildContext context, {String? targetOrderId}) {
+    var targetOrderWasOpened = false;
+
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -2723,7 +2725,18 @@ class _PosCartPageState extends State<PosCartPage>
                             .where((order) => order.id == targetOrderId)
                             .toList();
 
-                        if (matchingOrder.isNotEmpty &&
+                        if (!targetOrderWasOpened &&
+                            matchingOrder.isNotEmpty &&
+                            (matchingOrder.first.status == 'pending' ||
+                                matchingOrder.first.status == 'prepared')) {
+                          targetOrderWasOpened = true;
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) widget.onOrderOpened?.call();
+                          });
+                        }
+
+                        if (!targetOrderWasOpened &&
+                            matchingOrder.isNotEmpty &&
                             matchingOrder.first.status == 'completed') {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             if (!dialogContext.mounted) return;

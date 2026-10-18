@@ -14,7 +14,8 @@ class NotificationController extends ChangeNotifier {
   List<AppNotification> _notifications = [];
   bool _isLoading = false;
   String? _errorMessage;
-  StreamSubscription<void>? _realtimeSubscription;
+  StreamSubscription<void>? _notificationChangesSubscription;
+  StreamSubscription<void>? _orderChangesSubscription;
   bool _refreshInFlight = false;
   bool _refreshQueued = false;
   bool _disposed = false;
@@ -42,10 +43,27 @@ class NotificationController extends ChangeNotifier {
   }
 
   void bindRealtimeSync(RealtimeSyncService realtimeSync) {
-    _realtimeSubscription?.cancel();
-    _realtimeSubscription = realtimeSync.notificationChanges.listen((_) {
-      unawaited(_refreshNotifications());
-    });
+    unawaited(_notificationChangesSubscription?.cancel());
+    unawaited(_orderChangesSubscription?.cancel());
+
+    _notificationChangesSubscription = realtimeSync.notificationChanges.listen(
+      (_) => unawaited(_refreshNotifications()),
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint(
+          '[NotificationController] Notification realtime error: $error',
+        );
+      },
+    );
+
+    // Order ownership/status changes can make a linked notification visible or
+    // invisible without a notification-table event being delivered to every
+    // affected role. Treat Order changes as notification invalidation only.
+    _orderChangesSubscription = realtimeSync.orderChanges.listen(
+      (_) => unawaited(_refreshNotifications()),
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('[NotificationController] Order invalidation error: $error');
+      },
+    );
   }
 
   Future<void> _refreshNotifications({bool showLoading = false}) async {
@@ -518,7 +536,8 @@ class NotificationController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    unawaited(_realtimeSubscription?.cancel());
+    unawaited(_notificationChangesSubscription?.cancel());
+    unawaited(_orderChangesSubscription?.cancel());
     super.dispose();
   }
 }
