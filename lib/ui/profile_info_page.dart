@@ -26,7 +26,7 @@ class ProfileInfoPage extends StatefulWidget {
 class _ProfileInfoPageState extends State<ProfileInfoPage> {
   late TextEditingController _nameController;
   late TextEditingController _emailController;
-late TextEditingController _locationController; 
+  late TextEditingController _locationController; 
   late TextEditingController _phoneController;
   bool _isLoading = false;
   bool _isFetching = true;
@@ -47,7 +47,6 @@ late TextEditingController _locationController;
 
   Future<void> _loadLatestDataFromDatabase() async {
     try {
-      // ADD 'location' and 'phone' to the select statement
       final data = await Supabase.instance.client
           .from('profiles')
           .select('email, name, address, phone')
@@ -56,12 +55,12 @@ late TextEditingController _locationController;
 
       if (data != null && mounted) {
         setState(() {
-  _emailController.text = data['email'] ?? "";
-  _nameController.text = data['name'] ?? widget.currentName;
-  _locationController.text = data['address'] ?? ""; // Use controller
-  _phoneController.text = data['phone'] ?? "";       // Use controller
-  _isFetching = false;
-});
+          _emailController.text = data['email'] ?? "";
+          _nameController.text = data['name'] ?? widget.currentName;
+          _locationController.text = data['address'] ?? ""; 
+          _phoneController.text = data['phone'] ?? "";       
+          _isFetching = false;
+        });
       } else if (mounted) {
         setState(() {
           _isFetching = false;
@@ -81,7 +80,7 @@ late TextEditingController _locationController;
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _locationController.dispose(); // Dispose
+    _locationController.dispose(); 
     _phoneController.dispose();
     super.dispose();
   }
@@ -92,8 +91,6 @@ late TextEditingController _locationController;
     try {
       final newName = _nameController.text.trim();
       final newEmail = _emailController.text.trim();
-      
-      // FIX: Use the controllers instead of the old variables
       final newAddress = _locationController.text.trim(); 
       final newPhone = _phoneController.text.trim();
 
@@ -105,19 +102,18 @@ late TextEditingController _locationController;
         userId: widget.userId,
         name: newName,
         email: newEmail,
-        location: newAddress, // Use new variable
-        phone: newPhone,      // Use new variable
+        location: newAddress, 
+        phone: newPhone,      
       );
 
-
       if (mounted) {
+        setState(() => _isEditing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Profile updated successfully!"),
-            backgroundColor: Colors.green,
+            backgroundColor: Colors.blue,
           ),
         );
-        Navigator.pop(context, newName);
       }
     } catch (e) {
       if (mounted) {
@@ -139,7 +135,10 @@ late TextEditingController _locationController;
     final currentPasswordController = TextEditingController();
     final newPasswordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
-    bool obscureText = true;
+    
+    bool obscureCurrent = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
     bool isSaving = false;
     String? errorMessage;
 
@@ -148,152 +147,299 @@ late TextEditingController _locationController;
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (stateContext, setState) {
-            return AlertDialog(
-              title: const Text("Change Password"),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+            final text = newPasswordController.text;
+            final bool hasMinLength = text.length >= 8;
+            final bool hasUppercase = text.contains(RegExp(r'[A-Z]'));
+            final bool hasLowercase = text.contains(RegExp(r'[a-z]'));
+            final bool hasDigit = text.contains(RegExp(r'[0-9]'));
+            final bool hasSymbol = text.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'));
+
+            Widget buildRequirementRow(String label, bool met) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
                   children: [
-                    if (errorMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          errorMessage!,
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    TextField(
-                      controller: currentPasswordController,
-                      obscureText: obscureText,
-                      decoration: const InputDecoration(
-                        labelText: "Current Password",
-                        border: OutlineInputBorder(),
-                      ),
+                    Icon(
+                      met ? Icons.check_circle : Icons.circle_outlined,
+                      size: 14,
+                      color: met ? Colors.blue.shade700 : Colors.grey.shade400,
                     ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: newPasswordController,
-                      obscureText: obscureText,
-                      decoration: const InputDecoration(
-                        labelText: "New Password",
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: confirmPasswordController,
-                      obscureText: obscureText,
-                      decoration: InputDecoration(
-                        labelText: "Confirm Password",
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            obscureText ? LucideIcons.eye : LucideIcons.eyeOff,
-                            color: Colors.grey,
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              obscureText = !obscureText;
-                            });
-                          },
-                        ),
+                    const SizedBox(width: 8),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: met ? Colors.blue.shade900 : Colors.grey.shade600,
+                        fontWeight: met ? FontWeight.w500 : FontWeight.normal,
                       ),
                     ),
                   ],
                 ),
+              );
+            }
+
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("Cancel"),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: isSaving
-                      ? null
-                      : () async {
-                          if (currentPasswordController.text.isEmpty ||
-                              newPasswordController.text.isEmpty ||
-                              confirmPasswordController.text.isEmpty) {
-                            setState(
-                              () => errorMessage = "Please fill in all fields.",
-                            );
-                            return;
-                          }
-                          if (newPasswordController.text.trim().length <= 6) {
-                            setState(
-                              () => errorMessage =
-                                  "Password must be more than 6 characters.",
-                            );
-                            return;
-                          }
-                          if (newPasswordController.text !=
-                              confirmPasswordController.text) {
-                            setState(
-                              () =>
-                                  errorMessage = "New passwords do not match.",
-                            );
-                            return;
-                          }
+              contentPadding: const EdgeInsets.all(24),
+              content: SingleChildScrollView(
+                child: SizedBox(
+                  width: 320,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(LucideIcons.keyRound, color: Colors.blue.shade600, size: 24),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        "New Password",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        "Choose a new password for your account",
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
 
-                          setState(() {
-                            isSaving = true;
-                            errorMessage = null;
-                          });
-
-                          final error = await widget.controller.changePassword(
-                            currentPasswordController.text,
-                            newPasswordController.text,
-                          );
-
-                          if (error != null) {
-                            setState(() {
-                              errorMessage = error;
-                              isSaving = false;
-                            });
-                          } else {
-                            if (context.mounted) {
-                              Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    "Password changed successfully!",
-                                  ),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
-                            }
-                          }
-                        },
-                  child: isSaving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
+                      if (errorMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            errorMessage!,
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 12,
+                            ),
                           ),
-                        )
-                      : const Text("Save"),
+                        ),
+
+                      const Text("Current Password", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: currentPasswordController,
+                        obscureText: obscureCurrent,
+                        decoration: InputDecoration(
+                          hintText: "Enter current password",
+                          hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                          prefixIcon: Icon(LucideIcons.lock, size: 18, color: Colors.blue.shade300),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureCurrent ? LucideIcons.eyeOff : LucideIcons.eye,
+                              size: 18,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () => setState(() => obscureCurrent = !obscureCurrent),
+                          ),
+                          filled: true,
+                          fillColor: Colors.blue.shade50.withOpacity(0.3),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.blue.shade400, width: 1),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      const Text("New Password", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: newPasswordController,
+                        obscureText: obscureNew,
+                        onChanged: (val) => setState(() {}),
+                        decoration: InputDecoration(
+                          hintText: "Min. 8 characters",
+                          hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                          prefixIcon: Icon(LucideIcons.lock, size: 18, color: Colors.blue.shade300),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureNew ? LucideIcons.eyeOff : LucideIcons.eye,
+                              size: 18,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () => setState(() => obscureNew = !obscureNew),
+                          ),
+                          filled: true,
+                          fillColor: Colors.blue.shade50.withOpacity(0.3),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.blue.shade400, width: 1),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.blue.shade100),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            buildRequirementRow("At least 8 characters", hasMinLength),
+                            buildRequirementRow("At least one uppercase letter (A-Z)", hasUppercase),
+                            buildRequirementRow("At least one lowercase letter (a-z)", hasLowercase),
+                            buildRequirementRow("At least one number (0-9)", hasDigit),
+                            buildRequirementRow("At least one special symbol (!@#\$%^&*)", hasSymbol),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      const Text("Confirm Password", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: confirmPasswordController,
+                        obscureText: obscureConfirm,
+                        decoration: InputDecoration(
+                          hintText: "Re-enter new password",
+                          hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                          prefixIcon: Icon(LucideIcons.lock, size: 18, color: Colors.blue.shade300),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureConfirm ? LucideIcons.eyeOff : LucideIcons.eye,
+                              size: 18,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () => setState(() => obscureConfirm = !obscureConfirm),
+                          ),
+                          filled: true,
+                          fillColor: Colors.blue.shade50.withOpacity(0.3),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.blue.shade400, width: 1),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                side: BorderSide(color: Colors.blue.shade200),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: () => Navigator.pop(context),
+                              child: Text("Back", style: TextStyle(color: Colors.blue.shade700, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade600,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: isSaving
+                                  ? null
+                                  : () async {
+                                      if (currentPasswordController.text.isEmpty ||
+                                          newPasswordController.text.isEmpty ||
+                                          confirmPasswordController.text.isEmpty) {
+                                        setState(() => errorMessage = "Please fill in all fields.");
+                                        return;
+                                      }
+                                      if (!hasMinLength || !hasUppercase || !hasLowercase || !hasDigit || !hasSymbol) {
+                                        setState(() => errorMessage = "Password does not meet all security requirements.");
+                                        return;
+                                      }
+                                      if (newPasswordController.text != confirmPasswordController.text) {
+                                        setState(() => errorMessage = "New passwords do not match.");
+                                        return;
+                                      }
+
+                                      setState(() {
+                                        isSaving = true;
+                                        errorMessage = null;
+                                      });
+
+                                      final error = await widget.controller.changePassword(
+                                        currentPasswordController.text,
+                                        newPasswordController.text,
+                                      );
+
+                                      if (error != null) {
+                                        setState(() {
+                                          errorMessage = error;
+                                          isSaving = false;
+                                        });
+                                      } else {
+                                        if (context.mounted) {
+                                          Navigator.pop(context);
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text("Password changed successfully!"),
+                                              backgroundColor: Colors.blue,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                              child: isSaving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text("Update", style: TextStyle(fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             );
           },
         );
       },
     );
   }
-
-  // ... inside _ProfileInfoPageState class ...
 
   @override
   Widget build(BuildContext context) {
@@ -316,25 +462,33 @@ late TextEditingController _locationController;
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              if (_isEditing) {
-                _saveProfile();
-              } else {
-                setState(() => _isEditing = true);
-              }
-            },
-            child: Text(
-              _isEditing ? "Save" : "Edit",
-              style: const TextStyle(
-                color: Colors.orange,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            onPressed: _isLoading
+                ? null
+                : () {
+                    if (_isEditing) {
+                      _saveProfile();
+                    } else {
+                      setState(() => _isEditing = true);
+                    }
+                  },
+            child: _isLoading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
+                  )
+                : Text(
+                    _isEditing ? "Save" : "Edit",
+                    style: TextStyle(
+                      color: Colors.blue.shade600,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
           ),
         ],
       ),
       body: _isFetching
-          ? const Center(child: CircularProgressIndicator(color: Colors.orange))
+          ? const Center(child: CircularProgressIndicator(color: Colors.blue))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Column(
@@ -343,10 +497,10 @@ late TextEditingController _locationController;
                   Center(
                     child: CircleAvatar(
                       radius: 40,
-                      backgroundColor: Colors.orange.withOpacity(0.1),
-                      child: const Icon(
+                      backgroundColor: Colors.blue.shade50,
+                      child: Icon(
                         LucideIcons.user,
-                        color: Colors.orange,
+                        color: Colors.blue.shade600,
                         size: 40,
                       ),
                     ),
@@ -355,48 +509,49 @@ late TextEditingController _locationController;
 
                   _buildField(
                     "Role",
-                    widget.role.toUpperCase(),
                     null,
+                    TextEditingController(text: widget.role.toUpperCase()),
                     readOnly: true,
                   ),
                   _buildField(
                     "Full Name",
-                    "",
+                    null,
                     _nameController,
                     icon: LucideIcons.user,
                   ),
                   _buildField(
                     "Email Address",
-                    "",
+                    null,
                     _emailController,
                     icon: LucideIcons.mail,
                     type: TextInputType.emailAddress,
                   ),
                   _buildField(
                     "Location",
-                    "",
                     null,
+                    _locationController,
                     icon: LucideIcons.mapPin,
                   ),
                   _buildField(
                     "Phone Number",
-                    "",
                     null,
+                    _phoneController,
                     icon: LucideIcons.phone,
+                    type: TextInputType.phone,
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: OutlinedButton.icon(
                       onPressed: () => _showChangePasswordDialog(context),
-                      icon: const Icon(LucideIcons.lock, size: 18),
-                      label: const Text("Change Password"),
+                      icon: Icon(LucideIcons.lock, size: 18, color: Colors.blue.shade700),
+                      label: Text("Change Password", style: TextStyle(color: Colors.blue.shade700, fontWeight: FontWeight.w600)),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.black87,
-                        side: const BorderSide(color: Colors.black12),
+                        backgroundColor: Colors.blue.shade50.withOpacity(0.3),
+                        side: BorderSide(color: Colors.blue.shade200),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                     ),
@@ -407,7 +562,7 @@ late TextEditingController _locationController;
     );
   }
 
-  // Helper to build consistent fields
+  // Helper to build consistent fields with clean blue/white styling
   Widget _buildField(
     String label,
     String? staticValue,
@@ -421,36 +576,38 @@ late TextEditingController _locationController;
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.grey,
+          style: TextStyle(
+            color: Colors.grey.shade700,
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         TextField(
           controller: controller,
           readOnly: readOnly || !_isEditing,
           keyboardType: type,
           decoration: InputDecoration(
-            // SAFE NULL CHECK HERE
-            hintText: (staticValue != null && staticValue.isNotEmpty)
-                ? staticValue
-                : "Enter $label",
+            hintText: "Enter $label",
+            hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
             filled: true,
-            fillColor: _isEditing && controller != null
-                ? Colors.white
+            fillColor: _isEditing && !readOnly
+                ? Colors.blue.shade50.withOpacity(0.3)
                 : Colors.grey.withOpacity(0.05),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
             ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.blue.shade400, width: 1),
+            ),
             prefixIcon: icon != null
-                ? Icon(icon, size: 18, color: Colors.grey)
+                ? Icon(icon, size: 18, color: Colors.blue.shade300)
                 : null,
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
       ],
     );
   }
