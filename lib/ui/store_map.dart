@@ -9,6 +9,8 @@ import 'widgets/app_toast.dart';
 
 enum MapMode { view, manage, selection, pick }
 
+enum MapSidebarAction { rotate, up, down, left, right, widthLeftMinus, widthLeftPlus, widthRightMinus, widthRightPlus, duplicate, autoAlignWall, delete }
+
 // Updated to the soft light-blue background
 const Color kMapContainerBg = Color.fromARGB(255, 214, 235, 255); 
 
@@ -18,9 +20,11 @@ class StoreMap extends StatefulWidget {
   final ItemLocation? location;
   final String? itemName;
   final MapMode mode;
+  final bool showMobileToolbar;
   final String? selectedItemId;
   final VoidCallback? onSelectionAssigned;
   final Function(MapElement)? onElementSelected;
+  final ValueChanged<MapElement?>? onManageSelectionChanged;
 
   const StoreMap({
     super.key,
@@ -29,16 +33,18 @@ class StoreMap extends StatefulWidget {
     this.location,
     this.itemName,
     this.mode = MapMode.view,
+    this.showMobileToolbar = true,
     this.selectedItemId,
     this.onSelectionAssigned,
     this.onElementSelected,
+    this.onManageSelectionChanged,
   });
 
   @override
-  State<StoreMap> createState() => _StoreMapState();
+  State<StoreMap> createState() => StoreMapState();
 }
 
-class _StoreMapState extends State<StoreMap>
+class StoreMapState extends State<StoreMap>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late Animation<double> _bounceAnimation;
@@ -69,6 +75,7 @@ class _StoreMapState extends State<StoreMap>
   double _currentMapWidth = 1000.0;
   double _currentMapHeight = 1000.0;
   Size _currentViewportSize = Size.zero;
+  bool _viewportRecenterQueued = false;
 
   void _recenterMap({bool preserveScale = false}) {
     if (_currentViewportSize == Size.zero) return;
@@ -121,6 +128,20 @@ class _StoreMapState extends State<StoreMap>
     final selectedItemId = widget.selectedItemId;
     if (selectedItemId != null) {
       _autoOpenItemCard(selectedItemId);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant StoreMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Each mode starts with a clean selection. In particular, an object
+    // highlighted in Preview must not remain glowing in Manage Layout when
+    // the editor sidebar has no active selection.
+    if (oldWidget.mode != widget.mode) {
+      _selectedPopupElement = null;
+      _activeElementId = null;
+      _isNudging = false;
+      _isAdjustingWidth = false;
     }
   }
 
@@ -625,6 +646,174 @@ class _StoreMapState extends State<StoreMap>
   // ==========================================
   // NUDGE LOGIC
   // ==========================================
+  // Called by the desktop sidebar. Mobile uses the original floating controls.
+  void clearManageSelection() {
+    if (!mounted) return;
+    setState(() { _activeElementId = null; _isNudging = false; _isAdjustingWidth = false; });
+    widget.onManageSelectionChanged?.call(null);
+  }
+
+  void _duplicateSelectedElement(MapElement original) {
+    // Each map element has its own ID. Inventory assignments refer to the
+    // original ID, so the copy starts with no assigned inventory items.
+    const step = 40.0;
+    final clone = MapElement(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      type: original.type,
+      position: original.position,
+      label: original.type.name.toUpperCase(),
+    );
+    clone.size = original.size;
+    clone.rotation = original.rotation;
+
+    // Search outward from the original, snapping to the existing 40-unit grid.
+    Offset? freePosition;
+    for (int radius = 1; radius <= 16 && freePosition == null; radius++) {
+      for (int dy = -radius; dy <= radius && freePosition == null; dy++) {
+        for (int dx = -radius; dx <= radius; dx++) {
+          if (dx.abs() != radius && dy.abs() != radius) continue;
+          final candidate = _snapToGrid(
+            original.position + Offset(dx * step, dy * step),
+            clone.size,
+            clone.type,
+          );
+          if (!_hasCollision(clone, candidate, clone.size, clone.rotation)) {
+            freePosition = candidate;
+            break;
+          }
+        }
+      }
+    }
+    if (freePosition == null) {
+      AppToast.error(context, 'No free space nearby to duplicate this object.');
+      return;
+    }
+    clone.position = freePosition;
+    setState(() {
+      widget.controller.storeLayout.add(clone);
+      _activeElementId = clone.id;
+      _isNudging = false;
+      _isAdjustingWidth = false;
+    });
+    widget.onManageSelectionChanged?.call(clone);
+  }
+
+  void applySidebarAction(MapSidebarAction action) {
+    final matches = widget.controller.storeLayout.where((e) => e.id == _activeElementId);
+    if (matches.isEmpty || widget.mode != MapMode.manage) return;
+    final el = matches.first;
+    if (action == MapSidebarAction.duplicate) {
+      _duplicateSelectedElement(el);
+      return;
+    }
+    if (action == MapSidebarAction.autoAlignWall) {
+      if (!_autoAlignWall(el)) {
+        AppToast.error(context, 'No nearby wall endpoints to align.');
+      }
+      return;
+    }
+    if (action == MapSidebarAction.delete) {
+      widget.controller.deleteMapElement(el.id);
+      setState(() { _activeElementId = null; _isAdjustingWidth = false; _isNudging = false; });
+      widget.onManageSelectionChanged?.call(null);
+      return;
+    }
+    if (action == MapSidebarAction.rotate) {
+      if (el.type == ElementType.wall) {
+        final center = el.position + Offset(el.size.width / 2, el.size.height / 2);
+        final size = Size(el.size.height, el.size.width);
+        final pos = center - Offset(size.width / 2, size.height / 2);
+        if (_hasCollision(el, pos, size, 0)) {
+          AppToast.error(context, 'Cannot rotate. Overlaps with another element.');
+          return;
+        }
+        setState(() { el.size = size; el.position = pos; el.rotation = 0; });
+      } else {
+        final rotation = el.rotation + math.pi / 2;
+        if (_hasCollision(el, el.position, el.size, rotation)) {
+          AppToast.error(context, 'Cannot rotate. Overlaps with another element.');
+          return;
+        }
+        setState(() => el.rotation = rotation);
+      }
+      return;
+    }
+    switch (action) {
+      case MapSidebarAction.up: _nudgeElement(el, const Offset(0, -40)); break;
+      case MapSidebarAction.down: _nudgeElement(el, const Offset(0, 40)); break;
+      case MapSidebarAction.left: _nudgeElement(el, const Offset(-40, 0)); break;
+      case MapSidebarAction.right: _nudgeElement(el, const Offset(40, 0)); break;
+      case MapSidebarAction.widthLeftMinus: _changeElementWidthDirectional(el, -40, isLeft: true); break;
+      case MapSidebarAction.widthLeftPlus: _changeElementWidthDirectional(el, 40, isLeft: true); break;
+      case MapSidebarAction.widthRightMinus: _changeElementWidthDirectional(el, -40, isLeft: false); break;
+      case MapSidebarAction.widthRightPlus: _changeElementWidthDirectional(el, 40, isLeft: false); break;
+      default: break;
+    }
+  }
+
+  // Align endpoints of the selected axis-aligned wall to nearby
+  // perpendicular wall faces. Other elements are never moved.
+  bool _autoAlignWall(MapElement wall) {
+    if (wall.type != ElementType.wall) return false;
+    final horizontal = wall.size.width >= wall.size.height;
+    const tolerance = 45.0; // slightly more than one 40-unit resize step
+    final start = horizontal ? wall.position.dx : wall.position.dy;
+    final end = start + (horizontal ? wall.size.width : wall.size.height);
+    final crossMin = horizontal ? wall.position.dy : wall.position.dx;
+    final crossMax = crossMin + (horizontal ? wall.size.height : wall.size.width);
+
+    final candidates = <double>[];
+    for (final other in widget.controller.storeLayout) {
+      if (other.id == wall.id || other.type != ElementType.wall) continue;
+      final otherHorizontal = other.size.width >= other.size.height;
+      if (otherHorizontal == horizontal) continue;
+      final otherStart = horizontal ? other.position.dx : other.position.dy;
+      final otherEnd = otherStart +
+          (horizontal ? other.size.width : other.size.height);
+      final otherCrossMin =
+          horizontal ? other.position.dy : other.position.dx;
+      final otherCrossMax = otherCrossMin +
+          (horizontal ? other.size.height : other.size.width);
+      // The perpendicular wall must reach the selected wall's corridor.
+      if (otherCrossMax < crossMin - tolerance ||
+          otherCrossMin > crossMax + tolerance) continue;
+      candidates.add(otherStart);
+      candidates.add(otherEnd);
+    }
+
+    double snap(double endpoint) {
+      var best = endpoint;
+      var distance = tolerance + 0.001;
+      for (final face in candidates) {
+        final d = (endpoint - face).abs();
+        if (d < distance) {
+          distance = d;
+          best = face;
+        }
+      }
+      return best;
+    }
+
+    final nextStart = snap(start);
+    final nextEnd = snap(end);
+    if (nextEnd - nextStart < 15) return false;
+    if ((nextStart - start).abs() < 0.01 &&
+        (nextEnd - end).abs() < 0.01) return false;
+
+    final nextPos = horizontal
+        ? Offset(nextStart, wall.position.dy)
+        : Offset(wall.position.dx, nextStart);
+    final nextSize = horizontal
+        ? Size(nextEnd - nextStart, wall.size.height)
+        : Size(wall.size.width, nextEnd - nextStart);
+    if (_hasCollision(wall, nextPos, nextSize, wall.rotation)) return false;
+    setState(() {
+      wall.position = nextPos;
+      wall.size = nextSize;
+    });
+    return true;
+  }
+
   void _nudgeElement(MapElement el, Offset delta) {
     final Offset newPosition = el.position + delta;
 
@@ -1225,9 +1414,27 @@ class _StoreMapState extends State<StoreMap>
 
     Widget map = LayoutBuilder(
       builder: (context, constraints) {
-        _currentViewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+        final nextViewport = Size(constraints.maxWidth, constraints.maxHeight);
+        final viewportChanged = _currentViewportSize != Size.zero &&
+            _currentViewportSize != nextViewport;
+        _currentViewportSize = nextViewport;
         _currentMapWidth = mapWidth;
         _currentMapHeight = mapHeight;
+
+        // Manage/Assign use a sidebar; Preview has a wider canvas.
+        // Keep the current zoom, but recenter when the viewport changes.
+        if (viewportChanged &&
+            _isInitialScaleSet &&
+            !_viewportRecenterQueued &&
+            nextViewport.width > 0 &&
+            nextViewport.height > 0) {
+          _viewportRecenterQueued = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _viewportRecenterQueued = false;
+            if (mounted) _recenterMap(preserveScale: true);
+          });
+        }
+
         if (!_isInitialScaleSet && constraints.maxWidth > 0) {
           _isInitialScaleSet = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1355,6 +1562,7 @@ class _StoreMapState extends State<StoreMap>
                           _isAdjustingWidth = false;
                           _isNudging = false; // Add reset for nudge menu here
                         });
+                        widget.onManageSelectionChanged?.call(null);
                       } else if (widget.mode == MapMode.view) {
                         setState(() {
                           _selectedPopupElement = null;
@@ -1431,7 +1639,8 @@ class _StoreMapState extends State<StoreMap>
                             ...sortedLayout.map(
                               (el) => _buildPhysicalElement(el, minX, minY),
                             ),
-                            if (_selectedPopupElement != null)
+                            if (widget.mode == MapMode.view &&
+                                _selectedPopupElement != null)
                               _buildFloatingPopup(mapWidth, minX, minY),
                           ],
                         ),
@@ -1449,7 +1658,7 @@ class _StoreMapState extends State<StoreMap>
     Widget mapDisplay = Stack(
       children: [
         map,
-        if (widget.mode == MapMode.manage && _activeElementId != null)
+        if (widget.mode == MapMode.manage && widget.showMobileToolbar && _activeElementId != null)
           Positioned(
             bottom: 20,
             left: 0,
@@ -1459,7 +1668,7 @@ class _StoreMapState extends State<StoreMap>
         // ==========================================
         // NEW: Left Toolbar & Right Zoom Controls injected here
         // ==========================================
-        if (widget.mode == MapMode.manage) ...[
+        if (widget.mode == MapMode.manage && widget.showMobileToolbar) ...[
           _buildLeftToolbar(),
         ],
         
@@ -1587,6 +1796,10 @@ class _StoreMapState extends State<StoreMap>
     final bool isHighlighted = sourceId == widget.highlightId;
     final bool isActive =
         sourceId == _activeElementId && widget.mode == MapMode.manage;
+    // Also highlight the object whose details are open in Preview mode.
+    final bool isPreviewSelected = widget.mode == MapMode.view &&
+        _selectedPopupElement?.id == sourceId;
+    final bool showObjectGlow = isActive || isPreviewSelected;
 
     // `el` may be a synthetic wall segment created by _splitWallsAtJunctions
     // purely for rendering/z-order purposes — it is NOT in storeLayout and
@@ -1738,9 +1951,29 @@ class _StoreMapState extends State<StoreMap>
                     (-baseY * 12 - 33) + nudgeX,
                     (baseY * 12 - 35) + nudgeY,
                   ),
-                  child: CustomPaint(
-                    painter: modelPainter,
-                    size: Size(el.size.width, el.size.height),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      if (showObjectGlow)
+                        // The glow is made from the SAME 3D painter, so it
+                        // follows the rendered object instead of its floor tile.
+                        // No continuous animation or expensive blur filter.
+                        ColorFiltered(
+                          colorFilter: const ColorFilter.mode(
+                            Color(0xBBFF9800), BlendMode.srcIn),
+                          child: Transform.scale(
+                            scale: 1.045,
+                            child: CustomPaint(
+                              painter: modelPainter,
+                              size: Size(el.size.width, el.size.height),
+                            ),
+                          ),
+                        ),
+                      CustomPaint(
+                        painter: modelPainter,
+                        size: Size(el.size.width, el.size.height),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1809,18 +2042,15 @@ class _StoreMapState extends State<StoreMap>
                         }
                         _activeElementId = interactiveEl.id;
                       });
+                      widget.onManageSelectionChanged?.call(interactiveEl);
                     } else if (widget.mode == MapMode.selection &&
                         widget.selectedItemId != null) {
                       if (el.type == ElementType.door ||
                           el.type == ElementType.cashier ||
                           el.type == ElementType.wall) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              "Cannot assign items to ${el.type.name}s.",
-                            ),
-                            backgroundColor: Colors.redAccent,
-                          ),
+                        AppToast.error(
+                          context,
+                          "Cannot assign items to ${el.type.name}s.",
                         );
                         return;
                       }
@@ -1985,31 +2215,7 @@ class _StoreMapState extends State<StoreMap>
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // Arrow/pin marking exactly which object this popup belongs to.
-        // Billboarded so it stands upright instead of lying on the floor.
-        Positioned(
-          left: el.position.dx + el.size.width / 2 - 100 - minX,
-          top: el.position.dy - _pinHeightOffset(el.type) - minY,
-          child: Transform(
-            transform: billboard,
-            alignment: Alignment.bottomCenter,
-            child: AnimatedBuilder(
-              animation: _bounceAnimation,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(0, _bounceAnimation.value),
-                  child: child,
-                );
-              },
-              child: Icon(
-                LucideIcons.mapPin,
-                color: Colors.blue.shade600,
-                size: 26,
-                shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
-              ),
-            ),
-          ),
-        ),
+        // No location pin: the selected 3D model glows instead.
         Positioned(
           left: px,
           top: py,

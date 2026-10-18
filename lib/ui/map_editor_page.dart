@@ -22,6 +22,8 @@ class MapEditorPage extends StatefulWidget {
 }
 
 class _MapEditorPageState extends State<MapEditorPage> {
+  final GlobalKey<StoreMapState> _storeMapKey = GlobalKey<StoreMapState>();
+  MapElement? _manageSelected;
   MapMode _mode = MapMode.view; // Default to Preview
   String? _selectedItemId;
   String _initialLayoutJson = '[]';
@@ -72,6 +74,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
         body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
       );
     }
+
+    final bool desktopLayout = MediaQuery.sizeOf(context).width >= 900;
 
     return Scaffold(
       backgroundColor: _lightBg,
@@ -252,6 +256,19 @@ class _MapEditorPageState extends State<MapEditorPage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Desktop Manage Layout palette, kept outside the map canvas.
+                if (_mode == MapMode.manage && desktopLayout)
+                  Container(
+                    width: 290,
+                    margin: const EdgeInsets.only(top: 16, left: 16, bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFDBEAFE)),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: _buildManageSidebar(),
+                  ),
                 // SIDEBAR (Only visible in Assign mode)
                 if (_mode == MapMode.selection)
                   Container(
@@ -285,8 +302,13 @@ class _MapEditorPageState extends State<MapEditorPage> {
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(16),
                             child: StoreMap(
+                              key: _storeMapKey,
+                              onManageSelectionChanged: (element) {
+                                if (mounted) setState(() => _manageSelected = element);
+                              },
                               controller: widget.controller,
                               mode: _mode,
+                              showMobileToolbar: !desktopLayout,
                               selectedItemId: _selectedItemId,
                               onSelectionAssigned: () {
                                 setState(() {
@@ -309,6 +331,213 @@ class _MapEditorPageState extends State<MapEditorPage> {
           ),
         ],
       ),
+    );
+  }
+
+
+  // Desktop-only drag palette. The map's existing DragTarget<ElementType>
+  // receives the same type values as the mobile + toolbar.
+  Widget _buildManageSidebar() {
+    // When an element is selected, replace the entire drag palette with
+    // its editing controls. Closing the editor restores the palette.
+    if (_manageSelected != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              child: _buildManageSelectionControls(_manageSelected!),
+            ),
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
+          color: const Color(0xFFEFF6FF),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('MAP ELEMENTS',
+                  style: TextStyle(fontFamily: _fontFam, fontSize: 13,
+                      fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8),
+                      letterSpacing: 0.7)),
+              SizedBox(height: 6),
+              Text('Press and hold, then drag to map',
+                  style: TextStyle(fontFamily: _fontFam, fontSize: 12,
+                      color: Color(0xFF64748B))),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(12),
+            children: [
+              _buildManagePaletteItem(ElementType.door, 'Door',
+                  LucideIcons.doorOpen, const Color(0xFF16A34A)),
+              _buildManagePaletteItem(ElementType.rack, 'Rack',
+                  Icons.view_headline, const Color(0xFF2563EB)),
+              _buildManagePaletteItem(ElementType.shelf, 'Shelf',
+                  Icons.shelves, const Color(0xFFEA580C)),
+              _buildManagePaletteItem(ElementType.cashier, 'Cashier',
+                  Icons.point_of_sale, const Color(0xFF9333EA)),
+              _buildManagePaletteItem(ElementType.wall, 'Wall',
+                  Icons.line_weight, const Color(0xFF64748B)),
+            ],
+          ),
+        ),
+        if (_manageSelected != null)
+          Flexible(child: SingleChildScrollView(child: _buildManageSelectionControls(_manageSelected!))),
+        if (_manageSelected == null) Container(
+          padding: const EdgeInsets.all(16),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF8FAFC),
+            border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(LucideIcons.info, size: 16, color: Color(0xFF2563EB)),
+              SizedBox(width: 8),
+              Expanded(child: Text(
+                'Drag elements onto the map. Select a placed element to rotate, resize, move, or remove it.',
+                style: TextStyle(fontFamily: _fontFam, fontSize: 11,
+                    color: Color(0xFF64748B), height: 1.5),
+              )),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildManageSelectionControls(MapElement element) {
+    final label = element.type.name;
+    final heading = '${label[0].toUpperCase()}${label.substring(1)} #${widget.controller.storeLayout.where((e) => e.type == element.type).toList().indexWhere((e) => e.id == element.id) + 1}';
+    return Container(
+      decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFDBEAFE)))),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Expanded(child: Text(heading, style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w800, fontSize: 14, fontFamily: _fontFam))),
+            IconButton(tooltip: 'Deselect object', onPressed: () => _storeMapKey.currentState?.clearManageSelection(), icon: const Icon(Icons.close, size: 17)),
+          ]),
+          const SizedBox(height: 5),
+          _manageSectionLabel('ROTATE'),
+          const SizedBox(height: 5),
+          _manageAction('Rotate 90°', LucideIcons.rotateCw, MapSidebarAction.rotate),
+          const SizedBox(height: 10),
+          _manageSectionLabel('NUDGE'),
+          const SizedBox(height: 5),
+          Center(child: _manageMiniButton('▲', MapSidebarAction.up)),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            _manageMiniButton('◀', MapSidebarAction.left),
+            const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Icon(Icons.add, size: 14, color: Color(0xFF94A3B8))),
+            _manageMiniButton('▶', MapSidebarAction.right),
+          ]),
+          Center(child: _manageMiniButton('▼', MapSidebarAction.down)),
+          const SizedBox(height: 10),
+          _manageSectionLabel('ADJUST WIDTH'),
+          const SizedBox(height: 6),
+          Row(children: [
+            Expanded(child: _manageAction('◀ Left −', null, MapSidebarAction.widthLeftMinus)),
+            const SizedBox(width: 6),
+            Expanded(child: _manageAction('▶ Left +', null, MapSidebarAction.widthLeftPlus)),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            Expanded(child: _manageAction('◀ Right −', null, MapSidebarAction.widthRightMinus)),
+            const SizedBox(width: 6),
+            Expanded(child: _manageAction('▶ Right +', null, MapSidebarAction.widthRightPlus)),
+          ]),
+          const SizedBox(height: 12),
+          if (element.type == ElementType.wall) ...[
+            _manageSectionLabel('WALL ALIGNMENT'),
+            const SizedBox(height: 6),
+            _manageAction('Auto-align corners', LucideIcons.magnet,
+                MapSidebarAction.autoAlignWall),
+            const SizedBox(height: 12),
+          ],
+          _manageAction('Duplicate object', LucideIcons.copy, MapSidebarAction.duplicate),
+          const SizedBox(height: 8),
+          _manageAction('Delete object', LucideIcons.trash2, MapSidebarAction.delete, destructive: true),
+        ]),
+      ),
+    );
+  }
+
+  Widget _manageSectionLabel(String text) => Text(text,
+      style: const TextStyle(color: Color(0xFF64748B), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: .8, fontFamily: _fontFam));
+
+  Widget _manageMiniButton(String text, MapSidebarAction action) => Padding(
+    padding: const EdgeInsets.all(2),
+    child: _HoverManageButton(label: text, onTap: () => _storeMapKey.currentState?.applySidebarAction(action), width: 44, height: 33),
+  );
+
+  Widget _manageAction(String label, IconData? icon, MapSidebarAction action, {bool destructive = false}) =>
+    _HoverManageButton(label: label, icon: icon, destructive: destructive,
+      onTap: () => _storeMapKey.currentState?.applySidebarAction(action));
+
+  Widget _buildManagePaletteItem(
+      ElementType type, String label, IconData icon, Color accent) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Draggable<ElementType>(
+        data: type,
+        feedback: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _primaryBlue, width: 2),
+              boxShadow: const [
+                BoxShadow(color: Color(0x22000000), blurRadius: 12),
+              ],
+            ),
+            child: Icon(icon, color: accent, size: 28),
+          ),
+        ),
+        childWhenDragging: Opacity(
+          opacity: 0.35,
+          child: _buildPaletteCard(label, icon, accent),
+        ),
+        child: _buildPaletteCard(label, icon, accent),
+      ),
+    );
+  }
+
+  Widget _buildPaletteCard(String label, IconData icon, Color accent) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDBEAFE)),
+      ),
+      child: Row(children: [
+        Container(
+          width: 42, height: 42,
+          decoration: BoxDecoration(
+            color: accent.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: accent, size: 22),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Text(label, style: const TextStyle(
+          fontFamily: _fontFam, fontWeight: FontWeight.w700,
+          fontSize: 14, color: Color(0xFF0F172A),
+        ))),
+        const Icon(LucideIcons.gripVertical,
+            size: 18, color: Color(0xFF94A3B8)),
+      ]),
     );
   }
 
@@ -342,6 +571,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
       onTap: () {
         setState(() {
           _mode = mode;
+          if (mode != MapMode.manage) _manageSelected = null;
           if (mode != MapMode.selection) _selectedItemId = null;
         });
       },
@@ -652,6 +882,53 @@ class _MapEditorPageState extends State<MapEditorPage> {
               fontWeight: FontWeight.bold,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// Shared hover behavior for desktop map-control buttons.
+class _HoverManageButton extends StatefulWidget {
+  final String label;
+  final IconData? icon;
+  final VoidCallback onTap;
+  final bool destructive;
+  final double? width;
+  final double height;
+  const _HoverManageButton({required this.label, required this.onTap, this.icon,
+    this.destructive = false, this.width, this.height = 36});
+  @override
+  State<_HoverManageButton> createState() => _HoverManageButtonState();
+}
+class _HoverManageButtonState extends State<_HoverManageButton> {
+  bool hover = false;
+  @override
+  Widget build(BuildContext context) {
+    final fg = widget.destructive ? (hover ? Colors.white : const Color(0xFFDC2626))
+        : (hover ? Colors.white : const Color(0xFF1D4ED8));
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => hover = true),
+      onExit: (_) => setState(() => hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: widget.width, height: widget.height,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: widget.destructive
+                ? (hover ? const Color(0xFFDC2626) : const Color(0xFFFEF2F2))
+                : (hover ? const Color(0xFF2563EB) : const Color(0xFFEFF6FF)),
+            border: Border.all(color: widget.destructive ? const Color(0xFFFECACA) : const Color(0xFFBFDBFE)),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+            if (widget.icon != null) ...[Icon(widget.icon, size: 15, color: fg), const SizedBox(width: 6)],
+            Flexible(child: Text(widget.label, textAlign: TextAlign.center, maxLines: 1,
+              style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w700, fontFamily: _fontFam))),
+          ]),
         ),
       ),
     );

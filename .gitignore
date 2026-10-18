@@ -49,3 +49,5 @@ app.*.map.json
 # Local Codex files
 AGENTS.md
 .codex/
+# Widget Preview related
+.widget_preview/
