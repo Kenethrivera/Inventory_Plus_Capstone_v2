@@ -18,6 +18,7 @@ class NotificationController extends ChangeNotifier {
   StreamSubscription<void>? _orderChangesSubscription;
   bool _refreshInFlight = false;
   bool _refreshQueued = false;
+  bool _hasLoadedSnapshot = false;
   bool _disposed = false;
 
   List<AppNotification> get notifications {
@@ -59,7 +60,11 @@ class NotificationController extends ChangeNotifier {
     // invisible without a notification-table event being delivered to every
     // affected role. Treat Order changes as notification invalidation only.
     _orderChangesSubscription = realtimeSync.orderChanges.listen(
-      (_) => unawaited(_refreshNotifications()),
+      (_) {
+        if (_hasLoadedSnapshot) {
+          unawaited(_refreshNotifications());
+        }
+      },
       onError: (Object error, StackTrace stackTrace) {
         debugPrint('[NotificationController] Order invalidation error: $error');
       },
@@ -83,6 +88,7 @@ class NotificationController extends ChangeNotifier {
         final notifications = await _service.fetchNotifications();
         if (_disposed) return;
         _notifications = notifications;
+        _hasLoadedSnapshot = true;
         debugPrint(
           '[NotificationController] NOTIFICATIONS REFRESHED '
           'count=${notifications.length}',

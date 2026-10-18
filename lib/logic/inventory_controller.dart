@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:crypto/crypto.dart';
 import '../data/inventory.dart';
 import '../services/realtime/realtime_sync_service.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
-import 'dart:convert';
 import 'dart:async';
 
 enum StockStatus { ok, low, critical, out }
@@ -28,6 +28,7 @@ class InventoryController {
   String? _ordersSnapshotLocationId;
 
   bool _ordersSnapshotLoaded = false;
+  bool _ordersAwaitingRealtimeInitial = false;
 
   Future<void>? _ordersRefreshInFlight;
 
@@ -35,6 +36,7 @@ class InventoryController {
 
   String? _inventorySnapshotLocationId;
   bool _inventorySnapshotLoaded = false;
+  bool _inventoryAwaitingRealtimeInitial = false;
   Future<void>? _inventoryRefreshInFlight;
   bool _inventoryRefreshQueued = false;
 
@@ -53,6 +55,9 @@ class InventoryController {
   double globalCriticalPct = 10.0;
   List<Map<String, dynamic>> availableMeasurements = [];
   List<MapElement> storeLayout = [];
+  String? _mapLayoutLocationId;
+  String? _mapLayoutLoadLocationId;
+  Future<void>? _mapLayoutLoadInFlight;
 
   static const int _baselineRestocks = 3;
   static const int _baselineWindowDays = 180;
@@ -127,6 +132,7 @@ class InventoryController {
           list.add((row['new_quantity'] as num).toDouble());
         }
       }
+      if (activeLocationId != locId) return;
       _baselineByProduct = {
         for (final e in levels.entries) e.key: e.value.reduce(math.max),
       };
@@ -179,11 +185,30 @@ class InventoryController {
     required String role,
     String? email,
   }) {
+    if (currentUserId != id) {
+      _clearInventorySnapshot();
+      _clearOrdersSnapshot();
+      _inventoryAwaitingRealtimeInitial = true;
+      _ordersAwaitingRealtimeInitial = true;
+    }
+
     currentUserName = name;
     currentUserId = id;
     currentUserRole = role;
     currentUserNumericId = int.tryParse(id);
     loggedInUserEmail = email;
+  }
+
+  void setActiveLocation(String locationId) {
+    if (activeLocationId == locationId) return;
+
+    activeLocationId = locationId;
+    _clearInventorySnapshot();
+    _clearOrdersSnapshot();
+    _inventoryAwaitingRealtimeInitial = true;
+    _ordersAwaitingRealtimeInitial = true;
+    storeLayout = <MapElement>[];
+    _mapLayoutLocationId = null;
   }
 
   String _hashPassword(String password) {
@@ -275,18 +300,30 @@ class InventoryController {
   }
 
   Future<void> loadAppData(String userLocationId) async {
-    if (activeLocationId != userLocationId) {
-      _clearInventorySnapshot();
-    }
-    activeLocationId = userLocationId;
+    setActiveLocation(userLocationId);
+    await Future.wait<void>([
+      _refreshInventoryFromDatabase(),
+      loadDeferredAppData(),
+    ]);
+  }
 
-    try {
-      await _refreshInventoryFromDatabase();
-      await _loadStockBaselines();
-      await fetchMapLayout();
-      await loadStoreSettings();
-    } catch (e) {
-      _clearInventorySnapshot();
+  Future<void> loadDeferredAppData() async {
+    final stopwatch = Stopwatch()..start();
+    if (kDebugMode) {
+      debugPrint('[Startup] Deferred controller data started');
+    }
+
+    await Future.wait<void>([
+      _loadStockBaselines(),
+      fetchMapLayout(),
+      loadStoreSettings(),
+    ]);
+
+    if (kDebugMode) {
+      debugPrint(
+        '[Startup] Deferred controller data finished '
+        'elapsed=${stopwatch.elapsedMilliseconds}ms',
+      );
     }
   }
 
@@ -1124,6 +1161,7 @@ class InventoryController {
   void bindRealtimeSync(RealtimeSyncService realtimeSync) {
     _orderChangesSubscription ??= realtimeSync.orderChanges.listen(
       (_) {
+        _ordersAwaitingRealtimeInitial = false;
         unawaited(_refreshOrdersFromDatabase());
       },
       onError: (Object error, StackTrace stackTrace) {
@@ -1133,6 +1171,7 @@ class InventoryController {
 
     _inventoryChangesSubscription ??= realtimeSync.inventoryChanges.listen(
       (_) {
+        _inventoryAwaitingRealtimeInitial = false;
         unawaited(_refreshInventoryFromDatabase());
       },
       onError: (Object error, StackTrace stackTrace) {
@@ -1146,13 +1185,18 @@ class InventoryController {
 
     if (!_inventorySnapshotLoaded ||
         _inventorySnapshotLocationId != locationId) {
-      unawaited(_refreshInventoryFromDatabase());
+      if (!_inventoryAwaitingRealtimeInitial &&
+          _inventoryRefreshInFlight == null) {
+        unawaited(_refreshInventoryFromDatabase());
+      }
     }
 
     return _inventoryController.stream;
   }
 
   List<InventoryItem> get currentInventory => _inventorySnapshot;
+  Stream<List<InventoryItem>> get inventorySnapshots =>
+      _inventoryController.stream;
 
   List<InventoryItem> get _inventorySnapshot =>
       List<InventoryItem>.unmodifiable(<InventoryItem>[
@@ -1171,6 +1215,13 @@ class InventoryController {
     _inventorySnapshotLocationId = null;
     _inventorySnapshotLoaded = false;
     _publishInventorySnapshot();
+  }
+
+  void _clearOrdersSnapshot() {
+    _ordersSnapshot = const <CustomerOrder>[];
+    _ordersSnapshotLocationId = null;
+    _ordersSnapshotLoaded = false;
+    _ordersController.add(_ordersSnapshot);
   }
 
   Future<void> _refreshInventoryFromDatabase() {
@@ -1249,7 +1300,14 @@ Stream<List<CustomerOrder>> streamOrders() async* {
     final String? locationId = activeLocationId;
 
     if (!_ordersSnapshotLoaded || _ordersSnapshotLocationId != locationId) {
-      await _refreshOrdersFromDatabase();
+      if (!_ordersAwaitingRealtimeInitial) {
+        final inFlight = _ordersRefreshInFlight;
+        if (inFlight != null) {
+          await inFlight;
+        } else {
+          await _refreshOrdersFromDatabase();
+        }
+      }
     }
 
     // Send the latest known state immediately to the new subscriber.
@@ -1580,16 +1638,38 @@ Stream<List<CustomerOrder>> streamOrders() async* {
       return false;
     }
   }
-  Future<void> fetchMapLayout() async {
+  Future<void> fetchMapLayout() {
     final locId = activeLocationId;
-    if (locId == null) return;
+    if (locId == null) return Future<void>.value();
+    if (_mapLayoutLocationId == locId) return Future<void>.value();
 
+    final inFlight = _mapLayoutLoadInFlight;
+    if (inFlight != null) {
+      if (_mapLayoutLoadLocationId == locId) return inFlight;
+      return inFlight.then((_) => fetchMapLayout());
+    }
+
+    final load = _performMapLayoutLoad(locId);
+    _mapLayoutLoadInFlight = load;
+    _mapLayoutLoadLocationId = locId;
+
+    return load.whenComplete(() {
+      if (identical(_mapLayoutLoadInFlight, load)) {
+        _mapLayoutLoadInFlight = null;
+        _mapLayoutLoadLocationId = null;
+      }
+    });
+  }
+
+  Future<void> _performMapLayoutLoad(String locId) async {
     try {
       final locationResponse = await supabase
           .from('locations')
           .select('layout_data')
           .eq('id', locId)
           .maybeSingle();
+
+      if (activeLocationId != locId) return;
 
       if (locationResponse != null && locationResponse['layout_data'] != null) {
         final List<dynamic> layoutJson = locationResponse['layout_data'] is String 
@@ -1601,9 +1681,12 @@ Stream<List<CustomerOrder>> streamOrders() async* {
       } else {
         storeLayout = [];
       }
+      _mapLayoutLocationId = locId;
     } catch (e) {
       debugPrint("❌ Error parsing map data: $e");
-      storeLayout = [];
+      if (activeLocationId == locId) {
+        storeLayout = [];
+      }
     }
   }
   // ─── MAP EDITOR METHODS ────────────────────────────────────────────────────
@@ -1716,5 +1799,4 @@ Stream<List<CustomerOrder>> streamOrders() async* {
 
     return List<Map<String, dynamic>>.from(response);
   }
-  
 }

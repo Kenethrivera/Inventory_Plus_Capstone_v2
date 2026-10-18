@@ -107,7 +107,7 @@ class _LoginPageState extends State<LoginPage> {
         email: userEmail,
       );
 
-      await widget.controller.loadAppData(assignedLocationId);
+      widget.controller.setActiveLocation(assignedLocationId);
 
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/main');

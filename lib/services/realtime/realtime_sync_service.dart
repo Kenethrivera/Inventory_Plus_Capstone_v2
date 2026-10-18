@@ -121,6 +121,7 @@ class RealtimeSyncService {
       await _safeRemoveChannel(previous);
     }
 
+    bool hasSubscribed = false;
     final RealtimeChannel channel = _supabase
         .channel('inventory-plus:orders:$locationId')
         .onPostgresChanges(
@@ -150,6 +151,12 @@ class RealtimeSyncService {
             '[RealtimeSync] ORDERS STATUS=$status '
             'error=$error',
           );
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            if (hasSubscribed && _isStarted && _locationId == locationId) {
+              _orderChangesController.add(null);
+            }
+            hasSubscribed = true;
+          }
         });
 
     _channels[channelKey] = channel;
@@ -178,6 +185,7 @@ class RealtimeSyncService {
       await _safeRemoveChannel(previous);
     }
 
+    bool hasSubscribed = false;
     final RealtimeChannel channel = _supabase
         .channel('inventory-plus:inventory:$locationId')
         .onPostgresChanges(
@@ -200,6 +208,12 @@ class RealtimeSyncService {
         )
         .subscribe((status, error) {
           debugPrint('[RealtimeSync] INVENTORY STATUS=$status error=$error');
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            if (hasSubscribed && _isStarted && _locationId == locationId) {
+              _inventoryChangesController.add(null);
+            }
+            hasSubscribed = true;
+          }
         });
 
     _channels[channelKey] = channel;
@@ -245,6 +259,7 @@ class RealtimeSyncService {
       _notificationChangesController.add(null);
     }
 
+    bool notificationsSubscribed = false;
     final RealtimeChannel notificationsChannel = _supabase
         .channel('inventory-plus:notifications:$locationId')
         .onPostgresChanges(
@@ -263,10 +278,14 @@ class RealtimeSyncService {
             '[RealtimeSync] NOTIFICATIONS STATUS=$status error=$error',
           );
           if (status == RealtimeSubscribeStatus.subscribed) {
-            signalChange('notifications_subscribed');
+            if (notificationsSubscribed) {
+              signalChange('notifications_resubscribed');
+            }
+            notificationsSubscribed = true;
           }
         });
 
+    bool readsSubscribed = false;
     final RealtimeChannel readsChannel = _supabase
         .channel('inventory-plus:notification-reads:$userId')
         .onPostgresChanges(
@@ -285,7 +304,10 @@ class RealtimeSyncService {
             '[RealtimeSync] NOTIFICATION READS STATUS=$status error=$error',
           );
           if (status == RealtimeSubscribeStatus.subscribed) {
-            signalChange('notification_reads_subscribed');
+            if (readsSubscribed) {
+              signalChange('notification_reads_resubscribed');
+            }
+            readsSubscribed = true;
           }
         });
 
@@ -327,6 +349,7 @@ class RealtimeSyncService {
       _staffPresenceChangesController.add(null);
     }
 
+    bool hasSubscribed = false;
     final RealtimeChannel channel = _supabase
         .channel('inventory-plus:staff-presence:$locationId')
         .onPostgresChanges(
@@ -343,7 +366,10 @@ class RealtimeSyncService {
         .subscribe((status, error) {
           debugPrint('[RealtimeSync] PRESENCE STATUS=$status error=$error');
           if (status == RealtimeSubscribeStatus.subscribed) {
-            signalChange('staff_presence_subscribed');
+            if (hasSubscribed) {
+              signalChange('staff_presence_resubscribed');
+            }
+            hasSubscribed = true;
           }
         });
 

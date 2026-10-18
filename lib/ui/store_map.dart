@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -96,6 +97,7 @@ class _StoreMapState extends State<StoreMap>
   @override
   void initState() {
     super.initState();
+    unawaited(_ensureLayoutLoaded());
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
@@ -108,6 +110,17 @@ class _StoreMapState extends State<StoreMap>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _autoOpenItemCard(widget.selectedItemId!);
       });
+    }
+  }
+
+  Future<void> _ensureLayoutLoaded() async {
+    await widget.controller.fetchMapLayout();
+    if (!mounted) return;
+    setState(() {});
+
+    final selectedItemId = widget.selectedItemId;
+    if (selectedItemId != null) {
+      _autoOpenItemCard(selectedItemId);
     }
   }
 

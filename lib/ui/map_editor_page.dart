@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -23,7 +24,8 @@ class MapEditorPage extends StatefulWidget {
 class _MapEditorPageState extends State<MapEditorPage> {
   MapMode _mode = MapMode.view; // Default to Preview
   String? _selectedItemId;
-  late String _initialLayoutJson;
+  String _initialLayoutJson = '[]';
+  bool _isLayoutReady = false;
   bool _isSaved = false;
 
   // Assign mode state
@@ -34,14 +36,22 @@ class _MapEditorPageState extends State<MapEditorPage> {
   @override
   void initState() {
     super.initState();
+    unawaited(_initializeLayout());
+  }
+
+  Future<void> _initializeLayout() async {
+    await widget.controller.fetchMapLayout();
+    if (!mounted) return;
+
     _initialLayoutJson = jsonEncode(
         widget.controller.storeLayout.map((e) => e.toJson()).toList());
+    setState(() => _isLayoutReady = true);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    if (!_isSaved) {
+    if (_isLayoutReady && !_isSaved) {
       final List<dynamic> decoded = jsonDecode(_initialLayoutJson);
       widget.controller.storeLayout =
           decoded.map((e) => MapElement.fromJson(e)).toList();
@@ -56,6 +66,13 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isLayoutReady) {
+      return const Scaffold(
+        backgroundColor: _lightBg,
+        body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
+      );
+    }
+
     return Scaffold(
       backgroundColor: _lightBg,
       appBar: AppBar(

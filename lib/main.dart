@@ -10,7 +10,10 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'services/realtime/realtime_sync_service.dart';
 
 Future<void> main() async {
+  final startupStopwatch = Stopwatch()..start();
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (kDebugMode) debugPrint('[Startup] Flutter entry');
   
 try {
       await dotenv.load(fileName: "lib/.env");
@@ -24,8 +27,14 @@ try {
       url: dotenv.env['SUPABASE_URL']!,
       anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
     );
+    if (kDebugMode) {
+      debugPrint(
+        '[Startup] Supabase initialized '
+        'elapsed=${startupStopwatch.elapsedMilliseconds}ms',
+      );
+    }
   } catch (e) {
-    print("Initialization Error: $e");
+    debugPrint("Initialization Error: $e");
   }
 
   final inventoryController = InventoryController();
@@ -39,8 +48,13 @@ try {
       realtimeSync: realtimeSyncService,
     ),
   );
+  if (kDebugMode) {
+    debugPrint(
+      '[Startup] runApp requested '
+      'elapsed=${startupStopwatch.elapsedMilliseconds}ms',
+    );
+  }
 }
-
 Future<void> initDetectorRuntime() async {
   if (kIsWeb) {
     await initializeWeb(); // loads the LiteRT.js/TFLite.js runtime in-browser
@@ -97,6 +111,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Future<void> _checkAuth() async {
+    final stopwatch = Stopwatch()..start();
+    if (kDebugMode) debugPrint('[Startup] Auth restore started');
+
     final prefs = await SharedPreferences.getInstance();
     final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
     final userId = prefs.getString('userId');
@@ -120,9 +137,18 @@ class _AuthWrapperState extends State<AuthWrapper> {
           );
 
           if (assignedLocationId != null && assignedLocationId.isNotEmpty) {
-            await widget.controller.loadAppData(assignedLocationId);
+            widget.controller.setActiveLocation(assignedLocationId);
+            if (kDebugMode) {
+              debugPrint(
+                '[Startup] Restored profile and location '
+                'elapsed=${stopwatch.elapsedMilliseconds}ms',
+              );
+            }
             if (mounted) {
               Navigator.pushReplacementNamed(context, '/main');
+              if (kDebugMode) {
+                debugPrint('[Startup] MainScreen route requested');
+              }
               return;
             }
           }
@@ -130,12 +156,18 @@ class _AuthWrapperState extends State<AuthWrapper> {
       } catch (e) {
         print("Error restoring session: $e");
       }
-      // If fetching profile or app data loading fails, clear session and fall back to login
+      // If profile restoration fails, clear the session and fall back to login.
       await prefs.clear();
     }
     
     if (mounted) {
       Navigator.pushReplacementNamed(context, '/login');
+      if (kDebugMode) {
+        debugPrint(
+          '[Startup] LoginPage route requested '
+          'elapsed=${stopwatch.elapsedMilliseconds}ms',
+        );
+      }
     }
   }
 

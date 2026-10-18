@@ -64,6 +64,9 @@ class _MainScreenState extends State<MainScreen> {
   bool _isCheckingStockAlerts = false;
   bool _isCheckingExportReminders = false;
   StaffPresenceService? _staffPresenceService;
+  StreamSubscription<List<InventoryItem>>? _inventoryNotificationSubscription;
+  final Completer<void> _deferredControllerData = Completer<void>();
+  final Set<int> _mountedPageIndexes = <int>{0};
   Timer? _storeAccessEndTimer;
   bool _isForcingStoreLogout = false;
 
@@ -98,6 +101,8 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
 
+    if (kDebugMode) debugPrint('[Startup] MainScreen initState');
+
     final locationId = widget.controller.activeLocationId;
     final userId = widget.controller.currentUserId;
     final role = widget.controller.currentUserRole?.toLowerCase();
@@ -112,8 +117,6 @@ class _MainScreenState extends State<MainScreen> {
         recipientId: userId,
         realtimeSync: widget.realtimeSync,
       );
-
-      _notificationController!.loadNotifications();
 
       widget.controller.onRestockRecorded =
           ({
@@ -147,25 +150,31 @@ class _MainScreenState extends State<MainScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _scanExportReminderNotifications();
-        _scanInventoryStockAlerts();
       });
     }
+
+    _inventoryNotificationSubscription = widget.controller.inventorySnapshots
+        .listen((_) => unawaited(_scanInventoryAfterDeferredData()));
 
     _configureStaffPresence();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _startStaffPresence();
-      _scheduleStoreAccessEndLogout();
+      if (kDebugMode) debugPrint('[Startup] MainScreen first frame rendered');
+      unawaited(_startSessionSynchronization());
+      unawaited(_scheduleStoreAccessEndLogout());
+      unawaited(_loadDeferredControllerData());
     });
-
-    unawaited(_startRealtimeSync());
   }
 
   @override
   void dispose() {
     _storeAccessEndTimer?.cancel();
     _storeLogoutCountdownTimer?.cancel();
+    unawaited(_inventoryNotificationSubscription?.cancel());
+    if (!_deferredControllerData.isCompleted) {
+      _deferredControllerData.complete();
+    }
     _notificationController?.dispose();
     _staffPresenceService?.dispose();
     widget.controller.onRestockRecorded = null;
@@ -606,6 +615,54 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _startStaffPresence() async {
     await _staffPresenceService?.start(currentModule: _currentModuleName());
+  }
+
+  Future<void> _startSessionSynchronization() async {
+    try {
+      await _startStaffPresence();
+    } catch (error, stackTrace) {
+      debugPrint('[Startup] Staff presence start failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    if (!mounted) return;
+    if (kDebugMode) debugPrint('[Startup] Realtime start requested');
+    await _startRealtimeSync();
+  }
+
+  Future<void> _loadDeferredControllerData() async {
+    try {
+      await widget.controller.loadDeferredAppData();
+    } catch (error, stackTrace) {
+      debugPrint('[Startup] Deferred controller data failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      if (!_deferredControllerData.isCompleted) {
+        _deferredControllerData.complete();
+      }
+    }
+  }
+
+  Future<void> _scanInventoryAfterDeferredData() async {
+    await _deferredControllerData.future;
+    if (!mounted) return;
+    await _scanInventoryStockAlerts();
+  }
+
+  List<Widget> _lazyPageChildren(List<Widget> pages) {
+    final selectedIndex = _currentIndex ?? 0;
+    _mountedPageIndexes.add(selectedIndex);
+
+    return List<Widget>.generate(pages.length, (index) {
+      if (!_mountedPageIndexes.contains(index)) {
+        return const SizedBox.shrink();
+      }
+
+      return KeyedSubtree(
+        key: ValueKey<String>('main-page-$index'),
+        child: pages[index],
+      );
+    });
   }
 
   Future<void> _updateStaffPresenceModule() async {
@@ -1571,7 +1628,6 @@ class _MainScreenState extends State<MainScreen> {
           InventoryPage(
             controller: widget.controller,
             onSelectItem: _handleSelectItem,
-            onInventoryChanged: _scanInventoryStockAlerts,
             onExported: () {
               _scanExportReminderNotifications();
             },
@@ -1621,7 +1677,10 @@ class _MainScreenState extends State<MainScreen> {
                   staffHistoryIndex: staffHistoryIndex,
                 ),
                 Expanded(
-                  child: IndexedStack(index: _currentIndex, children: pages),
+                  child: IndexedStack(
+                    index: _currentIndex,
+                    children: _lazyPageChildren(pages),
+                  ),
                 ),
               ],
             ),
@@ -1646,7 +1705,10 @@ class _MainScreenState extends State<MainScreen> {
                   systemSettingsIndex: systemSettingsIndex,
                 ),
                 Expanded(
-                  child: IndexedStack(index: _currentIndex, children: pages),
+                  child: IndexedStack(
+                    index: _currentIndex,
+                    children: _lazyPageChildren(pages),
+                  ),
                 ),
               ],
             ),
@@ -1674,7 +1736,10 @@ class _MainScreenState extends State<MainScreen> {
             transactionIndex: transactionIndex,
             inventoryIndex: inventoryIndex,
           ),
-          body: IndexedStack(index: _currentIndex, children: pages),
+          body: IndexedStack(
+            index: _currentIndex,
+            children: _lazyPageChildren(pages),
+          ),
           bottomNavigationBar: _buildMobileNavigationBar(
             isAdmin: isAdmin,
             isHelper: isHelper,
