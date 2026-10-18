@@ -1,11 +1,44 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "bash vercel_build.sh",
   "outputDirectory": "build/web",
   "installCommand": "if cd flutter; then git pull && cd .. ; else git clone -b stable https://github.com/flutter/flutter.git; fi && flutter/bin/flutter doctor && flutter/bin/flutter config --enable-web",
-  "rewrites": [
+  "headers": [
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "source": "/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/(index.html|flutter.js|flutter_bootstrap.js|main.dart.js|manifest.json|version.json|flutter_service_worker.js)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/(assets|canvaskit|icons)/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/.*",
+      "dest": "/index.html"
     }
   ]
 }

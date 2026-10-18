@@ -218,7 +218,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
                       padding: EdgeInsets.zero,
                       icon: Icon(
                         _isBulletedFormat
-                            ? LucideIcons.alignHorizontalJustifyStart400
+                            ? LucideIcons.alignHorizontalJustifyStart
                             : LucideIcons.list,
                         color: Colors.blue.shade700,
                         size: 18,

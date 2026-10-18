@@ -12,7 +12,7 @@ dependencies:
   ultralytics_yolo:
   emailjs: ^4.0.0  # Official YOLO plugin for Flutter
   camera: ^0.11.0
-  lucide_icons_flutter: ^3.1.12
+  lucide_icons_flutter: ^4.0.0
   mobile_scanner: ^5.1.0
   shared_preferences: ^2.2.2
   supabase_flutter: ^2.0.0
