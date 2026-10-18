@@ -151,6 +151,8 @@ class _MainScreenState extends State<MainScreen> {
       });
     }
 
+    _configureStaffPresence();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _startStaffPresence();
@@ -165,7 +167,7 @@ class _MainScreenState extends State<MainScreen> {
     _storeAccessEndTimer?.cancel();
     _storeLogoutCountdownTimer?.cancel();
     _notificationController?.dispose();
-    _staffPresenceService?.stop(logoutReason: 'app_closed');
+    _staffPresenceService?.dispose();
     widget.controller.onRestockRecorded = null;
     super.dispose();
   }
@@ -574,7 +576,7 @@ class _MainScreenState extends State<MainScreen> {
     Navigator.pushReplacementNamed(context, '/login');
   }
 
-  Future<void> _startStaffPresence() async {
+  void _configureStaffPresence() {
     final locationId = widget.controller.activeLocationId;
     final userId = widget.controller.currentUserId;
     final userName = widget.controller.currentUserName;
@@ -591,15 +593,19 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
 
-    _staffPresenceService = StaffPresenceService(
+    final service = StaffPresenceService(
       supabase: widget.controller.supabase,
       locationId: locationId,
       userId: userId,
       userName: userName,
       userRole: userRole,
     );
+    service.bindRealtimeSync(widget.realtimeSync);
+    _staffPresenceService = service;
+  }
 
-    await _staffPresenceService!.start(currentModule: _currentModuleName());
+  Future<void> _startStaffPresence() async {
+    await _staffPresenceService?.start(currentModule: _currentModuleName());
   }
 
   Future<void> _updateStaffPresenceModule() async {
@@ -1648,11 +1654,8 @@ class _MainScreenState extends State<MainScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (isAdmin && widget.controller.activeLocationId != null)
-                  ActiveStaffButton(
-                    supabase: widget.controller.supabase,
-                    locationId: widget.controller.activeLocationId!,
-                  ),
+                if (isAdmin && _staffPresenceService != null)
+                  ActiveStaffButton(presenceService: _staffPresenceService!),
 
                 if (!kReleaseMode) ...[
                   const SizedBox(height: 12),

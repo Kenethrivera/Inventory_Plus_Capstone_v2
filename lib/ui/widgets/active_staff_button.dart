@@ -1,8 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../services/staff_presence_service.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const Color _darkText = Color(0xFF0F172A);
@@ -10,14 +9,9 @@ const Color _mutedText = Color(0xFF64748B);
 const String _fontFam = 'Hellix';
 
 class ActiveStaffButton extends StatefulWidget {
-  final SupabaseClient supabase;
-  final String locationId;
+  final StaffPresenceService presenceService;
 
-  const ActiveStaffButton({
-    super.key,
-    required this.supabase,
-    required this.locationId,
-  });
+  const ActiveStaffButton({super.key, required this.presenceService});
 
   @override
   State<ActiveStaffButton> createState() => _ActiveStaffButtonState();
@@ -27,85 +21,37 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
   final LayerLink _layerLink = LayerLink();
 
   OverlayEntry? _overlayEntry;
-  Timer? _refreshTimer;
-
-  List<Map<String, dynamic>> _activeStaff = [];
-  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadActiveStaff();
+    widget.presenceService.addListener(_handlePresenceChanged);
+  }
 
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _loadActiveStaff();
-    });
+  @override
+  void didUpdateWidget(covariant ActiveStaffButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.presenceService, widget.presenceService)) {
+      oldWidget.presenceService.removeListener(_handlePresenceChanged);
+      widget.presenceService.addListener(_handlePresenceChanged);
+    }
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    widget.presenceService.removeListener(_handlePresenceChanged);
     _removeOverlay();
     super.dispose();
   }
 
-  Future<void> _loadActiveStaff() async {
-    try {
-      final staffResponse = await widget.supabase
-          .from('profiles')
-          .select('id, name, role, location_id')
-          .eq('location_id', widget.locationId)
-          .inFilter('role', ['staff', 'helper'])
-          .order('role', ascending: true)
-          .order('name', ascending: true);
-
-      final presenceResponse = await widget.supabase
-          .from('staff_presence')
-          .select()
-          .eq('location_id', widget.locationId);
-
-      final staffRows = List<Map<String, dynamic>>.from(staffResponse);
-      final presenceRows = List<Map<String, dynamic>>.from(presenceResponse);
-
-      final presenceByUserId = {
-        for (final row in presenceRows) row['user_id'].toString(): row,
-      };
-
-      final merged = staffRows.map((staff) {
-        final userId = staff['id'].toString();
-        final presence = presenceByUserId[userId];
-
-        return {
-          'user_id': userId,
-          'user_name': staff['name']?.toString() ?? 'Unknown Staff',
-          'user_role': staff['role']?.toString() ?? 'staff',
-          'current_module': presence?['current_module'],
-          'is_online': presence?['is_online'] == true,
-          'last_seen_at': presence?['last_seen_at'],
-          'logged_in_at': presence?['logged_in_at'],
-          'logged_out_at': presence?['logged_out_at'],
-        };
-      }).toList();
-
-      if (!mounted) return;
-
-      setState(() {
-        _activeStaff = merged;
-        _isLoading = false;
-      });
-
-      _overlayEntry?.markNeedsBuild();
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _activeStaff = [];
-        _isLoading = false;
-      });
-
-      _overlayEntry?.markNeedsBuild();
-    }
+  void _handlePresenceChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _overlayEntry?.markNeedsBuild();
   }
+
+  List<Map<String, dynamic>> get _activeStaff =>
+      widget.presenceService.activeStaff;
 
   List<Map<String, dynamic>> get _cashiers {
     return _activeStaff.where((user) {
@@ -122,7 +68,7 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
   }
 
   int get _activeCount {
-    return _activeStaff.where(_isActuallyActive).length;
+    return _cashiers.length + _helpers.length;
   }
 
   void _toggleOverlay() {
@@ -230,7 +176,7 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
           _buildHeader(),
           const Divider(height: 1),
           Flexible(
-            child: _isLoading
+            child: widget.presenceService.isLoading
                 ? const Padding(
                     padding: EdgeInsets.all(32),
                     child: Center(
@@ -342,7 +288,7 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
-                users.where(_isActuallyActive).length.toString(),
+                users.length.toString(),
                 style: const TextStyle(
                   color: _primaryBlue,
                   fontSize: 11,
@@ -382,8 +328,7 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
     final name = user['user_name']?.toString() ?? 'Unknown Staff';
     final role = user['user_role']?.toString().toUpperCase() ?? 'STAFF';
     final module = user['current_module']?.toString() ?? 'In system';
-    final isActuallyActive = _isActuallyActive(user);
-    final lastSeenText = _lastSeenText(user['last_seen_at'], isActuallyActive);
+    final lastSeenText = _lastSeenText(user['last_seen_at']);
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
 
     return Container(
@@ -411,20 +356,19 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
                   ),
                 ),
               ),
-              if (isActuallyActive)
-                Positioned(
-                  right: -1,
-                  bottom: -1,
-                  child: Container(
-                    width: 11,
-                    height: 11,
-                    decoration: BoxDecoration(
-                      color: Colors.green,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
+              Positioned(
+                right: -1,
+                bottom: -1,
+                child: Container(
+                  width: 11,
+                  height: 11,
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
                   ),
                 ),
+              ),
             ],
           ),
           const SizedBox(width: 12),
@@ -486,23 +430,7 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
     );
   }
 
-  bool _isActuallyActive(Map<String, dynamic> user) {
-    if (user['is_online'] != true) return false;
-
-    final value = user['last_seen_at'];
-    if (value == null) return false;
-
-    try {
-      final date = DateTime.parse(value.toString()).toLocal();
-      final diff = DateTime.now().difference(date);
-
-      return diff.inMinutes < 2;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  String _lastSeenText(dynamic value, bool isOnline) {
+  String _lastSeenText(dynamic value) {
     if (value == null) {
       return 'Never active';
     }
@@ -511,17 +439,17 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
       final date = DateTime.parse(value.toString()).toLocal();
       final diff = DateTime.now().difference(date);
 
-      if (isOnline && diff.inSeconds < 60) {
+      if (diff.inSeconds < 60) {
         return 'Active now';
       }
 
-      if (isOnline && diff.inMinutes < 2) {
+      if (diff < StaffPresenceService.activeTimeout) {
         return '${diff.inMinutes}m ago';
       }
 
       return 'Last seen ${_formatClockTime(date)}';
     } catch (_) {
-      return isOnline ? 'Active now' : 'Last seen unknown';
+      return 'Last seen unknown';
     }
   }
 

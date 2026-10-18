@@ -19,6 +19,8 @@ class RealtimeSyncService {
       StreamController<void>.broadcast();
   final StreamController<void> _notificationChangesController =
       StreamController<void>.broadcast();
+  final StreamController<void> _staffPresenceChangesController =
+      StreamController<void>.broadcast();
 
   final Map<String, RealtimeChannel> _channels = <String, RealtimeChannel>{};
 
@@ -34,6 +36,8 @@ class RealtimeSyncService {
   Stream<void> get orderChanges => _orderChangesController.stream;
   Stream<void> get inventoryChanges => _inventoryChangesController.stream;
   Stream<void> get notificationChanges => _notificationChangesController.stream;
+  Stream<void> get staffPresenceChanges =>
+      _staffPresenceChangesController.stream;
 
   /// Starts one realtime session for the currently authenticated user/location.
   ///
@@ -57,6 +61,7 @@ class RealtimeSyncService {
       await _subscribeToOrderChanges();
       await _subscribeToInventoryChanges();
       await _subscribeToNotificationChanges();
+      await _subscribeToStaffPresenceChanges();
     });
   }
 
@@ -294,6 +299,61 @@ class RealtimeSyncService {
     debugPrint(
       '[RealtimeSync] NOTIFICATIONS SUBSCRIBED location=$locationId user=$userId',
     );
+  }
+
+  Future<void> _subscribeToStaffPresenceChanges() async {
+    final String? locationId = _locationId;
+
+    if (!_isStarted || locationId == null || locationId.isEmpty) {
+      return;
+    }
+
+    const String channelKey = 'staff_presence';
+    final RealtimeChannel? previous = _channels.remove(channelKey);
+
+    if (previous != null) {
+      await _safeRemoveChannel(previous);
+    }
+
+    void signalChange(String source) {
+      if (!_isStarted || _locationId != locationId) {
+        return;
+      }
+
+      debugPrint(
+        '[RealtimeSync] PRESENCE CHANGE '
+        'location=$locationId source=$source',
+      );
+      _staffPresenceChangesController.add(null);
+    }
+
+    final RealtimeChannel channel = _supabase
+        .channel('inventory-plus:staff-presence:$locationId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'staff_presence',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'location_id',
+            value: locationId,
+          ),
+          callback: (_) => signalChange('staff_presence'),
+        )
+        .subscribe((status, error) {
+          debugPrint('[RealtimeSync] PRESENCE STATUS=$status error=$error');
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            signalChange('staff_presence_subscribed');
+          }
+        });
+
+    _channels[channelKey] = channel;
+    _staffPresenceChangesController.add(null);
+
+    debugPrint(
+      '[RealtimeSync] PRESENCE SNAPSHOT REQUESTED location=$locationId',
+    );
+    debugPrint('[RealtimeSync] PRESENCE SUBSCRIBED location=$locationId');
   }
 
   Future<void> _stopInternal() async {
