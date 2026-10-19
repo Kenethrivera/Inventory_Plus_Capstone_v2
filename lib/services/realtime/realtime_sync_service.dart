@@ -23,6 +23,8 @@ class RealtimeSyncService {
       StreamController<void>.broadcast();
   final StreamController<void> _transactionHistoryChangesController =
       StreamController<void>.broadcast();
+  final StreamController<void> _mapLayoutChangesController =
+      StreamController<void>.broadcast();
 
   final Map<String, RealtimeChannel> _channels = <String, RealtimeChannel>{};
 
@@ -42,6 +44,7 @@ class RealtimeSyncService {
       _staffPresenceChangesController.stream;
   Stream<void> get transactionHistoryChanges =>
       _transactionHistoryChangesController.stream;
+  Stream<void> get mapLayoutChanges => _mapLayoutChangesController.stream;
 
   /// Starts one realtime session for the currently authenticated user/location.
   ///
@@ -67,6 +70,7 @@ class RealtimeSyncService {
       await _subscribeToNotificationChanges();
       await _subscribeToStaffPresenceChanges();
       await _subscribeToTransactionHistoryChanges();
+      await _subscribeToMapLayoutChanges();
     });
   }
 
@@ -449,6 +453,65 @@ class RealtimeSyncService {
     debugPrint(
       '[RealtimeSync] TRANSACTION HISTORY SUBSCRIBED location=$locationId',
     );
+  }
+
+  Future<void> _subscribeToMapLayoutChanges() async {
+    final String? locationId = _locationId;
+
+    if (!_isStarted || locationId == null || locationId.isEmpty) {
+      return;
+    }
+
+    const String channelKey = 'map_layout';
+    final RealtimeChannel? previous = _channels.remove(channelKey);
+
+    if (previous != null) {
+      await _safeRemoveChannel(previous);
+    }
+
+    void signalChange(String source) {
+      if (!_isStarted || _locationId != locationId) {
+        return;
+      }
+
+      debugPrint(
+        '[RealtimeSync] MAP LAYOUT CHANGE '
+        'location=$locationId source=$source',
+      );
+      _mapLayoutChangesController.add(null);
+    }
+
+    bool hasSubscribed = false;
+    final RealtimeChannel channel = _supabase
+        .channel('inventory-plus:map-layout:$locationId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'locations',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: locationId,
+          ),
+          callback: (_) => signalChange('locations'),
+        )
+        .subscribe((status, error) {
+          debugPrint('[RealtimeSync] MAP LAYOUT STATUS=$status error=$error');
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            if (hasSubscribed) {
+              signalChange('locations_resubscribed');
+            }
+            hasSubscribed = true;
+          }
+        });
+
+    _channels[channelKey] = channel;
+    _mapLayoutChangesController.add(null);
+
+    debugPrint(
+      '[RealtimeSync] MAP LAYOUT SNAPSHOT REQUESTED location=$locationId',
+    );
+    debugPrint('[RealtimeSync] MAP LAYOUT SUBSCRIBED location=$locationId');
   }
 
   Future<void> _stopInternal() async {

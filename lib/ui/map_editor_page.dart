@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../data/inventory.dart';
@@ -26,9 +25,18 @@ class _MapEditorPageState extends State<MapEditorPage> {
   MapElement? _manageSelected;
   MapMode _mode = MapMode.view; // Default to Preview
   String? _selectedItemId;
-  String _initialLayoutJson = '[]';
+  List<MapElement> _draftLayout = <MapElement>[];
+  String _baselineSignature = '';
+  String? _draftLocationId;
+  String? _draftUserId;
   bool _isLayoutReady = false;
-  bool _isSaved = false;
+  bool _isSaving = false;
+  bool _remoteChangePending = false;
+  bool _remoteChangeToastShown = false;
+  bool _allowRoutePop = false;
+  Object? _layoutLoadError;
+  StreamSubscription<List<MapElement>>? _layoutSubscription;
+  StreamSubscription<List<InventoryItem>>? _inventorySubscription;
 
   // Assign mode state
   String _searchQuery = '';
@@ -38,27 +46,303 @@ class _MapEditorPageState extends State<MapEditorPage> {
   @override
   void initState() {
     super.initState();
+    _layoutSubscription = widget.controller.mapLayoutSnapshots.listen(
+      _handleCanonicalLayout,
+    );
+    _inventorySubscription = widget.controller.inventorySnapshots.listen((_) {
+      if (!mounted) return;
+      if (_isLayoutReady &&
+          _draftUserId != null &&
+          _draftUserId != widget.controller.currentUserId) {
+        _resetDraftForCurrentScope();
+      } else {
+        setState(() {});
+      }
+    });
     unawaited(_initializeLayout());
   }
 
   Future<void> _initializeLayout() async {
-    await widget.controller.fetchMapLayout();
-    if (!mounted) return;
+    try {
+      await widget.controller.fetchMapLayout();
+      if (!mounted) return;
 
-    _initialLayoutJson = jsonEncode(
-        widget.controller.storeLayout.map((e) => e.toJson()).toList());
-    setState(() => _isLayoutReady = true);
+      final List<MapElement> canonical = widget.controller.currentMapLayout;
+      setState(() {
+        _draftLayout = widget.controller.cloneMapLayout(canonical);
+        _baselineSignature = widget.controller.mapLayoutSignature(canonical);
+        _draftLocationId = widget.controller.activeLocationId;
+        _draftUserId = widget.controller.currentUserId;
+        _isLayoutReady = true;
+        _layoutLoadError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _layoutLoadError = error);
+    }
+  }
+
+  bool get _hasDirtyDraft =>
+      _isLayoutReady &&
+      widget.controller.mapLayoutSignature(_draftLayout) != _baselineSignature;
+
+  void _handleCanonicalLayout(List<MapElement> canonical) {
+    if (!mounted || !_isLayoutReady || _isSaving) return;
+
+    if (_draftLocationId != widget.controller.activeLocationId) {
+      _resetDraftForCurrentScope(canonical: canonical);
+      unawaited(_reloadLatestLayout());
+      return;
+    }
+
+    final String canonicalSignature = widget.controller.mapLayoutSignature(
+      canonical,
+    );
+    if (canonicalSignature == _baselineSignature) {
+      if (_remoteChangePending) {
+        setState(() {
+          _remoteChangePending = false;
+          _remoteChangeToastShown = false;
+        });
+      }
+      return;
+    }
+
+    if (_hasDirtyDraft) {
+      setState(() => _remoteChangePending = true);
+      if (!_remoteChangeToastShown) {
+        _remoteChangeToastShown = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            AppToast.error(
+              context,
+              'A newer saved layout is available. Your draft was kept.',
+            );
+          }
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _draftLayout = widget.controller.cloneMapLayout(canonical);
+      _baselineSignature = canonicalSignature;
+      _remoteChangePending = false;
+      _remoteChangeToastShown = false;
+      _manageSelected = null;
+    });
+  }
+
+  void _resetDraftForCurrentScope({List<MapElement>? canonical}) {
+    final List<MapElement> current =
+        canonical ?? widget.controller.currentMapLayout;
+    setState(() {
+      _draftLayout = widget.controller.cloneMapLayout(current);
+      _baselineSignature = widget.controller.mapLayoutSignature(current);
+      _draftLocationId = widget.controller.activeLocationId;
+      _draftUserId = widget.controller.currentUserId;
+      _remoteChangePending = false;
+      _remoteChangeToastShown = false;
+      _manageSelected = null;
+      _selectedItemId = null;
+    });
   }
 
   @override
   void dispose() {
+    _layoutSubscription?.cancel();
+    _inventorySubscription?.cancel();
     _searchController.dispose();
-    if (_isLayoutReady && !_isSaved) {
-      final List<dynamic> decoded = jsonDecode(_initialLayoutJson);
-      widget.controller.storeLayout =
-          decoded.map((e) => MapElement.fromJson(e)).toList();
-    }
     super.dispose();
+  }
+
+  Future<void> _saveDraft({bool clear = false}) async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+
+    try {
+      final MapLayoutSaveResult result = await widget.controller
+          .saveMapLayoutIfUnchanged(
+            draft: clear ? <MapElement>[] : _draftLayout,
+            baselineSignature: _baselineSignature,
+            expectedLocationId: _draftLocationId ?? '',
+            expectedUserId: _draftUserId ?? '',
+            clear: clear,
+          );
+      if (!mounted) return;
+
+      if (result.status == MapLayoutSaveStatus.conflict) {
+        setState(() => _remoteChangePending = true);
+        await _showSaveConflictDialog();
+        return;
+      }
+
+      setState(() {
+        _draftLayout = widget.controller.cloneMapLayout(result.layout);
+        _baselineSignature = result.signature;
+        _draftLocationId = widget.controller.activeLocationId;
+        _draftUserId = widget.controller.currentUserId;
+        _remoteChangePending = false;
+        _remoteChangeToastShown = false;
+        _manageSelected = null;
+      });
+      AppToast.success(
+        context,
+        clear ? 'Map layout cleared' : 'Store layout saved successfully!',
+      );
+    } catch (error) {
+      if (mounted) {
+        AppToast.error(
+          context,
+          clear
+              ? 'Could not clear the map. Your draft was kept.'
+              : 'Could not save the map. Your draft was kept.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _showSaveConflictDialog() async {
+    final bool reload =
+        await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AppDialog(
+            icon: LucideIcons.triangleAlert,
+            color: Colors.orange.shade700,
+            title: 'Newer Map Layout Found',
+            subtitle: 'Your draft was not overwritten',
+            child: const Text(
+              'Another user saved the map after you began editing. Keep '
+              'editing your current draft, or reload the newest saved layout. '
+              'Reloading will discard your local changes.',
+              style: TextStyle(fontFamily: _fontFam, fontSize: 13),
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Keep Editing'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade700,
+                ),
+                child: const Text(
+                  'Reload Latest',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (reload && mounted) await _reloadLatestLayout();
+  }
+
+  Future<void> _confirmReloadLatest() async {
+    final bool reload =
+        await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AppDialog(
+            icon: LucideIcons.refreshCw,
+            color: Colors.orange.shade700,
+            title: 'Reload Latest Layout?',
+            subtitle: 'Discard this local draft',
+            child: const Text(
+              'The newest saved layout will replace your unsaved local '
+              'changes. This cannot be undone.',
+              style: TextStyle(fontFamily: _fontFam, fontSize: 13),
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Keep Editing'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade700,
+                ),
+                child: const Text(
+                  'Discard & Reload',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (reload && mounted) await _reloadLatestLayout();
+  }
+
+  Future<void> _reloadLatestLayout() async {
+    try {
+      await widget.controller.fetchMapLayout(force: true);
+      if (!mounted) return;
+
+      final List<MapElement> canonical = widget.controller.currentMapLayout;
+      setState(() {
+        _draftLayout = widget.controller.cloneMapLayout(canonical);
+        _baselineSignature = widget.controller.mapLayoutSignature(canonical);
+        _draftLocationId = widget.controller.activeLocationId;
+        _draftUserId = widget.controller.currentUserId;
+        _remoteChangePending = false;
+        _remoteChangeToastShown = false;
+        _manageSelected = null;
+      });
+    } catch (error) {
+      if (mounted) {
+        AppToast.error(context, 'Could not load the newest saved layout.');
+      }
+    }
+  }
+
+  Future<void> _confirmDiscardAndLeave() async {
+    final bool discard =
+        await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AppDialog(
+            icon: LucideIcons.triangleAlert,
+            color: Colors.orange.shade700,
+            title: 'Discard Unsaved Map Changes?',
+            subtitle: _remoteChangePending
+                ? 'A newer saved layout is also available'
+                : 'Your local draft has not been saved',
+            child: const Text(
+              'Leaving will discard your local map changes. The latest saved '
+              'layout in Supabase will remain unchanged.',
+              style: TextStyle(fontFamily: _fontFam, fontSize: 13),
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Keep Editing'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade700,
+                ),
+                child: const Text(
+                  'Discard & Leave',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!discard || !mounted) return;
+    setState(() => _allowRoutePop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).maybePop();
+    });
   }
 
   int get _assignedCount =>
@@ -69,17 +353,45 @@ class _MapEditorPageState extends State<MapEditorPage> {
   @override
   Widget build(BuildContext context) {
     if (!_isLayoutReady) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: _lightBg,
-        body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
+        body: Center(
+          child: _layoutLoadError == null
+              ? const CircularProgressIndicator(color: _primaryBlue)
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      LucideIcons.triangleAlert,
+                      color: Colors.red,
+                      size: 32,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Could not load the store map.'),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: () {
+                        setState(() => _layoutLoadError = null);
+                        unawaited(_initializeLayout());
+                      },
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+        ),
       );
     }
 
     final bool desktopLayout = MediaQuery.sizeOf(context).width >= 900;
 
-    return Scaffold(
-      backgroundColor: _lightBg,
-      appBar: AppBar(
+    return PopScope(
+      canPop: _allowRoutePop || !_hasDirtyDraft,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop) unawaited(_confirmDiscardAndLeave());
+      },
+      child: Scaffold(
+        backgroundColor: _lightBg,
+        appBar: AppBar(
         automaticallyImplyLeading: false, // Hidden back button as requested
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
@@ -130,7 +442,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
                     title: "Clear Map?",
                     subtitle: "Delete entire map layout",
                     child: const Text(
-                      "Are you sure you want to delete the entire map layout? All items will be unassigned.",
+                      "Are you sure you want to delete the entire saved map "
+                      "layout? Existing item assignments will not be changed.",
                       style: TextStyle(fontFamily: _fontFam, fontSize: 13),
                     ),
                     actions: [
@@ -147,12 +460,11 @@ class _MapEditorPageState extends State<MapEditorPage> {
                         child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam, fontWeight: FontWeight.bold)),
                       ),
                       ElevatedButton(
-                        onPressed: () {
+                        onPressed: _isSaving
+                            ? null
+                            : () async {
                           Navigator.pop(dialogContext);
-                          widget.controller.clearMapLayout().then((_) {
-                            if (mounted) setState(() {});
-                            if (mounted) AppToast.success(context, "Map layout cleared");
-                          });
+                          await _saveDraft(clear: true);
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red.shade600,
@@ -189,7 +501,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 20),
               ),
-              onPressed: () {
+              onPressed: _isSaving
+                  ? null
+                  : () {
                 showDialog(
                   context: context,
                   builder: (dialogContext) => AppDialog(
@@ -217,11 +531,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                       ElevatedButton(
                         onPressed: () async {
                           Navigator.pop(dialogContext);
-                          setState(() => _isSaved = true);
-                          await widget.controller.saveLayout();
-                          if (mounted) {
-                            AppToast.success(context, "Store layout saved successfully!");
-                          }
+                          await _saveDraft();
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _primaryBlue,
@@ -249,9 +559,10 @@ class _MapEditorPageState extends State<MapEditorPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
+        body: Column(
+          children: [
           Container(color: Colors.white, child: _buildModeTabs()),
+          if (_remoteChangePending) _buildRemoteChangeBanner(),
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -303,6 +614,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                             borderRadius: BorderRadius.circular(16),
                             child: StoreMap(
                               key: _storeMapKey,
+                              layout: _draftLayout,
+                              itemAssignmentEnabled:
+                                  !_hasDirtyDraft && !_remoteChangePending,
                               onManageSelectionChanged: (element) {
                                 if (mounted) setState(() => _manageSelected = element);
                               },
@@ -328,6 +642,40 @@ class _MapEditorPageState extends State<MapEditorPage> {
                 ),
               ],
             ),
+          ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRemoteChangeBanner() {
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFFFF7ED),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      child: Row(
+        children: [
+          Icon(
+            LucideIcons.triangleAlert,
+            size: 18,
+            color: Colors.orange.shade800,
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'A newer saved layout is available. Your unsaved draft is '
+              'still intact.',
+              style: TextStyle(
+                fontFamily: _fontFam,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF9A3412),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _isSaving ? null : _confirmReloadLatest,
+            child: const Text('Reload latest'),
           ),
         ],
       ),
@@ -416,7 +764,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   Widget _buildManageSelectionControls(MapElement element) {
     final label = element.type.name;
-    final heading = '${label[0].toUpperCase()}${label.substring(1)} #${widget.controller.storeLayout.where((e) => e.type == element.type).toList().indexWhere((e) => e.id == element.id) + 1}';
+    final heading = '${label[0].toUpperCase()}${label.substring(1)} #${_draftLayout.where((e) => e.type == element.type).toList().indexWhere((e) => e.id == element.id) + 1}';
     return Container(
       decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFDBEAFE)))),
       child: Padding(

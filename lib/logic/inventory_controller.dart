@@ -12,6 +12,20 @@ import 'dart:async';
 
 enum StockStatus { ok, low, critical, out }
 
+enum MapLayoutSaveStatus { saved, conflict }
+
+class MapLayoutSaveResult {
+  const MapLayoutSaveResult({
+    required this.status,
+    required this.layout,
+    required this.signature,
+  });
+
+  final MapLayoutSaveStatus status;
+  final List<MapElement> layout;
+  final String signature;
+}
+
 class OrderHistoryData {
   const OrderHistoryData({
     required this.orders,
@@ -36,10 +50,13 @@ class InventoryController {
       StreamController<List<InventoryItem>>.broadcast();
   final StreamController<void> _transactionHistoryInvalidationsController =
       StreamController<void>.broadcast();
+  final StreamController<List<MapElement>> _mapLayoutController =
+      StreamController<List<MapElement>>.broadcast();
 
   StreamSubscription<void>? _orderChangesSubscription;
   StreamSubscription<void>? _inventoryChangesSubscription;
   StreamSubscription<void>? _transactionHistoryChangesSubscription;
+  StreamSubscription<void>? _mapLayoutChangesSubscription;
 
   final Map<String, _SerializedHistoryQuery> _historyQueries =
       <String, _SerializedHistoryQuery>{};
@@ -81,6 +98,10 @@ class InventoryController {
   String? _mapLayoutLocationId;
   String? _mapLayoutLoadLocationId;
   Future<void>? _mapLayoutLoadInFlight;
+  bool _mapLayoutLoaded = false;
+  bool _mapLayoutStale = true;
+  bool _mapLayoutRefreshQueued = false;
+  Future<MapLayoutSaveResult>? _mapLayoutSaveInFlight;
 
   static const int _baselineRestocks = 3;
   static const int _baselineWindowDays = 180;
@@ -231,6 +252,10 @@ class InventoryController {
     _ordersAwaitingRealtimeInitial = true;
     storeLayout = <MapElement>[];
     _mapLayoutLocationId = null;
+    _mapLayoutLoaded = false;
+    _mapLayoutStale = true;
+    _mapLayoutRefreshQueued = false;
+    _publishMapLayoutSnapshot();
   }
 
   String _hashPassword(String password) {
@@ -337,7 +362,6 @@ class InventoryController {
 
     await Future.wait<void>([
       _loadStockBaselines(),
-      fetchMapLayout(),
       loadStoreSettings(),
     ]);
 
@@ -1388,6 +1412,33 @@ class InventoryController {
             );
           },
         );
+
+    _mapLayoutChangesSubscription ??= realtimeSync.mapLayoutChanges.listen(
+      (_) {
+        _mapLayoutStale = true;
+        if (_mapLayoutSaveInFlight != null) {
+          _mapLayoutRefreshQueued = true;
+          return;
+        }
+        if (_mapLayoutLoaded &&
+            _mapLayoutLocationId == activeLocationId &&
+            activeLocationId != null) {
+          unawaited(_refreshLoadedMapLayout());
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('[InventoryController] Map layout realtime error: $error');
+      },
+    );
+  }
+
+  Future<void> _refreshLoadedMapLayout() async {
+    try {
+      await fetchMapLayout(force: true);
+    } catch (error, stackTrace) {
+      debugPrint('[InventoryController] Map layout refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   Stream<void> get transactionHistoryInvalidations =>
@@ -1856,18 +1907,60 @@ Stream<List<CustomerOrder>> streamOrders() async* {
     }
   }
 
-  Future<void> fetchMapLayout() {
-    final locId = activeLocationId;
-    if (locId == null) return Future<void>.value();
-    if (_mapLayoutLocationId == locId) return Future<void>.value();
+  Stream<List<MapElement>> get mapLayoutSnapshots => _mapLayoutController.stream;
 
-    final inFlight = _mapLayoutLoadInFlight;
-    if (inFlight != null) {
-      if (_mapLayoutLoadLocationId == locId) return inFlight;
-      return inFlight.then((_) => fetchMapLayout());
+  List<MapElement> get currentMapLayout =>
+      List<MapElement>.unmodifiable(_cloneMapLayout(storeLayout));
+
+  bool get isMapLayoutLoadedForActiveLocation =>
+      _mapLayoutLoaded && _mapLayoutLocationId == activeLocationId;
+
+  String get currentMapLayoutSignature => mapLayoutSignature(storeLayout);
+
+  List<MapElement> cloneMapLayout(Iterable<MapElement> layout) =>
+      _cloneMapLayout(layout);
+
+  String mapLayoutSignature(Iterable<MapElement> layout) {
+    final String encoded = jsonEncode(
+      layout.map((MapElement element) => element.toJson()).toList(),
+    );
+    return sha256.convert(utf8.encode(encoded)).toString();
+  }
+
+  List<MapElement> _cloneMapLayout(Iterable<MapElement> layout) {
+    return layout
+        .map(
+          (MapElement element) => MapElement.fromJson(
+            Map<String, dynamic>.from(element.toJson()),
+          ),
+        )
+        .toList();
+  }
+
+  void _publishMapLayoutSnapshot() {
+    _mapLayoutController.add(currentMapLayout);
+  }
+
+  Future<void> fetchMapLayout({bool force = false}) {
+    final String? locId = activeLocationId;
+    if (locId == null || locId.isEmpty) return Future<void>.value();
+    if (!force &&
+        _mapLayoutLoaded &&
+        !_mapLayoutStale &&
+        _mapLayoutLocationId == locId) {
+      return Future<void>.value();
     }
 
-    final load = _performMapLayoutLoad(locId);
+    final Future<void>? inFlight = _mapLayoutLoadInFlight;
+    if (inFlight != null) {
+      if (_mapLayoutLoadLocationId != locId) {
+        return _waitForMapLayoutScopeThenLoad(inFlight, force: force);
+      }
+      _mapLayoutRefreshQueued = true;
+      return inFlight;
+    }
+
+    final Future<void> load = _performMapLayoutLoad(locId);
     _mapLayoutLoadInFlight = load;
     _mapLayoutLoadLocationId = locId;
 
@@ -1876,91 +1969,170 @@ Stream<List<CustomerOrder>> streamOrders() async* {
         _mapLayoutLoadInFlight = null;
         _mapLayoutLoadLocationId = null;
       }
+      if (_mapLayoutRefreshQueued) {
+        _mapLayoutRefreshQueued = false;
+        unawaited(_refreshLoadedMapLayout());
+      }
     });
+  }
+
+  Future<void> _waitForMapLayoutScopeThenLoad(
+    Future<void> previousLoad, {
+    required bool force,
+  }) async {
+    try {
+      await previousLoad;
+    } catch (_) {
+      // A failed old-location request must not prevent the new location load.
+    }
+    await fetchMapLayout(force: force);
+  }
+
+  Future<List<MapElement>> _readMapLayout(String locId) async {
+    final Map<String, dynamic>? locationResponse = await supabase
+        .from('locations')
+        .select('layout_data')
+        .eq('id', locId)
+        .maybeSingle();
+
+    final dynamic storedLayout = locationResponse?['layout_data'];
+    if (storedLayout == null) return <MapElement>[];
+    return _decodeMapLayoutValue(storedLayout);
+  }
+
+  List<MapElement> _decodeMapLayoutValue(dynamic value) {
+    final dynamic decoded = value is String ? jsonDecode(value) : value;
+    if (decoded is! List) {
+      throw const FormatException('Map layout_data is not a JSON list.');
+    }
+    return decoded
+        .map(
+          (dynamic element) => MapElement.fromJson(
+            Map<String, dynamic>.from(element as Map),
+          ),
+        )
+        .toList();
+  }
+
+  void _acceptCanonicalMapLayout(String locId, List<MapElement> layout) {
+    if (activeLocationId != locId) return;
+    storeLayout = _cloneMapLayout(layout);
+    _mapLayoutLocationId = locId;
+    _mapLayoutLoaded = true;
+    _mapLayoutStale = false;
+    _publishMapLayoutSnapshot();
+    debugPrint(
+      '[InventoryController] MAP LAYOUT REFRESHED '
+      'location=$locId count=${storeLayout.length}',
+    );
   }
 
   Future<void> _performMapLayoutLoad(String locId) async {
     try {
-      final locationResponse = await supabase
-          .from('locations')
-          .select('layout_data')
-          .eq('id', locId)
-          .maybeSingle();
-
+      final List<MapElement> layout = await _readMapLayout(locId);
       if (activeLocationId != locId) return;
-
-      if (locationResponse != null && locationResponse['layout_data'] != null) {
-        final List<dynamic> layoutJson = locationResponse['layout_data'] is String 
-              ? jsonDecode(locationResponse['layout_data']) 
-              : locationResponse['layout_data'];
-              
-        storeLayout = layoutJson.map((el) => MapElement.fromJson(el as Map<String, dynamic>)).toList();
-        debugPrint("✅ Map loaded successfully: ${storeLayout.length} elements.");
-      } else {
-        storeLayout = [];
-      }
-      _mapLayoutLocationId = locId;
-    } catch (e) {
-      debugPrint("❌ Error parsing map data: $e");
-      if (activeLocationId == locId) {
-        storeLayout = [];
-      }
+      _acceptCanonicalMapLayout(locId, layout);
+    } catch (error, stackTrace) {
+      _mapLayoutStale = true;
+      debugPrint('[InventoryController] Failed to load map layout: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      rethrow;
     }
   }
+
   // ─── MAP EDITOR METHODS ────────────────────────────────────────────────────
 
-  Future<void> saveLayout() async {
-    final locId = activeLocationId;
-    if (locId == null) return;
+  Future<MapLayoutSaveResult> saveMapLayoutIfUnchanged({
+    required List<MapElement> draft,
+    required String baselineSignature,
+    required String expectedLocationId,
+    required String expectedUserId,
+    bool clear = false,
+  }) {
+    final Future<MapLayoutSaveResult>? inFlight = _mapLayoutSaveInFlight;
+    if (inFlight != null) return inFlight;
 
-    try {
-      // Using your exact old working serialization method!
-      final String encodedData = jsonEncode(
-        storeLayout.map((el) => el.toJson()).toList(),
+    final Future<MapLayoutSaveResult> save = _performMapLayoutSave(
+      draft: _cloneMapLayout(draft),
+      baselineSignature: baselineSignature,
+      expectedLocationId: expectedLocationId,
+      expectedUserId: expectedUserId,
+      clear: clear,
+    );
+    _mapLayoutSaveInFlight = save;
+    return save.whenComplete(() {
+      if (identical(_mapLayoutSaveInFlight, save)) {
+        _mapLayoutSaveInFlight = null;
+      }
+      if (_mapLayoutRefreshQueued) {
+        _mapLayoutRefreshQueued = false;
+        unawaited(_refreshLoadedMapLayout());
+      }
+    });
+  }
+
+  Future<MapLayoutSaveResult> _performMapLayoutSave({
+    required List<MapElement> draft,
+    required String baselineSignature,
+    required String expectedLocationId,
+    required String expectedUserId,
+    required bool clear,
+  }) async {
+    final String? locId = activeLocationId;
+    if (locId == null || locId.isEmpty) {
+      throw StateError('No active location is available for the map save.');
+    }
+    if (locId != expectedLocationId) {
+      throw StateError('The map draft belongs to a different location.');
+    }
+    if (currentUserId != expectedUserId) {
+      throw StateError('The map draft belongs to a different user session.');
+    }
+
+    final Future<void>? refreshInFlight = _mapLayoutLoadInFlight;
+    if (refreshInFlight != null) await refreshInFlight;
+
+    final List<MapElement> latest = await _readMapLayout(locId);
+    if (activeLocationId != locId || currentUserId != expectedUserId) {
+      throw StateError('The active session changed during the map save.');
+    }
+
+    final String latestSignature = mapLayoutSignature(latest);
+    if (latestSignature != baselineSignature) {
+      _acceptCanonicalMapLayout(locId, latest);
+      return MapLayoutSaveResult(
+        status: MapLayoutSaveStatus.conflict,
+        layout: currentMapLayout,
+        signature: latestSignature,
       );
-
-      // Adding .select() forces Supabase to return the row if it succeeded
-      final response = await supabase
-          .from('locations')
-          .update({'layout_data': jsonDecode(encodedData)})
-          .eq('id', locId)
-          .select(); 
-          
-      if (response.isEmpty) {
-        debugPrint("❌ ALERT: Location ID '$locId' does not exist in the locations table! Map cannot save.");
-      } else {
-        debugPrint("✅ Map saved to database successfully!");
-      }
-    } catch (e) {
-      debugPrint("❌ Error saving layout: $e");
     }
-  }
 
-  Future<void> clearMapLayout() async {
-    final locId = activeLocationId;
-    if (locId == null) return;
+    final dynamic persistedValue = clear
+        ? null
+        : draft.map((MapElement element) => element.toJson()).toList();
+    final List<dynamic> response = await supabase
+        .from('locations')
+        .update(<String, dynamic>{'layout_data': persistedValue})
+        .eq('id', locId)
+        .select('layout_data');
 
-    try {
-      storeLayout.clear();
-
-      final response = await supabase
-          .from('locations')
-          .update({'layout_data': null})
-          .eq('id', locId)
-          .select();
-
-      if (response.isEmpty) {
-        debugPrint("❌ ALERT: Location ID '$locId' does not exist!");
-      } else {
-        debugPrint("✅ Map cleared successfully!");
-      }
-    } catch (e) {
-      debugPrint("❌ Error clearing layout: $e");
+    if (response.isEmpty) {
+      throw StateError("Location '$locId' does not exist or cannot be updated.");
     }
-  }
+    if (activeLocationId != locId || currentUserId != expectedUserId) {
+      throw StateError('The active session changed during the map save.');
+    }
 
-  void deleteMapElement(String id) {
-    storeLayout.removeWhere((element) => element.id == id);
+    final dynamic returnedValue = (response.first as Map)['layout_data'];
+    final List<MapElement> saved = returnedValue == null
+        ? <MapElement>[]
+        : _decodeMapLayoutValue(returnedValue);
+    _acceptCanonicalMapLayout(locId, saved);
+    return MapLayoutSaveResult(
+      status: MapLayoutSaveStatus.saved,
+      layout: currentMapLayout,
+      signature: mapLayoutSignature(saved),
+    );
   }
 
   Future<void> assignItemToLocation(String itemId, String mapElementId) async {

@@ -22,6 +22,8 @@ class StoreMap extends StatefulWidget {
   final MapMode mode;
   final bool showMobileToolbar;
   final String? selectedItemId;
+  final List<MapElement>? layout;
+  final bool itemAssignmentEnabled;
   final VoidCallback? onSelectionAssigned;
   final Function(MapElement)? onElementSelected;
   final ValueChanged<MapElement?>? onManageSelectionChanged;
@@ -35,6 +37,8 @@ class StoreMap extends StatefulWidget {
     this.mode = MapMode.view,
     this.showMobileToolbar = true,
     this.selectedItemId,
+    this.layout,
+    this.itemAssignmentEnabled = true,
     this.onSelectionAssigned,
     this.onElementSelected,
     this.onManageSelectionChanged,
@@ -76,6 +80,11 @@ class StoreMapState extends State<StoreMap>
   double _currentMapHeight = 1000.0;
   Size _currentViewportSize = Size.zero;
   bool _viewportRecenterQueued = false;
+  StreamSubscription<List<MapElement>>? _mapLayoutSubscription;
+  StreamSubscription<List<InventoryItem>>? _inventorySubscription;
+  bool _mapLayoutLoadFailed = false;
+
+  List<MapElement> get _layout => widget.layout ?? widget.controller.storeLayout;
 
   void _recenterMap({bool preserveScale = false}) {
     if (_currentViewportSize == Size.zero) return;
@@ -104,6 +113,7 @@ class StoreMapState extends State<StoreMap>
   @override
   void initState() {
     super.initState();
+    _bindDomainStreams();
     unawaited(_ensureLayoutLoaded());
     _animController = AnimationController(
       vsync: this,
@@ -121,19 +131,33 @@ class StoreMapState extends State<StoreMap>
   }
 
   Future<void> _ensureLayoutLoaded() async {
-    await widget.controller.fetchMapLayout();
-    if (!mounted) return;
-    setState(() {});
+    if (widget.layout != null) return;
+    try {
+      await widget.controller.fetchMapLayout();
+      if (!mounted) return;
+      setState(() => _mapLayoutLoadFailed = false);
 
-    final selectedItemId = widget.selectedItemId;
-    if (selectedItemId != null) {
-      _autoOpenItemCard(selectedItemId);
+      final selectedItemId = widget.selectedItemId;
+      if (selectedItemId != null) {
+        _autoOpenItemCard(selectedItemId);
+      }
+    } catch (error) {
+      if (mounted) setState(() => _mapLayoutLoadFailed = true);
     }
   }
 
   @override
   void didUpdateWidget(covariant StoreMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      unawaited(_mapLayoutSubscription?.cancel());
+      unawaited(_inventorySubscription?.cancel());
+      _bindDomainStreams();
+      if (widget.layout == null) unawaited(_ensureLayoutLoaded());
+    }
+    if (!identical(oldWidget.layout, widget.layout)) {
+      _resolveCurrentPopupSelection();
+    }
     // Each mode starts with a clean selection. In particular, an object
     // highlighted in Preview must not remain glowing in Manage Layout when
     // the editor sidebar has no active selection.
@@ -147,25 +171,50 @@ class StoreMapState extends State<StoreMap>
 
   @override
   void dispose() {
+    _mapLayoutSubscription?.cancel();
+    _inventorySubscription?.cancel();
     _animController.dispose();
     _transformationController.dispose();
     super.dispose();
   }
 
+  void _bindDomainStreams() {
+    _mapLayoutSubscription = widget.controller.mapLayoutSnapshots.listen((_) {
+      if (!mounted || widget.layout != null) return;
+      setState(_resolveCurrentPopupSelection);
+    });
+    _inventorySubscription = widget.controller.inventorySnapshots.listen((_) {
+      if (!mounted) return;
+      final String? selectedItemId = widget.selectedItemId;
+      if (selectedItemId != null) {
+        _autoOpenItemCard(selectedItemId);
+      } else {
+        setState(_resolveCurrentPopupSelection);
+      }
+    });
+  }
+
+  void _resolveCurrentPopupSelection() {
+    final String? selectedId = _selectedPopupElement?.id;
+    if (selectedId == null) return;
+    final Iterable<MapElement> matches = _layout.where(
+      (MapElement element) => element.id == selectedId,
+    );
+    _selectedPopupElement = matches.isEmpty ? null : matches.first;
+  }
+
   void _autoOpenItemCard(String itemId) {
+    MapElement? element;
     try {
       final item = widget.controller.allItems.firstWhere((i) => i.id == itemId);
       
       if (item.locationId != null) {
-        final element = widget.controller.storeLayout.firstWhere((e) => e.id == item.locationId);
-        
-        setState(() {
-          _selectedPopupElement = element; 
-        });
+        element = _layout.firstWhere((e) => e.id == item.locationId);
       }
     } catch (e) {
-      // Item or location not found; fail silently
+      element = null;
     }
+    if (mounted) setState(() => _selectedPopupElement = element);
   }
 
   // ==========================================
@@ -253,7 +302,7 @@ class StoreMapState extends State<StoreMap>
       Offset(-math.sin(rot), math.cos(rot)),
     ];
 
-    for (var other in widget.controller.storeLayout) {
+    for (var other in _layout) {
       if (other.id == activeEl.id) continue;
 
       // ==========================================
@@ -587,6 +636,26 @@ class StoreMapState extends State<StoreMap>
 
   @override
   Widget build(BuildContext context) {
+    if (_mapLayoutLoadFailed &&
+        !widget.controller.isMapLayoutLoadedForActiveLocation) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Could not load the store map.'),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () {
+                setState(() => _mapLayoutLoadFailed = false);
+                unawaited(_ensureLayoutLoaded());
+              },
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       // Margin on all sides so the map doesn't touch the sidebar
       margin: const EdgeInsets.all(12),
@@ -690,7 +759,7 @@ class StoreMapState extends State<StoreMap>
     }
     clone.position = freePosition;
     setState(() {
-      widget.controller.storeLayout.add(clone);
+      _layout.add(clone);
       _activeElementId = clone.id;
       _isNudging = false;
       _isAdjustingWidth = false;
@@ -699,7 +768,7 @@ class StoreMapState extends State<StoreMap>
   }
 
   void applySidebarAction(MapSidebarAction action) {
-    final matches = widget.controller.storeLayout.where((e) => e.id == _activeElementId);
+    final matches = _layout.where((e) => e.id == _activeElementId);
     if (matches.isEmpty || widget.mode != MapMode.manage) return;
     final el = matches.first;
     if (action == MapSidebarAction.duplicate) {
@@ -713,7 +782,7 @@ class StoreMapState extends State<StoreMap>
       return;
     }
     if (action == MapSidebarAction.delete) {
-      widget.controller.deleteMapElement(el.id);
+      _layout.removeWhere((MapElement element) => element.id == el.id);
       setState(() { _activeElementId = null; _isAdjustingWidth = false; _isNudging = false; });
       widget.onManageSelectionChanged?.call(null);
       return;
@@ -763,7 +832,7 @@ class StoreMapState extends State<StoreMap>
     final crossMax = crossMin + (horizontal ? wall.size.height : wall.size.width);
 
     final candidates = <double>[];
-    for (final other in widget.controller.storeLayout) {
+    for (final other in _layout) {
       if (other.id == wall.id || other.type != ElementType.wall) continue;
       final otherHorizontal = other.size.width >= other.size.height;
       if (otherHorizontal == horizontal) continue;
@@ -873,7 +942,7 @@ class StoreMapState extends State<StoreMap>
   }
 
   Widget _buildBottomActionBar() {
-    final activeEl = widget.controller.storeLayout.firstWhere(
+    final activeEl = _layout.firstWhere(
       (el) => el.id == _activeElementId,
       orElse: () => MapElement(
         id: '',
@@ -986,7 +1055,9 @@ class StoreMapState extends State<StoreMap>
           label: "Remove",
           color: Colors.redAccent,
           onTap: () {
-            widget.controller.deleteMapElement(activeEl.id);
+            _layout.removeWhere(
+              (MapElement element) => element.id == activeEl.id,
+            );
             setState(() {
               _activeElementId = null;
               _isAdjustingWidth = false;
@@ -1138,7 +1209,7 @@ class StoreMapState extends State<StoreMap>
     const double padding = 40.0;
 
     // 1. Find the bounds of all placed elements (including negative coordinates)
-    for (var el in widget.controller.storeLayout) {
+    for (var el in _layout) {
       if (el.position.dx < minX) minX = el.position.dx;
       if (el.position.dy < minY) minY = el.position.dy;
 
@@ -1314,7 +1385,7 @@ class StoreMapState extends State<StoreMap>
     }
 
     List<MapElement> _buildRenderOrder() {
-      final rawElements = List<MapElement>.from(widget.controller.storeLayout);
+      final rawElements = List<MapElement>.from(_layout);
       final elements = _splitWallsAtJunctions(rawElements);
       if (elements.length <= 1) return elements;
 
@@ -1541,7 +1612,7 @@ class StoreMapState extends State<StoreMap>
 
                   if (!_hasCollision(newEl, finalPos, finalSize, 0.0)) {
                     setState(() {
-                      widget.controller.storeLayout.add(newEl);
+                      _layout.add(newEl);
                     });
                   } else {
                     AppToast.error(context, "Cannot place element here. It overlaps with another.");
@@ -1807,7 +1878,7 @@ class StoreMapState extends State<StoreMap>
     // dragging, collision-checking and callbacks must operate on the real
     // source element instead. For non-wall elements sourceId == el.id, so
     // this just resolves to el itself.
-    final MapElement interactiveEl = widget.controller.storeLayout.firstWhere(
+    final MapElement interactiveEl = _layout.firstWhere(
       (e) => e.id == sourceId,
       orElse: () => el,
     );
@@ -2045,6 +2116,13 @@ class StoreMapState extends State<StoreMap>
                       widget.onManageSelectionChanged?.call(interactiveEl);
                     } else if (widget.mode == MapMode.selection &&
                         widget.selectedItemId != null) {
+                      if (!widget.itemAssignmentEnabled) {
+                        AppToast.error(
+                          context,
+                          'Save or reload the map before assigning items.',
+                        );
+                        return;
+                      }
                       if (el.type == ElementType.door ||
                           el.type == ElementType.cashier ||
                           el.type == ElementType.wall) {
