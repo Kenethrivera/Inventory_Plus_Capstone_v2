@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -13,6 +15,7 @@ class DashboardPage extends StatefulWidget {
   final VoidCallback onOpenQueue;
   final VoidCallback onViewActivity;
   final VoidCallback onOpenForecasting;
+  final bool isActive;
   
   const DashboardPage({
     super.key,
@@ -21,6 +24,7 @@ class DashboardPage extends StatefulWidget {
     required this.onOpenQueue,
     required this.onViewActivity,
     required this.onOpenForecasting,
+    required this.isActive,
   });
 
   @override
@@ -31,6 +35,20 @@ class _DashboardPageState extends State<DashboardPage> {
   String _selectedFilter = '30 Days';
   List<Map<String, dynamic>> _recentTransactions = [];
   bool _isLoadingTxs = true;
+  bool _transactionHistoryDirty = false;
+  Future<void>? _transactionRefreshInFlight;
+  bool _transactionRefreshQueued = false;
+  String? _transactionSnapshotScope;
+
+  StreamSubscription<List<CustomerOrder>>? _ordersSubscription;
+  StreamSubscription<List<InventoryItem>>? _inventorySubscription;
+  StreamSubscription<void>? _historySubscription;
+
+  List<CustomerOrder> _orders = const <CustomerOrder>[];
+  List<InventoryItem> _inventoryItems = const <InventoryItem>[];
+  Map<String, dynamic> _metrics = const <String, dynamic>{};
+  List<InventoryItem> _criticalStockItems = const <InventoryItem>[];
+  List<InventoryItem> _deadStockItems = const <InventoryItem>[];
 
   // ─── THEME COLORS ────────────────────────────────────────────────────────
   static const Color primaryBlue = Color(0xFF2563EB); // Updated to match new theme
@@ -44,116 +62,325 @@ class _DashboardPageState extends State<DashboardPage> {
   String _forecastingFilter = 'Season';
   String _forecastInsightText = "Loading forecast...";
   bool _isFetchingForecast = false;
-  bool _isBulletedFormat = true;
+  bool _aiRecommendationStale = false;
+  bool _forecastInsightStale = false;
+  bool _initialAIStarted = false;
+  int _inventoryRevision = 0;
+  int _recommendationGeneration = 0;
+  int _forecastGeneration = 0;
+  bool _recommendationRefreshQueued = false;
+  bool _forecastRefreshQueued = false;
+  Future<void>? _recommendationRequestInFlight;
+  Future<void>? _forecastRequestInFlight;
   final AIInsightsService _aiService = AIInsightsService();
 
   @override
   void initState() {
     super.initState();
-    _fetchTransactions();
-    _fetchAIRecommendations(); 
-    _fetchForecast(); 
+    _bindControllerState();
+    // The shared realtime session emits the guaranteed initial history
+    // invalidation after this default Admin page has subscribed.
+    _transactionHistoryDirty = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.isActive) return;
+      if (_inventoryItems.isNotEmpty) _startInitialAIRequests();
+    });
   }
 
-  Future<void> _fetchTransactions() async {
-    final txs = await widget.controller.fetchAllTransactionHistory();
-    if (mounted) {
-      setState(() {
-        _recentTransactions = txs;
-        _isLoadingTxs = false;
-      });
+  @override
+  void didUpdateWidget(covariant DashboardPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.controller != widget.controller) {
+      unawaited(_unbindControllerState());
+      _bindControllerState();
+      _transactionHistoryDirty = true;
     }
+
+    if (!oldWidget.isActive && widget.isActive) {
+      _recalculateDerivedState();
+      if (_transactionHistoryDirty) unawaited(_refreshTransactions());
+      _startInitialAIRequests();
+    } else if (oldWidget.isActive && !widget.isActive) {
+      _recommendationGeneration++;
+      _forecastGeneration++;
+      _recommendationRefreshQueued = false;
+      _forecastRefreshQueued = false;
+      if (_isLoadingAI) _aiRecommendationStale = true;
+      if (_isFetchingForecast) _forecastInsightStale = true;
+    }
+  }
+
+  void _bindControllerState() {
+    _orders = widget.controller.currentOrders;
+    _inventoryItems = widget.controller.allItems;
+    _recalculateDerivedState();
+
+    _ordersSubscription = widget.controller.orderSnapshots.listen((orders) {
+      if (!mounted) return;
+      _orders = orders;
+      if (widget.isActive) {
+        setState(_recalculateDerivedState);
+      }
+    });
+
+    _inventorySubscription = widget.controller.inventorySnapshots.listen((_) {
+      if (!mounted) return;
+      _inventoryItems = widget.controller.allItems;
+      _inventoryRevision++;
+      _recommendationGeneration++;
+      _forecastGeneration++;
+      if (_initialAIStarted) {
+        _aiRecommendationStale = true;
+        _forecastInsightStale = true;
+      }
+      if (widget.isActive) {
+        setState(_recalculateDerivedState);
+        _startInitialAIRequests();
+      }
+    });
+
+    _historySubscription = widget.controller.transactionHistoryInvalidations
+        .listen((_) {
+          if (!mounted) return;
+          _transactionHistoryDirty = true;
+          if (widget.isActive) unawaited(_refreshTransactions());
+        });
+  }
+
+  Future<void> _unbindControllerState() async {
+    final ordersSubscription = _ordersSubscription;
+    final inventorySubscription = _inventorySubscription;
+    final historySubscription = _historySubscription;
+    _ordersSubscription = null;
+    _inventorySubscription = null;
+    _historySubscription = null;
+    await Future.wait<void>([
+      if (ordersSubscription != null) ordersSubscription.cancel(),
+      if (inventorySubscription != null) inventorySubscription.cancel(),
+      if (historySubscription != null) historySubscription.cancel(),
+    ]);
+  }
+
+  void _recalculateDerivedState() {
+    _metrics = _calculateMetrics(_orders);
+    _criticalStockItems = _inventoryItems
+        .where((item) => item.quantity >= 0 && item.quantity <= 10)
+        .toList(growable: false)
+      ..sort((a, b) => a.quantity.compareTo(b.quantity));
+    _deadStockItems = _inventoryItems
+        .where((item) => item.quantity <= 0)
+        .toList(growable: false);
+  }
+
+  String get _sessionScope =>
+      '${widget.controller.activeLocationId ?? ''}:'
+      '${widget.controller.currentUserId ?? ''}';
+
+  void _startInitialAIRequests() {
+    if (_initialAIStarted || !widget.isActive) return;
+    _initialAIStarted = true;
+    unawaited(_fetchAIRecommendations());
+    unawaited(_fetchForecast());
+  }
+
+  Future<void> _refreshTransactions() {
+    if (!widget.isActive) {
+      _transactionHistoryDirty = true;
+      return Future<void>.value();
+    }
+    final inFlight = _transactionRefreshInFlight;
+    if (inFlight != null) {
+      _transactionRefreshQueued = true;
+      return inFlight;
+    }
+    late final Future<void> refresh;
+    refresh = _runTransactionRefreshes().whenComplete(() {
+      if (identical(_transactionRefreshInFlight, refresh)) {
+        _transactionRefreshInFlight = null;
+      }
+    });
+    _transactionRefreshInFlight = refresh;
+    return refresh;
+  }
+
+  Future<void> _runTransactionRefreshes() async {
+    do {
+      _transactionRefreshQueued = false;
+      _transactionHistoryDirty = false;
+      final scope = _sessionScope;
+      if (_transactionSnapshotScope != null &&
+          _transactionSnapshotScope != scope) {
+        _recentTransactions = const <Map<String, dynamic>>[];
+        _isLoadingTxs = true;
+        if (widget.isActive) setState(() {});
+      }
+      try {
+        final txs = await widget.controller.loadAllTransactionHistory();
+        if (!mounted) return;
+        if (scope != _sessionScope) {
+          _transactionHistoryDirty = true;
+          _transactionRefreshQueued = true;
+          continue;
+        }
+        _recentTransactions = txs;
+        _transactionSnapshotScope = scope;
+        _isLoadingTxs = false;
+        if (widget.isActive) setState(() {});
+      } catch (error, stackTrace) {
+        debugPrint('[Dashboard] Failed to refresh transaction data: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        if (mounted && scope == _sessionScope) {
+          _isLoadingTxs = false;
+          _transactionHistoryDirty = true;
+          if (widget.isActive) setState(() {});
+        }
+      }
+    } while (_transactionRefreshQueued && mounted && widget.isActive);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_unbindControllerState());
+    _recommendationGeneration++;
+    _forecastGeneration++;
+    super.dispose();
   }
 
   // ─── AI LOGIC ────────────────────────────────────────────────────────────
-  Future<void> _fetchForecast() async {
-    if (!mounted) return;
-    setState(() => _isFetchingForecast = true);
-
-    try {
-      final allItems = widget.controller.filterInventory(
-        query: "",
-        category: "All",
-      );
-
-      final List<Map<String, dynamic>> salesData = allItems
-          .map(
-            (item) => {
-              'name': item.name,
-              'current_quantity': item.quantity,
-              'max_capacity': (item as dynamic).maxQuantity ?? 100,
-            },
-          )
-          .toList();
-
-      final result = await _aiService.getDemandForecast(
-        _forecastingFilter,
-        salesData,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _forecastInsightText = result;
-      });
-    } catch (e) {
-      if (mounted) {
-        setState(() => _forecastInsightText = "Network error: $e");
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isFetchingForecast = false);
-      }
+  Future<void> _fetchForecast() {
+    if (!mounted || !widget.isActive) return Future<void>.value();
+    _forecastGeneration++;
+    final inFlight = _forecastRequestInFlight;
+    if (inFlight != null) {
+      _forecastRefreshQueued = true;
+      return inFlight;
     }
+    setState(() => _isFetchingForecast = true);
+    late final Future<void> request;
+    request = _runForecastRequests().whenComplete(() {
+      if (identical(_forecastRequestInFlight, request)) {
+        _forecastRequestInFlight = null;
+        if (mounted) setState(() => _isFetchingForecast = false);
+      }
+    });
+    _forecastRequestInFlight = request;
+    return request;
   }
 
-  Future<void> _fetchAIRecommendations() async {
-    if (!mounted) return;
+  Future<void> _runForecastRequests() async {
+    do {
+      _forecastRefreshQueued = false;
+      final generation = _forecastGeneration;
+      final revision = _inventoryRevision;
+      final scope = _sessionScope;
+      final filter = _forecastingFilter;
+      final salesData = _inventoryItems
+          .map((item) => {
+                'name': item.name,
+                'current_quantity': item.quantity,
+                'max_capacity': item.maxQuantity,
+              })
+          .toList(growable: false);
+      try {
+        final result = await _aiService.getDemandForecast(filter, salesData);
+        if (!_canPublishForecast(generation, revision, scope, filter)) continue;
+        setState(() {
+          _forecastInsightText = result;
+          _forecastInsightStale = false;
+        });
+      } catch (error) {
+        if (_canPublishForecast(generation, revision, scope, filter)) {
+          setState(() => _forecastInsightText = 'Network error: $error');
+        }
+      }
+    } while (_forecastRefreshQueued && mounted && widget.isActive);
+  }
+
+  bool _canPublishForecast(
+    int generation,
+    int revision,
+    String scope,
+    String filter,
+  ) {
+    return mounted &&
+        widget.isActive &&
+        generation == _forecastGeneration &&
+        revision == _inventoryRevision &&
+        scope == _sessionScope &&
+        filter == _forecastingFilter;
+  }
+
+  Future<void> _fetchAIRecommendations() {
+    if (!mounted || !widget.isActive) return Future<void>.value();
+    _recommendationGeneration++;
+    final inFlight = _recommendationRequestInFlight;
+    if (inFlight != null) {
+      _recommendationRefreshQueued = true;
+      return inFlight;
+    }
     setState(() => _isLoadingAI = true);
+    late final Future<void> request;
+    request = _runRecommendationRequests().whenComplete(() {
+      if (identical(_recommendationRequestInFlight, request)) {
+        _recommendationRequestInFlight = null;
+        if (mounted) setState(() => _isLoadingAI = false);
+      }
+    });
+    _recommendationRequestInFlight = request;
+    return request;
+  }
 
-    try {
-      final allItems = widget.controller.filterInventory(
-        query: "",
-        category: "All",
-      );
-
-      final criticalItemsList = allItems.where(
-        (i) => i.quantity > 0 && i.quantity <= 10,
-      );
-      final deadItemsList = allItems.where((i) => i.quantity <= 0);
-
-      final criticalItems = criticalItemsList
-          .map((i) => "${i.name} (Current: ${i.quantity})")
+  Future<void> _runRecommendationRequests() async {
+    do {
+      _recommendationRefreshQueued = false;
+      final generation = _recommendationGeneration;
+      final revision = _inventoryRevision;
+      final scope = _sessionScope;
+      final criticalItems = _inventoryItems
+          .where((item) => item.quantity > 0 && item.quantity <= 10)
+          .map((item) => '${item.name} (Current: ${item.quantity})')
           .join(', ');
-      final deadItems = deadItemsList.map((i) => i.name).join(', ');
+      final deadItems = _inventoryItems
+          .where((item) => item.quantity <= 0)
+          .map((item) => item.name)
+          .join(', ');
 
       if (criticalItems.isEmpty && deadItems.isEmpty) {
-        if (!mounted) return;
+        if (_canPublishRecommendation(generation, revision, scope)) {
+          setState(() {
+            _aiRecommendation =
+                'All inventory levels are healthy. No items require immediate restocking!';
+            _aiRecommendationStale = false;
+          });
+        }
+        continue;
+      }
+
+      try {
+        final result = await _aiService.getRestockRecommendations(
+          criticalItems,
+          deadItems,
+        );
+        if (!_canPublishRecommendation(generation, revision, scope)) continue;
         setState(() {
-          _aiRecommendation =
-              "All inventory levels are healthy. No items require immediate restocking!";
-          _isLoadingAI = false;
+          _aiRecommendation = result.replaceAll(RegExp(r'\*+'), '').trim();
+          _aiRecommendationStale = false;
         });
-        return;
+      } catch (error) {
+        if (_canPublishRecommendation(generation, revision, scope)) {
+          setState(() => _aiRecommendation = 'Network error: $error');
+        }
       }
+    } while (_recommendationRefreshQueued && mounted && widget.isActive);
+  }
 
-      final result = await _aiService.getRestockRecommendations(
-        criticalItems,
-        deadItems,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _aiRecommendation = result.replaceAll(RegExp(r'\*+'), '').trim();
-      });
-    } catch (e) {
-      if (mounted) {
-        setState(() => _aiRecommendation = "Network error: $e");
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoadingAI = false);
-      }
-    }
+  bool _canPublishRecommendation(int generation, int revision, String scope) {
+    return mounted &&
+        widget.isActive &&
+        generation == _recommendationGeneration &&
+        revision == _inventoryRevision &&
+        scope == _sessionScope;
   }
 
   // --- LOCAL DATA AGGREGATION ---
@@ -279,35 +506,14 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = _metrics;
+    final allItems = _inventoryItems;
+    final criticalStockItems = _criticalStockItems;
+    final deadStockItems = _deadStockItems;
+
     return Scaffold(
       backgroundColor: bgColor,
-      body: StreamBuilder<List<CustomerOrder>>(
-        stream: widget.controller.streamOrders(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              _isLoadingTxs) {
-            return const Center(
-              child: CircularProgressIndicator(color: primaryBlue),
-            );
-          }
-
-          final orders = snapshot.data ?? [];
-          final metrics = _calculateMetrics(orders);
-
-          final allItems = widget.controller.filterInventory(
-            query: "",
-            category: "All",
-          );
-          final criticalStockItems =
-              allItems
-                  .where((item) => item.quantity >= 0 && item.quantity <= 10)
-                  .toList()
-                ..sort((a, b) => a.quantity.compareTo(b.quantity));
-          final deadStockItems = allItems
-              .where((item) => item.quantity <= 0)
-              .toList();
-
-          return SingleChildScrollView(
+      body: SingleChildScrollView(
             padding: const EdgeInsets.all(32.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -357,8 +563,10 @@ class _DashboardPageState extends State<DashboardPage> {
                         children: ['Today', '7 Days', '30 Days'].map((filter) {
                           final isSelected = _selectedFilter == filter;
                           return InkWell(
-                            onTap: () =>
-                                setState(() => _selectedFilter = filter),
+                            onTap: () => setState(() {
+                              _selectedFilter = filter;
+                              _metrics = _calculateMetrics(_orders);
+                            }),
                             borderRadius: BorderRadius.circular(8),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
@@ -531,9 +739,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 const SizedBox(height: 40),
               ],
             ),
-          );
-        },
-      ),
+          ),
     );
   }
 
@@ -594,6 +800,19 @@ class _DashboardPageState extends State<DashboardPage> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  IconButton(
+                    tooltip: _forecastInsightStale
+                        ? 'Inventory changed. Refresh forecast.'
+                        : 'Refresh forecast',
+                    onPressed: _isFetchingForecast ? null : _fetchForecast,
+                    icon: Icon(
+                      LucideIcons.refreshCw,
+                      size: 17,
+                      color: _forecastInsightStale
+                          ? Colors.orange.shade700
+                          : darkColor,
+                    ),
+                  ),
                   Container(
                     height: 36,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -638,6 +857,18 @@ class _DashboardPageState extends State<DashboardPage> {
             "Uses contextual market data to forecast future demand and optimize restocking.",
             style: TextStyle(fontFamily: fontFam, fontSize: 13, color: Colors.grey.shade500),
           ),
+          if (_forecastInsightStale) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Inventory changed — refresh this insight.',
+              style: TextStyle(
+                fontFamily: fontFam,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.orange.shade700,
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
           Expanded(
             child: Container(
@@ -749,8 +980,31 @@ class _DashboardPageState extends State<DashboardPage> {
                   ],
                 ),
               ),
+              IconButton(
+                tooltip: _aiRecommendationStale
+                    ? 'Inventory changed. Refresh recommendations.'
+                    : 'Refresh recommendations',
+                onPressed: _isLoadingAI ? null : _fetchAIRecommendations,
+                icon: Icon(
+                  LucideIcons.refreshCw,
+                  color: _aiRecommendationStale
+                      ? Colors.orange
+                      : Colors.white,
+                  size: 18,
+                ),
+              ),
             ],
           ),
+          if (_aiRecommendationStale)
+            const Text(
+              'Inventory changed — refresh this plan.',
+              style: TextStyle(
+                fontFamily: fontFam,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.orange,
+              ),
+            ),
           const SizedBox(height: 24),
           Expanded(
             child: Container(

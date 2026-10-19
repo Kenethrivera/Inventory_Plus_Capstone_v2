@@ -1544,6 +1544,7 @@ class _MainScreenState extends State<MainScreen> {
           pages.add(
             DashboardPage(
               controller: widget.controller,
+              isActive: _currentIndex == dashboardIndex,
               onViewTransactions: () {
                 setState(() {
                   _txTargetTab = 'Sales History';
@@ -1569,7 +1570,12 @@ class _MainScreenState extends State<MainScreen> {
             ),
           );
 
-          pages.add(ForecastingPage(controller: widget.controller));
+          pages.add(
+            ForecastingPage(
+              controller: widget.controller,
+              isActive: _currentIndex == forecastingIndex,
+            ),
+          );
         }
 
         if (isAdmin) {
@@ -1642,6 +1648,7 @@ class _MainScreenState extends State<MainScreen> {
           pages.add(
             TransactionHistoryPage(
               controller: widget.controller,
+              isActive: _currentIndex == transactionIndex,
               initialTab: _txTargetTab,
               onExported: () {
                 _scanExportReminderNotifications();

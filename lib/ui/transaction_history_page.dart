@@ -22,6 +22,7 @@ class TransactionHistoryPage extends StatefulWidget {
   final bool exportDue;
   final VoidCallback? onExported;
   final void Function(String orderId)? onCompleteOrder;
+  final bool isActive;
 
   const TransactionHistoryPage({
     super.key,
@@ -30,6 +31,7 @@ class TransactionHistoryPage extends StatefulWidget {
     this.exportDue = false,
     this.onExported,
     this.onCompleteOrder,
+    required this.isActive,
   });
 
   @override
@@ -54,12 +56,15 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   String? _activityLocationId;
   bool _isLoadingLog = true;
   String _logFilter = 'All';
+  bool _salesHistoryDirty = false;
+  bool _activityHistoryDirty = false;
 
   @override
   void initState() {
     super.initState();
     _activeTab = widget.initialTab;
-    _load();
+    _groupedFuture = Future<List<_OrderGroup>>.value(const <_OrderGroup>[]);
+    if (widget.isActive) _load();
     _bindHistoryInvalidations();
   }
 
@@ -74,7 +79,16 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     }
     if (oldWidget.controller != widget.controller) {
       _bindHistoryInvalidations();
-      _load();
+      if (widget.isActive) {
+        _load();
+      } else {
+        _salesHistoryDirty = true;
+        _activityHistoryDirty = true;
+      }
+    }
+    if (!oldWidget.isActive && widget.isActive) {
+      if (_salesHistoryDirty) _refreshSalesHistory();
+      if (_activityHistoryDirty) unawaited(_fetchLog(showLoading: true));
     }
   }
 
@@ -87,6 +101,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   }
 
   void _load() {
+    _salesHistoryDirty = false;
+    _activityHistoryDirty = false;
     _groupedFuture = _fetchGrouped();
     unawaited(_fetchLog(showLoading: true));
   }
@@ -96,7 +112,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     unawaited(_activityHistorySubscription?.cancel());
 
     _orderHistorySubscription = widget.controller.orderSnapshots.listen(
-      (_) => _refreshSalesHistory(),
+      (_) {
+        _salesHistoryDirty = true;
+        if (widget.isActive) _refreshSalesHistory();
+      },
       onError: (Object error, StackTrace stackTrace) {
         debugPrint('[TransactionHistoryPage] Order invalidation error: $error');
       },
@@ -105,7 +124,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         .controller
         .transactionHistoryInvalidations
         .listen(
-          (_) => unawaited(_fetchLog()),
+          (_) {
+            _activityHistoryDirty = true;
+            if (widget.isActive) unawaited(_fetchLog());
+          },
           onError: (Object error, StackTrace stackTrace) {
             debugPrint(
               '[TransactionHistoryPage] Activity invalidation error: $error',
@@ -115,7 +137,11 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   }
 
   void _refreshSalesHistory() {
-    if (!mounted) return;
+    if (!mounted || !widget.isActive) {
+      _salesHistoryDirty = true;
+      return;
+    }
+    _salesHistoryDirty = false;
     setState(() {
       _groupedFuture = _fetchGrouped(preserveOnError: true);
     });
@@ -131,7 +157,11 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   }
 
   Future<void> _fetchLog({bool showLoading = false}) async {
-    if (!mounted) return;
+    if (!mounted || !widget.isActive) {
+      _activityHistoryDirty = true;
+      return;
+    }
+    _activityHistoryDirty = false;
     final String? locationId = widget.controller.activeLocationId;
     if (_activityLocationId != null && _activityLocationId != locationId) {
       setState(() {
@@ -155,6 +185,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       debugPrint('[TransactionHistoryPage] Failed to refresh activity: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
+        _activityHistoryDirty = true;
         setState(() => _isLoadingLog = false);
       }
     }
