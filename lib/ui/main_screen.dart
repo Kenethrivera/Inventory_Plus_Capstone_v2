@@ -79,6 +79,7 @@ class _MainScreenState extends State<MainScreen> {
   int _storeLogoutRemainingSeconds = 30;
   bool _isStoreLogoutWarningVisible = false;
   BuildContext? _storeLogoutDialogContext;
+  StateSetter? _storeLogoutDialogSetState;
 
   static const Color _primaryBlue = Color(0xFF2563EB);
   static const Color _sidebarBg = Colors.white;
@@ -198,6 +199,7 @@ class _MainScreenState extends State<MainScreen> {
   void dispose() {
     _storeAccessEndTimer?.cancel();
     _storeLogoutCountdownTimer?.cancel();
+    _storeLogoutDialogSetState = null;
     unawaited(_inventoryNotificationSubscription?.cancel());
     unawaited(_storeAccessSubscription?.cancel());
     unawaited(_currentProfileSubscription?.cancel());
@@ -355,6 +357,7 @@ class _MainScreenState extends State<MainScreen> {
     _storeLogoutCountdownTimer = null;
     final dialogContext = _storeLogoutDialogContext;
     _storeLogoutDialogContext = null;
+    _storeLogoutDialogSetState = null;
     if (dialogContext != null && Navigator.canPop(dialogContext)) {
       Navigator.pop(dialogContext);
     }
@@ -391,6 +394,9 @@ class _MainScreenState extends State<MainScreen> {
       setState(() {
         _storeLogoutRemainingSeconds--;
       });
+      if (_isStoreLogoutWarningVisible) {
+        _storeLogoutDialogSetState?.call(() {});
+      }
     });
   }
 
@@ -408,16 +414,7 @@ class _MainScreenState extends State<MainScreen> {
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            Timer.periodic(const Duration(seconds: 1), (timer) {
-              if (!_isStoreLogoutWarningVisible ||
-                  !mounted ||
-                  _storeLogoutDialogContext == null) {
-                timer.cancel();
-                return;
-              }
-
-              setDialogState(() {});
-            });
+            _storeLogoutDialogSetState = setDialogState;
 
             final progress = _storeLogoutRemainingSeconds / 30;
 
@@ -543,6 +540,7 @@ class _MainScreenState extends State<MainScreen> {
                             onPressed: () {
                               _isStoreLogoutWarningVisible = false;
                               _storeLogoutDialogContext = null;
+                              _storeLogoutDialogSetState = null;
 
                               if (Navigator.canPop(dialogContext)) {
                                 Navigator.pop(dialogContext);
@@ -599,6 +597,7 @@ class _MainScreenState extends State<MainScreen> {
     ).then((_) {
       _isStoreLogoutWarningVisible = false;
       _storeLogoutDialogContext = null;
+      _storeLogoutDialogSetState = null;
     });
   }
 
@@ -614,6 +613,7 @@ class _MainScreenState extends State<MainScreen> {
       }
 
       _storeLogoutDialogContext = null;
+      _storeLogoutDialogSetState = null;
     }
 
     await _staffPresenceService?.stop(logoutReason: 'store_hours_expired');
