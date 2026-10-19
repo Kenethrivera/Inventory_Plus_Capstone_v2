@@ -21,6 +21,8 @@ class RealtimeSyncService {
       StreamController<void>.broadcast();
   final StreamController<void> _staffPresenceChangesController =
       StreamController<void>.broadcast();
+  final StreamController<void> _transactionHistoryChangesController =
+      StreamController<void>.broadcast();
 
   final Map<String, RealtimeChannel> _channels = <String, RealtimeChannel>{};
 
@@ -38,6 +40,8 @@ class RealtimeSyncService {
   Stream<void> get notificationChanges => _notificationChangesController.stream;
   Stream<void> get staffPresenceChanges =>
       _staffPresenceChangesController.stream;
+  Stream<void> get transactionHistoryChanges =>
+      _transactionHistoryChangesController.stream;
 
   /// Starts one realtime session for the currently authenticated user/location.
   ///
@@ -62,6 +66,7 @@ class RealtimeSyncService {
       await _subscribeToInventoryChanges();
       await _subscribeToNotificationChanges();
       await _subscribeToStaffPresenceChanges();
+      await _subscribeToTransactionHistoryChanges();
     });
   }
 
@@ -380,6 +385,70 @@ class RealtimeSyncService {
       '[RealtimeSync] PRESENCE SNAPSHOT REQUESTED location=$locationId',
     );
     debugPrint('[RealtimeSync] PRESENCE SUBSCRIBED location=$locationId');
+  }
+
+  Future<void> _subscribeToTransactionHistoryChanges() async {
+    final String? locationId = _locationId;
+
+    if (!_isStarted || locationId == null || locationId.isEmpty) {
+      return;
+    }
+
+    const String channelKey = 'transaction_history';
+    final RealtimeChannel? previous = _channels.remove(channelKey);
+
+    if (previous != null) {
+      await _safeRemoveChannel(previous);
+    }
+
+    void signalChange(String source) {
+      if (!_isStarted || _locationId != locationId) {
+        return;
+      }
+
+      debugPrint(
+        '[RealtimeSync] TRANSACTION HISTORY CHANGE '
+        'location=$locationId source=$source',
+      );
+      _transactionHistoryChangesController.add(null);
+    }
+
+    bool hasSubscribed = false;
+    final RealtimeChannel channel = _supabase
+        .channel('inventory-plus:transaction-history:$locationId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'transaction_history',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'location_id',
+            value: locationId,
+          ),
+          callback: (_) => signalChange('transaction_history'),
+        )
+        .subscribe((status, error) {
+          debugPrint(
+            '[RealtimeSync] TRANSACTION HISTORY STATUS=$status error=$error',
+          );
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            if (hasSubscribed) {
+              signalChange('transaction_history_resubscribed');
+            }
+            hasSubscribed = true;
+          }
+        });
+
+    _channels[channelKey] = channel;
+    _transactionHistoryChangesController.add(null);
+
+    debugPrint(
+      '[RealtimeSync] TRANSACTION HISTORY SNAPSHOT REQUESTED '
+      'location=$locationId',
+    );
+    debugPrint(
+      '[RealtimeSync] TRANSACTION HISTORY SUBSCRIBED location=$locationId',
+    );
   }
 
   Future<void> _stopInternal() async {

@@ -12,6 +12,21 @@ import 'dart:async';
 
 enum StockStatus { ok, low, critical, out }
 
+class OrderHistoryData {
+  const OrderHistoryData({
+    required this.orders,
+    required this.profileNamesById,
+  });
+
+  final List<Map<String, dynamic>> orders;
+  final Map<String, String> profileNamesById;
+}
+
+class _SerializedHistoryQuery {
+  Future<List<Map<String, dynamic>>>? inFlight;
+  bool queued = false;
+}
+
 class InventoryController {
 
   // shared realtime controlelrs
@@ -19,9 +34,17 @@ class InventoryController {
       StreamController<List<CustomerOrder>>.broadcast();
   final StreamController<List<InventoryItem>> _inventoryController =
       StreamController<List<InventoryItem>>.broadcast();
+  final StreamController<void> _transactionHistoryInvalidationsController =
+      StreamController<void>.broadcast();
 
   StreamSubscription<void>? _orderChangesSubscription;
   StreamSubscription<void>? _inventoryChangesSubscription;
+  StreamSubscription<void>? _transactionHistoryChangesSubscription;
+
+  final Map<String, _SerializedHistoryQuery> _historyQueries =
+      <String, _SerializedHistoryQuery>{};
+  Future<OrderHistoryData>? _orderHistoryRefreshInFlight;
+  bool _orderHistoryRefreshQueued = false;
 
   List<CustomerOrder> _ordersSnapshot = const <CustomerOrder>[];
 
@@ -156,7 +179,6 @@ class InventoryController {
     if (pct <= globalLowStockPct) return StockStatus.low;
     return StockStatus.ok;
   }
-  
 
   List<InventoryItem> get disabledItems => List.unmodifiable(_disabledItems);
 
@@ -368,7 +390,7 @@ class InventoryController {
 
       final savedItem = InventoryItem.fromSupabase(response);
       _items.add(savedItem);
-      _baselineByProduct[savedItem.id] = savedItem.quantity; 
+      _baselineByProduct[savedItem.id] = savedItem.quantity;
       _publishInventorySnapshot();
 
       await _logTransaction(
@@ -884,34 +906,210 @@ class InventoryController {
     }
   }
 
+  Future<List<Map<String, dynamic>>> loadProductTransactionHistory(
+    String productId,
+  ) {
+    final String? locationId = activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      return Future<List<Map<String, dynamic>>>.value(
+        const <Map<String, dynamic>>[],
+      );
+    }
+
+    return _runSerializedHistoryQuery(
+      'product:$locationId:$productId',
+      () async {
+        final response = await supabase
+            .from('transaction_history')
+            .select('*, profiles(name, role)')
+            .eq('location_id', locationId)
+            .eq('product_id', productId)
+            .order('created_at', ascending: false);
+
+        if (activeLocationId != locationId) {
+          throw StateError('Transaction history location changed.');
+        }
+
+        return List<Map<String, dynamic>>.unmodifiable(
+          List<Map<String, dynamic>>.from(response),
+        );
+      },
+    );
+  }
+
   Future<List<Map<String, dynamic>>> fetchTransactionHistory(
     String productId,
   ) async {
     try {
-      final response = await supabase
-          .from('transaction_history')
-          .select('*, profiles(name, role)')
-          .eq('product_id', productId)
-          .order('created_at', ascending: false);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
+      return await loadProductTransactionHistory(productId);
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[InventoryController] Failed to load product transaction history: '
+        '$error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
       return [];
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchAllTransactionHistory() async {
-    final locId = activeLocationId;
-    if (locId == null) return [];
-    try {
+  Future<List<Map<String, dynamic>>> loadAllTransactionHistory() {
+    final String? locationId = activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      return Future<List<Map<String, dynamic>>>.value(
+        const <Map<String, dynamic>>[],
+      );
+    }
+
+    return _runSerializedHistoryQuery('all:$locationId', () async {
       final response = await supabase
           .from('transaction_history')
           .select('*, products(product_name, sku), profiles(name, role)')
-          .eq('location_id', locId)
+          .eq('location_id', locationId)
           .order('created_at', ascending: false);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
+
+      if (activeLocationId != locationId) {
+        throw StateError('Transaction history location changed.');
+      }
+
+      return List<Map<String, dynamic>>.unmodifiable(
+        List<Map<String, dynamic>>.from(response),
+      );
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAllTransactionHistory() async {
+    try {
+      return await loadAllTransactionHistory();
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[InventoryController] Failed to load transaction history: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
       return [];
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _runSerializedHistoryQuery(
+    String key,
+    Future<List<Map<String, dynamic>>> Function() query,
+  ) {
+    final _SerializedHistoryQuery state = _historyQueries.putIfAbsent(
+      key,
+      _SerializedHistoryQuery.new,
+    );
+
+    final Future<List<Map<String, dynamic>>>? inFlight = state.inFlight;
+    if (inFlight != null) {
+      state.queued = true;
+      return inFlight;
+    }
+
+    late final Future<List<Map<String, dynamic>>> refresh;
+    refresh =
+        () async {
+          List<Map<String, dynamic>> result = const <Map<String, dynamic>>[];
+          do {
+            state.queued = false;
+            result = await query();
+          } while (state.queued);
+          return result;
+        }().whenComplete(() {
+          if (identical(state.inFlight, refresh)) {
+            _historyQueries.remove(key);
+          }
+        });
+
+    state.inFlight = refresh;
+    return refresh;
+  }
+
+  Future<OrderHistoryData> loadOrderHistory() {
+    final Future<OrderHistoryData>? inFlight = _orderHistoryRefreshInFlight;
+    if (inFlight != null) {
+      _orderHistoryRefreshQueued = true;
+      return inFlight;
+    }
+
+    late final Future<OrderHistoryData> refresh;
+    refresh =
+        () async {
+          OrderHistoryData result;
+          do {
+            _orderHistoryRefreshQueued = false;
+            result = await _performOrderHistoryLoad();
+          } while (_orderHistoryRefreshQueued);
+          return result;
+        }().whenComplete(() {
+          if (identical(_orderHistoryRefreshInFlight, refresh)) {
+            _orderHistoryRefreshInFlight = null;
+          }
+        });
+
+    _orderHistoryRefreshInFlight = refresh;
+    return refresh;
+  }
+
+  Future<OrderHistoryData> _performOrderHistoryLoad() async {
+    final String? locationId = activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      return const OrderHistoryData(
+        orders: <Map<String, dynamic>>[],
+        profileNamesById: <String, String>{},
+      );
+    }
+
+    final response = await supabase
+        .from('orders')
+        .select()
+        .eq('location_id', locationId)
+        .order('created_at', ascending: false);
+
+    if (activeLocationId != locationId) {
+      throw StateError('Order history location changed.');
+    }
+
+    final List<Map<String, dynamic>> orders = List<Map<String, dynamic>>.from(
+      response,
+    );
+    final Set<Object> profileIds = <Object>{};
+
+    for (final Map<String, dynamic> order in orders) {
+      for (final String key in <String>[
+        'created_by',
+        'prepared_by',
+        'created_by_id',
+        'prepared_by_id',
+      ]) {
+        final Object? rawId = order[key];
+        if (rawId == null) continue;
+        profileIds.add(int.tryParse(rawId.toString()) ?? rawId.toString());
+      }
+    }
+
+    final Map<String, String> profileNames = <String, String>{};
+    if (profileIds.isNotEmpty) {
+      final profiles = await supabase
+          .from('profiles')
+          .select('id, name')
+          .inFilter('id', profileIds.toList(growable: false));
+
+      if (activeLocationId != locationId) {
+        throw StateError('Order history location changed.');
+      }
+
+      for (final dynamic row in profiles) {
+        final Map<String, dynamic> profile = Map<String, dynamic>.from(
+          row as Map,
+        );
+        profileNames[profile['id'].toString()] =
+            profile['name']?.toString() ?? '—';
+      }
+    }
+
+    return OrderHistoryData(
+      orders: List<Map<String, dynamic>>.unmodifiable(orders),
+      profileNamesById: Map<String, String>.unmodifiable(profileNames),
+    );
   }
 
   Future<void> clearTransactionHistory() async {
@@ -1178,7 +1376,26 @@ class InventoryController {
         debugPrint('[InventoryController] Inventory realtime error: $error');
       },
     );
+
+    _transactionHistoryChangesSubscription ??= realtimeSync
+        .transactionHistoryChanges
+        .listen(
+          (_) => _transactionHistoryInvalidationsController.add(null),
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint(
+              '[InventoryController] Transaction history realtime error: '
+              '$error',
+            );
+          },
+        );
   }
+
+  Stream<void> get transactionHistoryInvalidations =>
+      _transactionHistoryInvalidationsController.stream;
+
+  /// Emits after the shared canonical Order snapshot changes. History screens
+  /// use this as invalidation rather than creating a second Orders channel.
+  Stream<List<CustomerOrder>> get orderSnapshots => _ordersController.stream;
 
   Stream<List<InventoryItem>> streamInventory() {
     final String? locationId = activeLocationId;
@@ -1578,7 +1795,7 @@ Stream<List<CustomerOrder>> streamOrders() async* {
       if (changeAmount != null) updateData['change_amount'] = changeAmount;
 
       if (paymentReference != null && paymentReference.isNotEmpty) {
-        updateData['payment_reference'] = paymentReference; 
+        updateData['payment_reference'] = paymentReference;
       }
 
       final row = await supabase
@@ -1638,6 +1855,7 @@ Stream<List<CustomerOrder>> streamOrders() async* {
       return false;
     }
   }
+
   Future<void> fetchMapLayout() {
     final locId = activeLocationId;
     if (locId == null) return Future<void>.value();
@@ -1740,6 +1958,7 @@ Stream<List<CustomerOrder>> streamOrders() async* {
       debugPrint("❌ Error clearing layout: $e");
     }
   }
+
   void deleteMapElement(String id) {
     storeLayout.removeWhere((element) => element.id == id);
   }
@@ -1750,7 +1969,7 @@ Stream<List<CustomerOrder>> streamOrders() async* {
           .from('products')
           .update({'map_element_id': mapElementId})
           .eq('id', itemId);
-      
+
       final index = _items.indexWhere((item) => item.id == itemId);
       if (index != -1) {
         _items[index] = _items[index].copyWith(locationId: mapElementId);
@@ -1762,23 +1981,28 @@ Stream<List<CustomerOrder>> streamOrders() async* {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchMyRestockHistory({
+  Future<List<Map<String, dynamic>>> loadMyRestockHistory({
     int page = 0,
     int pageSize = 25,
-  }) async {
+  }) {
     final locationId = activeLocationId;
     final userId = currentUserNumericId;
 
     if (locationId == null || userId == null) {
-      return [];
+      return Future<List<Map<String, dynamic>>>.value(
+        const <Map<String, dynamic>>[],
+      );
     }
 
     final from = page * pageSize;
     final to = from + pageSize - 1;
 
-    final response = await supabase
-        .from('transaction_history')
-        .select('''
+    return _runSerializedHistoryQuery(
+      'restock:$locationId:$userId:$page:$pageSize',
+      () async {
+        final response = await supabase
+            .from('transaction_history')
+            .select('''
         id,
         product_id,
         transaction_type,
@@ -1790,13 +2014,36 @@ Stream<List<CustomerOrder>> streamOrders() async* {
         note,
         products(product_name, sku)
       ''')
-        .eq('location_id', locationId)
-        .eq('user_id', userId)
-        .eq('transaction_type', 'stock_in')
-        .gt('quantity_change', 0)
-        .order('created_at', ascending: false)
-        .range(from, to);
+            .eq('location_id', locationId)
+            .eq('user_id', userId)
+            .eq('transaction_type', 'stock_in')
+            .gt('quantity_change', 0)
+            .order('created_at', ascending: false)
+            .range(from, to);
 
-    return List<Map<String, dynamic>>.from(response);
+        if (activeLocationId != locationId || currentUserNumericId != userId) {
+          throw StateError('Restock history session changed.');
+        }
+
+        return List<Map<String, dynamic>>.unmodifiable(
+          List<Map<String, dynamic>>.from(response),
+        );
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMyRestockHistory({
+    int page = 0,
+    int pageSize = 25,
+  }) async {
+    try {
+      return await loadMyRestockHistory(page: page, pageSize: pageSize);
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[InventoryController] Failed to load restock history: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      return [];
+    }
   }
 }

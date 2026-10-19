@@ -40,7 +40,12 @@ class ItemDetailPage extends StatefulWidget {
 class _ItemDetailPageState extends State<ItemDetailPage> {
   late InventoryItem _currentItem;
   StreamSubscription<List<InventoryItem>>? _inventorySubscription;
+  StreamSubscription<void>? _transactionHistorySubscription;
   List<Map<String, dynamic>> _transactionHistory = [];
+  final ValueNotifier<List<Map<String, dynamic>>> _transactionHistoryNotifier =
+      ValueNotifier<List<Map<String, dynamic>>>(
+        const <Map<String, dynamic>>[],
+      );
   bool _isLoadingHistory = true;
   bool _isClosing = false;
 
@@ -82,6 +87,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     _initControllers();
     _loadHistory();
     _bindInventoryStream();
+    _bindHistoryInvalidations();
   }
 
   void _bindInventoryStream() {
@@ -92,6 +98,19 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         debugPrint('[ItemDetailPage] Inventory stream error: $error');
       },
     );
+  }
+
+  void _bindHistoryInvalidations() {
+    unawaited(_transactionHistorySubscription?.cancel());
+    _transactionHistorySubscription = widget
+        .controller
+        .transactionHistoryInvalidations
+        .listen(
+          (_) => unawaited(_loadHistory()),
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('[ItemDetailPage] History invalidation error: $error');
+          },
+        );
   }
 
   void _resolveCurrentItem() {
@@ -435,15 +454,25 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
   Future<void> _loadHistory() async {
     if (!mounted) return;
+    final String productId = _currentItem.id;
     setState(() => _isLoadingHistory = true);
-    final history = await widget.controller.fetchTransactionHistory(
-      _currentItem.id,
-    );
-    if (mounted) {
-      setState(() {
-        _transactionHistory = history;
-        _isLoadingHistory = false;
-      });
+    try {
+      final history = await widget.controller.loadProductTransactionHistory(
+        productId,
+      );
+      if (mounted && _currentItem.id == productId) {
+        setState(() {
+          _transactionHistory = history;
+          _isLoadingHistory = false;
+        });
+        _transactionHistoryNotifier.value = history;
+      }
+    } catch (error, stackTrace) {
+      debugPrint('[ItemDetailPage] Failed to refresh history: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted && _currentItem.id == productId) {
+        setState(() => _isLoadingHistory = false);
+      }
     }
   }
 
@@ -472,17 +501,22 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.item.id != widget.item.id) {
       _currentItem = widget.item;
+      _transactionHistory = const <Map<String, dynamic>>[];
+      _transactionHistoryNotifier.value = _transactionHistory;
       _setControllerValues(widget.item);
       _loadHistory();
     }
     if (oldWidget.controller != widget.controller) {
       _bindInventoryStream();
+      _bindHistoryInvalidations();
     }
   }
 
   @override
   void dispose() {
     _inventorySubscription?.cancel();
+    unawaited(_transactionHistorySubscription?.cancel());
+    _transactionHistoryNotifier.dispose();
     _nameController.dispose();
     _priceController.dispose();
     _stockController.dispose();
@@ -1540,13 +1574,16 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         color: _primaryBlue.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Text(
-                        "${_transactionHistory.length} records",
-                        style: const TextStyle(
-                          color: _primaryBlue,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: _fontFam,
+                      child: ValueListenableBuilder<List<Map<String, dynamic>>>(
+                        valueListenable: _transactionHistoryNotifier,
+                        builder: (context, transactions, _) => Text(
+                          "${transactions.length} records",
+                          style: const TextStyle(
+                            color: _primaryBlue,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: _fontFam,
+                          ),
                         ),
                       ),
                     ),
@@ -1556,17 +1593,20 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               const SizedBox(height: 16),
               Divider(height: 1, color: Colors.grey.shade200),
               Expanded(
-                child: ListView.separated(
-                  controller: scrollController,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
+                child: ValueListenableBuilder<List<Map<String, dynamic>>>(
+                  valueListenable: _transactionHistoryNotifier,
+                  builder: (context, transactions, _) => ListView.separated(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    itemCount: transactions.length,
+                    separatorBuilder: (_, _) =>
+                        Divider(height: 1, color: Colors.grey.shade100),
+                    itemBuilder: (context, index) =>
+                        _buildTransactionTile(transactions[index]),
                   ),
-                  itemCount: _transactionHistory.length,
-                  separatorBuilder: (_, _) =>
-                      Divider(height: 1, color: Colors.grey.shade100),
-                  itemBuilder: (context, index) =>
-                      _buildTransactionTile(_transactionHistory[index]),
                 ),
               ),
             ],

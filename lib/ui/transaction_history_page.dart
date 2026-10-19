@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
 import 'package:printing/printing.dart';
 import 'reports/sales_report_generator.dart';
@@ -35,6 +38,10 @@ class TransactionHistoryPage extends StatefulWidget {
 
 class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   late Future<List<_OrderGroup>> _groupedFuture;
+  StreamSubscription<List<CustomerOrder>>? _orderHistorySubscription;
+  StreamSubscription<void>? _activityHistorySubscription;
+  List<_OrderGroup> _lastOrderGroups = const <_OrderGroup>[];
+  String? _lastOrderGroupsLocationId;
 
   // Sales History State
   String _filterStatus = 'All';
@@ -44,6 +51,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   // Activity Log State
   late String _activeTab;
   List<Map<String, dynamic>> _activityLog = [];
+  String? _activityLocationId;
   bool _isLoadingLog = true;
   String _logFilter = 'All';
 
@@ -52,6 +60,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     super.initState();
     _activeTab = widget.initialTab;
     _load();
+    _bindHistoryInvalidations();
   }
 
   @override
@@ -63,64 +72,107 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         _activeTab = widget.initialTab;
       });
     }
+    if (oldWidget.controller != widget.controller) {
+      _bindHistoryInvalidations();
+      _load();
+    }
   }
 
   @override
   void dispose() {
+    unawaited(_orderHistorySubscription?.cancel());
+    unawaited(_activityHistorySubscription?.cancel());
     _searchController.dispose();
     super.dispose();
   }
 
   void _load() {
     _groupedFuture = _fetchGrouped();
-    _fetchLog();
+    unawaited(_fetchLog(showLoading: true));
   }
 
-  Future<void> _fetchLog() async {
-    setState(() => _isLoadingLog = true);
-    final logs = await widget.controller.fetchAllTransactionHistory();
-    if (mounted) {
+  void _bindHistoryInvalidations() {
+    unawaited(_orderHistorySubscription?.cancel());
+    unawaited(_activityHistorySubscription?.cancel());
+
+    _orderHistorySubscription = widget.controller.orderSnapshots.listen(
+      (_) => _refreshSalesHistory(),
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('[TransactionHistoryPage] Order invalidation error: $error');
+      },
+    );
+    _activityHistorySubscription = widget
+        .controller
+        .transactionHistoryInvalidations
+        .listen(
+          (_) => unawaited(_fetchLog()),
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint(
+              '[TransactionHistoryPage] Activity invalidation error: $error',
+            );
+          },
+        );
+  }
+
+  void _refreshSalesHistory() {
+    if (!mounted) return;
+    setState(() {
+      _groupedFuture = _fetchGrouped(preserveOnError: true);
+    });
+  }
+
+  void _reloadAll() {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingLog = true;
+      _groupedFuture = _fetchGrouped(preserveOnError: true);
+    });
+    unawaited(_fetchLog());
+  }
+
+  Future<void> _fetchLog({bool showLoading = false}) async {
+    if (!mounted) return;
+    final String? locationId = widget.controller.activeLocationId;
+    if (_activityLocationId != null && _activityLocationId != locationId) {
+      setState(() {
+        _activityLog = const <Map<String, dynamic>>[];
+        _isLoadingLog = true;
+      });
+    }
+    if (showLoading && mounted) {
+      setState(() => _isLoadingLog = true);
+    }
+
+    try {
+      final logs = await widget.controller.loadAllTransactionHistory();
+      if (!mounted) return;
       setState(() {
         _activityLog = logs;
+        _activityLocationId = locationId;
         _isLoadingLog = false;
       });
+    } catch (error, stackTrace) {
+      debugPrint('[TransactionHistoryPage] Failed to refresh activity: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() => _isLoadingLog = false);
+      }
     }
   }
 
-  Future<List<_OrderGroup>> _fetchGrouped() async {
-    final locId = widget.controller.activeLocationId;
-    if (locId == null) return [];
+  Future<List<_OrderGroup>> _fetchGrouped({
+    bool preserveOnError = false,
+  }) async {
+    final String? locationId = widget.controller.activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      return const <_OrderGroup>[];
+    }
 
     try {
-      final orders = await widget.controller.supabase
-          .from('orders')
-          .select()
-          .eq('location_id', locId)
-          .order('created_at', ascending: false);
-
-      final allUserIds = orders
-          .expand((o) {
-            final createdBy = o['created_by'];
-            final preparedBy = o['prepared_by'];
-            final preparedByInt = preparedBy != null
-                ? int.tryParse(preparedBy.toString())
-                : null;
-            return [createdBy, preparedByInt];
-          })
-          .where((id) => id != null)
-          .toSet()
-          .toList();
-
-      Map<dynamic, String> profileNames = {};
-      if (allUserIds.isNotEmpty) {
-        final profiles = await widget.controller.supabase
-            .from('profiles')
-            .select('id, name')
-            .inFilter('id', allUserIds);
-        for (final p in profiles) {
-          profileNames[p['id']] = p['name']?.toString() ?? '—';
-        }
-      }
+      final OrderHistoryData history = await widget.controller
+          .loadOrderHistory();
+      final orders = history.orders;
+      final profileNames = history.profileNamesById;
 
       final List<_OrderGroup> groups = [];
 
@@ -179,12 +231,14 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
             changeAmount: changeAmount,
             paymentMode: paymentMode,
             items: items,
-            createdBy: order['created_by'] != null
-                ? profileNames[order['created_by']]
-                : null,
-            preparedBy: order['prepared_by'] != null
-                ? profileNames[int.tryParse(order['prepared_by'].toString())]
-                : null,
+            createdBy:
+                order['created_by_name']?.toString() ??
+                profileNames[(order['created_by_id'] ?? order['created_by'])
+                    ?.toString()],
+            preparedBy:
+                order['prepared_by_name']?.toString() ??
+                profileNames[(order['prepared_by_id'] ?? order['prepared_by'])
+                    ?.toString()],
             preparedAt: order['prepared_at'] != null
                 ? DateTime.parse(order['prepared_at'].toString()).toLocal()
                 : null,
@@ -196,10 +250,15 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       }
 
       groups.sort((a, b) => b.eventAt.compareTo(a.eventAt));
-      return groups;
-    } catch (e) {
-      debugPrint('Error fetching orders: $e');
-      return [];
+      _lastOrderGroups = List<_OrderGroup>.unmodifiable(groups);
+      _lastOrderGroupsLocationId = locationId;
+      return _lastOrderGroups;
+    } catch (error, stackTrace) {
+      debugPrint('Error fetching orders: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return preserveOnError && _lastOrderGroupsLocationId == locationId
+          ? _lastOrderGroups
+          : const <_OrderGroup>[];
     }
   }
 
@@ -352,7 +411,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                           size: 18,
                           color: Colors.black87,
                         ),
-                        onPressed: () => setState(() => _load()),
+                        onPressed: _reloadAll,
                         tooltip: 'Refresh',
                       ),
                     ),
@@ -765,6 +824,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
             // Build the cards for this specific date group
             ...orders.map(
               (order) => _OrderCard(
+                key: ValueKey<String>(order.id),
                 group: order,
                 onCompleteOrder: widget.onCompleteOrder,
               ),
@@ -1205,7 +1265,7 @@ class _OrderCard extends StatefulWidget {
   final _OrderGroup group;
   final void Function(String orderId)? onCompleteOrder;
 
-  const _OrderCard({required this.group, this.onCompleteOrder});
+  const _OrderCard({super.key, required this.group, this.onCompleteOrder});
 
   @override
   State<_OrderCard> createState() => _OrderCardState();

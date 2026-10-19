@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/inventory.dart';
@@ -31,6 +33,9 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   final Set<String> _expandedOrderIds = {};
 
   Future<List<Map<String, dynamic>>>? _restockFuture;
+  StreamSubscription<void>? _transactionHistorySubscription;
+  List<Map<String, dynamic>> _lastRestocks = const <Map<String, dynamic>>[];
+  String? _lastRestockScope;
 
   String get _role =>
       widget.controller.currentUserRole?.toLowerCase() ?? 'staff';
@@ -46,7 +51,48 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     super.initState();
 
     if (_isCashier) {
-      _restockFuture = widget.controller.fetchMyRestockHistory();
+      _bindTransactionHistoryInvalidations();
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_transactionHistorySubscription?.cancel());
+    super.dispose();
+  }
+
+  void _bindTransactionHistoryInvalidations() {
+    unawaited(_transactionHistorySubscription?.cancel());
+    _transactionHistorySubscription = widget
+        .controller
+        .transactionHistoryInvalidations
+        .listen(
+          (_) {
+            if (_restockFuture != null) {
+              _refreshRestockHistory();
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('[StaffHistoryPage] History invalidation error: $error');
+          },
+        );
+  }
+
+  Future<List<Map<String, dynamic>>> _loadRestockHistory() async {
+    final String scope =
+        '${widget.controller.activeLocationId}:${widget.controller.currentUserNumericId}';
+    try {
+      final rows = await widget.controller.loadMyRestockHistory();
+      _lastRestocks = rows;
+      _lastRestockScope = scope;
+      return rows;
+    } catch (error, stackTrace) {
+      debugPrint('[StaffHistoryPage] Failed to refresh restocks: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (_lastRestocks.isNotEmpty && _lastRestockScope == scope) {
+        return _lastRestocks;
+      }
+      rethrow;
     }
   }
 
@@ -54,7 +100,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     if (!_isCashier) return;
 
     setState(() {
-      _restockFuture = widget.controller.fetchMyRestockHistory();
+      _restockFuture = _loadRestockHistory();
     });
   }
 
@@ -601,6 +647,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
           onTap: () {
             setState(() {
               _historySection = 'Restocks';
+              _restockFuture ??= _loadRestockHistory();
             });
           },
         ),
@@ -990,7 +1037,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   // ---------------------------------------------------------
 
   Widget _buildMyRestockHistory() {
-    final future = _restockFuture ?? widget.controller.fetchMyRestockHistory();
+    final future = _restockFuture ??= _loadRestockHistory();
 
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: future,
