@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../logic/inventory_controller.dart';
+import 'widgets/app_dialog.dart';
+import 'widgets/app_toast.dart';
+import 'dart:async';
 
 class ProfileInfoPage extends StatefulWidget {
   final InventoryController controller;
@@ -33,6 +35,9 @@ class _ProfileInfoPageState extends State<ProfileInfoPage> {
 
   // ADD STATE VARIABLE FOR EDIT MODE
   bool _isEditing = false;
+  StreamSubscription<CurrentUserProfileSnapshot?>? _profileSubscription;
+  CurrentUserProfileSnapshot? _pendingRemoteProfile;
+  bool _conflictNotified = false;
 
   @override
   void initState() {
@@ -41,24 +46,20 @@ class _ProfileInfoPageState extends State<ProfileInfoPage> {
     _emailController = TextEditingController(text: widget.currentEmail ?? "");
     _locationController = TextEditingController(); 
     _phoneController = TextEditingController();
+    _profileSubscription = widget.controller.currentUserProfileSnapshots.listen(
+      _handleProfileSnapshot,
+    );
     // Fetch latest data from database immediately on load
     _loadLatestDataFromDatabase();
   }
 
   Future<void> _loadLatestDataFromDatabase() async {
     try {
-      final data = await Supabase.instance.client
-          .from('profiles')
-          .select('email, name, address, phone')
-          .eq('id', widget.userId)
-          .maybeSingle();
+      final snapshot = await widget.controller.refreshCurrentUserProfile();
 
-      if (data != null && mounted) {
+      if (snapshot != null && mounted) {
         setState(() {
-          _emailController.text = data['email'] ?? "";
-          _nameController.text = data['name'] ?? widget.currentName;
-          _locationController.text = data['address'] ?? ""; 
-          _phoneController.text = data['phone'] ?? "";       
+          _applyProfileSnapshot(snapshot);
           _isFetching = false;
         });
       } else if (mounted) {
@@ -78,6 +79,7 @@ class _ProfileInfoPageState extends State<ProfileInfoPage> {
 
   @override
   void dispose() {
+    unawaited(_profileSubscription?.cancel());
     _nameController.dispose();
     _emailController.dispose();
     _locationController.dispose(); 
@@ -86,6 +88,10 @@ class _ProfileInfoPageState extends State<ProfileInfoPage> {
   }
 
   Future<void> _saveProfile() async {
+    if (_pendingRemoteProfile != null) {
+      await _showProfileConflict();
+      return;
+    }
     setState(() => _isLoading = true);
 
     try {
@@ -107,7 +113,11 @@ class _ProfileInfoPageState extends State<ProfileInfoPage> {
       );
 
       if (mounted) {
-        setState(() => _isEditing = false);
+        setState(() {
+          _isEditing = false;
+          _pendingRemoteProfile = null;
+          _conflictNotified = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Profile updated successfully!"),
@@ -128,6 +138,70 @@ class _ProfileInfoPageState extends State<ProfileInfoPage> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  void _handleProfileSnapshot(CurrentUserProfileSnapshot? snapshot) {
+    if (!mounted || snapshot == null || snapshot.id != widget.userId) return;
+    final matchesDraft =
+        _nameController.text.trim() == snapshot.name &&
+        _emailController.text.trim() == (snapshot.email ?? '') &&
+        _locationController.text.trim() == (snapshot.address ?? '') &&
+        _phoneController.text.trim() == (snapshot.phone ?? '');
+    if (_isEditing && !_isLoading && !matchesDraft) {
+      _pendingRemoteProfile = snapshot;
+      if (!_conflictNotified) {
+        _conflictNotified = true;
+        AppToast.error(
+          context,
+          'Your profile changed elsewhere. Your unsaved edits were kept.',
+        );
+      }
+      return;
+    }
+    setState(() => _applyProfileSnapshot(snapshot));
+  }
+
+  void _applyProfileSnapshot(CurrentUserProfileSnapshot snapshot) {
+    _nameController.text = snapshot.name;
+    _emailController.text = snapshot.email ?? '';
+    _locationController.text = snapshot.address ?? '';
+    _phoneController.text = snapshot.phone ?? '';
+    _pendingRemoteProfile = null;
+    _conflictNotified = false;
+  }
+
+  Future<void> _showProfileConflict() async {
+    final latest = _pendingRemoteProfile;
+    if (latest == null) return;
+    final reload = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.triangleAlert,
+        color: Colors.orange,
+        title: 'Profile changed',
+        subtitle: 'A newer saved profile is available.',
+        child: const Text(
+          'Your unsaved fields have not been overwritten. Reload the latest '
+          'saved profile, or keep editing.',
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep Editing'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Reload Latest'),
+          ),
+        ],
+      ),
+    );
+    if (reload == true && mounted) {
+      setState(() {
+        _applyProfileSnapshot(latest);
+        _isEditing = false;
+      });
     }
   }
 

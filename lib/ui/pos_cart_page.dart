@@ -12,6 +12,7 @@ import 'widgets/app_dialog.dart';
 import 'widgets/order_checklist_view.dart';
 import 'visual_search_page.dart';
 import 'package:inventory_plus/notifications/notification_provider.dart';
+import 'dart:async';
 
 const double _kSnapFull = 0.75;
 const double _kBaseChromeHeight = 320.0;
@@ -55,10 +56,17 @@ class _PosCartPageState extends State<PosCartPage>
   bool _soloMode = false;
 
   String? _pendingAutoOpenOrderId;
+  StreamSubscription<InventoryRuntimeSettingsSnapshot>?
+  _runtimeSettingsSubscription;
 
   @override
   void initState() {
     super.initState();
+    _runtimeSettingsSubscription = widget.controller
+        .streamRuntimeSettings()
+        .listen((_) {
+          if (mounted) setState(() {});
+        });
     _pendingAutoOpenOrderId = widget.targetOrderId;
     _snapAnim = AnimationController(
       vsync: this,
@@ -78,6 +86,7 @@ class _PosCartPageState extends State<PosCartPage>
 
   @override
   void dispose() {
+    unawaited(_runtimeSettingsSubscription?.cancel());
     _snapAnim.dispose();
     super.dispose();
   }

@@ -64,11 +64,16 @@ class _MainScreenState extends State<MainScreen> {
   bool _isCheckingStockAlerts = false;
   bool _isCheckingExportReminders = false;
   StaffPresenceService? _staffPresenceService;
+  StoreAccessService? _storeAccessService;
+  StreamSubscription<StoreAccessSettings>? _storeAccessSubscription;
+  StreamSubscription<CurrentUserProfileSnapshot?>? _currentProfileSubscription;
+  late final String _sessionRole;
   StreamSubscription<List<InventoryItem>>? _inventoryNotificationSubscription;
   final Completer<void> _deferredControllerData = Completer<void>();
   final Set<int> _mountedPageIndexes = <int>{0};
   Timer? _storeAccessEndTimer;
   bool _isForcingStoreLogout = false;
+  bool _isInvalidatingSession = false;
 
   Timer? _storeLogoutCountdownTimer;
   int _storeLogoutRemainingSeconds = 30;
@@ -94,7 +99,11 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
 
-    await widget.realtimeSync.start(locationId: locationId, userId: userId);
+    await widget.realtimeSync.start(
+      locationId: locationId,
+      userId: userId,
+      userRole: widget.controller.currentUserRole ?? 'staff',
+    );
   }
 
   @override
@@ -106,6 +115,25 @@ class _MainScreenState extends State<MainScreen> {
     final locationId = widget.controller.activeLocationId;
     final userId = widget.controller.currentUserId;
     final role = widget.controller.currentUserRole?.toLowerCase();
+    _sessionRole = role ?? 'staff';
+
+    if (locationId != null && locationId.isNotEmpty) {
+      final accessService = StoreAccessService(
+        supabase: widget.controller.supabase,
+        locationId: locationId,
+      );
+      accessService.bindRealtimeSync(widget.realtimeSync);
+      _storeAccessService = accessService;
+      _storeAccessSubscription = accessService.streamSettings().listen(
+        (settings) => unawaited(_applyStoreAccessSettings(settings)),
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('[StoreAccess] Settings stream failed: $error');
+        },
+      );
+    }
+
+    _currentProfileSubscription = widget.controller.currentUserProfileSnapshots
+        .listen(_handleCurrentProfileChange);
 
     if (locationId != null && userId != null && role != null) {
       _notificationController = NotificationBootstrap.create(
@@ -162,7 +190,6 @@ class _MainScreenState extends State<MainScreen> {
       if (!mounted) return;
       if (kDebugMode) debugPrint('[Startup] MainScreen first frame rendered');
       unawaited(_startSessionSynchronization());
-      unawaited(_scheduleStoreAccessEndLogout());
       unawaited(_loadDeferredControllerData());
     });
   }
@@ -172,6 +199,9 @@ class _MainScreenState extends State<MainScreen> {
     _storeAccessEndTimer?.cancel();
     _storeLogoutCountdownTimer?.cancel();
     unawaited(_inventoryNotificationSubscription?.cancel());
+    unawaited(_storeAccessSubscription?.cancel());
+    unawaited(_currentProfileSubscription?.cancel());
+    unawaited(_storeAccessService?.dispose());
     if (!_deferredControllerData.isCompleted) {
       _deferredControllerData.complete();
     }
@@ -251,26 +281,38 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  Future<void> _scheduleStoreAccessEndLogout() async {
-    if (_isForcingStoreLogout) return;
-
-    final locationId = widget.controller.activeLocationId;
+  Future<void> _applyStoreAccessSettings(
+    StoreAccessSettings settings,
+  ) async {
     final role = widget.controller.currentUserRole?.toLowerCase();
-
-    if (locationId == null || locationId.isEmpty) return;
     if (role == null || role.isEmpty) return;
-
-    final accessService = StoreAccessService(
-      supabase: widget.controller.supabase,
-      locationId: locationId,
-    );
-
-    final settings = await accessService.fetchSettings();
+    final accessService = _storeAccessService;
+    if (accessService == null || settings.locationId != accessService.locationId) {
+      return;
+    }
 
     debugPrint('STORE ACCESS CHECK: role=$role');
     debugPrint('OPENING: ${settings.openingTime}');
     debugPrint('CLOSING: ${settings.closingTime}');
     debugPrint('AFTER ALLOWANCE: ${settings.staffAccessAfterMinutes} minutes');
+
+    final now = DateTime.now();
+    final accessAllowed = accessService.isAccessAllowed(
+      settings: settings,
+      role: role,
+      now: now,
+    );
+
+    _storeAccessEndTimer?.cancel();
+    _storeAccessEndTimer = null;
+
+    if (!accessAllowed) {
+      debugPrint('STORE ACCESS: current session is outside the new window');
+      await _forceLogoutDueToStoreHours();
+      return;
+    }
+
+    _cancelPendingStoreLogout();
 
     if (!settings.restrictStaffLogin) {
       debugPrint('STORE ACCESS: restriction is OFF');
@@ -282,15 +324,12 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
 
-    final now = DateTime.now();
     final endTime = accessService.accessEndDateTime(settings, now: now);
     final remaining = endTime.difference(now);
 
     debugPrint('NOW: $now');
     debugPrint('ACCESS ENDS AT: $endTime');
     debugPrint('REMAINING: ${remaining.inSeconds} seconds');
-
-    _storeAccessEndTimer?.cancel();
 
     if (remaining.isNegative || remaining.inSeconds <= 0) {
       debugPrint('STORE ACCESS: expired already, forcing logout');
@@ -300,18 +339,26 @@ class _MainScreenState extends State<MainScreen> {
 
     _storeAccessEndTimer = Timer(remaining, () async {
       debugPrint('STORE ACCESS: timer fired, rechecking access');
-
-      final latestResult = await accessService.canLogin(role: role);
-
-      if (latestResult.allowed) {
-        debugPrint('STORE ACCESS: access was extended, rescheduling');
-        _scheduleStoreAccessEndLogout();
-        return;
+      try {
+        await accessService.refreshSettings();
+      } catch (error, stackTrace) {
+        debugPrint('[StoreAccess] Deadline reconciliation failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
       }
-
-      debugPrint('STORE ACCESS: access expired, forcing logout');
-      _forceLogoutDueToStoreHours();
     });
+  }
+
+  void _cancelPendingStoreLogout() {
+    if (!_isForcingStoreLogout) return;
+    _isForcingStoreLogout = false;
+    _storeLogoutCountdownTimer?.cancel();
+    _storeLogoutCountdownTimer = null;
+    final dialogContext = _storeLogoutDialogContext;
+    _storeLogoutDialogContext = null;
+    if (dialogContext != null && Navigator.canPop(dialogContext)) {
+      Navigator.pop(dialogContext);
+    }
+    _isStoreLogoutWarningVisible = false;
   }
 
   Future<void> _forceLogoutDueToStoreHours() async {
@@ -619,15 +666,70 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _startSessionSynchronization() async {
     try {
+      if (kDebugMode) debugPrint('[Startup] Realtime start requested');
+      await _startRealtimeSync();
+    } catch (error, stackTrace) {
+      debugPrint('[Startup] Realtime start failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    try {
+      final accessService = _storeAccessService;
+      if (accessService != null && accessService.currentSettings == null) {
+        await accessService.refreshSettings();
+      }
+    } catch (error, stackTrace) {
+      debugPrint('[Startup] Store access refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    try {
       await _startStaffPresence();
     } catch (error, stackTrace) {
       debugPrint('[Startup] Staff presence start failed: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
 
+  }
+
+  void _handleCurrentProfileChange(CurrentUserProfileSnapshot? profile) {
     if (!mounted) return;
-    if (kDebugMode) debugPrint('[Startup] Realtime start requested');
-    await _startRealtimeSync();
+    if (profile == null) {
+      unawaited(
+        _invalidateSessionForProfileChange(
+          'Your staff account is no longer active for this store.',
+        ),
+      );
+      return;
+    }
+    if (profile.role.toLowerCase() != _sessionRole) {
+      unawaited(
+        _invalidateSessionForProfileChange(
+          'Your account role changed. Please sign in again.',
+        ),
+      );
+      return;
+    }
+    setState(() {});
+  }
+
+  Future<void> _invalidateSessionForProfileChange(String message) async {
+    if (_isInvalidatingSession) return;
+    _isInvalidatingSession = true;
+    _storeAccessEndTimer?.cancel();
+    _storeLogoutCountdownTimer?.cancel();
+    try {
+      await _staffPresenceService?.stop(logoutReason: 'profile_changed');
+      final prefs = await SharedPreferences.getInstance();
+      await widget.realtimeSync.stop();
+      await prefs.clear();
+    } catch (error, stackTrace) {
+      debugPrint('[Session] Profile invalidation cleanup failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+    if (!mounted) return;
+    AppToast.error(context, message);
+    Navigator.pushReplacementNamed(context, '/login');
   }
 
   Future<void> _loadDeferredControllerData() async {
@@ -1663,7 +1765,15 @@ class _MainScreenState extends State<MainScreen> {
           );
 
           pages.add(MapEditorPage(controller: widget.controller));
-          pages.add(SystemSettingsPage(controller: widget.controller));
+          final accessService = _storeAccessService;
+          if (accessService != null) {
+            pages.add(
+              SystemSettingsPage(
+                controller: widget.controller,
+                storeAccessService: accessService,
+              ),
+            );
+          }
         }
 
         if ((isHelper || isCashier) && isDesktop) {

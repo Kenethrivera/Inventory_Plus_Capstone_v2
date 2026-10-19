@@ -1,4 +1,9 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'realtime/realtime_sync_service.dart';
 
 class StoreAccessSettings {
   final String locationId;
@@ -65,6 +70,42 @@ class StoreAccessService {
 
   StoreAccessService({required this.supabase, required this.locationId});
 
+  final StreamController<StoreAccessSettings> _settingsController =
+      StreamController<StoreAccessSettings>.broadcast();
+  StreamSubscription<void>? _realtimeSubscription;
+  StoreAccessSettings? _currentSettings;
+  Future<StoreAccessSettings>? _refreshInFlight;
+  bool _refreshQueued = false;
+  bool _isDisposed = false;
+
+  StoreAccessSettings? get currentSettings => _currentSettings;
+
+  Stream<StoreAccessSettings> streamSettings() async* {
+    final current = _currentSettings;
+    if (current != null) yield current;
+    yield* _settingsController.stream;
+  }
+
+  void bindRealtimeSync(RealtimeSyncService realtimeSync) {
+    if (_isDisposed) return;
+    _realtimeSubscription ??= realtimeSync.storeAccessChanges.listen(
+      (_) => unawaited(_refreshFromRealtime()),
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('[StoreAccess] Realtime error: $error');
+      },
+    );
+  }
+
+  Future<void> _refreshFromRealtime() async {
+    if (_isDisposed) return;
+    try {
+      await refreshSettings(queueIfBusy: true);
+    } catch (error, stackTrace) {
+      debugPrint('[StoreAccess] Reconciliation failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
   StoreAccessSettings defaultSettings() {
     return StoreAccessSettings(
       locationId: locationId,
@@ -97,10 +138,49 @@ class StoreAccessService {
     return StoreAccessSettings.fromMap(Map<String, dynamic>.from(response));
   }
 
+  Future<StoreAccessSettings> refreshSettings({bool queueIfBusy = false}) {
+    final inFlight = _refreshInFlight;
+    if (inFlight != null) {
+      if (queueIfBusy) _refreshQueued = true;
+      return inFlight;
+    }
+
+    final refresh = _performSettingsRefresh();
+    _refreshInFlight = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_refreshInFlight, refresh)) _refreshInFlight = null;
+      if (_refreshQueued) {
+        _refreshQueued = false;
+        unawaited(_refreshFromRealtime());
+      }
+    });
+  }
+
+  Future<StoreAccessSettings> _performSettingsRefresh() async {
+    final response = await supabase
+        .from('store_access_settings')
+        .select()
+        .eq('location_id', locationId)
+        .maybeSingle();
+    final settings = response == null
+        ? defaultSettings()
+        : StoreAccessSettings.fromMap(Map<String, dynamic>.from(response));
+    _publish(settings);
+    debugPrint('[StoreAccess] SETTINGS REFRESHED location=$locationId');
+    return settings;
+  }
+
   Future<void> saveSettings(StoreAccessSettings settings) async {
     await supabase
         .from('store_access_settings')
         .upsert(settings.toMap(), onConflict: 'location_id');
+    _publish(settings);
+  }
+
+  void _publish(StoreAccessSettings settings) {
+    if (_isDisposed) return;
+    _currentSettings = settings;
+    _settingsController.add(settings);
   }
 
   Future<StoreAccessResult> canLogin({
@@ -132,6 +212,26 @@ class StoreAccessService {
           '${allowedWindowText(settings)}.',
       settings: settings,
     );
+  }
+
+  bool isAccessAllowed({
+    required StoreAccessSettings settings,
+    required String role,
+    DateTime? now,
+  }) {
+    if (!settings.restrictStaffLogin) return true;
+    if (role.toLowerCase() == 'admin' && settings.allowAdminAnytime) {
+      return true;
+    }
+    return _isWithinAllowedWindow(settings, now: now);
+  }
+
+  Future<void> dispose() async {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    _refreshQueued = false;
+    await _realtimeSubscription?.cancel();
+    await _settingsController.close();
   }
 
   String allowedWindowText(StoreAccessSettings settings) {

@@ -36,6 +36,53 @@ class OrderHistoryData {
   final Map<String, String> profileNamesById;
 }
 
+class StockThresholdSettings {
+  const StockThresholdSettings({required this.low, required this.critical});
+
+  final double low;
+  final double critical;
+}
+
+class InventoryRuntimeSettingsSnapshot {
+  const InventoryRuntimeSettingsSnapshot({
+    required this.lowStockPercent,
+    required this.criticalStockPercent,
+    required this.measurements,
+    required this.gcashQrUrl,
+    required this.thresholdsLoaded,
+    required this.measurementsLoaded,
+    required this.paymentLoaded,
+  });
+
+  final double lowStockPercent;
+  final double criticalStockPercent;
+  final List<Map<String, dynamic>> measurements;
+  final String gcashQrUrl;
+  final bool thresholdsLoaded;
+  final bool measurementsLoaded;
+  final bool paymentLoaded;
+}
+
+class CurrentUserProfileSnapshot {
+  const CurrentUserProfileSnapshot({
+    required this.id,
+    required this.locationId,
+    required this.name,
+    required this.role,
+    this.email,
+    this.address,
+    this.phone,
+  });
+
+  final String id;
+  final String locationId;
+  final String name;
+  final String role;
+  final String? email;
+  final String? address;
+  final String? phone;
+}
+
 class _SerializedHistoryQuery {
   Future<List<Map<String, dynamic>>>? inFlight;
   bool queued = false;
@@ -52,11 +99,24 @@ class InventoryController {
       StreamController<void>.broadcast();
   final StreamController<List<MapElement>> _mapLayoutController =
       StreamController<List<MapElement>>.broadcast();
+  final StreamController<InventoryRuntimeSettingsSnapshot>
+  _runtimeSettingsController =
+      StreamController<InventoryRuntimeSettingsSnapshot>.broadcast();
+  final StreamController<List<Map<String, dynamic>>>
+  _staffConfigurationController =
+      StreamController<List<Map<String, dynamic>>>.broadcast();
+  final StreamController<CurrentUserProfileSnapshot?>
+  _currentUserProfileController =
+      StreamController<CurrentUserProfileSnapshot?>.broadcast();
 
   StreamSubscription<void>? _orderChangesSubscription;
   StreamSubscription<void>? _inventoryChangesSubscription;
   StreamSubscription<void>? _transactionHistoryChangesSubscription;
   StreamSubscription<void>? _mapLayoutChangesSubscription;
+  StreamSubscription<RuntimeSettingsChangeKind>?
+  _runtimeSettingsChangesSubscription;
+  StreamSubscription<void>? _staffConfigurationChangesSubscription;
+  StreamSubscription<void>? _currentProfileChangesSubscription;
 
   final Map<String, _SerializedHistoryQuery> _historyQueries =
       <String, _SerializedHistoryQuery>{};
@@ -103,6 +163,27 @@ class InventoryController {
   bool _mapLayoutRefreshQueued = false;
   Future<MapLayoutSaveResult>? _mapLayoutSaveInFlight;
 
+  bool _thresholdSettingsLoaded = false;
+  bool _measurementSettingsLoaded = false;
+  bool _measurementSettingsActivated = false;
+  bool _paymentSettingsLoaded = false;
+  Future<void>? _thresholdRefreshInFlight;
+  Future<void>? _measurementRefreshInFlight;
+  Future<void>? _paymentRefreshInFlight;
+  bool _thresholdRefreshQueued = false;
+  bool _measurementRefreshQueued = false;
+  bool _paymentRefreshQueued = false;
+
+  List<Map<String, dynamic>> _staffSnapshot = const [];
+  String? _staffSnapshotLocationId;
+  bool _staffSnapshotLoaded = false;
+  bool _staffSnapshotActivated = false;
+  Future<void>? _staffRefreshInFlight;
+  bool _staffRefreshQueued = false;
+  Future<void>? _currentProfileRefreshInFlight;
+  bool _currentProfileRefreshQueued = false;
+  CurrentUserProfileSnapshot? _currentProfileSnapshot;
+
   static const int _baselineRestocks = 3;
   static const int _baselineWindowDays = 180;
   Map<String, double> _baselineByProduct = {};
@@ -110,19 +191,8 @@ class InventoryController {
   String gcashQrUrl = '';
 
   Future<void> loadStoreSettings() async {
-    try {
-      final response = await supabase
-          .from('store_settings')
-          .select('gcash_qr_url')
-          .eq('id', 1)
-          .maybeSingle();
-
-      if (response != null && response['gcash_qr_url'] != null) {
-        gcashQrUrl = response['gcash_qr_url'] as String;
-      }
-    } catch (e) {
-      debugPrint("Error loading store settings: $e");
-    }
+    if (_paymentSettingsLoaded) return;
+    await _refreshPaymentSettings();
   }
 
   Future<void> updateGcashQrUrl(String newUrl) async {
@@ -133,6 +203,8 @@ class InventoryController {
           .eq('id', 1);
 
       gcashQrUrl = newUrl;
+      _paymentSettingsLoaded = true;
+      _publishRuntimeSettings();
     } catch (e) {
       debugPrint("Error updating GCash QR: $e");
       throw Exception("Failed to save QR URL to database.");
@@ -233,6 +305,8 @@ class InventoryController {
       _clearOrdersSnapshot();
       _inventoryAwaitingRealtimeInitial = true;
       _ordersAwaitingRealtimeInitial = true;
+      _clearStaffConfigurationSnapshot();
+      _currentProfileSnapshot = null;
     }
 
     currentUserName = name;
@@ -256,6 +330,7 @@ class InventoryController {
     _mapLayoutStale = true;
     _mapLayoutRefreshQueued = false;
     _publishMapLayoutSnapshot();
+    _clearStaffConfigurationSnapshot();
   }
 
   String _hashPassword(String password) {
@@ -264,28 +339,154 @@ class InventoryController {
   }
 
   Future<void> loadSystemSettings() async {
+    _measurementSettingsActivated = true;
+    await Future.wait<void>([
+      if (!_thresholdSettingsLoaded) _refreshThresholdSettings(),
+      if (!_measurementSettingsLoaded) _refreshMeasurementSettings(),
+    ]);
+  }
+
+  Future<void> loadStockThresholdSettings() async {
+    if (_thresholdSettingsLoaded) return;
+    await _refreshThresholdSettings();
+  }
+
+  Stream<InventoryRuntimeSettingsSnapshot> streamRuntimeSettings() async* {
+    yield _runtimeSettingsSnapshot;
+    yield* _runtimeSettingsController.stream;
+  }
+
+  InventoryRuntimeSettingsSnapshot get _runtimeSettingsSnapshot =>
+      InventoryRuntimeSettingsSnapshot(
+        lowStockPercent: globalLowStockPct,
+        criticalStockPercent: globalCriticalPct,
+        measurements: List<Map<String, dynamic>>.unmodifiable(
+          availableMeasurements.map(Map<String, dynamic>.from),
+        ),
+        gcashQrUrl: gcashQrUrl,
+        thresholdsLoaded: _thresholdSettingsLoaded,
+        measurementsLoaded: _measurementSettingsLoaded,
+        paymentLoaded: _paymentSettingsLoaded,
+      );
+
+  void _publishRuntimeSettings() {
+    _runtimeSettingsController.add(_runtimeSettingsSnapshot);
+  }
+
+  Future<StockThresholdSettings> fetchStockThresholdSettings() async {
+    final response = await supabase
+        .from('threshold')
+        .select('low_stock, critical')
+        .eq('id', 1)
+        .maybeSingle();
+    return StockThresholdSettings(
+      low: (response?['low_stock'] as num?)?.toDouble() ?? 20.0,
+      critical: (response?['critical'] as num?)?.toDouble() ?? 10.0,
+    );
+  }
+
+  Future<void> _refreshThresholdSettings() {
+    final inFlight = _thresholdRefreshInFlight;
+    if (inFlight != null) {
+      _thresholdRefreshQueued = true;
+      return inFlight;
+    }
+    final refresh = _performThresholdRefresh();
+    _thresholdRefreshInFlight = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_thresholdRefreshInFlight, refresh)) {
+        _thresholdRefreshInFlight = null;
+      }
+      if (_thresholdRefreshQueued) {
+        _thresholdRefreshQueued = false;
+        unawaited(_refreshThresholdSettings());
+      }
+    });
+  }
+
+  Future<void> _performThresholdRefresh() async {
     try {
-      // 1. Fetch thresholds (same row that updateGlobalThresholds writes: id = 1)
-      final thresholdRes = await supabase
-          .from('threshold')
-          .select('low_stock, critical')
+      final settings = await fetchStockThresholdSettings();
+      globalLowStockPct = settings.low;
+      globalCriticalPct = settings.critical;
+      _thresholdSettingsLoaded = true;
+      _publishRuntimeSettings();
+      _publishInventorySnapshot();
+      debugPrint('[InventoryController] THRESHOLD SETTINGS REFRESHED');
+    } catch (error, stackTrace) {
+      debugPrint('[InventoryController] Threshold refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _refreshMeasurementSettings() {
+    final inFlight = _measurementRefreshInFlight;
+    if (inFlight != null) {
+      _measurementRefreshQueued = true;
+      return inFlight;
+    }
+    final refresh = _performMeasurementRefresh();
+    _measurementRefreshInFlight = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_measurementRefreshInFlight, refresh)) {
+        _measurementRefreshInFlight = null;
+      }
+      if (_measurementRefreshQueued) {
+        _measurementRefreshQueued = false;
+        unawaited(_refreshMeasurementSettings());
+      }
+    });
+  }
+
+  Future<void> _performMeasurementRefresh() async {
+    try {
+      final rows = await supabase.from('measurements').select('id, name, symbol');
+      availableMeasurements = List<Map<String, dynamic>>.from(rows);
+      _measurementSettingsLoaded = true;
+      _publishRuntimeSettings();
+      debugPrint(
+        '[InventoryController] MEASUREMENT SETTINGS REFRESHED '
+        'count=${availableMeasurements.length}',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[InventoryController] Measurement refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _refreshPaymentSettings() {
+    final inFlight = _paymentRefreshInFlight;
+    if (inFlight != null) {
+      _paymentRefreshQueued = true;
+      return inFlight;
+    }
+    final refresh = _performPaymentRefresh();
+    _paymentRefreshInFlight = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_paymentRefreshInFlight, refresh)) {
+        _paymentRefreshInFlight = null;
+      }
+      if (_paymentRefreshQueued) {
+        _paymentRefreshQueued = false;
+        unawaited(_refreshPaymentSettings());
+      }
+    });
+  }
+
+  Future<void> _performPaymentRefresh() async {
+    try {
+      final response = await supabase
+          .from('store_settings')
+          .select('gcash_qr_url')
           .eq('id', 1)
           .maybeSingle();
-
-      if (thresholdRes != null) {
-        globalLowStockPct = (thresholdRes['low_stock'] as num).toDouble();
-        globalCriticalPct = (thresholdRes['critical'] as num).toDouble();
-      }
-
-      // 2. Fetch measurements
-      final measureRes = await supabase
-          .from('measurements')
-          .select('id, name, symbol');
-
-      availableMeasurements = List<Map<String, dynamic>>.from(measureRes);
-    } catch (e) {
-      print("Error loading system settings: $e");
-      rethrow; // callers decide how to show the error
+      gcashQrUrl = response?['gcash_qr_url']?.toString() ?? '';
+      _paymentSettingsLoaded = true;
+      _publishRuntimeSettings();
+      debugPrint('[InventoryController] PAYMENT SETTINGS REFRESHED');
+    } catch (error, stackTrace) {
+      debugPrint('[InventoryController] Payment settings refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
@@ -298,6 +499,9 @@ class InventoryController {
       });
       globalLowStockPct = low;
       globalCriticalPct = critical;
+      _thresholdSettingsLoaded = true;
+      _publishRuntimeSettings();
+      _publishInventorySnapshot();
     } catch (e) {
       rethrow;
     }
@@ -312,9 +516,20 @@ class InventoryController {
           .single();
 
       availableMeasurements.add(response);
+      _measurementSettingsLoaded = true;
+      _publishRuntimeSettings();
     } catch (e) {
       rethrow;
     }
+  }
+
+  Future<Map<String, dynamic>?> fetchMeasurement(String id) async {
+    final response = await supabase
+        .from('measurements')
+        .select('id, name, symbol')
+        .eq('id', id)
+        .maybeSingle();
+    return response == null ? null : Map<String, dynamic>.from(response);
   }
 
   Future<void> updateMeasurement(String id, String name, String symbol) async {
@@ -332,6 +547,8 @@ class InventoryController {
       if (index != -1) {
         availableMeasurements[index] = response;
       }
+      _measurementSettingsLoaded = true;
+      _publishRuntimeSettings();
     } catch (e) {
       rethrow;
     }
@@ -341,6 +558,8 @@ class InventoryController {
     try {
       await supabase.from('measurements').delete().eq('id', id);
       availableMeasurements.removeWhere((m) => m['id'].toString() == id);
+      _measurementSettingsLoaded = true;
+      _publishRuntimeSettings();
     } catch (e) {
       rethrow;
     }
@@ -362,7 +581,6 @@ class InventoryController {
 
     await Future.wait<void>([
       _loadStockBaselines(),
-      loadStoreSettings(),
     ]);
 
     if (kDebugMode) {
@@ -840,16 +1058,161 @@ class InventoryController {
   }
 
   Future<List<Map<String, dynamic>>> fetchStaff() async {
-    final locId = activeLocationId;
-    if (locId == null) return [];
+    _staffSnapshotActivated = true;
+    await _refreshStaffConfiguration();
+    return List<Map<String, dynamic>>.unmodifiable(_staffSnapshot);
+  }
+
+  Stream<List<Map<String, dynamic>>> streamStaffConfiguration() async* {
+    _staffSnapshotActivated = true;
+    final locationId = activeLocationId;
+    if (!_staffSnapshotLoaded || _staffSnapshotLocationId != locationId) {
+      await _refreshStaffConfiguration();
+    }
+    yield List<Map<String, dynamic>>.unmodifiable(_staffSnapshot);
+    yield* _staffConfigurationController.stream;
+  }
+
+  Stream<CurrentUserProfileSnapshot?> get currentUserProfileSnapshots =>
+      _currentUserProfileController.stream;
+
+  Future<CurrentUserProfileSnapshot?> refreshCurrentUserProfile() async {
+    await _refreshCurrentProfile();
+    return _currentProfileSnapshot;
+  }
+
+  void _clearStaffConfigurationSnapshot() {
+    _staffSnapshot = const [];
+    _staffSnapshotLocationId = null;
+    _staffSnapshotLoaded = false;
+    if (_staffSnapshotActivated) {
+      _staffConfigurationController.add(const []);
+    }
+  }
+
+  void _publishStaffConfigurationSnapshot() {
+    if (_staffSnapshotActivated) {
+      _staffConfigurationController.add(
+        List<Map<String, dynamic>>.unmodifiable(_staffSnapshot),
+      );
+    }
+  }
+
+  Future<void> _refreshStaffConfiguration() {
+    final inFlight = _staffRefreshInFlight;
+    if (inFlight != null) {
+      _staffRefreshQueued = true;
+      return inFlight;
+    }
+    final refresh = _performStaffConfigurationRefresh();
+    _staffRefreshInFlight = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_staffRefreshInFlight, refresh)) {
+        _staffRefreshInFlight = null;
+      }
+      if (_staffRefreshQueued) {
+        _staffRefreshQueued = false;
+        unawaited(_refreshStaffConfiguration());
+      }
+    });
+  }
+
+  Future<void> _performStaffConfigurationRefresh() async {
+    final locationId = activeLocationId;
+    final userId = currentUserId;
+    final role = currentUserRole?.toLowerCase();
+    if (locationId == null ||
+        locationId.isEmpty ||
+        userId == null ||
+        role != 'admin') {
+      _clearStaffConfigurationSnapshot();
+      return;
+    }
     try {
-      final response = await supabase
+      final rows = await supabase
           .from('profiles')
           .select()
-          .eq('location_id', locId);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      return [];
+          .eq('location_id', locationId);
+      if (activeLocationId != locationId ||
+          currentUserId != userId ||
+          currentUserRole?.toLowerCase() != 'admin') {
+        _staffRefreshQueued =
+            _staffSnapshotActivated &&
+            currentUserRole?.toLowerCase() == 'admin';
+        return;
+      }
+      _staffSnapshot = List<Map<String, dynamic>>.unmodifiable(
+        List<Map<String, dynamic>>.from(rows).map(Map<String, dynamic>.from),
+      );
+      _staffSnapshotLocationId = locationId;
+      _staffSnapshotLoaded = true;
+      _staffConfigurationController.add(_staffSnapshot);
+      debugPrint(
+        '[InventoryController] STAFF CONFIGURATION REFRESHED '
+        'location=$locationId count=${_staffSnapshot.length}',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[InventoryController] Staff refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _refreshCurrentProfile() {
+    final inFlight = _currentProfileRefreshInFlight;
+    if (inFlight != null) {
+      _currentProfileRefreshQueued = true;
+      return inFlight;
+    }
+    final refresh = _performCurrentProfileRefresh();
+    _currentProfileRefreshInFlight = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_currentProfileRefreshInFlight, refresh)) {
+        _currentProfileRefreshInFlight = null;
+      }
+      if (_currentProfileRefreshQueued) {
+        _currentProfileRefreshQueued = false;
+        unawaited(_refreshCurrentProfile());
+      }
+    });
+  }
+
+  Future<void> _performCurrentProfileRefresh() async {
+    final userId = currentUserId;
+    final locationId = activeLocationId;
+    if (userId == null || locationId == null) return;
+    try {
+      final row = await supabase
+          .from('profiles')
+          .select('id, location_id, name, role, email, address, phone')
+          .eq('id', userId)
+          .maybeSingle();
+      if (currentUserId != userId || activeLocationId != locationId) return;
+      if (row == null || row['location_id']?.toString() != locationId) {
+        _currentProfileSnapshot = null;
+        _currentUserProfileController.add(null);
+        return;
+      }
+      final snapshot = CurrentUserProfileSnapshot(
+        id: row['id'].toString(),
+        locationId: row['location_id'].toString(),
+        name: row['name']?.toString() ?? 'User',
+        role: row['role']?.toString() ?? 'staff',
+        email: row['email']?.toString(),
+        address: row['address']?.toString(),
+        phone: row['phone']?.toString(),
+      );
+      if (currentUserRole?.toLowerCase() == 'admin' &&
+          snapshot.role.toLowerCase() != 'admin') {
+        _clearStaffConfigurationSnapshot();
+      }
+      currentUserName = snapshot.name;
+      currentUserRole = snapshot.role;
+      loggedInUserEmail = snapshot.email;
+      _currentProfileSnapshot = snapshot;
+      _currentUserProfileController.add(snapshot);
+    } catch (error, stackTrace) {
+      debugPrint('[InventoryController] Current profile refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
@@ -867,16 +1230,27 @@ class InventoryController {
     try {
       final hashedPassword = _hashPassword(password);
 
-      await supabase.from('profiles').insert({
-        'name': name,
-        'username': username,
-        'password': hashedPassword,
-        'role': role,
-        'location_id': locId,
-        'email': email,
-        'phone': phone,
-        'address': address,
-      });
+      final row = await supabase
+          .from('profiles')
+          .insert({
+            'name': name,
+            'username': username,
+            'password': hashedPassword,
+            'role': role,
+            'location_id': locId,
+            'email': email,
+            'phone': phone,
+            'address': address,
+          })
+          .select()
+          .single();
+      if (_staffSnapshotActivated && _staffSnapshotLocationId == locId) {
+        _staffSnapshot = List<Map<String, dynamic>>.unmodifiable([
+          ..._staffSnapshot,
+          Map<String, dynamic>.from(row),
+        ]);
+        _publishStaffConfigurationSnapshot();
+      }
       return true;
     } catch (e) {
       return false;
@@ -885,16 +1259,46 @@ class InventoryController {
 
   Future<bool> updateStaffRole(String id, String newRole) async {
     try {
-      await supabase.from('profiles').update({'role': newRole}).eq('id', id);
+      final row = await supabase
+          .from('profiles')
+          .update({'role': newRole})
+          .eq('id', id)
+          .select()
+          .single();
+      final index = _staffSnapshot.indexWhere(
+        (staff) => staff['id'].toString() == id,
+      );
+      if (index >= 0) {
+        final updated = List<Map<String, dynamic>>.from(_staffSnapshot);
+        updated[index] = Map<String, dynamic>.from(row);
+        _staffSnapshot = List<Map<String, dynamic>>.unmodifiable(updated);
+        _publishStaffConfigurationSnapshot();
+      }
       return true;
     } catch (e) {
       return false;
     }
   }
 
+  Future<Map<String, dynamic>?> fetchStaffProfile(String id) async {
+    final locationId = activeLocationId;
+    if (locationId == null) return null;
+    final row = await supabase
+        .from('profiles')
+        .select()
+        .eq('id', id)
+        .eq('location_id', locationId)
+        .maybeSingle();
+    return row == null ? null : Map<String, dynamic>.from(row);
+  }
+
   Future<bool> deleteStaff(String id) async {
     try {
       await supabase.from('profiles').delete().eq('id', id);
+      _staffSnapshot = List<Map<String, dynamic>>.unmodifiable(
+        _staffSnapshot.where((staff) => staff['id'].toString() != id),
+      );
+      _publishStaffConfigurationSnapshot();
       return true;
     } catch (e) {
       return false;
@@ -1430,6 +1834,56 @@ class InventoryController {
         debugPrint('[InventoryController] Map layout realtime error: $error');
       },
     );
+
+    _runtimeSettingsChangesSubscription ??= realtimeSync
+        .runtimeSettingsChanges
+        .listen(
+          (kind) {
+            switch (kind) {
+              case RuntimeSettingsChangeKind.thresholds:
+                unawaited(_refreshThresholdSettings());
+              case RuntimeSettingsChangeKind.measurements:
+                if (_measurementSettingsActivated) {
+                  unawaited(_refreshMeasurementSettings());
+                }
+              case RuntimeSettingsChangeKind.payment:
+                if (currentUserRole?.toLowerCase() != 'helper') {
+                  unawaited(_refreshPaymentSettings());
+                }
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint(
+              '[InventoryController] Runtime settings realtime error: $error',
+            );
+          },
+        );
+
+    _staffConfigurationChangesSubscription ??= realtimeSync
+        .staffConfigurationChanges
+        .listen(
+          (_) {
+            if (_staffSnapshotActivated) {
+              unawaited(_refreshStaffConfiguration());
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint(
+              '[InventoryController] Staff configuration realtime error: '
+              '$error',
+            );
+          },
+        );
+
+    _currentProfileChangesSubscription ??= realtimeSync.currentProfileChanges
+        .listen(
+          (_) => unawaited(_refreshCurrentProfile()),
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint(
+              '[InventoryController] Current profile realtime error: $error',
+            );
+          },
+        );
   }
 
   Future<void> _refreshLoadedMapLayout() async {
@@ -1884,6 +2338,8 @@ Stream<List<CustomerOrder>> streamOrders() async* {
           .from('profiles')
           .update(updateData)
           .eq('id', userId);
+      if (userId == currentUserId) await _refreshCurrentProfile();
+      if (_staffSnapshotActivated) await _refreshStaffConfiguration();
     } catch (e) {
       throw Exception("Failed to save changes to the database.");
     }

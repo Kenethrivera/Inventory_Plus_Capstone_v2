@@ -55,7 +55,7 @@ class _InventoryPageState extends State<InventoryPage> {
 
   Future<void> _loadSystemSettings() async {
     try {
-      await widget.controller.loadSystemSettings();
+      await widget.controller.loadStockThresholdSettings();
     } catch (e) {
       if (mounted)
         _showToast("Could not load stock thresholds: $e", isError: true);

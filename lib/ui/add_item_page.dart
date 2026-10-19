@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
+import 'dart:async';
 
 class AddItemPage extends StatefulWidget {
   final InventoryController controller;
@@ -42,10 +43,17 @@ class _AddItemPageState extends State<AddItemPage> {
   String _selectedUnit = 'pcs';
   static const String _addNewValue = '__add_new_unit__';
   int _unitFieldVersion = 0; // forces the dropdown to rebuild after the modal
+  StreamSubscription<InventoryRuntimeSettingsSnapshot>?
+  _runtimeSettingsSubscription;
 
   @override
   void initState() {
     super.initState();
+    _runtimeSettingsSubscription = widget.controller
+        .streamRuntimeSettings()
+        .listen((_) {
+          if (mounted) setState(() => _unitFieldVersion++);
+        });
     _ensureUnitsLoaded();
   }
 
@@ -61,6 +69,7 @@ class _AddItemPageState extends State<AddItemPage> {
 
   @override
   void dispose() {
+    unawaited(_runtimeSettingsSubscription?.cancel());
     _nameController.dispose();
     _priceController.dispose();
     _quantityController.dispose();

@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
 
+enum RuntimeSettingsChangeKind { thresholds, measurements, payment }
+
 /// Owns app-session realtime transport.
 ///
 /// This service does not own business state and does not perform business
@@ -25,6 +27,15 @@ class RealtimeSyncService {
       StreamController<void>.broadcast();
   final StreamController<void> _mapLayoutChangesController =
       StreamController<void>.broadcast();
+  final StreamController<void> _storeAccessChangesController =
+      StreamController<void>.broadcast();
+  final StreamController<RuntimeSettingsChangeKind>
+  _runtimeSettingsChangesController =
+      StreamController<RuntimeSettingsChangeKind>.broadcast();
+  final StreamController<void> _staffConfigurationChangesController =
+      StreamController<void>.broadcast();
+  final StreamController<void> _currentProfileChangesController =
+      StreamController<void>.broadcast();
 
   final Map<String, RealtimeChannel> _channels = <String, RealtimeChannel>{};
 
@@ -33,6 +44,7 @@ class RealtimeSyncService {
   bool _isStarted = false;
   String? _locationId;
   String? _userId;
+  String? _userRole;
 
   bool get isStarted => _isStarted;
   String? get locationId => _locationId;
@@ -45,15 +57,30 @@ class RealtimeSyncService {
   Stream<void> get transactionHistoryChanges =>
       _transactionHistoryChangesController.stream;
   Stream<void> get mapLayoutChanges => _mapLayoutChangesController.stream;
+  Stream<void> get storeAccessChanges => _storeAccessChangesController.stream;
+  Stream<RuntimeSettingsChangeKind> get runtimeSettingsChanges =>
+      _runtimeSettingsChangesController.stream;
+  Stream<void> get staffConfigurationChanges =>
+      _staffConfigurationChangesController.stream;
+  Stream<void> get currentProfileChanges =>
+      _currentProfileChangesController.stream;
 
   /// Starts one realtime session for the currently authenticated user/location.
   ///
   /// Calling [start] repeatedly for the same user/location is intentionally a
   /// no-op. Starting for a different session first tears down channels owned
   /// by this service.
-  Future<void> start({required String locationId, required String userId}) {
+  Future<void> start({
+    required String locationId,
+    required String userId,
+    required String userRole,
+  }) {
     return _enqueue(() async {
-      if (_isStarted && _locationId == locationId && _userId == userId) {
+      final normalizedRole = userRole.toLowerCase();
+      if (_isStarted &&
+          _locationId == locationId &&
+          _userId == userId &&
+          _userRole == normalizedRole) {
         return;
       }
 
@@ -61,9 +88,13 @@ class RealtimeSyncService {
 
       _locationId = locationId;
       _userId = userId;
+      _userRole = normalizedRole;
       _isStarted = true;
 
-      debugPrint('[RealtimeSync] START location=$locationId user=$userId');
+      debugPrint(
+        '[RealtimeSync] START location=$locationId user=$userId '
+        'role=$normalizedRole',
+      );
 
       await _subscribeToOrderChanges();
       await _subscribeToInventoryChanges();
@@ -71,6 +102,9 @@ class RealtimeSyncService {
       await _subscribeToStaffPresenceChanges();
       await _subscribeToTransactionHistoryChanges();
       await _subscribeToMapLayoutChanges();
+      await _subscribeToStoreAccessChanges();
+      await _subscribeToRuntimeSettingsChanges();
+      await _subscribeToStaffConfigurationChanges();
     });
   }
 
@@ -514,6 +548,244 @@ class RealtimeSyncService {
     debugPrint('[RealtimeSync] MAP LAYOUT SUBSCRIBED location=$locationId');
   }
 
+  Future<void> _subscribeToStoreAccessChanges() async {
+    final String? locationId = _locationId;
+    if (!_isStarted || locationId == null || locationId.isEmpty) return;
+
+    const String channelKey = 'store_access_settings';
+    final previous = _channels.remove(channelKey);
+    if (previous != null) await _safeRemoveChannel(previous);
+
+    void signal(String source) {
+      if (!_isStarted || _locationId != locationId) return;
+      debugPrint(
+        '[RealtimeSync] STORE ACCESS CHANGE '
+        'location=$locationId source=$source',
+      );
+      _storeAccessChangesController.add(null);
+    }
+
+    bool hasSubscribed = false;
+    final channel = _supabase
+        .channel('inventory-plus:store-access:$locationId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'store_access_settings',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'location_id',
+            value: locationId,
+          ),
+          callback: (_) => signal('store_access_settings'),
+        )
+        .subscribe((status, error) {
+          debugPrint('[RealtimeSync] STORE ACCESS STATUS=$status error=$error');
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            if (hasSubscribed) signal('store_access_resubscribed');
+            hasSubscribed = true;
+          }
+        });
+
+    _channels[channelKey] = channel;
+    _storeAccessChangesController.add(null);
+    debugPrint(
+      '[RealtimeSync] STORE ACCESS SNAPSHOT REQUESTED location=$locationId',
+    );
+    debugPrint('[RealtimeSync] STORE ACCESS SUBSCRIBED location=$locationId');
+  }
+
+  Future<void> _subscribeToRuntimeSettingsChanges() async {
+    if (!_isStarted) return;
+    final role = _userRole;
+
+    const keys = <String>[
+      'threshold_settings',
+      'measurement_settings',
+      'payment_settings',
+    ];
+    for (final key in keys) {
+      final previous = _channels.remove(key);
+      if (previous != null) await _safeRemoveChannel(previous);
+    }
+
+    void signal(RuntimeSettingsChangeKind kind, String source) {
+      if (!_isStarted) return;
+      debugPrint(
+        '[RealtimeSync] RUNTIME SETTINGS CHANGE '
+        'kind=${kind.name} source=$source',
+      );
+      _runtimeSettingsChangesController.add(kind);
+    }
+
+    RealtimeChannel buildChannel({
+      required String key,
+      required String table,
+      required RuntimeSettingsChangeKind kind,
+      PostgresChangeFilter? filter,
+    }) {
+      bool hasSubscribed = false;
+      return _supabase
+          .channel('inventory-plus:$key')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: table,
+            filter: filter,
+            callback: (_) => signal(kind, table),
+          )
+          .subscribe((status, error) {
+            debugPrint(
+              '[RealtimeSync] ${kind.name.toUpperCase()} SETTINGS '
+              'STATUS=$status error=$error',
+            );
+            if (status == RealtimeSubscribeStatus.subscribed) {
+              if (hasSubscribed) signal(kind, '${table}_resubscribed');
+              hasSubscribed = true;
+            }
+          });
+    }
+
+    _channels['threshold_settings'] = buildChannel(
+      key: 'threshold-settings',
+      table: 'threshold',
+      kind: RuntimeSettingsChangeKind.thresholds,
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'id',
+        value: 1,
+      ),
+    );
+    if (role == 'admin') {
+      _channels['measurement_settings'] = buildChannel(
+        key: 'measurement-settings',
+        table: 'measurements',
+        kind: RuntimeSettingsChangeKind.measurements,
+      );
+      _runtimeSettingsChangesController.add(
+        RuntimeSettingsChangeKind.measurements,
+      );
+    }
+    if (role != 'helper') {
+      _channels['payment_settings'] = buildChannel(
+        key: 'payment-settings',
+        table: 'store_settings',
+        kind: RuntimeSettingsChangeKind.payment,
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'id',
+          value: 1,
+        ),
+      );
+      _runtimeSettingsChangesController.add(RuntimeSettingsChangeKind.payment);
+    }
+    _runtimeSettingsChangesController.add(RuntimeSettingsChangeKind.thresholds);
+    debugPrint('[RealtimeSync] RUNTIME SETTINGS SNAPSHOT REQUESTED');
+    debugPrint('[RealtimeSync] RUNTIME SETTINGS SUBSCRIBED');
+  }
+
+  Future<void> _subscribeToStaffConfigurationChanges() async {
+    final String? locationId = _locationId;
+    final String? userId = _userId;
+    if (!_isStarted ||
+        locationId == null ||
+        locationId.isEmpty ||
+        userId == null ||
+        userId.isEmpty) {
+      return;
+    }
+
+    const String locationKey = 'staff_configuration';
+    const String currentUserKey = 'current_profile';
+    for (final key in <String>[locationKey, currentUserKey]) {
+      final previous = _channels.remove(key);
+      if (previous != null) await _safeRemoveChannel(previous);
+    }
+
+    void signalStaffConfiguration(String source) {
+      if (!_isStarted || _locationId != locationId) return;
+      debugPrint(
+        '[RealtimeSync] STAFF CONFIGURATION CHANGE '
+        'location=$locationId source=$source',
+      );
+      _staffConfigurationChangesController.add(null);
+    }
+
+    void signalCurrentProfile(String source) {
+      if (!_isStarted || _locationId != locationId || _userId != userId) return;
+      debugPrint(
+        '[RealtimeSync] CURRENT PROFILE CHANGE user=$userId source=$source',
+      );
+      _currentProfileChangesController.add(null);
+    }
+
+    if (_userRole == 'admin') {
+      bool locationSubscribed = false;
+      final locationChannel = _supabase
+          .channel('inventory-plus:staff-configuration:$locationId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'profiles',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'location_id',
+              value: locationId,
+            ),
+            callback: (_) => signalStaffConfiguration('profiles'),
+          )
+          .subscribe((status, error) {
+            debugPrint(
+              '[RealtimeSync] STAFF CONFIGURATION STATUS=$status error=$error',
+            );
+            if (status == RealtimeSubscribeStatus.subscribed) {
+              if (locationSubscribed) {
+                signalStaffConfiguration('profiles_resubscribed');
+              }
+              locationSubscribed = true;
+            }
+          });
+      _channels[locationKey] = locationChannel;
+      _staffConfigurationChangesController.add(null);
+    }
+
+    bool currentUserSubscribed = false;
+    final currentUserChannel = _supabase
+        .channel('inventory-plus:current-profile:$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'profiles',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: userId,
+          ),
+          callback: (_) => signalCurrentProfile('current_profile'),
+        )
+        .subscribe((status, error) {
+          debugPrint(
+            '[RealtimeSync] CURRENT PROFILE STATUS=$status error=$error',
+          );
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            if (currentUserSubscribed) {
+              signalCurrentProfile('current_profile_resubscribed');
+            }
+            currentUserSubscribed = true;
+          }
+        });
+
+    _channels[currentUserKey] = currentUserChannel;
+    _currentProfileChangesController.add(null);
+    debugPrint(
+      '[RealtimeSync] STAFF CONFIGURATION SNAPSHOT REQUESTED '
+      'location=$locationId',
+    );
+    debugPrint(
+      '[RealtimeSync] STAFF CONFIGURATION SUBSCRIBED location=$locationId',
+    );
+  }
+
   Future<void> _stopInternal() async {
     final bool hadSession =
         _isStarted ||
@@ -539,6 +811,7 @@ class RealtimeSyncService {
     _isStarted = false;
     _locationId = null;
     _userId = null;
+    _userRole = null;
   }
 
   Future<void> _safeRemoveChannel(RealtimeChannel channel) async {

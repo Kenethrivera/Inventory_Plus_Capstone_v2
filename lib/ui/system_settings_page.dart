@@ -24,7 +24,12 @@ class MeasurementUnit {
 
 class SystemSettingsPage extends StatefulWidget {
   final InventoryController controller;
-  const SystemSettingsPage({super.key, required this.controller});
+  final StoreAccessService storeAccessService;
+  const SystemSettingsPage({
+    super.key,
+    required this.controller,
+    required this.storeAccessService,
+  });
 
   @override
   State<SystemSettingsPage> createState() => _SystemSettingsPageState();
@@ -38,11 +43,14 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   // Staff State
   bool _isLoadingStaff = true;
   List<Map<String, dynamic>> _staffList = [];
+  StreamSubscription<List<Map<String, dynamic>>>? _staffSubscription;
+  StreamSubscription<InventoryRuntimeSettingsSnapshot>?
+  _runtimeSettingsSubscription;
+  StreamSubscription<StoreAccessSettings>? _storeAccessSubscription;
 
   // Store Hours & Staff Access State
   bool _isLoadingStoreAccess = true;
   bool _isSavingStoreAccess = false;
-  StoreAccessSettings? _storeAccessSettings;
   TimeOfDay _openingTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _closingTime = const TimeOfDay(hour: 21, minute: 0);
   final TextEditingController _beforeMinutesCtrl =
@@ -52,12 +60,16 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   bool _restrictStaffLogin = true;
   bool _allowAdminAnytime = true;
   String? _storeAccessError;
+  StoreAccessSettings? _storeAccessBaseline;
+  bool _storeAccessConflictNotified = false;
 
   // Global Threshold State
   final TextEditingController _lowPercentCtrl = TextEditingController();
   final TextEditingController _criticalPercentCtrl = TextEditingController();
   String? _thresholdError;
   bool _isSavingThresholds = false;
+  StockThresholdSettings? _thresholdBaseline;
+  bool _thresholdConflictNotified = false;
 
   //QR Uploader
   bool _isUploadingQr = false;
@@ -65,13 +77,24 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   @override
   void initState() {
     super.initState();
+    _runtimeSettingsSubscription = widget.controller
+        .streamRuntimeSettings()
+        .listen(_handleRuntimeSettingsSnapshot);
+    _storeAccessSubscription = widget.storeAccessService
+        .streamSettings()
+        .listen(_handleStoreAccessSnapshot);
+    _staffSubscription = widget.controller.streamStaffConfiguration().listen(
+      _handleStaffSnapshot,
+    );
     _fetchSettings();
     _fetchStoreAccessSettings();
-    _loadStaff();
   }
 
   @override
   void dispose() {
+    unawaited(_runtimeSettingsSubscription?.cancel());
+    unawaited(_storeAccessSubscription?.cancel());
+    unawaited(_staffSubscription?.cancel());
     _beforeMinutesCtrl.dispose();
     _afterMinutesCtrl.dispose();
     _lowPercentCtrl.dispose();
@@ -92,6 +115,153 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
           ),
         )
         .toList();
+  }
+
+  bool get _thresholdDraftDirty {
+    final baseline = _thresholdBaseline;
+    if (baseline == null) return false;
+    return double.tryParse(_lowPercentCtrl.text) != baseline.low ||
+        double.tryParse(_criticalPercentCtrl.text) != baseline.critical;
+  }
+
+  bool get _storeAccessDraftDirty {
+    final baseline = _storeAccessBaseline;
+    if (baseline == null) return false;
+    return _formatClockTime(_openingTime) != baseline.openingTime ||
+        _formatClockTime(_closingTime) != baseline.closingTime ||
+        int.tryParse(_beforeMinutesCtrl.text) !=
+            baseline.staffAccessBeforeMinutes ||
+        int.tryParse(_afterMinutesCtrl.text) !=
+            baseline.staffAccessAfterMinutes ||
+        _restrictStaffLogin != baseline.restrictStaffLogin ||
+        _allowAdminAnytime != baseline.allowAdminAnytime;
+  }
+
+  bool _sameStoreAccess(
+    StoreAccessSettings left,
+    StoreAccessSettings right,
+  ) {
+    return left.locationId == right.locationId &&
+        left.openingTime == right.openingTime &&
+        left.closingTime == right.closingTime &&
+        left.staffAccessBeforeMinutes == right.staffAccessBeforeMinutes &&
+        left.staffAccessAfterMinutes == right.staffAccessAfterMinutes &&
+        left.restrictStaffLogin == right.restrictStaffLogin &&
+        left.allowAdminAnytime == right.allowAdminAnytime;
+  }
+
+  void _handleRuntimeSettingsSnapshot(
+    InventoryRuntimeSettingsSnapshot snapshot,
+  ) {
+    if (!mounted) return;
+    if (!snapshot.thresholdsLoaded) {
+      setState(() {
+        if (snapshot.measurementsLoaded) {
+          _measurements = _measurementsFromController();
+        }
+        _isLoadingSettings = true;
+      });
+      return;
+    }
+    final incomingThresholds = StockThresholdSettings(
+      low: snapshot.lowStockPercent,
+      critical: snapshot.criticalStockPercent,
+    );
+    final thresholdChanged = _thresholdBaseline != null &&
+        (_thresholdBaseline!.low != incomingThresholds.low ||
+            _thresholdBaseline!.critical != incomingThresholds.critical);
+    final incomingMatchesDraft =
+        double.tryParse(_lowPercentCtrl.text) == incomingThresholds.low &&
+        double.tryParse(_criticalPercentCtrl.text) ==
+            incomingThresholds.critical;
+    final protectDraft = _thresholdDraftDirty &&
+        !(_isSavingThresholds && incomingMatchesDraft);
+    setState(() {
+      if (snapshot.measurementsLoaded) {
+        _measurements = _measurementsFromController();
+      }
+      _isLoadingSettings = !snapshot.measurementsLoaded;
+      if (!protectDraft) {
+        _lowPercentCtrl.text = _formatPct(incomingThresholds.low);
+        _criticalPercentCtrl.text = _formatPct(incomingThresholds.critical);
+        _thresholdBaseline = incomingThresholds;
+        _thresholdConflictNotified = false;
+      } else if (thresholdChanged) {
+        // Keep the local draft; the conflict toast is emitted below.
+      }
+    });
+    if (protectDraft && thresholdChanged && !_thresholdConflictNotified) {
+      _thresholdConflictNotified = true;
+      _showConflictToast(
+        'Stock thresholds changed elsewhere. Your unsaved values were kept.',
+      );
+    }
+  }
+
+  void _handleStoreAccessSnapshot(StoreAccessSettings settings) {
+    if (!mounted ||
+        settings.locationId != widget.controller.activeLocationId) {
+      return;
+    }
+    final changed = _storeAccessBaseline != null &&
+        !_sameStoreAccess(_storeAccessBaseline!, settings);
+    final incomingMatchesDraft =
+        _formatClockTime(_openingTime) == settings.openingTime &&
+        _formatClockTime(_closingTime) == settings.closingTime &&
+        int.tryParse(_beforeMinutesCtrl.text) ==
+            settings.staffAccessBeforeMinutes &&
+        int.tryParse(_afterMinutesCtrl.text) ==
+            settings.staffAccessAfterMinutes &&
+        _restrictStaffLogin == settings.restrictStaffLogin &&
+        _allowAdminAnytime == settings.allowAdminAnytime;
+    final protectDraft = _storeAccessDraftDirty &&
+        !(_isSavingStoreAccess && incomingMatchesDraft);
+    if (protectDraft) {
+      if (changed) {
+        if (!_storeAccessConflictNotified) {
+          _storeAccessConflictNotified = true;
+          _showConflictToast(
+            'Store access settings changed elsewhere. Your unsaved values were kept.',
+          );
+        }
+      }
+      return;
+    }
+    _applyStoreAccessToForm(settings);
+  }
+
+  void _applyStoreAccessToForm(StoreAccessSettings settings) {
+    if (!mounted) return;
+    setState(() {
+      _storeAccessBaseline = settings;
+      _openingTime = _parseClockTime(settings.openingTime);
+      _closingTime = _parseClockTime(settings.closingTime);
+      _beforeMinutesCtrl.text = settings.staffAccessBeforeMinutes.toString();
+      _afterMinutesCtrl.text = settings.staffAccessAfterMinutes.toString();
+      _restrictStaffLogin = settings.restrictStaffLogin;
+      _allowAdminAnytime = settings.allowAdminAnytime;
+      _storeAccessConflictNotified = false;
+      _isLoadingStoreAccess = false;
+      _storeAccessError = null;
+    });
+  }
+
+  void _showConflictToast(String message) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AppToast.error(context, message);
+    });
+  }
+
+  void _handleStaffSnapshot(List<Map<String, dynamic>> staff) {
+    if (!mounted) return;
+    final currentUserId = widget.controller.currentUserId;
+    setState(() {
+      _staffList = staff
+          .where((row) => row['id'].toString() != currentUserId)
+          .map(Map<String, dynamic>.from)
+          .toList();
+      _isLoadingStaff = false;
+    });
   }
   Future<void> _uploadGcashQr() async {
     final picker = ImagePicker();
@@ -143,43 +313,10 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     try {
       await widget.controller.loadSystemSettings();
       if (!mounted) return;
-
-      _lowPercentCtrl.text = _formatPct(widget.controller.globalLowStockPct);
-      _criticalPercentCtrl.text = _formatPct(
-        widget.controller.globalCriticalPct,
-      );
-
-      setState(() {
-        _measurements = _measurementsFromController();
-        _isLoadingSettings = false;
-      });
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingSettings = false);
         _showToast("Error loading settings: $e", isError: true);
-      }
-    }
-  }
-
-  Future<void> _loadStaff() async {
-    setState(() => _isLoadingStaff = true);
-    try {
-      final staff = await widget.controller.fetchStaff();
-      final currentUserId = widget.controller.currentUserId;
-      final filteredStaff = staff
-          .where((s) => s['id'].toString() != currentUserId)
-          .toList();
-
-      if (mounted) {
-        setState(() {
-          _staffList = filteredStaff;
-          _isLoadingStaff = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingStaff = false);
-        _showToast("Error loading staff: $e", isError: true);
       }
     }
   }
@@ -295,26 +432,10 @@ Widget _buildPaymentSettings() {
     }
 
     try {
-      final service = StoreAccessService(
-        supabase: widget.controller.supabase,
-        locationId: locationId,
-      );
-
-      final settings = await service.fetchSettings();
+      final settings = await widget.storeAccessService.refreshSettings();
 
       if (!mounted) return;
-
-      setState(() {
-        _storeAccessSettings = settings;
-        _openingTime = _parseClockTime(settings.openingTime);
-        _closingTime = _parseClockTime(settings.closingTime);
-        _beforeMinutesCtrl.text = settings.staffAccessBeforeMinutes.toString();
-        _afterMinutesCtrl.text = settings.staffAccessAfterMinutes.toString();
-        _restrictStaffLogin = settings.restrictStaffLogin;
-        _allowAdminAnytime = settings.allowAdminAnytime;
-        _isLoadingStoreAccess = false;
-        _storeAccessError = null;
-      });
+      if (_storeAccessBaseline == null) _applyStoreAccessToForm(settings);
     } catch (e) {
       if (!mounted) return;
 
@@ -357,11 +478,6 @@ Widget _buildPaymentSettings() {
     });
 
     try {
-      final service = StoreAccessService(
-        supabase: widget.controller.supabase,
-        locationId: locationId,
-      );
-
       final settings = StoreAccessSettings(
         locationId: locationId,
         openingTime: _formatClockTime(_openingTime),
@@ -372,12 +488,21 @@ Widget _buildPaymentSettings() {
         allowAdminAnytime: _allowAdminAnytime,
       );
 
-      await service.saveSettings(settings);
+      final latest = await widget.storeAccessService.refreshSettings();
+      if (_storeAccessBaseline != null &&
+          !_sameStoreAccess(_storeAccessBaseline!, latest)) {
+        await _showStoreAccessConflict(latest);
+        if (mounted) setState(() => _isSavingStoreAccess = false);
+        return;
+      }
+
+      await widget.storeAccessService.saveSettings(settings);
 
       if (!mounted) return;
 
       setState(() {
-        _storeAccessSettings = settings;
+        _storeAccessBaseline = settings;
+        _storeAccessConflictNotified = false;
         _isSavingStoreAccess = false;
       });
 
@@ -390,6 +515,36 @@ Widget _buildPaymentSettings() {
         _storeAccessError = 'Failed to save store access settings: $e';
       });
     }
+  }
+
+  Future<void> _showStoreAccessConflict(
+    StoreAccessSettings latest,
+  ) async {
+    final reload = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.triangleAlert,
+        color: Colors.orange,
+        title: 'Store access settings changed',
+        subtitle: 'Another client saved a newer version.',
+        child: const Text(
+          'Your unsaved values are still intact. Reload the latest saved '
+          'settings, or keep editing without overwriting them.',
+          style: TextStyle(fontFamily: _fontFam),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep Editing'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Reload Latest'),
+          ),
+        ],
+      ),
+    );
+    if (reload == true && mounted) _applyStoreAccessToForm(latest);
   }
 
   Future<void> _pickStoreTime({required bool isOpening}) async {
@@ -889,10 +1044,29 @@ Widget _buildPaymentSettings() {
     setState(() => _isSavingThresholds = true);
 
     try {
+      final latest = await widget.controller.fetchStockThresholdSettings();
+      final baseline = _thresholdBaseline;
+      if (baseline != null &&
+          (baseline.low != latest.low ||
+              baseline.critical != latest.critical)) {
+        setState(() {
+          _isSavingThresholds = false;
+        });
+        await _showThresholdConflict(latest);
+        return;
+      }
+
       await widget.controller.updateGlobalThresholds(lowVal, critVal);
 
       if (mounted) {
-        setState(() => _isSavingThresholds = false);
+        setState(() {
+          _thresholdBaseline = StockThresholdSettings(
+            low: lowVal,
+            critical: critVal,
+          );
+          _thresholdConflictNotified = false;
+          _isSavingThresholds = false;
+        });
         _showToast("Global thresholds updated successfully");
       }
     } catch (e) {
@@ -902,6 +1076,41 @@ Widget _buildPaymentSettings() {
           _thresholdError = "Failed to save: $e";
         });
       }
+    }
+  }
+
+  Future<void> _showThresholdConflict(StockThresholdSettings latest) async {
+    final reload = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.triangleAlert,
+        color: Colors.orange,
+        title: 'Stock thresholds changed',
+        subtitle: 'Another client saved newer threshold values.',
+        child: const Text(
+          'Your unsaved values are still intact. Reload the latest saved '
+          'thresholds, or keep editing.',
+          style: TextStyle(fontFamily: _fontFam),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep Editing'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Reload Latest'),
+          ),
+        ],
+      ),
+    );
+    if (reload == true && mounted) {
+      setState(() {
+        _lowPercentCtrl.text = _formatPct(latest.low);
+        _criticalPercentCtrl.text = _formatPct(latest.critical);
+        _thresholdBaseline = latest;
+        _thresholdConflictNotified = false;
+      });
     }
   }
 
@@ -934,6 +1143,59 @@ Widget _buildPaymentSettings() {
                 await widget.controller.addMeasurement(name, symbol);
                 _showToast("Measurement added successfully");
               } else {
+                final latest = await widget.controller.fetchMeasurement(
+                  existing.id,
+                );
+                if (latest == null) {
+                  setModalState(() => saving = false);
+                  _showToast(
+                    'This measurement was deleted elsewhere.',
+                    isError: true,
+                  );
+                  return;
+                }
+                final latestName = latest['name']?.toString() ?? '';
+                final latestSymbol = latest['symbol']?.toString() ?? '';
+                if (latestName != existing.name ||
+                    latestSymbol != existing.symbol) {
+                  if (!dialogContext.mounted) return;
+                  final reload = await showDialog<bool>(
+                    context: dialogContext,
+                    builder: (conflictContext) => AppDialog(
+                      icon: LucideIcons.triangleAlert,
+                      color: Colors.orange,
+                      title: 'Measurement changed',
+                      subtitle: 'A newer saved value is available.',
+                      child: const Text(
+                        'Your unsaved values were kept. Reload the latest '
+                        'measurement, or keep editing.',
+                        style: TextStyle(fontFamily: _fontFam),
+                      ),
+                      actions: [
+                        OutlinedButton(
+                          onPressed: () =>
+                              Navigator.pop(conflictContext, false),
+                          child: const Text('Keep Editing'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () =>
+                              Navigator.pop(conflictContext, true),
+                          child: const Text('Reload Latest'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (reload == true) {
+                    existing.name = latestName;
+                    existing.symbol = latestSymbol;
+                    nameCtrl.text = latestName;
+                    symbolCtrl.text = latestSymbol;
+                  }
+                  if (dialogContext.mounted) {
+                    setModalState(() => saving = false);
+                  }
+                  return;
+                }
                 await widget.controller.updateMeasurement(
                   existing.id,
                   name,
@@ -1388,7 +1650,6 @@ Widget _buildPaymentSettings() {
                             if (dialogContext.mounted) {
                               Navigator.pop(dialogContext);
                             }
-                            _loadStaff();
                             _showToast("Staff created successfully.");
                           } else {
                             setModalState(() => isSaving = false);
@@ -1447,6 +1708,7 @@ Widget _buildPaymentSettings() {
             title: "Change Role",
             subtitle: staff['name'],
             child: DropdownButtonFormField<String>(
+              key: ValueKey<String>(selectedRole),
               initialValue: selectedRole,
               style: const TextStyle(fontFamily: _fontFam, color: Colors.black87, fontSize: 14),
               decoration: InputDecoration(
@@ -1494,15 +1756,71 @@ Widget _buildPaymentSettings() {
                     : () async {
                         setModalState(() => isSaving = true);
                         try {
+                          final latest = await widget.controller
+                              .fetchStaffProfile(staff['id'].toString());
+                          if (latest == null) {
+                            setModalState(() => isSaving = false);
+                            _showToast(
+                              'This staff account was removed elsewhere.',
+                              isError: true,
+                            );
+                            return;
+                          }
+                          final latestRole =
+                              latest['role']?.toString() ?? 'staff';
+                          final baselineRole =
+                              staff['role']?.toString() ?? 'staff';
+                          if (latestRole != baselineRole) {
+                            if (!dialogContext.mounted) return;
+                            final reload = await showDialog<bool>(
+                              context: dialogContext,
+                              builder: (conflictContext) => AppDialog(
+                                icon: LucideIcons.triangleAlert,
+                                color: Colors.orange,
+                                title: 'Staff role changed',
+                                subtitle:
+                                    'Another admin saved a newer role.',
+                                child: const Text(
+                                  'Your unsaved selection was kept. Reload '
+                                  'the latest role, or keep editing.',
+                                  style: TextStyle(fontFamily: _fontFam),
+                                ),
+                                actions: [
+                                  OutlinedButton(
+                                    onPressed: () => Navigator.pop(
+                                      conflictContext,
+                                      false,
+                                    ),
+                                    child: const Text('Keep Editing'),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () => Navigator.pop(
+                                      conflictContext,
+                                      true,
+                                    ),
+                                    child: const Text('Reload Latest'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (reload == true) {
+                              staff['role'] = latestRole;
+                              selectedRole = latestRole;
+                            }
+                            if (dialogContext.mounted) {
+                              setModalState(() => isSaving = false);
+                            }
+                            return;
+                          }
                           final success = await widget.controller
                               .updateStaffRole(
                                 staff['id'].toString(),
                                 selectedRole,
                               );
                           if (success) {
-                            if (dialogContext.mounted)
+                            if (dialogContext.mounted) {
                               Navigator.pop(dialogContext);
-                            _loadStaff();
+                            }
                             _showToast("Role updated successfully.");
                           } else {
                             setModalState(() => isSaving = false);
@@ -1655,7 +1973,6 @@ Widget _buildPaymentSettings() {
                 );
                 if (ctx.mounted) Navigator.pop(ctx);
                 if (success) {
-                  _loadStaff();
                   _showToast("Staff account deleted");
                 } else {
                   _showToast("Failed to delete staff account.", isError: true);
