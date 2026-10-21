@@ -539,6 +539,58 @@ class NotificationController extends ChangeNotifier {
     }
   }
 
+  Future<void> notifyStoreAccessLifecycle({
+    required String locationId,
+    required List<String> targetRoles,
+    required String lifecycleKind,
+    required String windowKey,
+    required String stage,
+    required String title,
+    required String body,
+    required DateTime openingAt,
+    required DateTime shiftEndAt,
+    required DateTime accessEndAt,
+  }) async {
+    try {
+      _errorMessage = null;
+      await _service.notifyStoreAccessLifecycle(
+        locationId: locationId,
+        targetRoles: targetRoles,
+        lifecycleKind: lifecycleKind,
+        windowKey: windowKey,
+        stage: stage,
+        title: title,
+        body: body,
+        openingAt: openingAt,
+        shiftEndAt: shiftEndAt,
+        accessEndAt: accessEndAt,
+      );
+      await _refreshNotifications();
+    } catch (e) {
+      if (_disposed) return;
+      _errorMessage = 'Failed to update store access notification: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> resolveStoreAccessLifecycle({
+    required String lifecycleKind,
+    required String windowKey,
+  }) async {
+    try {
+      _errorMessage = null;
+      await _service.resolveStoreAccessLifecycle(
+        lifecycleKind: lifecycleKind,
+        windowKey: windowKey,
+      );
+      await _refreshNotifications();
+    } catch (e) {
+      if (_disposed) return;
+      _errorMessage = 'Failed to resolve store access notification: $e';
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;

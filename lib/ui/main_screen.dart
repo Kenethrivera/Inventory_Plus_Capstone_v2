@@ -77,12 +77,21 @@ class _MainScreenState extends State<MainScreen> {
   final Completer<void> _deferredControllerData = Completer<void>();
   final Set<int> _mountedPageIndexes = <int>{0};
   Timer? _storeAccessEndTimer;
+  StoreAccessSettings? _scheduledStoreAccessSettings;
+  StoreAccessWindow? _scheduledStoreAccessWindow;
+  String? _storeAccessScheduleKey;
+  final Set<_StoreAccessMilestone> _deliveredStoreAccessMilestones = {};
   bool _isForcingStoreLogout = false;
   bool _isInvalidatingSession = false;
 
   Timer? _storeLogoutCountdownTimer;
-  int _storeLogoutRemainingSeconds = 30;
+  DateTime? _storeLogoutDeadline;
+  int _storeLogoutRemainingSeconds = 0;
+  int _storeLogoutInitialSeconds = 60;
   bool _isStoreLogoutWarningVisible = false;
+  bool _showStoreLogoutCountdownChip = false;
+  bool _storeLogoutWarningShownForSchedule = false;
+  int _storeLogoutDialogGeneration = 0;
   BuildContext? _storeLogoutDialogContext;
   StateSetter? _storeLogoutDialogSetState;
 
@@ -289,78 +298,140 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  Future<void> _applyStoreAccessSettings(
-    StoreAccessSettings settings,
-  ) async {
+  Future<void> _applyStoreAccessSettings(StoreAccessSettings settings) async {
     final role = widget.controller.currentUserRole?.toLowerCase();
     if (role == null || role.isEmpty) return;
     final accessService = _storeAccessService;
-    if (accessService == null || settings.locationId != accessService.locationId) {
+    if (accessService == null ||
+        settings.locationId != accessService.locationId) {
       return;
     }
 
-    debugPrint('STORE ACCESS CHECK: role=$role');
-    debugPrint('OPENING: ${settings.openingTime}');
-    debugPrint('CLOSING: ${settings.closingTime}');
-    debugPrint('AFTER ALLOWANCE: ${settings.staffAccessAfterMinutes} minutes');
-
     final now = DateTime.now();
+    _storeAccessEndTimer?.cancel();
+    _storeAccessEndTimer = null;
+
+    final isExempt =
+        !settings.restrictStaffLogin ||
+        (role == 'admin' && settings.allowAdminAnytime);
+    if (isExempt) {
+      _resolveObsoleteStoreAccessLifecycles();
+      _clearStoreAccessScheduling();
+      return;
+    }
+
+    final window = accessService.resolveAccessWindow(settings, now: now);
+    final scheduleKey = window.scheduleKey(settings.locationId);
+    final scheduleChanged = scheduleKey != _storeAccessScheduleKey;
+    if (scheduleChanged) {
+      _resolveObsoleteStoreAccessLifecycles(
+        replacementSettings: settings,
+        replacementWindow: window,
+      );
+      _cancelPendingStoreLogout();
+      _deliveredStoreAccessMilestones.clear();
+      _storeLogoutWarningShownForSchedule = false;
+      _storeAccessScheduleKey = scheduleKey;
+    }
+    _scheduledStoreAccessSettings = settings;
+    _scheduledStoreAccessWindow = window;
+
     final accessAllowed = accessService.isAccessAllowed(
       settings: settings,
       role: role,
       now: now,
     );
+    if (!accessAllowed || !now.isBefore(window.accessEnd)) {
+      await _completeForcedStoreLogout();
+      return;
+    }
 
+    final remainingMilliseconds = window.accessEnd
+        .difference(now)
+        .inMilliseconds;
+    if (remainingMilliseconds <= const Duration(minutes: 1).inMilliseconds) {
+      final newlyDelivered = _deliveredStoreAccessMilestones.add(
+        _StoreAccessMilestone.logoutWarning,
+      );
+      if (newlyDelivered) {
+        _persistStoreAccessMilestone(
+          _StoreAccessMilestone.logoutWarning,
+          settings,
+          window,
+        );
+      }
+      _startStoreLogoutCountdown(window.accessEnd);
+      _scheduleNextStoreAccessMilestone();
+      return;
+    }
+
+    if (_isForcingStoreLogout) _cancelPendingStoreLogout();
+    _scheduleNextStoreAccessMilestone();
+  }
+
+  void _resolveObsoleteStoreAccessLifecycles({
+    StoreAccessSettings? replacementSettings,
+    StoreAccessWindow? replacementWindow,
+  }) {
+    final controller = _notificationController;
+    final previousSettings = _scheduledStoreAccessSettings;
+    final previousWindow = _scheduledStoreAccessWindow;
+    if (controller == null ||
+        previousSettings == null ||
+        previousWindow == null) {
+      return;
+    }
+
+    final previousOpeningKey = previousWindow.openingLifecycleKey(
+      previousSettings.locationId,
+    );
+    final nextOpeningKey =
+        replacementSettings == null || replacementWindow == null
+        ? null
+        : replacementWindow.openingLifecycleKey(replacementSettings.locationId);
+    if (previousOpeningKey != nextOpeningKey) {
+      unawaited(
+        controller.resolveStoreAccessLifecycle(
+          lifecycleKind: 'opening',
+          windowKey: previousOpeningKey,
+        ),
+      );
+    }
+
+    final previousAccessKey = previousWindow.accessLifecycleKey(
+      previousSettings.locationId,
+    );
+    final nextAccessKey =
+        replacementSettings == null || replacementWindow == null
+        ? null
+        : replacementWindow.accessLifecycleKey(replacementSettings.locationId);
+    if (previousAccessKey != nextAccessKey) {
+      unawaited(
+        controller.resolveStoreAccessLifecycle(
+          lifecycleKind: 'access',
+          windowKey: previousAccessKey,
+        ),
+      );
+    }
+  }
+
+  void _clearStoreAccessScheduling() {
     _storeAccessEndTimer?.cancel();
     _storeAccessEndTimer = null;
-
-    if (!accessAllowed) {
-      debugPrint('STORE ACCESS: current session is outside the new window');
-      await _forceLogoutDueToStoreHours();
-      return;
-    }
-
+    _scheduledStoreAccessSettings = null;
+    _scheduledStoreAccessWindow = null;
+    _storeAccessScheduleKey = null;
+    _deliveredStoreAccessMilestones.clear();
+    _storeLogoutWarningShownForSchedule = false;
     _cancelPendingStoreLogout();
-
-    if (!settings.restrictStaffLogin) {
-      debugPrint('STORE ACCESS: restriction is OFF');
-      return;
-    }
-
-    if (role == 'admin' && settings.allowAdminAnytime) {
-      debugPrint('STORE ACCESS: admin allowed anytime');
-      return;
-    }
-
-    final endTime = accessService.accessEndDateTime(settings, now: now);
-    final remaining = endTime.difference(now);
-
-    debugPrint('NOW: $now');
-    debugPrint('ACCESS ENDS AT: $endTime');
-    debugPrint('REMAINING: ${remaining.inSeconds} seconds');
-
-    if (remaining.isNegative || remaining.inSeconds <= 0) {
-      debugPrint('STORE ACCESS: expired already, forcing logout');
-      await _forceLogoutDueToStoreHours();
-      return;
-    }
-
-    _storeAccessEndTimer = Timer(remaining, () async {
-      debugPrint('STORE ACCESS: timer fired, rechecking access');
-      try {
-        await accessService.refreshSettings();
-      } catch (error, stackTrace) {
-        debugPrint('[StoreAccess] Deadline reconciliation failed: $error');
-        debugPrintStack(stackTrace: stackTrace);
-      }
-    });
   }
 
   void _cancelPendingStoreLogout() {
-    if (!_isForcingStoreLogout) return;
     _isForcingStoreLogout = false;
     _storeLogoutCountdownTimer?.cancel();
     _storeLogoutCountdownTimer = null;
+    _storeLogoutDeadline = null;
+    _storeLogoutDialogGeneration++;
     final dialogContext = _storeLogoutDialogContext;
     _storeLogoutDialogContext = null;
     _storeLogoutDialogSetState = null;
@@ -368,19 +439,275 @@ class _MainScreenState extends State<MainScreen> {
       Navigator.pop(dialogContext);
     }
     _isStoreLogoutWarningVisible = false;
+    final needsRebuild =
+        _showStoreLogoutCountdownChip || _storeLogoutRemainingSeconds != 0;
+    _showStoreLogoutCountdownChip = false;
+    _storeLogoutRemainingSeconds = 0;
+    if (needsRebuild && mounted) setState(() {});
   }
 
-  Future<void> _forceLogoutDueToStoreHours() async {
-    if (_isForcingStoreLogout) return;
+  void _scheduleNextStoreAccessMilestone() {
+    _storeAccessEndTimer?.cancel();
+    _storeAccessEndTimer = null;
+    final settings = _scheduledStoreAccessSettings;
+    final window = _scheduledStoreAccessWindow;
+    final scheduleKey = _storeAccessScheduleKey;
+    if (settings == null || window == null || scheduleKey == null) return;
+
+    final now = DateTime.now();
+    if (!now.isBefore(window.accessEnd)) {
+      unawaited(_completeForcedStoreLogout());
+      return;
+    }
+
+    final candidates = <_ScheduledStoreAccessMilestone>[
+      _ScheduledStoreAccessMilestone(
+        _StoreAccessMilestone.openingSoon,
+        window.opening.subtract(const Duration(minutes: 5)),
+      ),
+      _ScheduledStoreAccessMilestone(
+        _StoreAccessMilestone.opened,
+        window.opening,
+      ),
+      _ScheduledStoreAccessMilestone(
+        _StoreAccessMilestone.shiftEnd30,
+        window.shiftEnd.subtract(const Duration(minutes: 30)),
+      ),
+      _ScheduledStoreAccessMilestone(
+        _StoreAccessMilestone.shiftEnd15,
+        window.shiftEnd.subtract(const Duration(minutes: 15)),
+      ),
+      _ScheduledStoreAccessMilestone(
+        _StoreAccessMilestone.shiftEnd5,
+        window.shiftEnd.subtract(const Duration(minutes: 5)),
+      ),
+      _ScheduledStoreAccessMilestone(
+        _StoreAccessMilestone.shiftEnded,
+        window.shiftEnd,
+      ),
+      if (settings.staffAccessAfterMinutes > 5)
+        _ScheduledStoreAccessMilestone(
+          _StoreAccessMilestone.allowance5,
+          window.accessEnd.subtract(const Duration(minutes: 5)),
+        ),
+      _ScheduledStoreAccessMilestone(
+        _StoreAccessMilestone.logoutWarning,
+        window.accessEnd.subtract(const Duration(minutes: 1)),
+      ),
+      _ScheduledStoreAccessMilestone(
+        _StoreAccessMilestone.deadline,
+        window.accessEnd,
+      ),
+    ]..sort((left, right) => left.at.compareTo(right.at));
+
+    _ScheduledStoreAccessMilestone? next;
+    for (final candidate in candidates) {
+      if (_deliveredStoreAccessMilestones.contains(candidate.milestone)) {
+        continue;
+      }
+      // Threshold notifications are intentionally not backfilled. The final
+      // minute is reconciled separately when settings are applied.
+      if (candidate.at.isAfter(now)) {
+        next = candidate;
+        break;
+      }
+    }
+    if (next == null) return;
+    final scheduled = next;
+
+    _storeAccessEndTimer = Timer(scheduled.at.difference(now), () {
+      if (!mounted || _storeAccessScheduleKey != scheduleKey) return;
+      final firedLateBy = DateTime.now().difference(scheduled.at);
+      final isEnforcementMilestone = candidates.any(
+        (candidate) =>
+            candidate.at == scheduled.at &&
+            (candidate.milestone == _StoreAccessMilestone.logoutWarning ||
+                candidate.milestone == _StoreAccessMilestone.deadline),
+      );
+      if (!isEnforcementMilestone && firedLateBy > const Duration(seconds: 5)) {
+        _scheduleNextStoreAccessMilestone();
+        return;
+      }
+      final dueMilestones = candidates
+          .where(
+            (candidate) =>
+                candidate.at == scheduled.at &&
+                (firedLateBy <= const Duration(seconds: 5) ||
+                    candidate.milestone ==
+                        _StoreAccessMilestone.logoutWarning ||
+                    candidate.milestone == _StoreAccessMilestone.deadline) &&
+                !_deliveredStoreAccessMilestones.contains(candidate.milestone),
+          )
+          .map((candidate) => candidate.milestone)
+          .toList(growable: false);
+      for (final milestone in dueMilestones) {
+        _handleStoreAccessMilestone(milestone, settings, window);
+      }
+      if (!dueMilestones.contains(_StoreAccessMilestone.deadline)) {
+        _scheduleNextStoreAccessMilestone();
+      }
+    });
+  }
+
+  void _handleStoreAccessMilestone(
+    _StoreAccessMilestone milestone,
+    StoreAccessSettings settings,
+    StoreAccessWindow window,
+  ) {
+    if (_deliveredStoreAccessMilestones.contains(milestone)) return;
+    _deliveredStoreAccessMilestones.add(milestone);
+
+    if (milestone == _StoreAccessMilestone.logoutWarning) {
+      _startStoreLogoutCountdown(window.accessEnd);
+    } else if (milestone == _StoreAccessMilestone.deadline) {
+      unawaited(_completeForcedStoreLogout());
+    }
+    _persistStoreAccessMilestone(milestone, settings, window);
+  }
+
+  void _persistStoreAccessMilestone(
+    _StoreAccessMilestone milestone,
+    StoreAccessSettings settings,
+    StoreAccessWindow window,
+  ) {
+    final controller = _notificationController;
+    if (controller == null || milestone == _StoreAccessMilestone.deadline) {
+      if (milestone == _StoreAccessMilestone.deadline) {
+        unawaited(
+          controller?.resolveStoreAccessLifecycle(
+                lifecycleKind: 'access',
+                windowKey: window.accessLifecycleKey(settings.locationId),
+              ) ??
+              Future<void>.value(),
+        );
+      }
+      return;
+    }
+
+    final targetRoles = <String>[
+      'helper',
+      'staff',
+      if (!settings.allowAdminAnytime) 'admin',
+    ];
+    late final String lifecycleKind;
+    late final String windowKey;
+    late final String stage;
+    late final String title;
+    late final String body;
+
+    switch (milestone) {
+      case _StoreAccessMilestone.openingSoon:
+        lifecycleKind = 'opening';
+        windowKey = window.openingLifecycleKey(settings.locationId);
+        stage = 'openingSoon';
+        title = 'Store opening soon';
+        body = 'Store hours begin in 5 minutes.';
+      case _StoreAccessMilestone.opened:
+        lifecycleKind = 'opening';
+        windowKey = window.openingLifecycleKey(settings.locationId);
+        stage = 'opened';
+        title = 'Store hours started';
+        body = 'Store hours are now active.';
+      case _StoreAccessMilestone.shiftEnd30:
+        lifecycleKind = 'access';
+        windowKey = window.accessLifecycleKey(settings.locationId);
+        stage = 'shiftEnd30';
+        title = 'Shift ending soon';
+        body = 'Your shift ends in 30 minutes.';
+      case _StoreAccessMilestone.shiftEnd15:
+        lifecycleKind = 'access';
+        windowKey = window.accessLifecycleKey(settings.locationId);
+        stage = 'shiftEnd15';
+        title = 'Shift ending soon';
+        body = 'Your shift ends in 15 minutes.';
+      case _StoreAccessMilestone.shiftEnd5:
+        lifecycleKind = 'access';
+        windowKey = window.accessLifecycleKey(settings.locationId);
+        stage = 'shiftEnd5';
+        title = 'Shift ending soon';
+        body = 'Your shift ends in 5 minutes.';
+      case _StoreAccessMilestone.shiftEnded:
+        unawaited(
+          controller.resolveStoreAccessLifecycle(
+            lifecycleKind: 'opening',
+            windowKey: window.openingLifecycleKey(settings.locationId),
+          ),
+        );
+        lifecycleKind = 'access';
+        windowKey = window.accessLifecycleKey(settings.locationId);
+        stage = 'shiftEnded';
+        title = 'Shift ended';
+        final allowance = settings.staffAccessAfterMinutes;
+        body = allowance == 0
+            ? 'Your shift has ended. Store access is ending now.'
+            : 'Your shift has ended. You have $allowance minutes to finish '
+                  'your remaining work.';
+      case _StoreAccessMilestone.allowance5:
+        lifecycleKind = 'access';
+        windowKey = window.accessLifecycleKey(settings.locationId);
+        stage = 'allowance5';
+        title = 'Store access ending soon';
+        body = '5 minutes of your post-shift allowance remain.';
+      case _StoreAccessMilestone.logoutWarning:
+        lifecycleKind = 'access';
+        windowKey = window.accessLifecycleKey(settings.locationId);
+        stage = 'logoutWarning';
+        title = 'Session ending soon';
+        body = 'Store access ends in less than 1 minute.';
+      case _StoreAccessMilestone.deadline:
+        return;
+    }
+
+    unawaited(
+      controller.notifyStoreAccessLifecycle(
+        locationId: settings.locationId,
+        targetRoles: targetRoles,
+        lifecycleKind: lifecycleKind,
+        windowKey: windowKey,
+        stage: stage,
+        title: title,
+        body: body,
+        openingAt: window.opening,
+        shiftEndAt: window.shiftEnd,
+        accessEndAt: window.accessEnd,
+      ),
+    );
+  }
+
+  void _startStoreLogoutCountdown(DateTime deadline) {
+    if (_isForcingStoreLogout && _storeLogoutDeadline == deadline) return;
 
     _isForcingStoreLogout = true;
-    _storeLogoutRemainingSeconds = 30;
+    _storeLogoutDeadline = deadline;
+    final remaining = _remainingStoreLogoutSeconds();
+    if (remaining <= 0) {
+      unawaited(_completeForcedStoreLogout());
+      return;
+    }
+    _storeLogoutInitialSeconds = remaining;
+    if (mounted) {
+      setState(() {
+        _storeLogoutRemainingSeconds = remaining;
+        _showStoreLogoutCountdownChip = false;
+      });
+    }
 
-    _showStoreLogoutWarningModal();
-    _startStoreLogoutCountdown();
+    if (!_storeLogoutWarningShownForSchedule) {
+      _storeLogoutWarningShownForSchedule = true;
+      _showStoreLogoutWarningModal();
+    }
+    _runStoreLogoutCountdownTimer();
   }
 
-  void _startStoreLogoutCountdown() {
+  int _remainingStoreLogoutSeconds() {
+    final deadline = _storeLogoutDeadline;
+    if (deadline == null) return 0;
+    final milliseconds = deadline.difference(DateTime.now()).inMilliseconds;
+    if (milliseconds <= 0) return 0;
+    return (milliseconds / Duration.millisecondsPerSecond).ceil();
+  }
+
+  void _runStoreLogoutCountdownTimer() {
     _storeLogoutCountdownTimer?.cancel();
 
     _storeLogoutCountdownTimer = Timer.periodic(const Duration(seconds: 1), (
@@ -391,15 +718,16 @@ class _MainScreenState extends State<MainScreen> {
         return;
       }
 
-      if (_storeLogoutRemainingSeconds <= 1) {
+      final remaining = _remainingStoreLogoutSeconds();
+      if (remaining <= 0) {
         timer.cancel();
-        _completeForcedStoreLogout();
+        unawaited(_completeForcedStoreLogout());
         return;
       }
 
-      setState(() {
-        _storeLogoutRemainingSeconds--;
-      });
+      if (_storeLogoutRemainingSeconds != remaining) {
+        setState(() => _storeLogoutRemainingSeconds = remaining);
+      }
       if (_isStoreLogoutWarningVisible) {
         _storeLogoutDialogSetState?.call(() {});
       }
@@ -411,6 +739,7 @@ class _MainScreenState extends State<MainScreen> {
     if (_isStoreLogoutWarningVisible) return;
 
     _isStoreLogoutWarningVisible = true;
+    final dialogGeneration = ++_storeLogoutDialogGeneration;
 
     showDialog(
       context: context,
@@ -422,7 +751,8 @@ class _MainScreenState extends State<MainScreen> {
           builder: (context, setDialogState) {
             _storeLogoutDialogSetState = setDialogState;
 
-            final progress = _storeLogoutRemainingSeconds / 30;
+            final progress =
+                _storeLogoutRemainingSeconds / _storeLogoutInitialSeconds;
 
             return Dialog(
               backgroundColor: Colors.transparent,
@@ -436,7 +766,7 @@ class _MainScreenState extends State<MainScreen> {
                   border: Border.all(color: const Color(0xFFE5E7EB)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.14),
+                      color: Colors.black.withValues(alpha: 0.14),
                       blurRadius: 28,
                       offset: const Offset(0, 14),
                     ),
@@ -452,7 +782,7 @@ class _MainScreenState extends State<MainScreen> {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: _primaryBlue.withOpacity(0.1),
+                            color: _primaryBlue.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: const Icon(
@@ -464,7 +794,7 @@ class _MainScreenState extends State<MainScreen> {
                         const SizedBox(width: 12),
                         const Expanded(
                           child: Text(
-                            'Shift access ended',
+                            'Session ending soon',
                             style: TextStyle(
                               color: _darkText,
                               fontSize: 19,
@@ -492,7 +822,7 @@ class _MainScreenState extends State<MainScreen> {
                       child: Column(
                         children: [
                           const Text(
-                            'Automatic logout in',
+                            'Store access ends in less than 1 minute.',
                             style: TextStyle(
                               color: _inactiveText,
                               fontSize: 13,
@@ -502,23 +832,15 @@ class _MainScreenState extends State<MainScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            '$_storeLogoutRemainingSeconds',
+                            _formatStoreLogoutCountdown(
+                              _storeLogoutRemainingSeconds,
+                            ),
                             style: const TextStyle(
                               color: _primaryBlue,
                               fontSize: 44,
                               fontWeight: FontWeight.w900,
                               fontFamily: _fontFam,
                               height: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            'seconds',
-                            style: TextStyle(
-                              color: _inactiveText,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              fontFamily: _fontFam,
                             ),
                           ),
                           const SizedBox(height: 14),
@@ -547,6 +869,11 @@ class _MainScreenState extends State<MainScreen> {
                               _isStoreLogoutWarningVisible = false;
                               _storeLogoutDialogContext = null;
                               _storeLogoutDialogSetState = null;
+                              if (mounted) {
+                                setState(() {
+                                  _showStoreLogoutCountdownChip = true;
+                                });
+                              }
 
                               if (Navigator.canPop(dialogContext)) {
                                 Navigator.pop(dialogContext);
@@ -582,7 +909,7 @@ class _MainScreenState extends State<MainScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
                             child: const Text(
-                              'Log out now',
+                              'Logout Now',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w800,
@@ -601,15 +928,37 @@ class _MainScreenState extends State<MainScreen> {
         );
       },
     ).then((_) {
-      _isStoreLogoutWarningVisible = false;
-      _storeLogoutDialogContext = null;
-      _storeLogoutDialogSetState = null;
+      if (_storeLogoutDialogGeneration == dialogGeneration) {
+        _isStoreLogoutWarningVisible = false;
+        _storeLogoutDialogContext = null;
+        _storeLogoutDialogSetState = null;
+      }
     });
   }
 
   Future<void> _completeForcedStoreLogout() async {
+    if (_isInvalidatingSession) return;
+    _isInvalidatingSession = true;
+    _storeAccessEndTimer?.cancel();
+    _storeAccessEndTimer = null;
     _storeLogoutCountdownTimer?.cancel();
     _storeLogoutCountdownTimer = null;
+    if (mounted && _storeLogoutRemainingSeconds != 0) {
+      setState(() => _storeLogoutRemainingSeconds = 0);
+      _storeLogoutDialogSetState?.call(() {});
+    }
+
+    final settings = _scheduledStoreAccessSettings;
+    final window = _scheduledStoreAccessWindow;
+    if (settings != null && window != null) {
+      unawaited(
+        _notificationController?.resolveStoreAccessLifecycle(
+              lifecycleKind: 'access',
+              windowKey: window.accessLifecycleKey(settings.locationId),
+            ) ??
+            Future<void>.value(),
+      );
+    }
 
     if (_storeLogoutDialogContext != null) {
       final dialogContext = _storeLogoutDialogContext!;
@@ -636,6 +985,14 @@ class _MainScreenState extends State<MainScreen> {
     );
 
     Navigator.pushReplacementNamed(context, '/login');
+  }
+
+  String _formatStoreLogoutCountdown(int totalSeconds) {
+    final safeSeconds = totalSeconds.clamp(0, 5999);
+    final minutes = safeSeconds ~/ 60;
+    final seconds = safeSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:'
+        '${seconds.toString().padLeft(2, '0')}';
   }
 
   void _configureStaffPresence() {
@@ -695,7 +1052,6 @@ class _MainScreenState extends State<MainScreen> {
       debugPrint('[Startup] Staff presence start failed: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
-
   }
 
   void _handleCurrentProfileChange(CurrentUserProfileSnapshot? profile) {
@@ -754,8 +1110,7 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _invalidateSessionForProfileChange(String message) async {
     if (_isInvalidatingSession) return;
     _isInvalidatingSession = true;
-    _storeAccessEndTimer?.cancel();
-    _storeLogoutCountdownTimer?.cancel();
+    _clearStoreAccessScheduling();
     try {
       await _staffPresenceService?.stop(logoutReason: 'profile_changed');
       final prefs = await SharedPreferences.getInstance();
@@ -1633,7 +1988,54 @@ class _MainScreenState extends State<MainScreen> {
 
     return NotificationProvider(
       controller: notificationController,
-      child: _buildMainContent(),
+      child: Stack(
+        children: [
+          Positioned.fill(child: _buildMainContent()),
+          if (_showStoreLogoutCountdownChip && _storeLogoutRemainingSeconds > 0)
+            Positioned(
+              right: 16,
+              bottom: MediaQuery.sizeOf(context).width < 600
+                  ? 88
+                  : (kDebugMode ? 160 : 88),
+              child: _buildStoreLogoutCountdownChip(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoreLogoutCountdownChip() {
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFF97316)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(LucideIcons.timer, size: 18, color: Color(0xFFC2410C)),
+            const SizedBox(width: 8),
+            Text(
+              'Auto logout in ${_formatStoreLogoutCountdown(_storeLogoutRemainingSeconds)}',
+              style: const TextStyle(
+                color: Color(0xFF9A3412),
+                fontWeight: FontWeight.w800,
+                fontFamily: _fontFam,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2732,6 +3134,7 @@ class _MainScreenState extends State<MainScreen> {
     if (confirm != true || !mounted) return;
 
     try {
+      _clearStoreAccessScheduling();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
@@ -2749,6 +3152,7 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _logoutFromForcedPasswordChange() async {
     try {
+      _clearStoreAccessScheduling();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
@@ -2763,4 +3167,23 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
   }
+}
+
+enum _StoreAccessMilestone {
+  openingSoon,
+  opened,
+  shiftEnd30,
+  shiftEnd15,
+  shiftEnd5,
+  shiftEnded,
+  allowance5,
+  logoutWarning,
+  deadline,
+}
+
+class _ScheduledStoreAccessMilestone {
+  final _StoreAccessMilestone milestone;
+  final DateTime at;
+
+  const _ScheduledStoreAccessMilestone(this.milestone, this.at);
 }

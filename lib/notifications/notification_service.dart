@@ -69,6 +69,9 @@ class NotificationService {
 
     if (matches.isEmpty) {
       await _repository.createNotification(notification);
+      if (identity != null) {
+        await _reconcileLifecycleDuplicates(identity);
+      }
       return;
     }
 
@@ -79,6 +82,21 @@ class NotificationService {
 
     // Reconcile any historical duplicates so only one active lifecycle row
     // remains. This fixes persistence rather than merely hiding duplicates.
+    final resolvedAt = DateTime.now();
+    for (final duplicate in matches.skip(1)) {
+      await _repository.updateNotification(
+        duplicate.copyWith(isResolved: true, resolvedAt: resolvedAt),
+      );
+    }
+  }
+
+  Future<void> _reconcileLifecycleDuplicates(String identity) async {
+    final active = await _repository.fetchActiveLifecycleNotifications();
+    final matches = active
+        .where((notification) => _logicalIdentity(notification) == identity)
+        .toList(growable: false);
+    if (matches.length < 2) return;
+
     final resolvedAt = DateTime.now();
     for (final duplicate in matches.skip(1)) {
       await _repository.updateNotification(
@@ -130,8 +148,65 @@ class NotificationService {
       case NotificationType.inventoryAdded:
       case NotificationType.inventoryUpdated:
       case NotificationType.inventoryDeleted:
-      case NotificationType.system:
         return null;
+      case NotificationType.system:
+        if (payload['category']?.toString() != 'storeAccess') return null;
+        final lifecycleKind = payload['lifecycleKind']?.toString();
+        final windowKey = payload['windowKey']?.toString();
+        if (lifecycleKind == null || windowKey == null) return null;
+        return 'store-access:$lifecycleKind:$windowKey';
+    }
+  }
+
+  Future<void> notifyStoreAccessLifecycle({
+    required String locationId,
+    required List<String> targetRoles,
+    required String lifecycleKind,
+    required String windowKey,
+    required String stage,
+    required String title,
+    required String body,
+    required DateTime openingAt,
+    required DateTime shiftEndAt,
+    required DateTime accessEndAt,
+  }) async {
+    final notification = NotificationFactory.storeAccessLifecycle(
+      locationId: locationId,
+      targetRoles: targetRoles,
+      lifecycleKind: lifecycleKind,
+      windowKey: windowKey,
+      stage: stage,
+      title: title,
+      body: body,
+      openingAt: openingAt,
+      shiftEndAt: shiftEndAt,
+      accessEndAt: accessEndAt,
+    );
+    await createNotification(notification);
+  }
+
+  Future<void> resolveStoreAccessLifecycle({
+    required String lifecycleKind,
+    required String windowKey,
+  }) {
+    return _enqueueWrite(
+      () => _resolveStoreAccessLifecycle(lifecycleKind, windowKey),
+    );
+  }
+
+  Future<void> _resolveStoreAccessLifecycle(
+    String lifecycleKind,
+    String windowKey,
+  ) async {
+    final active = await _repository.fetchActiveLifecycleNotifications();
+    final identity = 'store-access:$lifecycleKind:$windowKey';
+    final now = DateTime.now();
+    for (final notification in active) {
+      if (_logicalIdentity(notification) == identity) {
+        await _repository.updateNotification(
+          notification.copyWith(isResolved: true, resolvedAt: now),
+        );
+      }
     }
   }
 

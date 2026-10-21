@@ -64,6 +64,36 @@ class StoreAccessResult {
   });
 }
 
+class StoreAccessWindow {
+  final DateTime opening;
+  final DateTime shiftEnd;
+  final DateTime accessStart;
+  final DateTime accessEnd;
+
+  const StoreAccessWindow({
+    required this.opening,
+    required this.shiftEnd,
+    required this.accessStart,
+    required this.accessEnd,
+  });
+
+  String openingLifecycleKey(String locationId) {
+    return '$locationId:${opening.toUtc().toIso8601String()}';
+  }
+
+  String accessLifecycleKey(String locationId) {
+    return '$locationId:${shiftEnd.toUtc().toIso8601String()}:'
+        '${accessEnd.toUtc().toIso8601String()}';
+  }
+
+  String scheduleKey(String locationId) {
+    return '$locationId:${opening.toUtc().toIso8601String()}:'
+        '${shiftEnd.toUtc().toIso8601String()}:'
+        '${accessStart.toUtc().toIso8601String()}:'
+        '${accessEnd.toUtc().toIso8601String()}';
+  }
+}
+
 class StoreAccessService {
   final SupabaseClient supabase;
   final String locationId;
@@ -251,12 +281,13 @@ class StoreAccessService {
   bool _isWithinAllowedWindow(StoreAccessSettings settings, {DateTime? now}) {
     final DateTime current = now ?? DateTime.now();
 
-    final _ResolvedAccessWindow window = _resolveAccessWindow(
+    final StoreAccessWindow window = resolveAccessWindow(
       settings,
       now: current,
     );
 
-    return !current.isBefore(window.start) && !current.isAfter(window.end);
+    return !current.isBefore(window.accessStart) &&
+        !current.isAfter(window.accessEnd);
   }
 
   /// Builds one store-access session using [openingDate] as the calendar
@@ -271,7 +302,7 @@ class StoreAccessService {
   /// Result:
   /// opening = Oct 17 20:00
   /// closing = Oct 18 10:00
-  _ResolvedAccessWindow _buildAccessWindowForOpeningDate(
+  StoreAccessWindow _buildAccessWindowForOpeningDate(
     StoreAccessSettings settings,
     DateTime openingDate,
   ) {
@@ -318,11 +349,11 @@ class StoreAccessService {
       Duration(minutes: settings.staffAccessAfterMinutes),
     );
 
-    return _ResolvedAccessWindow(
+    return StoreAccessWindow(
       opening: openingDateTime,
-      closing: closingDateTime,
-      start: accessStart,
-      end: accessEnd,
+      shiftEnd: closingDateTime,
+      accessStart: accessStart,
+      accessEnd: accessEnd,
     );
   }
 
@@ -340,7 +371,7 @@ class StoreAccessService {
   ///
   /// Correct window:
   /// Oct 17 20:00 -> Oct 18 10:00
-  _ResolvedAccessWindow _resolveAccessWindow(
+  StoreAccessWindow resolveAccessWindow(
     StoreAccessSettings settings, {
     DateTime? now,
   }) {
@@ -348,24 +379,22 @@ class StoreAccessService {
 
     final DateTime today = DateTime(current.year, current.month, current.day);
 
-    final _ResolvedAccessWindow yesterdayWindow =
-        _buildAccessWindowForOpeningDate(
-          settings,
-          today.subtract(const Duration(days: 1)),
-        );
+    final StoreAccessWindow yesterdayWindow = _buildAccessWindowForOpeningDate(
+      settings,
+      today.subtract(const Duration(days: 1)),
+    );
 
-    final _ResolvedAccessWindow todayWindow = _buildAccessWindowForOpeningDate(
+    final StoreAccessWindow todayWindow = _buildAccessWindowForOpeningDate(
       settings,
       today,
     );
 
-    final _ResolvedAccessWindow tomorrowWindow =
-        _buildAccessWindowForOpeningDate(
-          settings,
-          today.add(const Duration(days: 1)),
-        );
+    final StoreAccessWindow tomorrowWindow = _buildAccessWindowForOpeningDate(
+      settings,
+      today.add(const Duration(days: 1)),
+    );
 
-    final List<_ResolvedAccessWindow> candidates = [
+    final List<StoreAccessWindow> candidates = [
       yesterdayWindow,
       todayWindow,
       tomorrowWindow,
@@ -374,7 +403,8 @@ class StoreAccessService {
     // First, find the session that currently contains "now".
     for (final window in candidates) {
       final bool inside =
-          !current.isBefore(window.start) && !current.isAfter(window.end);
+          !current.isBefore(window.accessStart) &&
+          !current.isAfter(window.accessEnd);
 
       if (inside) {
         return window;
@@ -383,7 +413,7 @@ class StoreAccessService {
 
     // Otherwise, return the next upcoming session.
     for (final window in candidates) {
-      if (window.start.isAfter(current)) {
+      if (window.accessStart.isAfter(current)) {
         return window;
       }
     }
@@ -392,11 +422,11 @@ class StoreAccessService {
   }
 
   DateTime accessStartDateTime(StoreAccessSettings settings, {DateTime? now}) {
-    return _resolveAccessWindow(settings, now: now).start;
+    return resolveAccessWindow(settings, now: now).accessStart;
   }
 
   DateTime accessEndDateTime(StoreAccessSettings settings, {DateTime? now}) {
-    return _resolveAccessWindow(settings, now: now).end;
+    return resolveAccessWindow(settings, now: now).accessEnd;
   }
 
   _ClockTime _parseTimeOfDay(String value) {
@@ -434,18 +464,4 @@ class _ClockTime {
   final int minute;
 
   const _ClockTime({required this.hour, required this.minute});
-}
-
-class _ResolvedAccessWindow {
-  final DateTime opening;
-  final DateTime closing;
-  final DateTime start;
-  final DateTime end;
-
-  const _ResolvedAccessWindow({
-    required this.opening,
-    required this.closing,
-    required this.start,
-    required this.end,
-  });
 }

@@ -217,6 +217,39 @@ class NotificationFactory {
     );
   }
 
+  static AppNotification storeAccessLifecycle({
+    required String locationId,
+    required List<String> targetRoles,
+    required String lifecycleKind,
+    required String windowKey,
+    required String stage,
+    required String title,
+    required String body,
+    required DateTime openingAt,
+    required DateTime shiftEndAt,
+    required DateTime accessEndAt,
+  }) {
+    return create(
+      locationId: locationId,
+      targetRoles: targetRoles,
+      title: title,
+      body: body,
+      type: NotificationType.system,
+      priority: stage == 'logoutWarning'
+          ? NotificationPriority.critical
+          : NotificationPriority.high,
+      payload: {
+        'category': 'storeAccess',
+        'lifecycleKind': lifecycleKind,
+        'windowKey': windowKey,
+        'stage': stage,
+        'openingAt': openingAt.toUtc().toIso8601String(),
+        'shiftEndAt': shiftEndAt.toUtc().toIso8601String(),
+        'accessEndAt': accessEndAt.toUtc().toIso8601String(),
+      },
+    );
+  }
+
   static String _shortOrderId(String orderId) {
     final clean = orderId.replaceAll('-', '').toUpperCase();
 
