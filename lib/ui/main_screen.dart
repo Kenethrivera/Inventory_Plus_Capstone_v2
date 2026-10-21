@@ -31,6 +31,7 @@ import 'pos_monitor_page.dart';
 import 'order_queue_monitor_page.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
+import 'widgets/change_password_dialog.dart';
 import '../services/staff_presence_service.dart';
 import 'widgets/active_staff_button.dart';
 import '../services/store_access_service.dart';
@@ -68,6 +69,10 @@ class _MainScreenState extends State<MainScreen> {
   StreamSubscription<StoreAccessSettings>? _storeAccessSubscription;
   StreamSubscription<CurrentUserProfileSnapshot?>? _currentProfileSubscription;
   late final String _sessionRole;
+  CurrentUserProfileSnapshot? _currentProfile;
+  int _currentProfileRevision = 0;
+  bool _helperProfileResolved = false;
+  bool _helperProfileLoadFailed = false;
   StreamSubscription<List<InventoryItem>>? _inventoryNotificationSubscription;
   final Completer<void> _deferredControllerData = Completer<void>();
   final Set<int> _mountedPageIndexes = <int>{0};
@@ -190,6 +195,7 @@ class _MainScreenState extends State<MainScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (kDebugMode) debugPrint('[Startup] MainScreen first frame rendered');
+      unawaited(_refreshHelperPasswordGate());
       unawaited(_startSessionSynchronization());
       unawaited(_loadDeferredControllerData());
     });
@@ -710,7 +716,39 @@ class _MainScreenState extends State<MainScreen> {
       );
       return;
     }
-    setState(() {});
+    if (identical(_currentProfile, profile) &&
+        (_sessionRole != 'helper' || _helperProfileResolved)) {
+      return;
+    }
+    setState(() {
+      _currentProfile = profile;
+      _currentProfileRevision++;
+      if (_sessionRole == 'helper') {
+        _helperProfileResolved = true;
+        _helperProfileLoadFailed = false;
+      }
+    });
+  }
+
+  Future<void> _refreshHelperPasswordGate() async {
+    if (_sessionRole != 'helper') return;
+    if (mounted) {
+      setState(() {
+        _helperProfileResolved = false;
+        _helperProfileLoadFailed = false;
+      });
+    }
+
+    final profile = await widget.controller.refreshCurrentUserProfile();
+    if (!mounted) return;
+    if (profile == null) {
+      setState(() {
+        _helperProfileResolved = true;
+        _helperProfileLoadFailed = true;
+      });
+      return;
+    }
+    _handleCurrentProfileChange(profile);
   }
 
   Future<void> _invalidateSessionForProfileChange(String message) async {
@@ -1569,6 +1607,21 @@ class _MainScreenState extends State<MainScreen> {
       );
     }
 
+    if (_sessionRole == 'helper') {
+      if (!_helperProfileResolved) {
+        return const Scaffold(
+          backgroundColor: Colors.white,
+          body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
+        );
+      }
+      if (_helperProfileLoadFailed) {
+        return _buildHelperProfileLoadFailure();
+      }
+      if (_currentProfile?.mustChangePassword == true) {
+        return _buildForcedPasswordChangeGate();
+      }
+    }
+
     final notificationController = _notificationController;
 
     if (notificationController == null) {
@@ -1581,6 +1634,71 @@ class _MainScreenState extends State<MainScreen> {
     return NotificationProvider(
       controller: notificationController,
       child: _buildMainContent(),
+    );
+  }
+
+  Widget _buildForcedPasswordChangeGate() {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F6F8),
+      body: SafeArea(
+        child: Center(
+          child: ChangePasswordDialog(
+            // Every canonical current-profile publication rotates this key.
+            // A repeated Admin reset therefore discards verification against
+            // the previous temporary password, even when the flag stays true.
+            key: ValueKey<int>(_currentProfileRevision),
+            controller: widget.controller,
+            forced: true,
+            onLogout: _logoutFromForcedPasswordChange,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHelperProfileLoadFailure() {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F6F8),
+      body: Center(
+        child: Container(
+          width: 380,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(LucideIcons.circleAlert, color: Colors.red.shade600),
+              const SizedBox(height: 12),
+              const Text(
+                'Unable to verify your account status.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _logoutFromForcedPasswordChange,
+                      child: const Text('Logout'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _refreshHelperPasswordGate,
+                      child: const Text('Retry'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -2613,6 +2731,23 @@ class _MainScreenState extends State<MainScreen> {
 
     if (confirm != true || !mounted) return;
 
+    try {
+      await _staffPresenceService?.stop(logoutReason: 'manual_logout');
+      final prefs = await SharedPreferences.getInstance();
+      await widget.realtimeSync.stop();
+      await prefs.clear();
+
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    } catch (e) {
+      if (mounted) {
+        AppToast.error(context, 'Could not log out: $e');
+      }
+    }
+  }
+
+  Future<void> _logoutFromForcedPasswordChange() async {
     try {
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       final prefs = await SharedPreferences.getInstance();

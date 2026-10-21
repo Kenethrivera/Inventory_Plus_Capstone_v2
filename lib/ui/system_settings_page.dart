@@ -42,6 +42,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
   // Staff State
   bool _isLoadingStaff = true;
+  String? _staffLoadError;
   List<Map<String, dynamic>> _staffList = [];
   StreamSubscription<List<Map<String, dynamic>>>? _staffSubscription;
   StreamSubscription<InventoryRuntimeSettingsSnapshot>?
@@ -85,6 +86,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         .listen(_handleStoreAccessSnapshot);
     _staffSubscription = widget.controller.streamStaffConfiguration().listen(
       _handleStaffSnapshot,
+      onError: (Object _) => _handleStaffLoadFailure(),
     );
     _fetchSettings();
     _fetchStoreAccessSettings();
@@ -261,7 +263,28 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
           .map(Map<String, dynamic>.from)
           .toList();
       _isLoadingStaff = false;
+      _staffLoadError = widget.controller.staffConfigurationLoadFailed
+          ? 'Unable to load staff accounts.'
+          : null;
     });
+  }
+
+  void _handleStaffLoadFailure() {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingStaff = false;
+      _staffLoadError = 'Unable to load staff accounts.';
+    });
+  }
+
+  Future<void> _retryStaffLoad() async {
+    setState(() {
+      _isLoadingStaff = true;
+      _staffLoadError = null;
+    });
+    final staff = await widget.controller.fetchStaff();
+    if (!mounted) return;
+    _handleStaffSnapshot(staff);
   }
   Future<void> _uploadGcashQr() async {
     final picker = ImagePicker();
@@ -754,32 +777,37 @@ Widget _buildPaymentSettings() {
               builder: (context, constraints) {
                 final isNarrow = constraints.maxWidth < 760;
 
-                final timeFields = [
-                  Expanded(
-                    child: _buildTimePickerBox(
-                      label: 'Opening Time',
-                      value: _formatDisplayTime(_openingTime),
-                      icon: Icons.wb_sunny_outlined,
-                      onTap: () => _pickStoreTime(isOpening: true),
-                    ),
-                  ),
-                  SizedBox(width: isNarrow ? 0 : 16, height: isNarrow ? 16 : 0),
-                  Expanded(
-                    child: _buildTimePickerBox(
-                      label: 'Closing Time',
-                      value: _formatDisplayTime(_closingTime),
-                      icon: Icons.nights_stay_outlined,
-                      onTap: () => _pickStoreTime(isOpening: false),
-                    ),
-                  ),
-                ];
+                final openingField = _buildTimePickerBox(
+                  label: 'Opening Time',
+                  value: _formatDisplayTime(_openingTime),
+                  icon: Icons.wb_sunny_outlined,
+                  onTap: () => _pickStoreTime(isOpening: true),
+                );
+                final closingField = _buildTimePickerBox(
+                  label: 'Closing Time',
+                  value: _formatDisplayTime(_closingTime),
+                  icon: Icons.nights_stay_outlined,
+                  onTap: () => _pickStoreTime(isOpening: false),
+                );
 
                 return Column(
                   children: [
                     if (isNarrow)
-                      Column(children: timeFields)
+                      Column(
+                        children: [
+                          openingField,
+                          const SizedBox(height: 16),
+                          closingField,
+                        ],
+                      )
                     else
-                      Row(children: timeFields),
+                      Row(
+                        children: [
+                          Expanded(child: openingField),
+                          const SizedBox(width: 16),
+                          Expanded(child: closingField),
+                        ],
+                      ),
                     const SizedBox(height: 16),
                     if (isNarrow)
                       Column(
@@ -1887,6 +1915,11 @@ Widget _buildPaymentSettings() {
                   fontFamily: _fontFam,
                 ),
               ),
+              if (staff['role']?.toString().toLowerCase() == 'helper')
+                const TextSpan(
+                  text:
+                      "\n\nThe Helper will be required to change this password before continuing.",
+                ),
             ],
           ),
         ),
@@ -2546,6 +2579,30 @@ Widget _buildPaymentSettings() {
                             child: Center(
                               child: CircularProgressIndicator(
                                 color: _primaryBlue,
+                              ),
+                            ),
+                          )
+                        else if (_staffLoadError != null)
+                          Padding(
+                            padding: const EdgeInsets.all(40.0),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _staffLoadError!,
+                                    style: const TextStyle(
+                                      color: Colors.redAccent,
+                                      fontFamily: _fontFam,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  OutlinedButton.icon(
+                                    onPressed: _retryStaffLoad,
+                                    icon: const Icon(LucideIcons.refreshCw),
+                                    label: const Text('Retry'),
+                                  ),
+                                ],
                               ),
                             ),
                           )

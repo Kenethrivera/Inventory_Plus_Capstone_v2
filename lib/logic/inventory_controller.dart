@@ -14,6 +14,23 @@ enum StockStatus { ok, low, critical, out }
 
 enum MapLayoutSaveStatus { saved, conflict }
 
+enum ChangePasswordResult {
+  success,
+  incorrectCurrentPassword,
+  sameAsCurrentPassword,
+  invalidNewPassword,
+  concurrentChange,
+  notAuthenticated,
+  unexpectedFailure,
+}
+
+enum CurrentPasswordVerificationResult {
+  correct,
+  incorrect,
+  notAuthenticated,
+  unexpectedFailure,
+}
+
 class MapLayoutSaveResult {
   const MapLayoutSaveResult({
     required this.status,
@@ -69,6 +86,7 @@ class CurrentUserProfileSnapshot {
     required this.locationId,
     required this.name,
     required this.role,
+    required this.mustChangePassword,
     this.email,
     this.address,
     this.phone,
@@ -78,6 +96,7 @@ class CurrentUserProfileSnapshot {
   final String locationId;
   final String name;
   final String role;
+  final bool mustChangePassword;
   final String? email;
   final String? address;
   final String? phone;
@@ -89,7 +108,6 @@ class _SerializedHistoryQuery {
 }
 
 class InventoryController {
-
   // shared realtime controlelrs
   final StreamController<List<CustomerOrder>> _ordersController =
       StreamController<List<CustomerOrder>>.broadcast();
@@ -178,6 +196,7 @@ class InventoryController {
   String? _staffSnapshotLocationId;
   bool _staffSnapshotLoaded = false;
   bool _staffSnapshotActivated = false;
+  bool _staffConfigurationLoadFailed = false;
   Future<void>? _staffRefreshInFlight;
   bool _staffRefreshQueued = false;
   Future<void>? _currentProfileRefreshInFlight;
@@ -288,11 +307,9 @@ class InventoryController {
   }
 
   /// Active + disabled. Only meant for reports.
-  List<InventoryItem> get reportableItems =>
-      List<InventoryItem>.unmodifiable(<InventoryItem>[
-        ..._items,
-        ..._disabledItems,
-      ]);
+  List<InventoryItem> get reportableItems => List<InventoryItem>.unmodifiable(
+    <InventoryItem>[..._items, ..._disabledItems],
+  );
 
   void setLoggedInUser({
     required String name,
@@ -440,7 +457,9 @@ class InventoryController {
 
   Future<void> _performMeasurementRefresh() async {
     try {
-      final rows = await supabase.from('measurements').select('id, name, symbol');
+      final rows = await supabase
+          .from('measurements')
+          .select('id, name, symbol');
       availableMeasurements = List<Map<String, dynamic>>.from(rows);
       _measurementSettingsLoaded = true;
       _publishRuntimeSettings();
@@ -485,7 +504,9 @@ class InventoryController {
       _publishRuntimeSettings();
       debugPrint('[InventoryController] PAYMENT SETTINGS REFRESHED');
     } catch (error, stackTrace) {
-      debugPrint('[InventoryController] Payment settings refresh failed: $error');
+      debugPrint(
+        '[InventoryController] Payment settings refresh failed: $error',
+      );
       debugPrintStack(stackTrace: stackTrace);
     }
   }
@@ -579,9 +600,7 @@ class InventoryController {
       debugPrint('[Startup] Deferred controller data started');
     }
 
-    await Future.wait<void>([
-      _loadStockBaselines(),
-    ]);
+    await Future.wait<void>([_loadStockBaselines()]);
 
     if (kDebugMode) {
       debugPrint(
@@ -900,10 +919,7 @@ class InventoryController {
     try {
       await supabase
           .from('products')
-          .update({
-            'shelf_level': shelf.toString(),
-            'bin_number': layer,
-          })
+          .update({'shelf_level': shelf.toString(), 'bin_number': layer})
           .eq('id', itemId);
 
       final index = _items.indexWhere((item) => item.id == itemId);
@@ -917,8 +933,9 @@ class InventoryController {
     } catch (e) {}
   }
 
-  List<InventoryItem> get unassignedItems =>
-      _items.where((item) => item.shelfLevel == null || item.shelfLevel!.isEmpty).toList();
+  List<InventoryItem> get unassignedItems => _items
+      .where((item) => item.shelfLevel == null || item.shelfLevel!.isEmpty)
+      .toList();
 
   List<InventoryItem> _applyFilter(
     List<InventoryItem> source,
@@ -945,7 +962,7 @@ class InventoryController {
     return filtered;
   }
 
-   List<InventoryItem> filterInventory({
+  List<InventoryItem> filterInventory({
     required String query,
     required String category,
   }) => _applyFilter(_items, query, category);
@@ -1019,7 +1036,7 @@ class InventoryController {
       sku: sku,
       price: double.tryParse(price) ?? 0.0,
       quantity: parsedQty,
-       maxQuantity: parsedMax == 0 ? parsedQty : parsedMax,
+      maxQuantity: parsedMax == 0 ? parsedQty : parsedMax,
       category: category,
       description: description,
       manufacturer: manufacturer,
@@ -1062,6 +1079,8 @@ class InventoryController {
     await _refreshStaffConfiguration();
     return List<Map<String, dynamic>>.unmodifiable(_staffSnapshot);
   }
+
+  bool get staffConfigurationLoadFailed => _staffConfigurationLoadFailed;
 
   Stream<List<Map<String, dynamic>>> streamStaffConfiguration() async* {
     _staffSnapshotActivated = true;
@@ -1146,12 +1165,14 @@ class InventoryController {
       );
       _staffSnapshotLocationId = locationId;
       _staffSnapshotLoaded = true;
+      _staffConfigurationLoadFailed = false;
       _staffConfigurationController.add(_staffSnapshot);
       debugPrint(
         '[InventoryController] STAFF CONFIGURATION REFRESHED '
         'location=$locationId count=${_staffSnapshot.length}',
       );
     } catch (error, stackTrace) {
+      _staffConfigurationLoadFailed = true;
       debugPrint('[InventoryController] Staff refresh failed: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
@@ -1181,9 +1202,14 @@ class InventoryController {
     final locationId = activeLocationId;
     if (userId == null || locationId == null) return;
     try {
+      final isHelperSession = currentUserRole?.toLowerCase() == 'helper';
+      final profileColumns = isHelperSession
+          ? 'id, location_id, name, role, email, address, phone, '
+                'must_change_password'
+          : 'id, location_id, name, role, email, address, phone';
       final row = await supabase
           .from('profiles')
-          .select('id, location_id, name, role, email, address, phone')
+          .select(profileColumns)
           .eq('id', userId)
           .maybeSingle();
       if (currentUserId != userId || activeLocationId != locationId) return;
@@ -1197,6 +1223,8 @@ class InventoryController {
         locationId: row['location_id'].toString(),
         name: row['name']?.toString() ?? 'User',
         role: row['role']?.toString() ?? 'staff',
+        mustChangePassword:
+            isHelperSession && row['must_change_password'] == true,
         email: row['email']?.toString(),
         address: row['address']?.toString(),
         phone: row['phone']?.toString(),
@@ -1211,7 +1239,9 @@ class InventoryController {
       _currentProfileSnapshot = snapshot;
       _currentUserProfileController.add(snapshot);
     } catch (error, stackTrace) {
-      debugPrint('[InventoryController] Current profile refresh failed: $error');
+      debugPrint(
+        '[InventoryController] Current profile refresh failed: $error',
+      );
       debugPrintStack(stackTrace: stackTrace);
     }
   }
@@ -1305,33 +1335,131 @@ class InventoryController {
     }
   }
 
-  Future<String?> changePassword(
+  Future<ChangePasswordResult> changePassword(
     String currentPassword,
     String newPassword,
   ) async {
-    if (currentUserId == null) return "User not logged in.";
+    final userId = currentUserId;
+    if (userId == null) return ChangePasswordResult.notAuthenticated;
+
     try {
       final hashedCurrentPassword = _hashPassword(currentPassword);
       final hashedNewPassword = _hashPassword(newPassword);
 
       final response = await supabase
           .from('profiles')
-          .select('password')
-          .eq('id', currentUserId!)
-          .single();
+          .select('password, role')
+          .eq('id', userId)
+          .maybeSingle();
 
+      if (response == null) {
+        return ChangePasswordResult.notAuthenticated;
+      }
       if (response['password'] != hashedCurrentPassword) {
-        return "Incorrect current password.";
+        return ChangePasswordResult.incorrectCurrentPassword;
+      }
+      if (hashedNewPassword == hashedCurrentPassword) {
+        return ChangePasswordResult.sameAsCurrentPassword;
+      }
+      if (!_meetsPasswordPolicy(newPassword)) {
+        return ChangePasswordResult.invalidNewPassword;
+      }
+      if (currentUserId != userId) {
+        return ChangePasswordResult.notAuthenticated;
       }
 
-      await supabase
-          .from('profiles')
-          .update({'password': hashedNewPassword})
-          .eq('id', currentUserId!);
-      return null;
-    } catch (e) {
-      return "An error occurred while changing the password.";
+      final role = response['role']?.toString() ?? '';
+      final isHelper = role.toLowerCase() == 'helper';
+      final Map<String, dynamic>? updatedProfile;
+      if (isHelper) {
+        updatedProfile = await supabase
+            .from('profiles')
+            .update({
+              'password': hashedNewPassword,
+              'must_change_password': false,
+            })
+            .eq('id', userId)
+            .eq('role', role)
+            .eq('password', hashedCurrentPassword)
+            .select('id, must_change_password')
+            .maybeSingle();
+      } else {
+        updatedProfile = await supabase
+            .from('profiles')
+            .update({'password': hashedNewPassword})
+            .eq('id', userId)
+            .eq('role', role)
+            .eq('password', hashedCurrentPassword)
+            .select('id')
+            .maybeSingle();
+      }
+
+      if (updatedProfile == null) {
+        return ChangePasswordResult.concurrentChange;
+      }
+      if (isHelper && updatedProfile['must_change_password'] != false) {
+        return ChangePasswordResult.unexpectedFailure;
+      }
+      if (isHelper) _setCurrentProfileMustChangePassword(false);
+      return ChangePasswordResult.success;
+    } on PostgrestException catch (error) {
+      debugPrint(
+        '[Password] Profile operation failed: '
+        'code=${error.code} message=${error.message}',
+      );
+      return ChangePasswordResult.unexpectedFailure;
+    } catch (_) {
+      return ChangePasswordResult.unexpectedFailure;
     }
+  }
+
+  Future<CurrentPasswordVerificationResult> verifyCurrentPassword(
+    String currentPassword,
+  ) async {
+    final userId = currentUserId;
+    if (userId == null) {
+      return CurrentPasswordVerificationResult.notAuthenticated;
+    }
+    try {
+      final response = await supabase
+          .from('profiles')
+          .select('password')
+          .eq('id', userId)
+          .maybeSingle();
+      if (currentUserId != userId || response == null) {
+        return CurrentPasswordVerificationResult.notAuthenticated;
+      }
+      return response['password'] == _hashPassword(currentPassword)
+          ? CurrentPasswordVerificationResult.correct
+          : CurrentPasswordVerificationResult.incorrect;
+    } catch (_) {
+      return CurrentPasswordVerificationResult.unexpectedFailure;
+    }
+  }
+
+  void _setCurrentProfileMustChangePassword(bool value) {
+    final snapshot = _currentProfileSnapshot;
+    if (snapshot == null || snapshot.id != currentUserId) return;
+    final updated = CurrentUserProfileSnapshot(
+      id: snapshot.id,
+      locationId: snapshot.locationId,
+      name: snapshot.name,
+      role: snapshot.role,
+      mustChangePassword: value,
+      email: snapshot.email,
+      address: snapshot.address,
+      phone: snapshot.phone,
+    );
+    _currentProfileSnapshot = updated;
+    _currentUserProfileController.add(updated);
+  }
+
+  bool _meetsPasswordPolicy(String password) {
+    return password.length >= 8 &&
+        password.contains(RegExp(r'[A-Z]')) &&
+        password.contains(RegExp(r'[a-z]')) &&
+        password.contains(RegExp(r'[0-9]')) &&
+        password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'));
   }
 
   Future<List<Map<String, dynamic>>> loadProductTransactionHistory(
@@ -1835,8 +1963,7 @@ class InventoryController {
       },
     );
 
-    _runtimeSettingsChangesSubscription ??= realtimeSync
-        .runtimeSettingsChanges
+    _runtimeSettingsChangesSubscription ??= realtimeSync.runtimeSettingsChanges
         .listen(
           (kind) {
             switch (kind) {
@@ -1991,8 +2118,9 @@ class InventoryController {
       final List<InventoryItem> disabled = <InventoryItem>[];
 
       for (final dynamic row in rows) {
-        final Map<String, dynamic> product =
-            Map<String, dynamic>.from(row as Map);
+        final Map<String, dynamic> product = Map<String, dynamic>.from(
+          row as Map,
+        );
         final InventoryItem item = InventoryItem.fromSupabase(product);
 
         if (product['is_active'] == false) {
@@ -2018,7 +2146,7 @@ class InventoryController {
     }
   }
 
-Stream<List<CustomerOrder>> streamOrders() async* {
+  Stream<List<CustomerOrder>> streamOrders() async* {
     final String? locationId = activeLocationId;
 
     if (!_ordersSnapshotLoaded || _ordersSnapshotLocationId != locationId) {
@@ -2132,7 +2260,7 @@ Stream<List<CustomerOrder>> streamOrders() async* {
     return null;
   }
 
- Future<void> updateOrderStatus(String orderId, String newStatus) async {
+  Future<void> updateOrderStatus(String orderId, String newStatus) async {
     try {
       final Map<String, dynamic> updateData = {'status': newStatus};
 
@@ -2261,7 +2389,7 @@ Stream<List<CustomerOrder>> streamOrders() async* {
 
   Set<String>? _processingOrders;
 
-    Future<({DateTime createdAt, DateTime completedAt})?> completeOrder(
+  Future<({DateTime createdAt, DateTime completedAt})?> completeOrder(
     CustomerOrder order, {
     String? paymentMode,
     double? cashGiven,
@@ -2352,18 +2480,48 @@ Stream<List<CustomerOrder>> streamOrders() async* {
     try {
       final hashedNewPassword = _hashPassword(newPassword);
 
-      await supabase
+      final target = await supabase
           .from('profiles')
-          .update({'password': hashedNewPassword})
-          .eq('id', targetUserId);
+          .select('role')
+          .eq('id', targetUserId)
+          .maybeSingle();
+      if (target == null) return false;
+      final targetRole = target['role']?.toString() ?? '';
 
-      return true;
+      final update = <String, dynamic>{'password': hashedNewPassword};
+      final isHelper = targetRole.toLowerCase() == 'helper';
+      if (isHelper) {
+        update['must_change_password'] = true;
+      }
+
+      final Map<String, dynamic>? updatedProfile;
+      if (isHelper) {
+        updatedProfile = await supabase
+            .from('profiles')
+            .update(update)
+            .eq('id', targetUserId)
+            .eq('role', targetRole)
+            .select('id, role, must_change_password')
+            .maybeSingle();
+      } else {
+        updatedProfile = await supabase
+            .from('profiles')
+            .update(update)
+            .eq('id', targetUserId)
+            .eq('role', targetRole)
+            .select('id, role')
+            .maybeSingle();
+      }
+
+      if (updatedProfile == null) return false;
+      return !isHelper || updatedProfile['must_change_password'] == true;
     } catch (e) {
       return false;
     }
   }
 
-  Stream<List<MapElement>> get mapLayoutSnapshots => _mapLayoutController.stream;
+  Stream<List<MapElement>> get mapLayoutSnapshots =>
+      _mapLayoutController.stream;
 
   List<MapElement> get currentMapLayout =>
       List<MapElement>.unmodifiable(_cloneMapLayout(storeLayout));
@@ -2386,9 +2544,8 @@ Stream<List<CustomerOrder>> streamOrders() async* {
   List<MapElement> _cloneMapLayout(Iterable<MapElement> layout) {
     return layout
         .map(
-          (MapElement element) => MapElement.fromJson(
-            Map<String, dynamic>.from(element.toJson()),
-          ),
+          (MapElement element) =>
+              MapElement.fromJson(Map<String, dynamic>.from(element.toJson())),
         )
         .toList();
   }
@@ -2463,9 +2620,8 @@ Stream<List<CustomerOrder>> streamOrders() async* {
     }
     return decoded
         .map(
-          (dynamic element) => MapElement.fromJson(
-            Map<String, dynamic>.from(element as Map),
-          ),
+          (dynamic element) =>
+              MapElement.fromJson(Map<String, dynamic>.from(element as Map)),
         )
         .toList();
   }
@@ -2573,7 +2729,9 @@ Stream<List<CustomerOrder>> streamOrders() async* {
         .select('layout_data');
 
     if (response.isEmpty) {
-      throw StateError("Location '$locId' does not exist or cannot be updated.");
+      throw StateError(
+        "Location '$locId' does not exist or cannot be updated.",
+      );
     }
     if (activeLocationId != locId || currentUserId != expectedUserId) {
       throw StateError('The active session changed during the map save.');
