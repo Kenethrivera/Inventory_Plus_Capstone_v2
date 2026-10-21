@@ -1635,6 +1635,10 @@ class InventoryController {
         'prepared_by',
         'created_by_id',
         'prepared_by_id',
+        'completed_by',
+        'completed_by_id',
+        'cancelled_by',
+        'cancelled_by_id',
       ]) {
         final Object? rawId = order[key];
         if (rawId == null) continue;
@@ -2770,6 +2774,8 @@ class InventoryController {
   Future<List<Map<String, dynamic>>> loadMyRestockHistory({
     int page = 0,
     int pageSize = 25,
+    DateTime? start,
+    DateTime? endExclusive,
   }) {
     final locationId = activeLocationId;
     final userId = currentUserNumericId;
@@ -2780,13 +2786,22 @@ class InventoryController {
       );
     }
 
+    if ((start == null) != (endExclusive == null)) {
+      throw ArgumentError(
+        'Restock history range requires both start and endExclusive.',
+      );
+    }
     final from = page * pageSize;
     final to = from + pageSize - 1;
+    final rangeKey = start == null
+        ? 'page:$page:$pageSize'
+        : '${start.toUtc().toIso8601String()}:'
+              '${endExclusive!.toUtc().toIso8601String()}';
 
     return _runSerializedHistoryQuery(
-      'restock:$locationId:$userId:$page:$pageSize',
+      'restock:$locationId:$userId:$rangeKey',
       () async {
-        final response = await supabase
+        final query = supabase
             .from('transaction_history')
             .select('''
         id,
@@ -2803,9 +2818,13 @@ class InventoryController {
             .eq('location_id', locationId)
             .eq('user_id', userId)
             .eq('transaction_type', 'stock_in')
-            .gt('quantity_change', 0)
-            .order('created_at', ascending: false)
-            .range(from, to);
+            .gt('quantity_change', 0);
+        final response = start == null
+            ? await query.order('created_at', ascending: false).range(from, to)
+            : await query
+                  .gte('created_at', start.toUtc().toIso8601String())
+                  .lt('created_at', endExclusive!.toUtc().toIso8601String())
+                  .order('created_at', ascending: false);
 
         if (activeLocationId != locationId || currentUserNumericId != userId) {
           throw StateError('Restock history session changed.');
