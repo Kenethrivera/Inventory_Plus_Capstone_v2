@@ -1542,7 +1542,51 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  void _handleNotificationSelected(
+  bool _isNotificationActionable(
+    AppNotification notification, {
+    required int orderQueueIndex,
+    required int posIndex,
+    required int transactionIndex,
+    required int inventoryIndex,
+  }) {
+    final payload = notification.payload;
+    switch (notification.type) {
+      case NotificationType.newOrder:
+      case NotificationType.orderAssigned:
+        return orderQueueIndex >= 0 &&
+            (payload['orderId']?.toString().isNotEmpty ?? false);
+      case NotificationType.orderPrepared:
+        return posIndex >= 0 &&
+            (payload['orderId']?.toString().isNotEmpty ?? false);
+      case NotificationType.transaction:
+        return transactionIndex >= 0;
+      case NotificationType.exportReminder:
+        final reportType = payload['reportType']?.toString();
+        return reportType == 'inventory'
+            ? inventoryIndex >= 0
+            : reportType == 'sales' && transactionIndex >= 0;
+      case NotificationType.stockAlert:
+        final items = payload['items'];
+        return inventoryIndex >= 0 && items is List && items.isNotEmpty;
+      case NotificationType.lowStock:
+      case NotificationType.criticalStock:
+      case NotificationType.deadStock:
+        return inventoryIndex >= 0 &&
+            (payload['itemId']?.toString().isNotEmpty ?? false);
+      case NotificationType.inventoryRestocked:
+        return inventoryIndex >= 0 &&
+            widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
+            (payload['productId']?.toString().isNotEmpty ?? false);
+      case NotificationType.orderCancelled:
+      case NotificationType.inventoryAdded:
+      case NotificationType.inventoryUpdated:
+      case NotificationType.inventoryDeleted:
+      case NotificationType.system:
+        return false;
+    }
+  }
+
+  bool _handleNotificationSelected(
     AppNotification notification, {
     required int orderQueueIndex,
     required int posIndex,
@@ -1556,7 +1600,7 @@ class _MainScreenState extends State<MainScreen> {
       case NotificationType.orderAssigned:
         if (orderId == null || orderId.isEmpty) {
           AppToast.error(context, 'Order ID not found in notification.');
-          return;
+          return false;
         }
 
         if (orderQueueIndex < 0) {
@@ -1564,43 +1608,43 @@ class _MainScreenState extends State<MainScreen> {
             context,
             'Order Queue is not available for this role.',
           );
-          return;
+          return false;
         }
 
         setState(() {
           _targetOrderId = orderId;
           _currentIndex = orderQueueIndex;
         });
-        break;
+        return true;
 
       case NotificationType.orderPrepared:
         if (orderId == null || orderId.isEmpty) {
           AppToast.error(context, 'Order ID not found in notification.');
-          return;
+          return false;
         }
 
         if (posIndex < 0) {
           AppToast.error(context, 'POS is not available for this role.');
-          return;
+          return false;
         }
 
         setState(() {
           _targetPosOrderId = orderId;
           _currentIndex = posIndex;
         });
-        break;
+        return true;
 
       case NotificationType.transaction:
         if (transactionIndex < 0) {
           AppToast.error(context, 'Transactions page is not available.');
-          return;
+          return false;
         }
 
         setState(() {
           _txTargetTab = 'Sales History';
           _currentIndex = transactionIndex;
         });
-        break;
+        return true;
 
       case NotificationType.exportReminder:
         final reportType = notification.payload['reportType']?.toString();
@@ -1609,31 +1653,31 @@ class _MainScreenState extends State<MainScreen> {
           setState(() {
             _currentIndex = inventoryIndex;
           });
-          break;
+          return true;
         }
 
         if (reportType == 'sales') {
           if (transactionIndex < 0) {
             AppToast.error(context, 'Transactions page is not available.');
-            return;
+            return false;
           }
 
           setState(() {
             _txTargetTab = 'Sales History';
             _currentIndex = transactionIndex;
           });
-          break;
+          return true;
         }
 
         AppToast.error(context, 'Unknown report type.');
-        break;
+        return false;
 
       case NotificationType.stockAlert:
         final rawItems = notification.payload['items'];
 
         if (rawItems is! List || rawItems.isEmpty) {
           AppToast.error(context, 'Stock alert items not found.');
-          return;
+          return false;
         }
 
         final firstItem = Map<String, dynamic>.from(rawItems.first);
@@ -1641,7 +1685,7 @@ class _MainScreenState extends State<MainScreen> {
 
         if (itemId == null || itemId.isEmpty) {
           AppToast.error(context, 'Item ID not found in stock alert.');
-          return;
+          return false;
         }
 
         final items = [
@@ -1653,7 +1697,7 @@ class _MainScreenState extends State<MainScreen> {
 
         if (matches.isEmpty) {
           AppToast.error(context, 'This item no longer exists.');
-          return;
+          return false;
         }
 
         setState(() {
@@ -1664,7 +1708,7 @@ class _MainScreenState extends State<MainScreen> {
           if (!mounted) return;
           _handleSelectItem(matches.first);
         });
-        break;
+        return true;
 
       case NotificationType.lowStock:
       case NotificationType.criticalStock:
@@ -1677,14 +1721,14 @@ class _MainScreenState extends State<MainScreen> {
         final matches = items.where((item) => item.id == itemId).toList();
         if (matches.isEmpty) {
           AppToast.error(context, 'This product no longer exists.');
-          return;
+          return false;
         }
 
         setState(() => _currentIndex = inventoryIndex);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _handleSelectItem(matches.first);
         });
-        break;
+        return true;
 
       case NotificationType.inventoryRestocked:
         final productId = notification.payload['productId']?.toString();
@@ -1696,12 +1740,12 @@ class _MainScreenState extends State<MainScreen> {
             context,
             'Restock monitoring is available to administrators only.',
           );
-          return;
+          return false;
         }
 
         if (productId == null || productId.isEmpty) {
           AppToast.error(context, 'Product information is missing.');
-          return;
+          return false;
         }
 
         final items = [
@@ -1715,7 +1759,7 @@ class _MainScreenState extends State<MainScreen> {
 
         if (matches.isEmpty) {
           AppToast.error(context, 'This product no longer exists.');
-          return;
+          return false;
         }
 
         setState(() {
@@ -1727,11 +1771,10 @@ class _MainScreenState extends State<MainScreen> {
           _handleSelectItem(matches.first);
         });
 
-        break;
+        return true;
 
       default:
-        AppToast.success(context, notification.title);
-        break;
+        return false;
     }
   }
 
@@ -1988,54 +2031,7 @@ class _MainScreenState extends State<MainScreen> {
 
     return NotificationProvider(
       controller: notificationController,
-      child: Stack(
-        children: [
-          Positioned.fill(child: _buildMainContent()),
-          if (_showStoreLogoutCountdownChip && _storeLogoutRemainingSeconds > 0)
-            Positioned(
-              right: 16,
-              bottom: MediaQuery.sizeOf(context).width < 600
-                  ? 88
-                  : (kDebugMode ? 160 : 88),
-              child: _buildStoreLogoutCountdownChip(),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStoreLogoutCountdownChip() {
-    return SafeArea(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF7ED),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFF97316)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(LucideIcons.timer, size: 18, color: Color(0xFFC2410C)),
-            const SizedBox(width: 8),
-            Text(
-              'Auto logout in ${_formatStoreLogoutCountdown(_storeLogoutRemainingSeconds)}',
-              style: const TextStyle(
-                color: Color(0xFF9A3412),
-                fontWeight: FontWeight.w800,
-                fontFamily: _fontFam,
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: _buildMainContent(),
     );
   }
 
@@ -2387,6 +2383,79 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  Widget _buildNotificationControls({
+    required int orderQueueIndex,
+    required int posIndex,
+    required int transactionIndex,
+    required int inventoryIndex,
+    NotificationPanelPlacement placement = NotificationPanelPlacement.belowBell,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_showStoreLogoutCountdownChip &&
+            _storeLogoutRemainingSeconds > 0) ...[
+          Tooltip(
+            message: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
+            child: Semantics(
+              label: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
+              liveRegion: true,
+              child: Container(
+                height: 30,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFF97316)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      LucideIcons.timer,
+                      size: 15,
+                      color: Color(0xFFC2410C),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      _formatStoreLogoutCountdown(_storeLogoutRemainingSeconds),
+                      style: const TextStyle(
+                        color: Color(0xFF9A3412),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        fontFamily: _fontFam,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+        NotificationBell(
+          placement: placement,
+          isActionable: (notification) => _isNotificationActionable(
+            notification,
+            orderQueueIndex: orderQueueIndex,
+            posIndex: posIndex,
+            transactionIndex: transactionIndex,
+            inventoryIndex: inventoryIndex,
+          ),
+          onValidateNotification: _validateNotificationTap,
+          onNotificationSelected: (notification) => _handleNotificationSelected(
+            notification,
+            orderQueueIndex: orderQueueIndex,
+            posIndex: posIndex,
+            transactionIndex: transactionIndex,
+            inventoryIndex: inventoryIndex,
+          ),
+        ),
+      ],
+    );
+  }
+
   PreferredSizeWidget _buildMobileAppBar({
     required int orderQueueIndex,
     required int posIndex,
@@ -2432,17 +2501,11 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
       actions: [
-        NotificationBell(
-          onValidateNotification: _validateNotificationTap,
-          onNotificationSelected: (notification) {
-            _handleNotificationSelected(
-              notification,
-              orderQueueIndex: orderQueueIndex,
-              posIndex: posIndex,
-              transactionIndex: transactionIndex,
-              inventoryIndex: inventoryIndex,
-            );
-          },
+        _buildNotificationControls(
+          orderQueueIndex: orderQueueIndex,
+          posIndex: posIndex,
+          transactionIndex: transactionIndex,
+          inventoryIndex: inventoryIndex,
         ),
         _buildMobileProfileButton(),
         const SizedBox(width: 8),
@@ -2615,18 +2678,12 @@ class _MainScreenState extends State<MainScreen> {
                           ),
                         ),
                         const SizedBox(width: 4),
-                        NotificationBell(
+                        _buildNotificationControls(
                           placement: NotificationPanelPlacement.besideSidebar,
-                          onValidateNotification: _validateNotificationTap,
-                          onNotificationSelected: (notification) {
-                            _handleNotificationSelected(
-                              notification,
-                              orderQueueIndex: orderQueueIndex,
-                              posIndex: posIndex,
-                              transactionIndex: transactionIndex,
-                              inventoryIndex: inventoryIndex,
-                            );
-                          },
+                          orderQueueIndex: orderQueueIndex,
+                          posIndex: posIndex,
+                          transactionIndex: transactionIndex,
+                          inventoryIndex: inventoryIndex,
                         ),
                       ],
                     ),
@@ -2787,17 +2844,11 @@ class _MainScreenState extends State<MainScreen> {
 
           const Spacer(),
 
-          NotificationBell(
-            onValidateNotification: _validateNotificationTap,
-            onNotificationSelected: (notification) {
-              _handleNotificationSelected(
-                notification,
-                orderQueueIndex: orderQueueIndex,
-                posIndex: posIndex,
-                transactionIndex: transactionIndex,
-                inventoryIndex: inventoryIndex,
-              );
-            },
+          _buildNotificationControls(
+            orderQueueIndex: orderQueueIndex,
+            posIndex: posIndex,
+            transactionIndex: transactionIndex,
+            inventoryIndex: inventoryIndex,
           ),
 
           const SizedBox(width: 12),

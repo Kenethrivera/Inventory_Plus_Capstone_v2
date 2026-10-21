@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'models/app_notification.dart';
 import 'notification_badge.dart';
+import 'notification_controller.dart';
 import 'notification_page.dart';
 import 'notification_provider.dart';
 
@@ -11,7 +14,9 @@ enum NotificationPanelPlacement { besideSidebar, belowBell }
 class NotificationBell extends StatelessWidget {
   final Color iconColor;
   final NotificationPanelPlacement placement;
-  final ValueChanged<AppNotification>? onNotificationSelected;
+  final FutureOr<bool> Function(AppNotification notification)?
+  onNotificationSelected;
+  final bool Function(AppNotification notification) isActionable;
 
   /// Return null if valid.
   /// Return an error message if invalid.
@@ -24,6 +29,7 @@ class NotificationBell extends StatelessWidget {
     this.placement = NotificationPanelPlacement.belowBell,
     this.onNotificationSelected,
     this.onValidateNotification,
+    required this.isActionable,
   });
 
   @override
@@ -38,14 +44,27 @@ class NotificationBell extends StatelessWidget {
             return IconButton(
               tooltip: 'Notifications',
               onPressed: () async {
+                final informationalIds = <String>{};
                 final selectedNotification = await _showNotificationPanel(
                   buttonContext,
                   controller,
+                  informationalIds.addAll,
+                  informationalIds.remove,
                 );
 
+                var actionInitiated = false;
                 if (selectedNotification != null) {
-                  onNotificationSelected?.call(selectedNotification);
+                  final handler = onNotificationSelected;
+                  if (handler != null) {
+                    actionInitiated = await Future<bool>.sync(
+                      () => handler(selectedNotification),
+                    );
+                  }
                 }
+                if (actionInitiated && !selectedNotification!.isRead) {
+                  informationalIds.add(selectedNotification.id);
+                }
+                await controller.markNotificationsAsRead(informationalIds);
               },
               icon: Stack(
                 clipBehavior: Clip.none,
@@ -67,7 +86,9 @@ class NotificationBell extends StatelessWidget {
 
   Future<AppNotification?> _showNotificationPanel(
     BuildContext context,
-    dynamic controller,
+    NotificationController controller,
+    ValueChanged<Iterable<String>> onInformationalNotificationsShown,
+    ValueChanged<String> onNotificationRemovedFromSession,
   ) {
     final screen = MediaQuery.of(context).size;
     final isDesktop = screen.width >= 700;
@@ -84,6 +105,11 @@ class NotificationBell extends StatelessWidget {
               controller: controller,
               isModal: true,
               onValidateNotification: onValidateNotification,
+              isActionable: isActionable,
+              onInformationalNotificationsShown:
+                  onInformationalNotificationsShown,
+              onNotificationRemovedFromSession:
+                  onNotificationRemovedFromSession,
             ),
           );
         },
@@ -91,16 +117,30 @@ class NotificationBell extends StatelessWidget {
     }
 
     if (placement == NotificationPanelPlacement.besideSidebar) {
-      return _showBesideSidebarPanel(context, controller, screen);
+      return _showBesideSidebarPanel(
+        context,
+        controller,
+        screen,
+        onInformationalNotificationsShown,
+        onNotificationRemovedFromSession,
+      );
     }
 
-    return _showBelowBellPanel(context, controller, screen);
+    return _showBelowBellPanel(
+      context,
+      controller,
+      screen,
+      onInformationalNotificationsShown,
+      onNotificationRemovedFromSession,
+    );
   }
 
   Future<AppNotification?> _showBesideSidebarPanel(
     BuildContext context,
-    dynamic controller,
+    NotificationController controller,
     Size screen,
+    ValueChanged<Iterable<String>> onInformationalNotificationsShown,
+    ValueChanged<String> onNotificationRemovedFromSession,
   ) {
     const sidebarWidth = 250.0;
     const gap = 16.0;
@@ -117,7 +157,7 @@ class NotificationBell extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Notifications',
-      barrierColor: Colors.black.withOpacity(0.18),
+      barrierColor: Colors.black.withValues(alpha: 0.18),
       transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (context, animation, secondaryAnimation) {
         return Stack(
@@ -133,6 +173,11 @@ class NotificationBell extends StatelessWidget {
                   controller: controller,
                   isModal: true,
                   onValidateNotification: onValidateNotification,
+                  isActionable: isActionable,
+                  onInformationalNotificationsShown:
+                      onInformationalNotificationsShown,
+                  onNotificationRemovedFromSession:
+                      onNotificationRemovedFromSession,
                 ),
               ),
             ),
@@ -158,8 +203,10 @@ class NotificationBell extends StatelessWidget {
 
   Future<AppNotification?> _showBelowBellPanel(
     BuildContext context,
-    dynamic controller,
+    NotificationController controller,
     Size screen,
+    ValueChanged<Iterable<String>> onInformationalNotificationsShown,
+    ValueChanged<String> onNotificationRemovedFromSession,
   ) {
     final box = context.findRenderObject() as RenderBox?;
     final offset = box?.localToGlobal(Offset.zero) ?? Offset.zero;
@@ -182,7 +229,7 @@ class NotificationBell extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Notifications',
-      barrierColor: Colors.black.withOpacity(0.14),
+      barrierColor: Colors.black.withValues(alpha: 0.14),
       transitionDuration: const Duration(milliseconds: 180),
       pageBuilder: (context, animation, secondaryAnimation) {
         return Stack(
@@ -198,6 +245,11 @@ class NotificationBell extends StatelessWidget {
                   controller: controller,
                   isModal: true,
                   onValidateNotification: onValidateNotification,
+                  isActionable: isActionable,
+                  onInformationalNotificationsShown:
+                      onInformationalNotificationsShown,
+                  onNotificationRemovedFromSession:
+                      onNotificationRemovedFromSession,
                 ),
               ),
             ),

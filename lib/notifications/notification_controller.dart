@@ -140,6 +140,29 @@ class NotificationController extends ChangeNotifier {
     }
   }
 
+  Future<void> markNotificationsAsRead(Iterable<String> notificationIds) async {
+    final ids = notificationIds.toSet();
+    if (ids.isEmpty) return;
+    try {
+      _errorMessage = null;
+      await _service.markAsReadBatch(ids);
+      if (_disposed) return;
+      final readAt = DateTime.now();
+      _notifications = _notifications
+          .map(
+            (notification) => ids.contains(notification.id)
+                ? notification.copyWith(isRead: true, readAt: readAt)
+                : notification,
+          )
+          .toList();
+      notifyListeners();
+    } catch (e) {
+      if (_disposed) return;
+      _errorMessage = 'Failed to mark notifications as read: $e';
+      notifyListeners();
+    }
+  }
+
   Future<void> markAllAsRead() async {
     try {
       _errorMessage = null;

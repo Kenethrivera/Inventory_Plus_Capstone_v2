@@ -15,7 +15,11 @@ abstract class NotificationRepository {
 
   Future<void> markAsRead(String notificationId);
 
+  Future<void> markAsReadBatch(Iterable<String> notificationIds);
+
   Future<void> markAllAsRead();
+
+  Future<void> rearmNotificationReads(String notificationId);
 
   Future<void> deleteNotification(String notificationId);
 
@@ -139,14 +143,29 @@ class SupabaseNotificationRepository implements NotificationRepository {
 
   @override
   Future<void> markAsRead(String notificationId) async {
-    await _supabase.from('notification_reads').upsert({
-      'notification_id': notificationId,
-      'user_id': userId,
-      'is_read': true,
-      'read_at': DateTime.now().toUtc().toIso8601String(),
-      'is_deleted': false,
-      'deleted_at': null,
-    }, onConflict: 'notification_id,user_id');
+    await markAsReadBatch([notificationId]);
+  }
+
+  @override
+  Future<void> markAsReadBatch(Iterable<String> notificationIds) async {
+    final ids = notificationIds.toSet();
+    if (ids.isEmpty) return;
+    final readAt = DateTime.now().toUtc().toIso8601String();
+    final rows = ids
+        .map(
+          (notificationId) => {
+            'notification_id': notificationId,
+            'user_id': userId,
+            'is_read': true,
+            'read_at': readAt,
+            'is_deleted': false,
+            'deleted_at': null,
+          },
+        )
+        .toList(growable: false);
+    await _supabase
+        .from('notification_reads')
+        .upsert(rows, onConflict: 'notification_id,user_id');
   }
 
   @override
@@ -171,6 +190,19 @@ class SupabaseNotificationRepository implements NotificationRepository {
     await _supabase
         .from('notification_reads')
         .upsert(rows, onConflict: 'notification_id,user_id');
+  }
+
+  @override
+  Future<void> rearmNotificationReads(String notificationId) async {
+    await _supabase
+        .from('notification_reads')
+        .update({
+          'is_read': false,
+          'read_at': null,
+          'is_deleted': false,
+          'deleted_at': null,
+        })
+        .eq('notification_id', notificationId);
   }
 
   @override

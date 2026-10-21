@@ -22,12 +22,18 @@ class NotificationPage extends StatefulWidget {
   final bool isModal;
   final Future<String?> Function(AppNotification notification)?
   onValidateNotification;
+  final bool Function(AppNotification notification) isActionable;
+  final ValueChanged<Iterable<String>> onInformationalNotificationsShown;
+  final ValueChanged<String> onNotificationRemovedFromSession;
 
   const NotificationPage({
     super.key,
     required this.controller,
     this.isModal = false,
     this.onValidateNotification,
+    required this.isActionable,
+    required this.onInformationalNotificationsShown,
+    required this.onNotificationRemovedFromSession,
   });
 
   @override
@@ -70,6 +76,14 @@ class _NotificationPageState extends State<NotificationPage> {
         final filtered = _filteredNotifications(
           widget.controller.notifications,
         );
+        widget.onInformationalNotificationsShown(
+          filtered
+              .where(
+                (notification) =>
+                    !notification.isRead && !widget.isActionable(notification),
+              )
+              .map((notification) => notification.id),
+        );
 
         return Container(
           width: panelWidth,
@@ -79,7 +93,7 @@ class _NotificationPageState extends State<NotificationPage> {
             borderRadius: BorderRadius.circular(isDesktop ? 18 : 24),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.14),
+                color: Colors.black.withValues(alpha: 0.14),
                 blurRadius: 30,
                 offset: const Offset(0, 12),
               ),
@@ -339,33 +353,30 @@ class _NotificationPageState extends State<NotificationPage> {
               ),
             ),
             ...group.items.map((notification) {
+              final isActionable = widget.isActionable(notification);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: NotificationTile(
                   notification: notification,
-                  onTap: () async {
-                    // A deliberate tap consumes the unread state even when the
-                    // linked target has since become stale or non-actionable.
-                    if (!notification.isRead) {
-                      await widget.controller.markAsRead(notification.id);
-                    }
+                  onTap: !isActionable
+                      ? null
+                      : () async {
+                          final errorMessage = await widget
+                              .onValidateNotification
+                              ?.call(notification);
 
-                    final errorMessage = await widget.onValidateNotification
-                        ?.call(notification);
+                          if (errorMessage != null) {
+                            if (!context.mounted) return;
+                            AppToast.error(context, errorMessage);
+                            return;
+                          }
 
-                    if (errorMessage != null) {
-                      if (!context.mounted) return;
-
-                      AppToast.error(context, errorMessage);
-
-                      return;
-                    }
-
-                    if (context.mounted) {
-                      Navigator.pop(context, notification);
-                    }
-                  },
+                          if (context.mounted) {
+                            Navigator.pop(context, notification);
+                          }
+                        },
                   onDelete: () {
+                    widget.onNotificationRemovedFromSession(notification.id);
                     widget.controller.deleteNotification(notification.id);
                   },
                 ),

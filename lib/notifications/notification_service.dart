@@ -41,6 +41,10 @@ class NotificationService {
     return _repository.markAsRead(id);
   }
 
+  Future<void> markAsReadBatch(Iterable<String> ids) {
+    return _repository.markAsReadBatch(ids);
+  }
+
   Future<void> markAllAsRead() {
     return _repository.markAllAsRead();
   }
@@ -76,9 +80,14 @@ class NotificationService {
     }
 
     final canonical = matches.first;
+    final semanticStageChanged =
+        _semanticStageKey(canonical) != _semanticStageKey(notification);
     await _repository.updateNotification(
       notification.copyWith(id: canonical.id, createdAt: canonical.createdAt),
     );
+    if (semanticStageChanged) {
+      await _repository.rearmNotificationReads(canonical.id);
+    }
 
     // Reconcile any historical duplicates so only one active lifecycle row
     // remains. This fixes persistence rather than merely hiding duplicates.
@@ -88,6 +97,14 @@ class NotificationService {
         duplicate.copyWith(isResolved: true, resolvedAt: resolvedAt),
       );
     }
+  }
+
+  String _semanticStageKey(AppNotification notification) {
+    final stage =
+        notification.payload['stage']?.toString() ??
+        notification.payload['status']?.toString() ??
+        '';
+    return '${notification.type.name}:$stage';
   }
 
   Future<void> _reconcileLifecycleDuplicates(String identity) async {
