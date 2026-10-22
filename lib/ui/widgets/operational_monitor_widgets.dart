@@ -95,25 +95,25 @@ class MonitorMetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 92,
-      padding: const EdgeInsets.all(14),
+      height: 80,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: monitorLineColor),
       ),
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 20),
+            child: Icon(icon, color: color, size: 18),
           ),
-          const SizedBox(width: 11),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -128,6 +128,7 @@ class MonitorMetricCard extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     fontFamily: monitorFontFamily,
+                    height: 1.05,
                   ),
                 ),
                 Text(
@@ -139,6 +140,7 @@ class MonitorMetricCard extends StatelessWidget {
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
                     fontFamily: monitorFontFamily,
+                    height: 1.05,
                   ),
                 ),
                 Text(
@@ -149,6 +151,7 @@ class MonitorMetricCard extends StatelessWidget {
                     color: monitorMutedText,
                     fontSize: 10,
                     fontFamily: monitorFontFamily,
+                    height: 1.05,
                   ),
                 ),
               ],
