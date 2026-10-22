@@ -302,15 +302,17 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 1050
+        final columns = constraints.maxWidth >= 890
             ? 5
             : constraints.maxWidth >= 620
             ? 3
             : 2;
-        final width = (constraints.maxWidth - ((columns - 1) * 12)) / columns;
+        const spacing = 10.0;
+        final width =
+            (constraints.maxWidth - ((columns - 1) * spacing)) / columns;
         return Wrap(
-          spacing: 12,
-          runSpacing: 12,
+          spacing: spacing,
+          runSpacing: spacing,
           children: cards
               .map((card) => SizedBox(width: width, child: card))
               .toList(growable: false),

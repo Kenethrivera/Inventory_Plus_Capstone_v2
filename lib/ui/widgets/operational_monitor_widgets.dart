@@ -95,8 +95,8 @@ class MonitorMetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 80,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      height: 90,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -105,51 +105,65 @@ class MonitorMetricCard extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 18),
+            child: Icon(icon, color: color, size: 19),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 11),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: monitorMutedText,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: monitorFontFamily,
-                    height: 1.05,
+                SizedBox(
+                  height: 26,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: monitorMutedText,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: monitorFontFamily,
+                        height: 1.1,
+                      ),
+                    ),
                   ),
                 ),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: monitorDarkText,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    fontFamily: monitorFontFamily,
-                    height: 1.05,
+                const SizedBox(height: 2),
+                SizedBox(
+                  height: 22,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        color: monitorDarkText,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
+                        fontFamily: monitorFontFamily,
+                        height: 1,
+                      ),
+                    ),
                   ),
                 ),
+                const SizedBox(height: 3),
                 Text(
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: monitorMutedText,
-                    fontSize: 10,
+                    fontSize: 11,
                     fontFamily: monitorFontFamily,
                     height: 1.05,
                   ),
