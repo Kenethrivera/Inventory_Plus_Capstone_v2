@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/staff_management.dart';
 import '../navigation/main_section.dart';
 import '../services/debug_clock.dart';
 import '../services/export_period.dart';
@@ -79,8 +80,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   late final List<MainSection> _mainSections;
   CurrentUserProfileSnapshot? _currentProfile;
   int _currentProfileRevision = 0;
-  bool _helperProfileResolved = false;
-  bool _helperProfileLoadFailed = false;
+  bool _passwordGateProfileResolved = false;
+  bool _passwordGateProfileLoadFailed = false;
   StreamSubscription<List<InventoryItem>>? _inventoryNotificationSubscription;
   final Completer<void> _deferredControllerData = Completer<void>();
   final Set<int> _mountedPageIndexes = <int>{};
@@ -226,7 +227,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (!mounted) return;
       replaceMainSectionPath(_currentMainSection.routePath);
       if (kDebugMode) debugPrint('[Startup] MainScreen first frame rendered');
-      unawaited(_refreshHelperPasswordGate());
+      unawaited(_refreshPasswordGate());
       unawaited(_startSessionSynchronization());
       unawaited(_loadDeferredControllerData());
     });
@@ -1178,26 +1179,27 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       );
       return;
     }
+    final requiresPasswordGate = roleRequiresForcedPasswordChange(_sessionRole);
     if (identical(_currentProfile, profile) &&
-        (_sessionRole != 'helper' || _helperProfileResolved)) {
+        (!requiresPasswordGate || _passwordGateProfileResolved)) {
       return;
     }
     setState(() {
       _currentProfile = profile;
       _currentProfileRevision++;
-      if (_sessionRole == 'helper') {
-        _helperProfileResolved = true;
-        _helperProfileLoadFailed = false;
+      if (requiresPasswordGate) {
+        _passwordGateProfileResolved = true;
+        _passwordGateProfileLoadFailed = false;
       }
     });
   }
 
-  Future<void> _refreshHelperPasswordGate() async {
-    if (_sessionRole != 'helper') return;
+  Future<void> _refreshPasswordGate() async {
+    if (!roleRequiresForcedPasswordChange(_sessionRole)) return;
     if (mounted) {
       setState(() {
-        _helperProfileResolved = false;
-        _helperProfileLoadFailed = false;
+        _passwordGateProfileResolved = false;
+        _passwordGateProfileLoadFailed = false;
       });
     }
 
@@ -1205,8 +1207,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     if (profile == null) {
       setState(() {
-        _helperProfileResolved = true;
-        _helperProfileLoadFailed = true;
+        _passwordGateProfileResolved = true;
+        _passwordGateProfileLoadFailed = true;
       });
       return;
     }
@@ -2103,12 +2105,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       return const StartupRestorationSurface();
     }
 
-    if (_sessionRole == 'helper') {
-      if (!_helperProfileResolved) {
+    if (roleRequiresForcedPasswordChange(_sessionRole)) {
+      if (!_passwordGateProfileResolved) {
         return const StartupRestorationSurface();
       }
-      if (_helperProfileLoadFailed) {
-        return _buildHelperProfileLoadFailure();
+      if (_passwordGateProfileLoadFailed) {
+        return _buildPasswordGateProfileLoadFailure();
       }
       if (_currentProfile?.mustChangePassword == true) {
         return _buildForcedPasswordChangeGate();
@@ -2146,7 +2148,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildHelperProfileLoadFailure() {
+  Widget _buildPasswordGateProfileLoadFailure() {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),
       body: Center(
@@ -2179,7 +2181,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: _refreshHelperPasswordGate,
+                      onPressed: _refreshPasswordGate,
                       child: const Text('Retry'),
                     ),
                   ),

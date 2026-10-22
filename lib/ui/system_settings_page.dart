@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/staff_management.dart';
 import '../services/store_access_service.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show debugPrint, debugPrintStack, kIsWeb;
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const String _fontFam = 'Hellix';
@@ -1460,6 +1462,24 @@ Widget _buildPaymentSettings() {
     );
   }
 
+  String _staffCreationFailureMessage(StaffCreationFailure? failure) {
+    return switch (failure) {
+      StaffCreationFailure.duplicateUsername =>
+        'That username is already in use.',
+      StaffCreationFailure.duplicateEmail =>
+        'That email address is already assigned to another account.',
+      StaffCreationFailure.duplicatePhone =>
+        'That phone number is already assigned to another account.',
+      StaffCreationFailure.backendUnavailable =>
+        'Staff creation is temporarily unavailable. Please try again later.',
+      StaffCreationFailure.unauthorized =>
+        'Your session is not authorized to create staff accounts.',
+      StaffCreationFailure.databaseConflict ||
+      StaffCreationFailure.unexpected ||
+      null => 'Could not create staff. Please try again.',
+    };
+  }
+
   void _showAddStaffDialog() {
     final nameCtrl = TextEditingController();
     final userCtrl = TextEditingController();
@@ -1665,7 +1685,7 @@ Widget _buildPaymentSettings() {
                         }
                         setModalState(() => isSaving = true);
                         try {
-                          final success = await widget.controller.createStaff(
+                          final result = await widget.controller.createStaff(
                             name: nameCtrl.text.trim(),
                             username: userCtrl.text.trim(),
                             password: defaultPassword,
@@ -1674,7 +1694,7 @@ Widget _buildPaymentSettings() {
                             address: addressCtrl.text.trim(),
                             role: selectedRole,
                           );
-                          if (success) {
+                          if (result.success) {
                             if (dialogContext.mounted) {
                               Navigator.pop(dialogContext);
                             }
@@ -1682,13 +1702,21 @@ Widget _buildPaymentSettings() {
                           } else {
                             setModalState(() => isSaving = false);
                             _showToast(
-                              "Failed to create staff. Username may already exist.",
+                              _staffCreationFailureMessage(result.failure),
                               isError: true,
                             );
                           }
-                        } catch (e) {
+                        } catch (error, stackTrace) {
                           setModalState(() => isSaving = false);
-                          _showToast("Error creating staff: $e", isError: true);
+                          debugPrint(
+                            '[StaffCreation] unexpected UI failure '
+                            'type=${error.runtimeType}',
+                          );
+                          debugPrintStack(stackTrace: stackTrace);
+                          _showToast(
+                            'Could not create staff. Please try again.',
+                            isError: true,
+                          );
                         }
                       },
                 style: ElevatedButton.styleFrom(
@@ -1915,10 +1943,10 @@ Widget _buildPaymentSettings() {
                   fontFamily: _fontFam,
                 ),
               ),
-              if (staff['role']?.toString().toLowerCase() == 'helper')
+              if (roleRequiresForcedPasswordChange(staff['role']?.toString()))
                 const TextSpan(
                   text:
-                      "\n\nThe Helper will be required to change this password before continuing.",
+                      "\n\nThe staff member will be required to change this password before continuing.",
                 ),
             ],
           ),

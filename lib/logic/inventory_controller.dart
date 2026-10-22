@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import '../data/inventory.dart';
 import '../services/realtime/realtime_sync_service.dart';
 import 'history_pagination.dart';
+import 'staff_management.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'dart:async';
@@ -1242,14 +1243,12 @@ class InventoryController {
     final locationId = activeLocationId;
     if (userId == null || locationId == null) return;
     try {
-      final isHelperSession = currentUserRole?.toLowerCase() == 'helper';
-      final profileColumns = isHelperSession
-          ? 'id, location_id, name, role, email, address, phone, '
-                'must_change_password'
-          : 'id, location_id, name, role, email, address, phone';
       final row = await supabase
           .from('profiles')
-          .select(profileColumns)
+          .select(
+            'id, location_id, name, role, email, address, phone, '
+            'must_change_password',
+          )
           .eq('id', userId)
           .maybeSingle();
       if (currentUserId != userId || activeLocationId != locationId) return;
@@ -1264,7 +1263,8 @@ class InventoryController {
         name: row['name']?.toString() ?? 'User',
         role: row['role']?.toString() ?? 'staff',
         mustChangePassword:
-            isHelperSession && row['must_change_password'] == true,
+            roleRequiresForcedPasswordChange(row['role']?.toString()) &&
+            row['must_change_password'] == true,
         email: row['email']?.toString(),
         address: row['address']?.toString(),
         phone: row['phone']?.toString(),
@@ -1297,7 +1297,7 @@ class InventoryController {
     }
   }
 
-  Future<bool> createStaff({
+  Future<StaffCreationResult> createStaff({
     required String name,
     required String username,
     required String password,
@@ -1307,35 +1307,76 @@ class InventoryController {
     String? address,
   }) async {
     final locId = activeLocationId;
-    if (locId == null) return false;
+    if (locId == null || locId.isEmpty) {
+      return const StaffCreationResult.failure(StaffCreationFailure.unexpected);
+    }
+
+    late final Map<String, dynamic> row;
     try {
       final hashedPassword = _hashPassword(password);
-
-      final row = await supabase
+      final inserted = await supabase
           .from('profiles')
-          .insert({
-            'name': name,
-            'username': username,
-            'password': hashedPassword,
-            'role': role,
-            'location_id': locId,
-            'email': email,
-            'phone': phone,
-            'address': address,
-          })
+          .insert(
+            buildStaffCreationPayload(
+              name: name,
+              username: username,
+              passwordHash: hashedPassword,
+              role: role,
+              locationId: locId,
+              email: email,
+              phone: phone,
+              address: address,
+            ),
+          )
           .select()
           .single();
+      row = Map<String, dynamic>.from(inserted);
+    } on PostgrestException catch (error) {
+      final constraint = staffCreationConstraintName(
+        message: error.message,
+        details: error.details?.toString(),
+      );
+      debugPrint(
+        '[StaffCreation] profiles insert failed '
+        'code=${error.code} constraint=${constraint ?? 'unknown'} '
+        'message=${error.message} hint=${error.hint}',
+      );
+      return StaffCreationResult.failure(
+        classifyStaffCreationFailure(
+          code: error.code,
+          message: error.message,
+          details: error.details?.toString(),
+          hint: error.hint,
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[StaffCreation] profiles insert failed '
+        'type=${error.runtimeType}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      return const StaffCreationResult.failure(StaffCreationFailure.unexpected);
+    }
+
+    try {
       if (_staffSnapshotActivated && _staffSnapshotLocationId == locId) {
         _staffSnapshot = List<Map<String, dynamic>>.unmodifiable([
           ..._staffSnapshot,
-          Map<String, dynamic>.from(row),
+          row,
         ]);
         _publishStaffConfigurationSnapshot();
       }
-      return true;
-    } catch (e) {
-      return false;
+    } catch (error, stackTrace) {
+      // The database insert already succeeded. A local publication problem
+      // must not make the UI report a failed account creation and invite a
+      // duplicate retry; realtime reconciliation will restore the snapshot.
+      debugPrint(
+        '[StaffCreation] local snapshot publication failed '
+        'type=${error.runtimeType}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
     }
+    return const StaffCreationResult.success();
   }
 
   Future<bool> updateStaffRole(String id, String newRole) async {
@@ -1417,7 +1458,7 @@ class InventoryController {
           _sessionToken = replacementToken;
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('sessionToken', replacementToken);
-          if (currentUserRole?.toLowerCase() == 'helper') {
+          if (roleRequiresForcedPasswordChange(currentUserRole)) {
             _setCurrentProfileMustChangePassword(false);
           }
           _clearPaginatedHistoryState();

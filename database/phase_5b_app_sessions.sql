@@ -270,7 +270,9 @@ begin
   update public.profiles
   set password = v_new_hash,
       must_change_password = case
-        when v_role = 'helper' then false else must_change_password end
+        when v_role in ('helper', 'staff', 'cashier') then false
+        else must_change_password
+      end
   where id = v_profile_id and password = v_current_hash;
 
   if not found then
@@ -320,7 +322,9 @@ begin
   set password = encode(extensions.digest(
         convert_to(coalesce(p_new_password, ''), 'UTF8'), 'sha256'), 'hex'),
       must_change_password = case
-        when v_target_role = 'helper' then true else must_change_password end
+        when v_target_role in ('helper', 'staff', 'cashier') then true
+        else must_change_password
+      end
   where id = p_target_profile_id;
 
   return found;
