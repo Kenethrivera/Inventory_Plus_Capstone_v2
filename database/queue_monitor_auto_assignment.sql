@@ -6,10 +6,16 @@
 -- Keeping only the token signature prevents an older, weaker entry point from
 -- surviving when this migration is reapplied to a development database.
 drop function if exists public.auto_assign_pending_orders_v1(uuid);
+drop function if exists public.auto_assign_pending_orders_v1(text);
 
 create or replace function public.auto_assign_pending_orders_v1(
   p_session_token text
-) returns integer
+) returns table (
+  order_id text,
+  helper_id text,
+  helper_name text,
+  assigned_at timestamptz
+)
 language plpgsql
 security definer
 set search_path = public, private, extensions, pg_temp
@@ -20,7 +26,7 @@ declare
   v_order_id public.orders.id%type;
   v_helper_id public.profiles.id%type;
   v_helper_name public.profiles.name%type;
-  v_assigned_count integer := 0;
+  v_assigned_at timestamptz;
 begin
   select session_profile.role,
          session_profile.location_id
@@ -62,7 +68,10 @@ begin
                max(work.assigned_at) as last_assigned_at
           from public.orders work
          where work.location_id = v_location_id
-           and work.assigned_helper_id = profile.id
+           -- orders.assigned_helper_id is text while profiles.id is bigint.
+           -- Cast the profile key once; do not cast the order column so an
+           -- assignment lookup index can remain usable.
+           and work.assigned_helper_id = profile.id::text
       ) workload on true
      where presence.location_id = v_location_id
        and presence.is_online = true
@@ -78,10 +87,12 @@ begin
       exit;
     end if;
 
+    v_assigned_at := clock_timestamp();
+
     update public.orders assigned
-       set assigned_helper_id = v_helper_id,
+       set assigned_helper_id = v_helper_id::text,
            assigned_helper_name = v_helper_name,
-           assigned_at = clock_timestamp(),
+           assigned_at = v_assigned_at,
            assigned_by_admin_id = null,
            assigned_by_admin_name = null
      where assigned.id = v_order_id
@@ -90,11 +101,13 @@ begin
        and assigned.assigned_helper_id is null;
 
     if found then
-      v_assigned_count := v_assigned_count + 1;
+      order_id := v_order_id::text;
+      helper_id := v_helper_id::text;
+      helper_name := v_helper_name;
+      assigned_at := v_assigned_at;
+      return next;
     end if;
   end loop;
-
-  return v_assigned_count;
 end;
 $$;
 

@@ -6,7 +6,9 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../data/inventory.dart';
+import '../logic/helper_assignment.dart';
 import '../logic/inventory_controller.dart';
+import '../services/staff_presence_service.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/order_checklist_view.dart';
@@ -20,12 +22,14 @@ const Color _primaryBlue = Color(0xFF2563EB); // Centralized theme color
 
 class PosCartPage extends StatefulWidget {
   final InventoryController controller;
+  final StaffPresenceService? presenceService;
   final String? targetOrderId;
   final VoidCallback? onOrderOpened;
 
   const PosCartPage({
     super.key,
     required this.controller,
+    this.presenceService,
     this.targetOrderId,
     this.onOrderOpened,
   });
@@ -54,6 +58,7 @@ class _PosCartPageState extends State<PosCartPage>
   double _kBaseChromeHeight = 368.0; // was 320
 
   bool _soloMode = false;
+  String? _selectedHelperId;
 
   String? _pendingAutoOpenOrderId;
   StreamSubscription<InventoryRuntimeSettingsSnapshot>?
@@ -228,6 +233,7 @@ class _PosCartPageState extends State<PosCartPage>
           : _discountValue;
       if (discountAmt > subtotal) discountAmt = subtotal;
       final double totalDue = subtotal - discountAmt;
+      final assignedHelper = _soloMode ? null : _selectedEligibleHelper();
 
       final CustomerOrder? createdOrder = await widget.controller
           .createCustomerOrder(
@@ -235,6 +241,7 @@ class _PosCartPageState extends State<PosCartPage>
             totalAmount: totalDue,
             discountAmount: discountAmt,
             soloHandled: _soloMode,
+            assignedHelper: assignedHelper,
           );
       if (createdOrder == null) {
         throw Exception('Order could not be created.');
@@ -251,6 +258,16 @@ class _PosCartPageState extends State<PosCartPage>
           createdByName: createdByName,
           createdAt: createdOrder.createdAt,
         );
+        if (assignedHelper != null) {
+          await notificationController.notifyOrderAssigned(
+            locationId: locationId,
+            orderId: createdOrder.id,
+            helperId: assignedHelper.id,
+            helperName: assignedHelper.name,
+            assignedByName: createdByName,
+            assignedAt: createdOrder.assignedAt ?? DateTime.now(),
+          );
+        }
       }
 
       if (!mounted) return;
@@ -259,18 +276,44 @@ class _PosCartPageState extends State<PosCartPage>
         _cart.clear();
         _discountValue = 0.0;
         _discountReason = '';
+        _selectedHelperId = null;
       });
 
       if (_soloMode) {
         await _runSoloCheckout(createdOrder);
       } else {
-        AppToast.success(context, 'Order sent to Helper!');
+        AppToast.success(
+          context,
+          assignedHelper == null
+              ? 'Order submitted for automatic Helper assignment.'
+              : 'Order assigned to ${assignedHelper.name}.',
+        );
       }
     } catch (e) {
       if (mounted) AppToast.error(context, "Couldn't process the order: $e");
     } finally {
       if (mounted) setState(() => _isProcessingCart = false);
     }
+  }
+
+  List<HelperAssignmentCandidate> _eligibleHelpers() {
+    final helpers = widget.presenceService?.eligibleHelpersForAssignment;
+    if (helpers == null || helpers.isEmpty) {
+      return const <HelperAssignmentCandidate>[];
+    }
+    return rankHelpersByActiveWorkload(
+      helpers: helpers,
+      orders: widget.controller.currentOrders,
+    );
+  }
+
+  HelperAssignmentCandidate? _selectedEligibleHelper() {
+    final selectedId = _selectedHelperId;
+    if (selectedId == null) return null;
+    for (final helper in _eligibleHelpers()) {
+      if (helper.id == selectedId) return helper;
+    }
+    return null;
   }
 
   Future<void> _completeOrderFlow(
@@ -4240,8 +4283,15 @@ class _PosCartPageState extends State<PosCartPage>
                   _HandlingToggle(
                     packMyself: _soloMode,
                     enabled: !_isProcessingCart,
-                    onChanged: (v) => setState(() => _soloMode = v),
+                    onChanged: (v) => setState(() {
+                      _soloMode = v;
+                      if (v) _selectedHelperId = null;
+                    }),
                   ),
+                  if (!_soloMode) ...[
+                    const SizedBox(height: 12),
+                    _buildHelperAssignmentControl(),
+                  ],
                   const SizedBox(height: 12),
 
                   SizedBox(
@@ -4291,6 +4341,128 @@ class _PosCartPageState extends State<PosCartPage>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildHelperAssignmentControl() {
+    final presenceService = widget.presenceService;
+    if (presenceService == null) {
+      return const _HelperAssignmentControl(
+        helpers: <HelperAssignmentCandidate>[],
+        selectedHelperId: null,
+        enabled: false,
+        onChanged: null,
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: presenceService,
+      builder: (context, _) {
+        final helpers = _eligibleHelpers();
+        final selectedId =
+            helpers.any((helper) => helper.id == _selectedHelperId)
+            ? _selectedHelperId
+            : null;
+        return _HelperAssignmentControl(
+          helpers: helpers,
+          selectedHelperId: selectedId,
+          enabled: !_isProcessingCart,
+          onChanged: (helperId) {
+            setState(() => _selectedHelperId = helperId);
+          },
+        );
+      },
+    );
+  }
+}
+
+class _HelperAssignmentControl extends StatelessWidget {
+  const _HelperAssignmentControl({
+    required this.helpers,
+    required this.selectedHelperId,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  static const String _autoAssignValue = '__auto_assign__';
+
+  final List<HelperAssignmentCandidate> helpers;
+  final String? selectedHelperId;
+  final bool enabled;
+  final ValueChanged<String?>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          const Icon(LucideIcons.userCheck, size: 18, color: _primaryBlue),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Assign Helper',
+                  style: TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Hellix',
+                  ),
+                ),
+                SizedBox(
+                  height: 28,
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: selectedHelperId ?? _autoAssignValue,
+                      isExpanded: true,
+                      isDense: true,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Hellix',
+                      ),
+                      items: [
+                        DropdownMenuItem<String>(
+                          value: _autoAssignValue,
+                          child: Text(
+                            helpers.isEmpty
+                                ? 'Auto-assign (waiting for Helper)'
+                                : 'Auto-assign',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        ...helpers.map(
+                          (helper) => DropdownMenuItem<String>(
+                            value: helper.id,
+                            child: Text(
+                              helper.name,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: enabled
+                          ? (value) => onChanged?.call(
+                              value == _autoAssignValue ? null : value,
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

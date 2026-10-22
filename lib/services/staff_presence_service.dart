@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../logic/helper_assignment.dart';
 import 'realtime/realtime_sync_service.dart';
 
 class StaffPresenceService extends ChangeNotifier {
@@ -35,6 +36,13 @@ class StaffPresenceService extends ChangeNotifier {
   });
 
   List<Map<String, dynamic>> get activeStaff => _activeStaff;
+  List<HelperAssignmentCandidate> get eligibleHelpersForAssignment =>
+      eligibleHelpersFromPresence(
+        presenceRows: _activeStaff,
+        locationId: locationId,
+        now: DateTime.now().toUtc(),
+        activeTimeout: activeTimeout,
+      );
   bool get isLoading => _isLoading;
 
   void bindRealtimeSync(RealtimeSyncService realtimeSync) {

@@ -3,8 +3,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../data/inventory.dart';
+import '../logic/helper_assignment.dart';
 import '../logic/inventory_controller.dart';
 import 'staff_presence_service.dart';
+
+typedef AutomaticAssignmentsCallback =
+    Future<void> Function(List<AutomaticHelperAssignmentResult> assignments);
 
 /// Reconciles pending orders with active Helpers through the database's
 /// concurrency-safe assignment boundary.
@@ -16,6 +20,7 @@ class OrderAutoAssignmentService {
     required InventoryController inventoryController,
     required StaffPresenceService presenceService,
     required String locationId,
+    this.onAssignments,
   }) : _inventoryController = inventoryController,
        _presenceService = presenceService,
        _locationId = locationId,
@@ -25,12 +30,13 @@ class OrderAutoAssignmentService {
   final StaffPresenceService _presenceService;
   final String _locationId;
   final String _accountId;
+  final AutomaticAssignmentsCallback? onAssignments;
 
   StreamSubscription<List<CustomerOrder>>? _ordersSubscription;
+  final AssignmentReconciliationGate _reconciliationGate =
+      AssignmentReconciliationGate();
   bool _started = false;
   bool _disposed = false;
-  bool _reconcileInFlight = false;
-  bool _reconcileQueued = false;
 
   void start() {
     if (_started || _disposed) return;
@@ -48,10 +54,7 @@ class OrderAutoAssignmentService {
   void _handlePresenceChanged() => _scheduleReconciliation();
 
   bool get _hasEligibleHelper {
-    return _presenceService.activeStaff.any((staff) {
-      final role = staff['user_role']?.toString().trim().toLowerCase();
-      return staff['is_online'] == true && role == 'helper';
-    });
+    return _presenceService.eligibleHelpersForAssignment.isNotEmpty;
   }
 
   bool get _hasUnassignedPendingOrder {
@@ -71,48 +74,30 @@ class OrderAutoAssignmentService {
   }
 
   void _scheduleReconciliation() {
-    if (!_hasCurrentScope) {
-      _reconcileQueued = false;
-      return;
-    }
-    unawaited(_reconcile());
+    if (!_hasCurrentScope) return;
+    unawaited(_reconciliationGate.schedule(_reconcileOnce));
   }
 
-  Future<void> _reconcile() async {
-    if (!_hasCurrentScope) {
-      _reconcileQueued = false;
-      return;
-    }
-    if (_reconcileInFlight) {
-      _reconcileQueued = true;
-      return;
-    }
+  Future<void> _reconcileOnce() async {
+    if (!_hasCurrentScope) return;
 
-    _reconcileInFlight = true;
+    // These are only cheap guards. Eligibility, location, workload, and
+    // order ownership are revalidated atomically by the database RPC.
+    if (!_hasEligibleHelper || !_hasUnassignedPendingOrder) return;
+
     try {
-      do {
-        _reconcileQueued = false;
-
-        if (!_hasCurrentScope) break;
-
-        // These are only cheap guards. Eligibility, location, workload, and
-        // order ownership are revalidated atomically by the database RPC.
-        if (!_hasEligibleHelper || !_hasUnassignedPendingOrder) continue;
-
-        try {
-          await _inventoryController.reconcileAutomaticHelperAssignments(
+      final assignments = await _inventoryController
+          .reconcileAutomaticHelperAssignments(
             expectedLocationId: _locationId,
             expectedAccountId: _accountId,
           );
-        } catch (error, stackTrace) {
-          // Keep the operational snapshot intact. A later order/presence event
-          // will retry; monitor pages should never fail because assignment did.
-          debugPrint('[OrderAutoAssignment] reconciliation failed: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      } while (_reconcileQueued && _hasCurrentScope);
-    } finally {
-      _reconcileInFlight = false;
+      if (!_hasCurrentScope || assignments.isEmpty) return;
+      await onAssignments?.call(assignments);
+    } catch (error, stackTrace) {
+      // Keep the operational snapshot intact. A later order/presence event
+      // will retry; monitor pages should never fail because assignment did.
+      debugPrint('[OrderAutoAssignment] reconciliation failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
@@ -120,7 +105,7 @@ class OrderAutoAssignmentService {
     if (_disposed) return;
     _disposed = true;
     _started = false;
-    _reconcileQueued = false;
+    _reconciliationGate.dispose();
     _presenceService.removeListener(_handlePresenceChanged);
     unawaited(_ordersSubscription?.cancel());
     _ordersSubscription = null;

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import '../data/inventory.dart';
 import '../services/realtime/realtime_sync_service.dart';
+import 'helper_assignment.dart';
 import 'history_pagination.dart';
 import 'staff_management.dart';
 import 'package:flutter/material.dart';
@@ -2124,6 +2125,7 @@ class InventoryController {
     double? cashGiven,
     double? changeAmount,
     bool soloHandled = false,
+    HelperAssignmentCandidate? assignedHelper,
   }) async {
     final locId = activeLocationId;
     if (locId == null) return null;
@@ -2150,6 +2152,12 @@ class InventoryController {
     }
 
     try {
+      final initialAssignment = soloHandled
+          ? const <String, dynamic>{}
+          : initialHelperAssignmentFields(
+              helper: assignedHelper,
+              assignedAt: DateTime.now().toUtc(),
+            );
       final response = await supabase
           .from('orders')
           .insert({
@@ -2165,6 +2173,7 @@ class InventoryController {
             // ownership
             'created_by_id': currentUserId,
             'created_by_name': currentUserName ?? 'Unknown User',
+            ...initialAssignment,
           })
           .select()
           .single();
@@ -2750,7 +2759,8 @@ class InventoryController {
   /// Runs the database-owned, deterministic Helper assignment reconciliation.
   /// Identity and location are derived from the opaque app session in
   /// Postgres; the client does not submit either as an authorization claim.
-  Future<void> reconcileAutomaticHelperAssignments({
+  Future<List<AutomaticHelperAssignmentResult>>
+  reconcileAutomaticHelperAssignments({
     required String expectedLocationId,
     required String expectedAccountId,
   }) async {
@@ -2759,13 +2769,24 @@ class InventoryController {
         sessionToken.isEmpty ||
         currentUserId != expectedAccountId ||
         activeLocationId != expectedLocationId) {
-      return;
+      return const <AutomaticHelperAssignmentResult>[];
     }
 
-    await supabase.rpc(
+    final response = await supabase.rpc(
       'auto_assign_pending_orders_v1',
       params: {'p_session_token': sessionToken},
     );
+    if (response is! List) {
+      return const <AutomaticHelperAssignmentResult>[];
+    }
+    return response
+        .whereType<Map>()
+        .map(
+          (row) => AutomaticHelperAssignmentResult.fromJson(
+            Map<String, dynamic>.from(row),
+          ),
+        )
+        .toList(growable: false);
   }
 
   Future<void> assignOrderToHelper({

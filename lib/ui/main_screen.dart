@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/helper_assignment.dart';
 import '../logic/staff_management.dart';
 import '../navigation/main_section.dart';
 import '../services/debug_clock.dart';
@@ -1125,9 +1126,29 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       inventoryController: widget.controller,
       presenceService: service,
       locationId: locationId,
+      onAssignments: _notifyAutomaticHelperAssignments,
     );
     autoAssignmentService.start();
     _orderAutoAssignmentService = autoAssignmentService;
+  }
+
+  Future<void> _notifyAutomaticHelperAssignments(
+    List<AutomaticHelperAssignmentResult> assignments,
+  ) async {
+    final controller = _notificationController;
+    final locationId = widget.controller.activeLocationId;
+    if (controller == null || locationId == null) return;
+
+    for (final assignment in assignments) {
+      await controller.notifyOrderAssigned(
+        locationId: locationId,
+        orderId: assignment.orderId,
+        helperId: assignment.helperId,
+        helperName: assignment.helperName,
+        assignedByName: 'Automatic assignment',
+        assignedAt: assignment.assignedAt,
+      );
+    }
   }
 
   Future<void> _startStaffPresence() async {
@@ -2300,6 +2321,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           pages.add(
             PosCartPage(
               controller: widget.controller,
+              presenceService: _staffPresenceService,
               targetOrderId: _targetPosOrderId,
               onOrderOpened: () {
                 if (mounted) {
