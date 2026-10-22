@@ -8,11 +8,14 @@ import 'logic/inventory_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'login/auth_service.dart';
+import 'navigation/main_section.dart';
+import 'services/main_section_url.dart';
 import 'services/realtime/realtime_sync_service.dart';
 
 Future<void> main() async {
   final startupStopwatch = Stopwatch()..start();
   WidgetsFlutterBinding.ensureInitialized();
+  final initialRequestedPath = readMainSectionPath();
 
   if (kDebugMode) debugPrint('[Startup] Flutter entry');
   
@@ -47,6 +50,7 @@ try {
     InventoryApp(
       controller: inventoryController,
       realtimeSync: realtimeSyncService,
+      initialRequestedPath: initialRequestedPath,
     ),
   );
   if (kDebugMode) {
@@ -65,11 +69,13 @@ Future<void> initDetectorRuntime() async {
 class InventoryApp extends StatelessWidget {
   final InventoryController controller;
   final RealtimeSyncService realtimeSync;
+  final String initialRequestedPath;
 
   const InventoryApp({
     super.key,
     required this.controller,
     required this.realtimeSync,
+    required this.initialRequestedPath,
   });
 
   @override
@@ -83,11 +89,34 @@ class InventoryApp extends StatelessWidget {
       ),
       initialRoute: '/',
       routes: {
-        '/': (context) => AuthWrapper(controller: controller),
+        '/': (context) => AuthWrapper(
+          controller: controller,
+          requestedPath: initialRequestedPath,
+        ),
         '/login': (context) => LoginPage(controller: controller),
-        '/main': (context) =>
-            MainScreen(controller: controller, realtimeSync: realtimeSync),
-        
+      },
+      onGenerateRoute: (settings) {
+        final section = MainSection.fromPath(settings.name);
+        if (settings.name == '/main' || section != null) {
+          if (settings.arguments is! AuthenticatedMainRoute) {
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder: (context) => AuthWrapper(
+                controller: controller,
+                requestedPath: settings.name ?? '/main',
+              ),
+            );
+          }
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (context) => MainScreen(
+              controller: controller,
+              realtimeSync: realtimeSync,
+              initialSection: section,
+            ),
+          );
+        }
+        return null;
       },
     );
   }
@@ -95,8 +124,13 @@ class InventoryApp extends StatelessWidget {
 
 class AuthWrapper extends StatefulWidget {
   final InventoryController controller;
+  final String requestedPath;
 
-  const AuthWrapper({super.key, required this.controller});
+  const AuthWrapper({
+    super.key,
+    required this.controller,
+    required this.requestedPath,
+  });
 
   @override
   State<AuthWrapper> createState() => _AuthWrapperState();
@@ -174,7 +208,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
             'elapsed=${stopwatch.elapsedMilliseconds}ms',
           );
         }
-        Navigator.pushReplacementNamed(context, '/main');
+        final requestedSection = MainSection.fromPath(widget.requestedPath);
+        final restoredSection = MainSection.resolveForRole(
+          requestedSection,
+          role,
+        );
+        Navigator.pushReplacementNamed(
+          context,
+          restoredSection.routePath,
+          arguments: const AuthenticatedMainRoute(),
+        );
         if (kDebugMode) {
           debugPrint('[Startup] MainScreen route requested');
         }

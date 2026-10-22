@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../navigation/main_section.dart';
 import '../services/debug_clock.dart';
 import '../services/export_period.dart';
 import '../services/export_reminder_service.dart';
@@ -35,24 +36,27 @@ import 'widgets/change_password_dialog.dart';
 import '../services/staff_presence_service.dart';
 import 'widgets/active_staff_button.dart';
 import '../services/store_access_service.dart';
+import '../services/main_section_url.dart';
 import 'staff_history_page.dart';
 import '../services/realtime/realtime_sync_service.dart';
 
 class MainScreen extends StatefulWidget {
   final InventoryController controller;
   final RealtimeSyncService realtimeSync;
+  final MainSection? initialSection;
 
   const MainScreen({
     super.key,
     required this.controller,
     required this.realtimeSync,
+    this.initialSection,
   });
 
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int? _currentIndex;
   bool _isDetailView = false;
   String? _selectedItemId;
@@ -69,13 +73,14 @@ class _MainScreenState extends State<MainScreen> {
   StreamSubscription<StoreAccessSettings>? _storeAccessSubscription;
   StreamSubscription<CurrentUserProfileSnapshot?>? _currentProfileSubscription;
   late final String _sessionRole;
+  late final List<MainSection> _mainSections;
   CurrentUserProfileSnapshot? _currentProfile;
   int _currentProfileRevision = 0;
   bool _helperProfileResolved = false;
   bool _helperProfileLoadFailed = false;
   StreamSubscription<List<InventoryItem>>? _inventoryNotificationSubscription;
   final Completer<void> _deferredControllerData = Completer<void>();
-  final Set<int> _mountedPageIndexes = <int>{0};
+  final Set<int> _mountedPageIndexes = <int>{};
   Timer? _storeAccessEndTimer;
   StoreAccessSettings? _scheduledStoreAccessSettings;
   StoreAccessWindow? _scheduledStoreAccessWindow;
@@ -136,6 +141,14 @@ class _MainScreenState extends State<MainScreen> {
     final userId = widget.controller.currentUserId;
     final role = widget.controller.currentUserRole?.toLowerCase();
     _sessionRole = role ?? 'staff';
+    _mainSections = MainSection.forRole(_sessionRole);
+    final initialSection = MainSection.resolveForRole(
+      widget.initialSection,
+      _sessionRole,
+    );
+    _currentIndex = _mainSections.indexOf(initialSection);
+    _mountedPageIndexes.add(_currentIndex!);
+    WidgetsBinding.instance.addObserver(this);
 
     if (locationId != null && locationId.isNotEmpty) {
       final accessService = StoreAccessService(
@@ -208,6 +221,7 @@ class _MainScreenState extends State<MainScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      replaceMainSectionPath(_currentMainSection.routePath);
       if (kDebugMode) debugPrint('[Startup] MainScreen first frame rendered');
       unawaited(_refreshHelperPasswordGate());
       unawaited(_startSessionSynchronization());
@@ -217,6 +231,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _storeAccessEndTimer?.cancel();
     _storeLogoutCountdownTimer?.cancel();
     _storeLogoutDialogSetState = null;
@@ -231,6 +246,80 @@ class _MainScreenState extends State<MainScreen> {
     _staffPresenceService?.dispose();
     widget.controller.onRestockRecorded = null;
     super.dispose();
+  }
+
+  MainSection get _currentMainSection {
+    final index = (_currentIndex ?? 0).clamp(0, _mainSections.length - 1);
+    return _mainSections[index];
+  }
+
+  bool _isMainSectionPath(String path) =>
+      path == '/main' || path.startsWith('/main/');
+
+  void _restoreMainSectionFromPath(String path) {
+    if (!mounted || !_isMainSectionPath(path)) return;
+    final requested = MainSection.fromPath(path);
+    final resolved = MainSection.resolveForRole(requested, _sessionRole);
+    final index = _mainSections.indexOf(resolved);
+    if (requested != resolved || path != resolved.routePath) {
+      replaceMainSectionPath(resolved.routePath);
+    }
+    if (index == _currentIndex) return;
+    setState(() {
+      _currentIndex = index;
+      _isDetailView = false;
+      _selectedItemId = null;
+    });
+    unawaited(_updateStaffPresenceModule());
+  }
+
+  void _selectMainIndex(
+    int index, {
+    VoidCallback? updateState,
+    bool replaceUrl = false,
+  }) {
+    if (index < 0 || index >= _mainSections.length) return;
+    final changed = index != _currentIndex;
+    if (changed || updateState != null) {
+      setState(() {
+        updateState?.call();
+        _currentIndex = index;
+        if (changed) {
+          _isDetailView = false;
+          _selectedItemId = null;
+        }
+      });
+    }
+    final path = _mainSections[index].routePath;
+    if (replaceUrl) {
+      replaceMainSectionPath(path);
+    } else {
+      pushMainSectionPath(path);
+    }
+    if (changed) unawaited(_updateStaffPresenceModule());
+  }
+
+  @override
+  Future<bool> didPopRoute() async {
+    final path = readMainSectionPath();
+    if (!_isMainSectionPath(path)) return false;
+    final requested = MainSection.fromPath(path);
+    final resolved = MainSection.resolveForRole(requested, _sessionRole);
+    if (resolved == _currentMainSection && path == resolved.routePath) {
+      return false;
+    }
+    _restoreMainSectionFromPath(path);
+    return true;
+  }
+
+  @override
+  Future<bool> didPushRouteInformation(
+    RouteInformation routeInformation,
+  ) async {
+    final path = readMainSectionPath();
+    if (!_isMainSectionPath(path)) return false;
+    _restoreMainSectionFromPath(path);
+    return true;
   }
 
   String _currentModuleName() {
@@ -990,7 +1079,7 @@ class _MainScreenState extends State<MainScreen> {
       'Store access time has ended. You have been logged out.',
     );
 
-    Navigator.pushReplacementNamed(context, '/login');
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
   }
 
   String _formatStoreLogoutCountdown(int totalSeconds) {
@@ -1129,7 +1218,7 @@ class _MainScreenState extends State<MainScreen> {
     }
     if (!mounted) return;
     AppToast.error(context, message);
-    Navigator.pushReplacementNamed(context, '/login');
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
   }
 
   Future<void> _loadDeferredControllerData() async {
@@ -1618,10 +1707,10 @@ class _MainScreenState extends State<MainScreen> {
           return false;
         }
 
-        setState(() {
-          _targetOrderId = orderId;
-          _currentIndex = orderQueueIndex;
-        });
+        _selectMainIndex(
+          orderQueueIndex,
+          updateState: () => _targetOrderId = orderId,
+        );
         return true;
 
       case NotificationType.orderPrepared:
@@ -1635,10 +1724,10 @@ class _MainScreenState extends State<MainScreen> {
           return false;
         }
 
-        setState(() {
-          _targetPosOrderId = orderId;
-          _currentIndex = posIndex;
-        });
+        _selectMainIndex(
+          posIndex,
+          updateState: () => _targetPosOrderId = orderId,
+        );
         return true;
 
       case NotificationType.transaction:
@@ -1647,19 +1736,17 @@ class _MainScreenState extends State<MainScreen> {
           return false;
         }
 
-        setState(() {
-          _txTargetTab = 'Sales History';
-          _currentIndex = transactionIndex;
-        });
+        _selectMainIndex(
+          transactionIndex,
+          updateState: () => _txTargetTab = 'Sales History',
+        );
         return true;
 
       case NotificationType.exportReminder:
         final reportType = notification.payload['reportType']?.toString();
 
         if (reportType == 'inventory') {
-          setState(() {
-            _currentIndex = inventoryIndex;
-          });
+          _selectMainIndex(inventoryIndex);
           return true;
         }
 
@@ -1669,10 +1756,10 @@ class _MainScreenState extends State<MainScreen> {
             return false;
           }
 
-          setState(() {
-            _txTargetTab = 'Sales History';
-            _currentIndex = transactionIndex;
-          });
+          _selectMainIndex(
+            transactionIndex,
+            updateState: () => _txTargetTab = 'Sales History',
+          );
           return true;
         }
 
@@ -1707,9 +1794,7 @@ class _MainScreenState extends State<MainScreen> {
           return false;
         }
 
-        setState(() {
-          _currentIndex = inventoryIndex;
-        });
+        _selectMainIndex(inventoryIndex);
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -1731,7 +1816,7 @@ class _MainScreenState extends State<MainScreen> {
           return false;
         }
 
-        setState(() => _currentIndex = inventoryIndex);
+        _selectMainIndex(inventoryIndex);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _handleSelectItem(matches.first);
         });
@@ -1769,9 +1854,7 @@ class _MainScreenState extends State<MainScreen> {
           return false;
         }
 
-        setState(() {
-          _currentIndex = inventoryIndex;
-        });
+        _selectMainIndex(inventoryIndex);
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -2137,9 +2220,7 @@ class _MainScreenState extends State<MainScreen> {
 
         final isAdmin = role == 'admin';
         final isHelper = role == 'helper';
-        final isCashier = role == 'staff';
-
-        _currentIndex ??= 0;
+        final isCashier = role == 'staff' || role == 'cashier';
 
         int pageIndex = 0;
 
@@ -2171,26 +2252,22 @@ class _MainScreenState extends State<MainScreen> {
               controller: widget.controller,
               isActive: _currentIndex == dashboardIndex,
               onViewTransactions: () {
-                setState(() {
-                  _txTargetTab = 'Sales History';
-                  _currentIndex = transactionIndex;
-                });
+                _selectMainIndex(
+                  transactionIndex,
+                  updateState: () => _txTargetTab = 'Sales History',
+                );
               },
               onOpenQueue: () {
-                setState(() {
-                  _currentIndex = orderQueueIndex;
-                });
+                _selectMainIndex(orderQueueIndex);
               },
               onViewActivity: () {
-                setState(() {
-                  _txTargetTab = 'Activity Log';
-                  _currentIndex = transactionIndex;
-                });
+                _selectMainIndex(
+                  transactionIndex,
+                  updateState: () => _txTargetTab = 'Activity Log',
+                );
               },
               onOpenForecasting: () {
-                setState(() {
-                  _currentIndex = forecastingIndex;
-                });
+                _selectMainIndex(forecastingIndex);
               },
             ),
           );
@@ -2279,10 +2356,10 @@ class _MainScreenState extends State<MainScreen> {
                 _scanExportReminderNotifications();
               },
               onCompleteOrder: (orderId) {
-                setState(() {
-                  _targetOrderId = orderId;
-                  _currentIndex = orderQueueIndex;
-                });
+                _selectMainIndex(
+                  orderQueueIndex,
+                  updateState: () => _targetOrderId = orderId,
+                );
               },
             ),
           );
@@ -2300,10 +2377,6 @@ class _MainScreenState extends State<MainScreen> {
         }
 
         if ((isHelper || isCashier) && isDesktop) {
-          if (_currentIndex! > 2) {
-            _currentIndex = 0;
-          }
-
           return Scaffold(
             backgroundColor: _mainBg,
             body: Column(
@@ -2557,11 +2630,7 @@ class _MainScreenState extends State<MainScreen> {
         surfaceTintColor: Colors.white,
         selectedIndex: _currentIndex!,
         labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-        onDestinationSelected: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onDestinationSelected: _selectMainIndex,
         destinations: [
           if (isAdmin)
             const NavigationDestination(
@@ -2875,7 +2944,7 @@ class _MainScreenState extends State<MainScreen> {
     final isSelected = _currentIndex == index;
 
     return InkWell(
-      onTap: () => setState(() => _currentIndex = index),
+      onTap: () => _selectMainIndex(index),
       child: Container(
         height: 72,
         alignment: Alignment.center,
@@ -3055,8 +3124,7 @@ class _MainScreenState extends State<MainScreen> {
         color: Colors.transparent,
         child: InkWell(
           onTap: () {
-            setState(() => _currentIndex = index);
-            _updateStaffPresenceModule();
+            _selectMainIndex(index);
           },
           borderRadius: BorderRadius.circular(12),
           child: AnimatedContainer(
@@ -3200,7 +3268,7 @@ class _MainScreenState extends State<MainScreen> {
       await prefs.clear();
 
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
       }
     } catch (e) {
       if (mounted) {
@@ -3219,7 +3287,7 @@ class _MainScreenState extends State<MainScreen> {
       await prefs.clear();
 
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
       }
     } catch (e) {
       if (mounted) {

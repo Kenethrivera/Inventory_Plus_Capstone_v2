@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:math';
 import '../login/auth_service.dart';
 import '../logic/inventory_controller.dart';
+import '../navigation/main_section.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import '../services/store_access_service.dart';
@@ -125,7 +126,11 @@ class _LoginPageState extends State<LoginPage> {
 
       if (mounted) {
         issuedSessionToken = null;
-        Navigator.pushReplacementNamed(context, '/main');
+        Navigator.pushReplacementNamed(
+          context,
+          MainSection.defaultForRole(userRole).routePath,
+          arguments: const AuthenticatedMainRoute(),
+        );
       }
     } catch (e) {
       final sessionToken = issuedSessionToken;
