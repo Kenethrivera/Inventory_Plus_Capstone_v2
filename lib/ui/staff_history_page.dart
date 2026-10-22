@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/history_pagination.dart';
+import 'widgets/history_pagination_footer.dart';
 import 'widgets/history_period_controls.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
@@ -28,11 +30,17 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   String _historySection = 'Orders';
   HistoryPeriodSelection _periodSelection = HistoryPeriodSelection.current();
   final TextEditingController _searchController = TextEditingController();
-
-  Future<List<Map<String, dynamic>>>? _restockFuture;
-  StreamSubscription<void>? _transactionHistorySubscription;
-  List<Map<String, dynamic>> _lastRestocks = const <Map<String, dynamic>>[];
-  String? _lastRestockScope;
+  late Future<HistoryPageResult<Map<String, dynamic>>> _historyFuture;
+  StreamSubscription<HistoryInvalidation>? _historySubscription;
+  Timer? _searchDebounce;
+  int _ordersPage = 1;
+  int _restocksPage = 1;
+  HistoryQueryFamily? _renderedFamily;
+  int _knownTotalCount = 0;
+  Map<String, num> _knownMetrics = const <String, num>{};
+  String? _openOrderId;
+  HistoryQueryFamily? _openOrderFamily;
+  ValueNotifier<CustomerOrder>? _openOrderNotifier;
 
   String get _role =>
       widget.controller.currentUserRole?.toLowerCase() ?? 'staff';
@@ -41,8 +49,6 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
 
   bool get _isHelper => _role == 'helper';
 
-  bool get _isCashier => _role == 'staff' || _role == 'cashier';
-
   List<String> get _filters => _isHelper
       ? const ['All', 'Assigned', 'Prepared']
       : const ['All', 'Created', 'Completed', 'Cancelled'];
@@ -50,73 +56,140 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   @override
   void initState() {
     super.initState();
-    if (_isCashier) _bindTransactionHistoryInvalidations();
+    _historyFuture = _loadCurrentPageResult();
+    _bindHistoryInvalidations();
+  }
+
+  @override
+  void didUpdateWidget(StaffHistoryPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      _bindHistoryInvalidations();
+      _historyFuture = _loadCurrentPageResult();
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    unawaited(_transactionHistorySubscription?.cancel());
+    _searchDebounce?.cancel();
+    unawaited(_historySubscription?.cancel());
     super.dispose();
   }
 
-  void _bindTransactionHistoryInvalidations() {
-    unawaited(_transactionHistorySubscription?.cancel());
-    _transactionHistorySubscription = widget
-        .controller
-        .transactionHistoryInvalidations
-        .listen(
-          (_) {
-            if (_restockFuture != null) _refreshRestockHistory();
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('[StaffHistoryPage] History invalidation error: $error');
-          },
-        );
+  void _bindHistoryInvalidations() {
+    unawaited(_historySubscription?.cancel());
+    _historySubscription = widget.controller.historyInvalidations.listen(
+      (invalidation) {
+        if (invalidation.kind == HistoryInvalidationKind.orders) {
+          unawaited(_refreshOpenOrderDetail());
+        }
+        if (invalidation.affects(_currentDomain)) {
+          _refreshCurrent(forceRefresh: true);
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('[StaffHistoryPage] History invalidation error: $error');
+      },
+    );
   }
 
-  Future<List<Map<String, dynamic>>> _loadRestockHistory() async {
-    final periodRange = _periodSelection.range;
-    final scope = _currentRestockScope;
-    try {
-      final rows = await widget.controller.loadMyRestockHistory(
-        start: periodRange.start,
-        endExclusive: periodRange.end,
+  HistoryDomain get _currentDomain {
+    if (_isHelper) return HistoryDomain.helperWork;
+    return _historySection == 'Restocks'
+        ? HistoryDomain.cashierRestocks
+        : HistoryDomain.cashierOrders;
+  }
+
+  int get _currentPage => _currentDomain == HistoryDomain.cashierRestocks
+      ? _restocksPage
+      : _ordersPage;
+
+  HistoryQueryFamily? get _currentFamily {
+    final accountId = widget.controller.currentUserId;
+    final locationId = widget.controller.activeLocationId;
+    final role = widget.controller.currentUserRole;
+    if (accountId == null || locationId == null || role == null) return null;
+    final range = _periodSelection.range;
+    return HistoryQueryFamily(
+      accountId: accountId,
+      role: role,
+      locationId: locationId,
+      domain: _currentDomain,
+      periodMode: _periodSelection.mode.name,
+      periodStart: range.start,
+      periodEndExclusive: range.end,
+      filter: _currentDomain == HistoryDomain.cashierRestocks
+          ? 'all'
+          : _selectedFilter,
+      search: _searchQuery,
+      sort: 'event_at_desc_id_desc',
+    );
+  }
+
+  Future<HistoryPageResult<Map<String, dynamic>>> _emptyPage() async =>
+      HistoryPageResult<Map<String, dynamic>>(
+        family: null,
+        page: 1,
+        records: const [],
+        totalCount: 0,
+        metrics: const {},
+        loadedAt: DateTime.now(),
       );
-      if (_currentRestockScope == scope) {
-        _lastRestocks = rows;
-        _lastRestockScope = scope;
-      }
-      return rows;
-    } catch (error, stackTrace) {
-      debugPrint('[StaffHistoryPage] Failed to refresh restocks: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      if (_lastRestocks.isNotEmpty && _lastRestockScope == scope) {
-        return _lastRestocks;
-      }
-      rethrow;
+
+  Future<HistoryPageResult<Map<String, dynamic>>> _loadCurrentPageResult({
+    bool forceRefresh = false,
+  }) {
+    final family = _currentFamily;
+    if (family == null) return _emptyPage();
+    return widget.controller.loadHistoryPage(
+      family: family,
+      page: _currentPage,
+      forceRefresh: forceRefresh,
+    );
+  }
+
+  void _refreshCurrent({bool forceRefresh = false}) {
+    if (!mounted) return;
+    setState(() {
+      _historyFuture = _loadCurrentPageResult(forceRefresh: forceRefresh);
+    });
+  }
+
+  void _queryChanged({bool debounce = false}) {
+    _searchDebounce?.cancel();
+    if (_currentDomain == HistoryDomain.cashierRestocks) {
+      _restocksPage = 1;
+    } else {
+      _ordersPage = 1;
+    }
+    if (debounce) {
+      _searchDebounce = Timer(
+        const Duration(milliseconds: 400),
+        _refreshCurrent,
+      );
+    } else {
+      _refreshCurrent();
     }
   }
 
-  String get _currentRestockScope =>
-      '${widget.controller.activeLocationId}:'
-      '${widget.controller.currentUserNumericId}:'
-      '${_periodSelection.stableKey}';
-
-  void _refreshRestockHistory() {
-    if (!_isCashier || !mounted) return;
-    setState(() => _restockFuture = _loadRestockHistory());
+  void _selectPage(int page) {
+    if (page < 1 || page == _currentPage) return;
+    setState(() {
+      if (_currentDomain == HistoryDomain.cashierRestocks) {
+        _restocksPage = page;
+      } else {
+        _ordersPage = page;
+      }
+      _historyFuture = _loadCurrentPageResult();
+    });
   }
 
   void _updatePeriodSelection(HistoryPeriodSelection selection) {
     setState(() {
       _periodSelection = selection;
-      if (_isCashier) {
-        _restockFuture = _historySection == 'Restocks'
-            ? _loadRestockHistory()
-            : null;
-      }
     });
+    _queryChanged();
   }
 
   bool _sameUser(dynamic value) {
@@ -125,57 +198,6 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
         userId.isNotEmpty &&
         value != null &&
         value.toString() == userId;
-  }
-
-  bool _belongsToCurrentUser(CustomerOrder order) {
-    if (_isHelper) {
-      return _sameUser(order.assignedHelperId) || _sameUser(order.preparedById);
-    }
-    if (_isCashier) {
-      return _sameUser(order.createdById) ||
-          _sameUser(order.completedById) ||
-          _sameUser(order.cancelledById) ||
-          _sameUser(order.returnedById);
-    }
-    return false;
-  }
-
-  bool _matchesSelectedFilter(CustomerOrder order) {
-    if (_selectedFilter == 'All') return true;
-    if (_isHelper) {
-      return switch (_selectedFilter) {
-        'Assigned' => _sameUser(order.assignedHelperId),
-        'Prepared' => _sameUser(order.preparedById),
-        _ => true,
-      };
-    }
-    return switch (_selectedFilter) {
-      'Created' => _sameUser(order.createdById),
-      'Completed' => _sameUser(order.completedById),
-      'Cancelled' =>
-        _sameUser(order.cancelledById) || _sameUser(order.returnedById),
-      _ => true,
-    };
-  }
-
-  bool _matchesOrderSearch(CustomerOrder order) {
-    final query = _searchQuery.trim().toLowerCase();
-    if (query.isEmpty) return true;
-    return order.id.toLowerCase().contains(query) ||
-        order.status.toLowerCase().contains(query) ||
-        order.items.any(
-          (item) => item.productName.toLowerCase().contains(query),
-        );
-  }
-
-  bool _matchesRestockSearch(Map<String, dynamic> transaction) {
-    final query = _searchQuery.trim().toLowerCase();
-    if (query.isEmpty) return true;
-    final product = _readProductMap(transaction['products']);
-    final productName =
-        product?['product_name']?.toString().toLowerCase() ?? '';
-    final sku = product?['sku']?.toString().toLowerCase() ?? '';
-    return productName.contains(query) || sku.contains(query);
   }
 
   DateTime _activityDate(CustomerOrder order) {
@@ -211,16 +233,6 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     if (_sameUser(order.returnedById)) return 'Returned by you';
     if (_sameUser(order.createdById)) return 'Created by you';
     return 'Your transaction';
-  }
-
-  ({DateTime start, DateTime end}) _selectedPeriodRange() {
-    return _periodSelection.range;
-  }
-
-  bool _isInSelectedPeriod(DateTime date) {
-    final range = _selectedPeriodRange();
-    final local = date.toLocal();
-    return !local.isBefore(range.start) && local.isBefore(range.end);
   }
 
   DateTime? _restockDate(Map<String, dynamic> transaction) =>
@@ -308,50 +320,49 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
 
     return Scaffold(
       backgroundColor: _pageBg,
-      body: StreamBuilder<List<CustomerOrder>>(
-        stream: widget.controller.streamOrders(),
+      body: FutureBuilder<HistoryPageResult<Map<String, dynamic>>>(
+        future: _historyFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(color: _primaryBlue),
-            );
+          final currentFamily = _currentFamily;
+          if (_renderedFamily != currentFamily) {
+            _renderedFamily = currentFamily;
+            _knownTotalCount = 0;
+            _knownMetrics = const <String, num>{};
           }
-          if (snapshot.hasError) {
-            return const _HistoryState(
-              icon: Icons.error_outline,
-              title: 'Could not load your history',
-              message: 'Check your connection and try again.',
-            );
+          final rawResult = snapshot.data;
+          final scopedResult = rawResult?.family == currentFamily
+              ? rawResult
+              : null;
+          final result = scopedResult?.page == _currentPage
+              ? scopedResult
+              : null;
+          if (scopedResult != null) {
+            _knownTotalCount = scopedResult.totalCount;
+            _knownMetrics = scopedResult.metrics;
           }
-
-          final allOrders = snapshot.data ?? <CustomerOrder>[];
-          final myOrders = allOrders.where(_belongsToCurrentUser).toList()
-            ..sort((a, b) => _activityDate(b).compareTo(_activityDate(a)));
-          final periodOrders = myOrders
-              .where((order) => _isInSelectedPeriod(_activityDate(order)))
-              .toList(growable: false);
-          final displayedOrders = periodOrders
-              .where(_matchesSelectedFilter)
-              .where(_matchesOrderSearch)
-              .toList(growable: false);
-          final activeCount = periodOrders.where((order) {
-            final status = order.status.toLowerCase();
-            return status == 'pending' || status == 'prepared';
-          }).length;
-          final completedCount = _isHelper
-              ? periodOrders
-                    .where((order) => _sameUser(order.preparedById))
-                    .length
-              : periodOrders
-                    .where((order) => _sameUser(order.completedById))
-                    .length;
-          final cancelledCount = _isHelper
-              ? 0
-              : periodOrders.where((order) {
-                  return _sameUser(order.cancelledById) ||
-                      _sameUser(order.returnedById);
-                }).length;
+          if (scopedResult != null && scopedResult.page != _currentPage) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || scopedResult.page == _currentPage) return;
+              setState(() {
+                if (_currentDomain == HistoryDomain.cashierRestocks) {
+                  _restocksPage = scopedResult.page;
+                } else {
+                  _ordersPage = scopedResult.page;
+                }
+              });
+            });
+          }
+          final loading = snapshot.connectionState == ConnectionState.waiting;
+          final rows = result?.records ?? const <Map<String, dynamic>>[];
+          final displayedOrders =
+              _currentDomain == HistoryDomain.cashierRestocks
+              ? const <CustomerOrder>[]
+              : rows.map(CustomerOrder.fromJson).toList(growable: false);
+          final metrics = result?.metrics ?? _knownMetrics;
+          final recordCount = (metrics['records'] ?? 0).toInt();
+          final activeCount = (metrics['active'] ?? 0).toInt();
+          final completedCount = (metrics['completed'] ?? 0).toInt();
+          final cancelledCount = (metrics['cancelled'] ?? 0).toInt();
 
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -375,10 +386,10 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _buildHeader(periodOrders.length),
+                        _buildHeader(recordCount),
                         const SizedBox(height: 12),
                         _buildStats(
-                          total: periodOrders.length,
+                          total: recordCount,
                           active: activeCount,
                           completed: completedCount,
                           cancelled: cancelledCount,
@@ -387,11 +398,14 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
                         _buildControls(),
                         const SizedBox(height: 10),
                         Expanded(
-                          child: !_isHelper && _historySection == 'Restocks'
-                              ? _buildMyRestockHistory()
-                              : displayedOrders.isEmpty
-                              ? _buildOrderEmptyState()
-                              : _buildOrderHistory(displayedOrders),
+                          child: _buildPagedContent(
+                            result: result,
+                            loading: loading,
+                            error: snapshot.error,
+                            orders: displayedOrders,
+                            restocks: rows,
+                            totalItems: result?.totalCount ?? _knownTotalCount,
+                          ),
                         ),
                       ],
                     ),
@@ -401,6 +415,64 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
             },
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildPagedContent({
+    required HistoryPageResult<Map<String, dynamic>>? result,
+    required bool loading,
+    required Object? error,
+    required List<CustomerOrder> orders,
+    required List<Map<String, dynamic>> restocks,
+    required int totalItems,
+  }) {
+    Widget content;
+    if (loading && result == null) {
+      content = const _HistoryState(
+        icon: Icons.history,
+        title: 'Loading history',
+        loading: true,
+      );
+    } else if (error != null && result == null) {
+      content = _HistoryState(
+        icon: Icons.error_outline,
+        title: 'Could not load your history',
+        message: 'Check your connection and try again.',
+        actionLabel: 'Retry',
+        onAction: () => _refreshCurrent(forceRefresh: true),
+      );
+    } else if (_currentDomain == HistoryDomain.cashierRestocks) {
+      content = restocks.isEmpty
+          ? _buildRestockEmptyState()
+          : LayoutBuilder(
+              builder: (context, constraints) => constraints.maxWidth >= 700
+                  ? _buildRestockTable(restocks)
+                  : _buildRestockCards(restocks),
+            );
+    } else {
+      content = orders.isEmpty
+          ? _buildOrderEmptyState()
+          : _buildOrderHistory(orders);
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Expanded(child: content),
+          HistoryPaginationFooter(
+            currentPage: _currentPage,
+            totalItems: totalItems,
+            pageSize: historyPageSize,
+            loading: loading,
+            onPageSelected: _selectPage,
+          ),
+        ],
       ),
     );
   }
@@ -519,13 +591,16 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
               _HistorySegments(
                 options: _filters,
                 selected: _selectedFilter,
-                onSelected: (value) => setState(() => _selectedFilter = value),
+                onSelected: (value) {
+                  setState(() => _selectedFilter = value);
+                  _queryChanged();
+                },
               ),
           ];
           final refresh = !_isHelper && _historySection == 'Restocks'
               ? IconButton(
                   tooltip: 'Refresh restocks',
-                  onPressed: _refreshRestockHistory,
+                  onPressed: () => _refreshCurrent(forceRefresh: true),
                   icon: const Icon(Icons.refresh, size: 18),
                   color: _primaryBlue,
                   visualDensity: VisualDensity.compact,
@@ -570,9 +645,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     onSelected: (value) {
       setState(() {
         _historySection = value;
-        if (value == 'Restocks') {
-          _restockFuture ??= _loadRestockHistory();
-        }
+        _historyFuture = _loadCurrentPageResult();
       });
     },
   );
@@ -582,7 +655,10 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
       height: 36,
       child: TextField(
         controller: _searchController,
-        onChanged: (value) => setState(() => _searchQuery = value),
+        onChanged: (value) {
+          setState(() => _searchQuery = value);
+          _queryChanged(debounce: true);
+        },
         style: const TextStyle(
           color: _darkText,
           fontSize: 12,
@@ -601,6 +677,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
                   onPressed: () {
                     _searchController.clear();
                     setState(() => _searchQuery = '');
+                    _queryChanged();
                   },
                   icon: const Icon(Icons.close, size: 16),
                 ),
@@ -835,79 +912,78 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   }
 
   void _showOrderDetails(CustomerOrder order) {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: const Color(0x8A0F172A),
-      useSafeArea: true,
-      builder: (dialogContext) {
-        final viewport = MediaQuery.sizeOf(dialogContext);
-        final narrow = viewport.width < 600;
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: narrow ? 12 : 32,
-            vertical: narrow ? 16 : 28,
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 720,
-              maxHeight: viewport.height * 0.78,
+    final family = _currentFamily;
+    if (family == null) return;
+    final notifier = ValueNotifier<CustomerOrder>(order);
+    _openOrderId = order.id;
+    _openOrderFamily = family;
+    _openOrderNotifier = notifier;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        barrierColor: const Color(0x8A0F172A),
+        useSafeArea: true,
+        builder: (dialogContext) {
+          final viewport = MediaQuery.sizeOf(dialogContext);
+          final narrow = viewport.width < 600;
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: narrow ? 12 : 32,
+              vertical: narrow ? 16 : 28,
             ),
-            child: _StaffOrderDetail(
-              order: order,
-              isHelper: _isHelper,
-              activityLabel: _myActionLabel(order),
-              statusLabel: _statusLabel(order.status),
-              statusColor: _statusColor(order.status),
-              onClose: () => Navigator.pop(dialogContext),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 720,
+                maxHeight: viewport.height * 0.78,
+              ),
+              child: ValueListenableBuilder<CustomerOrder>(
+                valueListenable: notifier,
+                builder: (context, currentOrder, _) => _StaffOrderDetail(
+                  order: currentOrder,
+                  isHelper: _isHelper,
+                  activityLabel: _myActionLabel(currentOrder),
+                  statusLabel: _statusLabel(currentOrder.status),
+                  statusColor: _statusColor(currentOrder.status),
+                  onClose: () => Navigator.pop(dialogContext),
+                ),
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ).whenComplete(() {
+        if (identical(_openOrderNotifier, notifier)) {
+          _openOrderId = null;
+          _openOrderFamily = null;
+          _openOrderNotifier = null;
+        }
+        notifier.dispose();
+      }),
     );
   }
 
-  Widget _buildMyRestockHistory() {
-    final future = _restockFuture ??= _loadRestockHistory();
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return const _HistoryState(
-            icon: Icons.inventory_2_outlined,
-            title: 'Loading restock history',
-            loading: true,
-          );
-        }
-        if (snapshot.hasError && _lastRestocks.isEmpty) {
-          return _HistoryState(
-            icon: Icons.error_outline,
-            title: 'Could not load restock history',
-            message: 'Check your connection and try again.',
-            actionLabel: 'Retry',
-            onAction: _refreshRestockHistory,
-          );
-        }
-        final allRestocks = snapshot.data ?? _lastRestocks;
-        final restocks = allRestocks
-            .where((transaction) {
-              final date = _restockDate(transaction);
-              return date != null &&
-                  _isInSelectedPeriod(date) &&
-                  _matchesRestockSearch(transaction);
-            })
-            .toList(growable: false);
-        if (restocks.isEmpty) return _buildRestockEmptyState();
-        return LayoutBuilder(
-          builder: (context, constraints) => constraints.maxWidth >= 700
-              ? _buildRestockTable(restocks)
-              : _buildRestockCards(restocks),
-        );
-      },
-    );
+  Future<void> _refreshOpenOrderDetail() async {
+    final orderId = _openOrderId;
+    final family = _openOrderFamily;
+    final notifier = _openOrderNotifier;
+    if (orderId == null || family == null || notifier == null) return;
+    try {
+      final row = await widget.controller.loadHistoryOrderDetail(
+        family: family,
+        orderId: orderId,
+      );
+      if (!mounted ||
+          row == null ||
+          _openOrderId != orderId ||
+          !identical(_openOrderNotifier, notifier)) {
+        return;
+      }
+      notifier.value = CustomerOrder.fromJson(row);
+    } catch (error) {
+      debugPrint('[StaffHistoryPage] Detail reconciliation failed: $error');
+    }
   }
 
   Widget _buildRestockTable(List<Map<String, dynamic>> restocks) {

@@ -3,9 +3,11 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import '../data/inventory.dart';
 import '../services/realtime/realtime_sync_service.dart';
+import 'history_pagination.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'dart:async';
@@ -115,6 +117,8 @@ class InventoryController {
       StreamController<List<InventoryItem>>.broadcast();
   final StreamController<void> _transactionHistoryInvalidationsController =
       StreamController<void>.broadcast();
+  final StreamController<HistoryInvalidation> _historyInvalidationsController =
+      StreamController<HistoryInvalidation>.broadcast();
   final StreamController<List<MapElement>> _mapLayoutController =
       StreamController<List<MapElement>>.broadcast();
   final StreamController<InventoryRuntimeSettingsSnapshot>
@@ -138,6 +142,14 @@ class InventoryController {
 
   final Map<String, _SerializedHistoryQuery> _historyQueries =
       <String, _SerializedHistoryQuery>{};
+  final HistoryPageCache<Map<String, dynamic>> _historyPageCache =
+      HistoryPageCache<Map<String, dynamic>>();
+  final Map<HistoryPageKey, Future<HistoryPageResult<Map<String, dynamic>>>>
+  _historyPageRequests =
+      <HistoryPageKey, Future<HistoryPageResult<Map<String, dynamic>>>>{};
+  final Map<String, Future<Map<String, dynamic>?>> _historyDetailRequests =
+      <String, Future<Map<String, dynamic>?>>{};
+  int _historyCacheGeneration = 0;
   Future<OrderHistoryData>? _orderHistoryRefreshInFlight;
   bool _orderHistoryRefreshQueued = false;
 
@@ -167,6 +179,7 @@ class InventoryController {
   String? currentUserRole;
   String? currentUserName;
   String? currentUserId;
+  String? _sessionToken;
   String? loggedInUserEmail;
   bool get isAdmin => currentUserRole?.toLowerCase() == 'admin';
   double globalLowStockPct = 20.0;
@@ -315,9 +328,12 @@ class InventoryController {
     required String name,
     required String id,
     required String role,
+    required String sessionToken,
     String? email,
   }) {
-    if (currentUserId != id) {
+    final accountChanged = currentUserId != id;
+    _clearPaginatedHistoryState();
+    if (accountChanged) {
       _clearInventorySnapshot();
       _clearOrdersSnapshot();
       _inventoryAwaitingRealtimeInitial = true;
@@ -331,12 +347,28 @@ class InventoryController {
     currentUserRole = role;
     currentUserNumericId = int.tryParse(id);
     loggedInUserEmail = email;
+    _sessionToken = sessionToken;
+    if (activeLocationId != null) {
+      _historyInvalidationsController.add(
+        HistoryInvalidation(
+          kind: HistoryInvalidationKind.scope,
+          locationId: activeLocationId!,
+        ),
+      );
+    }
   }
 
   void setActiveLocation(String locationId) {
     if (activeLocationId == locationId) return;
 
     activeLocationId = locationId;
+    _clearPaginatedHistoryState();
+    _historyInvalidationsController.add(
+      HistoryInvalidation(
+        kind: HistoryInvalidationKind.scope,
+        locationId: locationId,
+      ),
+    );
     _clearInventorySnapshot();
     _clearOrdersSnapshot();
     _inventoryAwaitingRealtimeInitial = true;
@@ -1233,9 +1265,20 @@ class InventoryController {
           snapshot.role.toLowerCase() != 'admin') {
         _clearStaffConfigurationSnapshot();
       }
+      final roleChanged =
+          currentUserRole?.toLowerCase() != snapshot.role.toLowerCase();
       currentUserName = snapshot.name;
       currentUserRole = snapshot.role;
       loggedInUserEmail = snapshot.email;
+      if (roleChanged) {
+        _clearPaginatedHistoryState();
+        _historyInvalidationsController.add(
+          HistoryInvalidation(
+            kind: HistoryInvalidationKind.scope,
+            locationId: locationId,
+          ),
+        );
+      }
       _currentProfileSnapshot = snapshot;
       _currentUserProfileController.add(snapshot);
     } catch (error, stackTrace) {
@@ -1339,69 +1382,51 @@ class InventoryController {
     String currentPassword,
     String newPassword,
   ) async {
-    final userId = currentUserId;
-    if (userId == null) return ChangePasswordResult.notAuthenticated;
+    if (currentUserId == null || _sessionToken == null) {
+      return ChangePasswordResult.notAuthenticated;
+    }
+    if (!_meetsPasswordPolicy(newPassword)) {
+      return ChangePasswordResult.invalidNewPassword;
+    }
 
     try {
-      final hashedCurrentPassword = _hashPassword(currentPassword);
-      final hashedNewPassword = _hashPassword(newPassword);
-
-      final response = await supabase
-          .from('profiles')
-          .select('password, role')
-          .eq('id', userId)
-          .maybeSingle();
-
-      if (response == null) {
-        return ChangePasswordResult.notAuthenticated;
+      final response = await supabase.rpc(
+        'profile_change_password_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_current_password': currentPassword,
+          'p_new_password': newPassword,
+        },
+      );
+      if (response is! Map) return ChangePasswordResult.unexpectedFailure;
+      final payload = Map<String, dynamic>.from(response);
+      switch (payload['status']?.toString()) {
+        case 'success':
+          final replacementToken = payload['session_token']?.toString();
+          if (replacementToken == null || replacementToken.isEmpty) {
+            return ChangePasswordResult.unexpectedFailure;
+          }
+          _sessionToken = replacementToken;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('sessionToken', replacementToken);
+          if (currentUserRole?.toLowerCase() == 'helper') {
+            _setCurrentProfileMustChangePassword(false);
+          }
+          _clearPaginatedHistoryState();
+          return ChangePasswordResult.success;
+        case 'incorrect_current':
+          return ChangePasswordResult.incorrectCurrentPassword;
+        case 'same_password':
+          return ChangePasswordResult.sameAsCurrentPassword;
+        case 'invalid_new':
+          return ChangePasswordResult.invalidNewPassword;
+        case 'concurrent_change':
+          return ChangePasswordResult.concurrentChange;
+        case 'not_authenticated':
+          return ChangePasswordResult.notAuthenticated;
+        default:
+          return ChangePasswordResult.unexpectedFailure;
       }
-      if (response['password'] != hashedCurrentPassword) {
-        return ChangePasswordResult.incorrectCurrentPassword;
-      }
-      if (hashedNewPassword == hashedCurrentPassword) {
-        return ChangePasswordResult.sameAsCurrentPassword;
-      }
-      if (!_meetsPasswordPolicy(newPassword)) {
-        return ChangePasswordResult.invalidNewPassword;
-      }
-      if (currentUserId != userId) {
-        return ChangePasswordResult.notAuthenticated;
-      }
-
-      final role = response['role']?.toString() ?? '';
-      final isHelper = role.toLowerCase() == 'helper';
-      final Map<String, dynamic>? updatedProfile;
-      if (isHelper) {
-        updatedProfile = await supabase
-            .from('profiles')
-            .update({
-              'password': hashedNewPassword,
-              'must_change_password': false,
-            })
-            .eq('id', userId)
-            .eq('role', role)
-            .eq('password', hashedCurrentPassword)
-            .select('id, must_change_password')
-            .maybeSingle();
-      } else {
-        updatedProfile = await supabase
-            .from('profiles')
-            .update({'password': hashedNewPassword})
-            .eq('id', userId)
-            .eq('role', role)
-            .eq('password', hashedCurrentPassword)
-            .select('id')
-            .maybeSingle();
-      }
-
-      if (updatedProfile == null) {
-        return ChangePasswordResult.concurrentChange;
-      }
-      if (isHelper && updatedProfile['must_change_password'] != false) {
-        return ChangePasswordResult.unexpectedFailure;
-      }
-      if (isHelper) _setCurrentProfileMustChangePassword(false);
-      return ChangePasswordResult.success;
     } on PostgrestException catch (error) {
       debugPrint(
         '[Password] Profile operation failed: '
@@ -1416,20 +1441,18 @@ class InventoryController {
   Future<CurrentPasswordVerificationResult> verifyCurrentPassword(
     String currentPassword,
   ) async {
-    final userId = currentUserId;
-    if (userId == null) {
+    if (currentUserId == null || _sessionToken == null) {
       return CurrentPasswordVerificationResult.notAuthenticated;
     }
     try {
-      final response = await supabase
-          .from('profiles')
-          .select('password')
-          .eq('id', userId)
-          .maybeSingle();
-      if (currentUserId != userId || response == null) {
-        return CurrentPasswordVerificationResult.notAuthenticated;
-      }
-      return response['password'] == _hashPassword(currentPassword)
+      final response = await supabase.rpc(
+        'profile_verify_password_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_password': currentPassword,
+        },
+      );
+      return response == true
           ? CurrentPasswordVerificationResult.correct
           : CurrentPasswordVerificationResult.incorrect;
     } catch (_) {
@@ -1579,6 +1602,225 @@ class InventoryController {
     return refresh;
   }
 
+  Stream<HistoryInvalidation> get historyInvalidations =>
+      _historyInvalidationsController.stream;
+
+  Future<HistoryPageResult<Map<String, dynamic>>> loadHistoryPage({
+    required HistoryQueryFamily family,
+    required int page,
+    bool forceRefresh = false,
+  }) {
+    if (page < 1) {
+      throw ArgumentError.value(page, 'page', 'History pages start at 1.');
+    }
+    _validateHistoryFamilyScope(family);
+
+    final key = HistoryPageKey(family, page);
+    if (!forceRefresh) {
+      final cached = _historyPageCache.read(key);
+      if (cached != null && !cached.stale) return SynchronousFuture(cached);
+    }
+
+    final inFlight = _historyPageRequests[key];
+    if (inFlight != null) return inFlight;
+
+    final generation = _historyCacheGeneration;
+    late final Future<HistoryPageResult<Map<String, dynamic>>> request;
+    request = _fetchHistoryPage(family, page)
+        .then((result) {
+          _validateHistoryFamilyScope(family);
+          if (generation != _historyCacheGeneration) {
+            throw StateError('History request became stale.');
+          }
+          _historyPageCache.write(key, result);
+          if (result.page != page) {
+            _historyPageCache.write(
+              HistoryPageKey(family, result.page),
+              result,
+            );
+          }
+          return result;
+        })
+        .whenComplete(() {
+          if (identical(_historyPageRequests[key], request)) {
+            _historyPageRequests.remove(key);
+          }
+        });
+    _historyPageRequests[key] = request;
+    return request;
+  }
+
+  Future<HistoryPageResult<Map<String, dynamic>>> _fetchHistoryPage(
+    HistoryQueryFamily family,
+    int page,
+  ) async {
+    final sessionToken = _requireSessionToken();
+    final response = await supabase.rpc(
+      'history_page_v1',
+      params: family.toRpcParameters(page, sessionToken: sessionToken),
+    );
+    final payload = Map<String, dynamic>.from(response as Map);
+    final rawRecords = payload['records'] as List<dynamic>? ?? const [];
+    final rawMetrics = payload['metrics'];
+    final metrics = <String, num>{};
+    if (rawMetrics is Map) {
+      for (final entry in rawMetrics.entries) {
+        final value = entry.value;
+        if (value is num) metrics[entry.key.toString()] = value;
+      }
+    }
+    final totalCount = (payload['total_count'] as num?)?.toInt() ?? 0;
+    final totalPages = totalCount == 0
+        ? 1
+        : (totalCount / family.pageSize).ceil();
+    if (page > totalPages) return _fetchHistoryPage(family, totalPages);
+    return HistoryPageResult<Map<String, dynamic>>(
+      family: family,
+      page: page,
+      records: List<Map<String, dynamic>>.unmodifiable(
+        rawRecords.map((row) => Map<String, dynamic>.from(row as Map)),
+      ),
+      totalCount: totalCount,
+      metrics: Map<String, num>.unmodifiable(metrics),
+      loadedAt: DateTime.now(),
+    );
+  }
+
+  void invalidateHistoryFamily(HistoryQueryFamily family) {
+    _historyPageCache.markFamilyStale(family);
+  }
+
+  void clearHistorySession() {
+    _clearPaginatedHistoryState();
+  }
+
+  Future<void> revokeCurrentSession() async {
+    final token = _sessionToken;
+    _sessionToken = null;
+    _clearPaginatedHistoryState();
+    if (token == null || token.isEmpty) return;
+    try {
+      await supabase.rpc(
+        'profile_logout_v1',
+        params: <String, dynamic>{'p_session_token': token},
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[Session] Server revocation failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<Map<String, dynamic>?> loadHistoryOrderDetail({
+    required HistoryQueryFamily family,
+    required String orderId,
+  }) {
+    _validateHistoryFamilyScope(family);
+    final key =
+        '${family.accountId}:${family.role}:${family.locationId}:$orderId';
+    final inFlight = _historyDetailRequests[key];
+    if (inFlight != null) return inFlight;
+    final generation = _historyCacheGeneration;
+    late final Future<Map<String, dynamic>?> request;
+    request = supabase
+        .rpc(
+          'history_order_detail_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_order_id': orderId,
+          },
+        )
+        .then((response) {
+          _validateHistoryFamilyScope(family);
+          if (generation != _historyCacheGeneration) {
+            throw StateError('History detail request became stale.');
+          }
+          return response == null
+              ? null
+              : Map<String, dynamic>.from(response as Map);
+        })
+        .whenComplete(() {
+          if (identical(_historyDetailRequests[key], request)) {
+            _historyDetailRequests.remove(key);
+          }
+        });
+    _historyDetailRequests[key] = request;
+    return request;
+  }
+
+  Future<List<Map<String, dynamic>>> loadSalesExport({
+    required DateTime start,
+    required DateTime endExclusive,
+  }) async {
+    final locationId = activeLocationId;
+    final accountId = currentUserId;
+    if (locationId == null || accountId == null) return const [];
+    final sessionToken = _requireSessionToken();
+    final response = await supabase.rpc(
+      'history_export_sales_v1',
+      params: <String, dynamic>{
+        'p_session_token': sessionToken,
+        'p_period_start': start.toUtc().toIso8601String(),
+        'p_period_end': endExclusive.toUtc().toIso8601String(),
+      },
+    );
+    if (activeLocationId != locationId || currentUserId != accountId) {
+      throw StateError('Sales export session changed.');
+    }
+    return List<Map<String, dynamic>>.unmodifiable(
+      (response as List<dynamic>).map(
+        (row) => Map<String, dynamic>.from(row as Map),
+      ),
+    );
+  }
+
+  void _validateHistoryFamilyScope(HistoryQueryFamily family) {
+    if (family.accountId != currentUserId ||
+        family.locationId != activeLocationId ||
+        family.role.toLowerCase() != currentUserRole?.toLowerCase()) {
+      throw StateError('History query scope no longer matches the session.');
+    }
+  }
+
+  String _requireSessionToken() {
+    final token = _sessionToken;
+    if (token == null || token.isEmpty) {
+      throw StateError('The application session is not authenticated.');
+    }
+    return token;
+  }
+
+  void _clearPaginatedHistoryState() {
+    _historyCacheGeneration++;
+    _historyPageCache.clear();
+    _historyPageRequests.clear();
+    _historyDetailRequests.clear();
+  }
+
+  void _invalidatePaginatedHistory(
+    HistoryInvalidationKind kind,
+    String locationId,
+  ) {
+    _historyCacheGeneration++;
+    _historyPageRequests.clear();
+    _historyDetailRequests.clear();
+    final domains = switch (kind) {
+      HistoryInvalidationKind.orders => <HistoryDomain>{
+        HistoryDomain.adminSales,
+        HistoryDomain.cashierOrders,
+        HistoryDomain.helperWork,
+      },
+      HistoryInvalidationKind.transactions => <HistoryDomain>{
+        HistoryDomain.adminActivity,
+        HistoryDomain.cashierRestocks,
+      },
+      HistoryInvalidationKind.scope => HistoryDomain.values.toSet(),
+    };
+    _historyPageCache.markStale(locationId: locationId, domains: domains);
+    _historyInvalidationsController.add(
+      HistoryInvalidation(kind: kind, locationId: locationId),
+    );
+  }
+
   Future<OrderHistoryData> loadOrderHistory() {
     final Future<OrderHistoryData>? inFlight = _orderHistoryRefreshInFlight;
     if (inFlight != null) {
@@ -1615,8 +1857,16 @@ class InventoryController {
     }
 
     final response = await supabase
-        .from('orders')
-        .select()
+        .from('order_history')
+        .select(
+          'id:order_id, status, items, created_at, total_amount, '
+          'discount_amount, created_by_id, created_by_name, '
+          'assigned_helper_id, assigned_helper_name, assigned_at, '
+          'prepared_by_id, prepared_by_name, prepared_at, '
+          'completed_by_id, completed_by_name, completed_at, '
+          'cancelled_by_id, cancelled_by_name, cancelled_at, '
+          'returned_by_id, returned_by_name, returned_at',
+        )
         .eq('location_id', locationId)
         .order('created_at', ascending: false);
 
@@ -1631,13 +1881,9 @@ class InventoryController {
 
     for (final Map<String, dynamic> order in orders) {
       for (final String key in <String>[
-        'created_by',
-        'prepared_by',
         'created_by_id',
         'prepared_by_id',
-        'completed_by',
         'completed_by_id',
-        'cancelled_by',
         'cancelled_by_id',
       ]) {
         final Object? rawId = order[key];
@@ -1823,8 +2069,6 @@ class InventoryController {
     }
 
     try {
-      final now = DateTime.now().toUtc().toIso8601String();
-
       final response = await supabase
           .from('orders')
           .insert({
@@ -1840,9 +2084,6 @@ class InventoryController {
             // ownership
             'created_by_id': currentUserId,
             'created_by_name': currentUserName ?? 'Unknown User',
-
-            // optional old field, keep only if your old DB still uses it
-            'created_by': currentUserNumericId,
           })
           .select()
           .single();
@@ -1920,6 +2161,13 @@ class InventoryController {
     _orderChangesSubscription ??= realtimeSync.orderChanges.listen(
       (_) {
         _ordersAwaitingRealtimeInitial = false;
+        final locationId = activeLocationId;
+        if (locationId != null) {
+          _invalidatePaginatedHistory(
+            HistoryInvalidationKind.orders,
+            locationId,
+          );
+        }
         unawaited(_refreshOrdersFromDatabase());
       },
       onError: (Object error, StackTrace stackTrace) {
@@ -1940,7 +2188,16 @@ class InventoryController {
     _transactionHistoryChangesSubscription ??= realtimeSync
         .transactionHistoryChanges
         .listen(
-          (_) => _transactionHistoryInvalidationsController.add(null),
+          (_) {
+            final locationId = activeLocationId;
+            if (locationId != null) {
+              _invalidatePaginatedHistory(
+                HistoryInvalidationKind.transactions,
+                locationId,
+              );
+            }
+            _transactionHistoryInvalidationsController.add(null);
+          },
           onError: (Object error, StackTrace stackTrace) {
             debugPrint(
               '[InventoryController] Transaction history realtime error: '
@@ -2272,9 +2529,6 @@ class InventoryController {
         updateData['prepared_by_id'] = currentUserId;
         updateData['prepared_by_name'] = currentUserName ?? 'Unknown User';
         updateData['prepared_at'] = DateTime.now().toUtc().toIso8601String();
-
-        // optional old field, keep only if your old DB still uses it
-        updateData['prepared_by'] = currentUserNumericId;
       }
 
       await supabase
@@ -2482,43 +2736,17 @@ class InventoryController {
     String newPassword,
   ) async {
     try {
-      final hashedNewPassword = _hashPassword(newPassword);
-
-      final target = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', targetUserId)
-          .maybeSingle();
-      if (target == null) return false;
-      final targetRole = target['role']?.toString() ?? '';
-
-      final update = <String, dynamic>{'password': hashedNewPassword};
-      final isHelper = targetRole.toLowerCase() == 'helper';
-      if (isHelper) {
-        update['must_change_password'] = true;
-      }
-
-      final Map<String, dynamic>? updatedProfile;
-      if (isHelper) {
-        updatedProfile = await supabase
-            .from('profiles')
-            .update(update)
-            .eq('id', targetUserId)
-            .eq('role', targetRole)
-            .select('id, role, must_change_password')
-            .maybeSingle();
-      } else {
-        updatedProfile = await supabase
-            .from('profiles')
-            .update(update)
-            .eq('id', targetUserId)
-            .eq('role', targetRole)
-            .select('id, role')
-            .maybeSingle();
-      }
-
-      if (updatedProfile == null) return false;
-      return !isHelper || updatedProfile['must_change_password'] == true;
+      final targetId = int.tryParse(targetUserId);
+      if (targetId == null) return false;
+      final response = await supabase.rpc(
+        'profile_admin_reset_password_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_target_profile_id': targetId,
+          'p_new_password': newPassword,
+        },
+      );
+      return response == true;
     } catch (e) {
       return false;
     }

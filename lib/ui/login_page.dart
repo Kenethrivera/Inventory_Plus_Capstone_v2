@@ -52,6 +52,7 @@ class _LoginPageState extends State<LoginPage> {
     final password = _passwordController.text.trim();
 
     setState(() => _isLoading = true);
+    String? issuedSessionToken;
 
     try {
       final userProfile = await _authService.login(username, password);
@@ -66,8 +67,16 @@ class _LoginPageState extends State<LoginPage> {
       final String userName = userProfile['name'] ?? username;
       final String userRole = (userProfile['role'] ?? 'staff').toString();
       final String? userEmail = userProfile['email'];
+      final String? sessionToken = userProfile['session_token']?.toString();
+      issuedSessionToken = sessionToken;
 
-      if (assignedLocationId == null || assignedLocationId.isEmpty) {
+      if (assignedLocationId == null ||
+          assignedLocationId.isEmpty ||
+          sessionToken == null ||
+          sessionToken.isEmpty) {
+        if (sessionToken != null && sessionToken.isNotEmpty) {
+          await _authService.logout(sessionToken);
+        }
         _showError("Account Error: No store assigned to this user.");
         return;
       }
@@ -93,6 +102,8 @@ class _LoginPageState extends State<LoginPage> {
           reason: reason,
         );
 
+        await _authService.logout(sessionToken);
+
         _showError(reason);
         return;
       }
@@ -100,20 +111,34 @@ class _LoginPageState extends State<LoginPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('isLoggedIn', true);
       await prefs.setString('userId', userId);
+      await prefs.setString('sessionToken', sessionToken);
 
       widget.controller.setLoggedInUser(
         name: userName,
         id: userId,
         role: userRole,
         email: userEmail,
+        sessionToken: sessionToken,
       );
 
       widget.controller.setActiveLocation(assignedLocationId);
 
       if (mounted) {
+        issuedSessionToken = null;
         Navigator.pushReplacementNamed(context, '/main');
       }
     } catch (e) {
+      final sessionToken = issuedSessionToken;
+      if (sessionToken != null && sessionToken.isNotEmpty) {
+        try {
+          await _authService.logout(sessionToken);
+        } catch (logoutError) {
+          debugPrint(
+            'Failed to revoke the partially issued login session: '
+            '$logoutError',
+          );
+        }
+      }
       _showError("An unexpected error occurred during login.");
       debugPrint("Login Page Error: $e");
     } finally {

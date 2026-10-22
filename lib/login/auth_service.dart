@@ -17,13 +17,45 @@ class AuthService {
   }
 
   Future<Map<String, dynamic>?> login(String username, String password) async {
-    final hashedPassword = _hashPassword(password);
-    return await _supabase
-        .from('profiles')
-        .select()
-        .eq('username', username)
-        .eq('password', hashedPassword)
-        .maybeSingle();
+    final response = await _supabase.rpc(
+      'profile_login_v1',
+      params: {'p_username': username, 'p_password': password},
+    );
+    return _profileFromSessionPayload(response);
+  }
+
+  Future<Map<String, dynamic>?> restoreSession(String sessionToken) async {
+    final response = await _supabase.rpc(
+      'profile_restore_session_v1',
+      params: {'p_session_token': sessionToken},
+    );
+    return _profileFromSessionPayload(
+      response,
+      existingSessionToken: sessionToken,
+    );
+  }
+
+  Future<void> logout(String sessionToken) async {
+    await _supabase.rpc(
+      'profile_logout_v1',
+      params: {'p_session_token': sessionToken},
+    );
+  }
+
+  Map<String, dynamic>? _profileFromSessionPayload(
+    dynamic response, {
+    String? existingSessionToken,
+  }) {
+    if (response == null || response is! Map) return null;
+    final payload = Map<String, dynamic>.from(response);
+    final rawProfile = payload['profile'];
+    if (rawProfile is! Map) return null;
+    final profile = Map<String, dynamic>.from(rawProfile);
+    final token = existingSessionToken ?? payload['session_token']?.toString();
+    if (token == null || token.isEmpty) return null;
+    profile['session_token'] = token;
+    profile['session_expires_at'] = payload['expires_at'];
+    return profile;
   }
 
   Future<String?> getEmailFromUsername(String username) async {

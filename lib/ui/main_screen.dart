@@ -972,6 +972,7 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     await _staffPresenceService?.stop(logoutReason: 'store_hours_expired');
+    await widget.controller.revokeCurrentSession();
 
     final prefs = await SharedPreferences.getInstance();
     await widget.realtimeSync.stop();
@@ -1113,6 +1114,7 @@ class _MainScreenState extends State<MainScreen> {
     _clearStoreAccessScheduling();
     try {
       await _staffPresenceService?.stop(logoutReason: 'profile_changed');
+      await widget.controller.revokeCurrentSession();
       final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
       await prefs.clear();
@@ -3187,6 +3189,7 @@ class _MainScreenState extends State<MainScreen> {
     try {
       _clearStoreAccessScheduling();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
+      await widget.controller.revokeCurrentSession();
       final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
       await prefs.clear();
@@ -3205,6 +3208,7 @@ class _MainScreenState extends State<MainScreen> {
     try {
       _clearStoreAccessScheduling();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
+      await widget.controller.revokeCurrentSession();
       final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
       await prefs.clear();

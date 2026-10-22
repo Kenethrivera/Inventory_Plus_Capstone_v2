@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/history_pagination.dart';
 import 'package:printing/printing.dart';
 import 'reports/sales_report_generator.dart';
 import '../services/export_period.dart';
@@ -13,6 +13,7 @@ import 'reports/report_range.dart';
 import 'reports/report_period_dialog.dart';
 import '../notifications/notification_provider.dart';
 import 'widgets/history_period_controls.dart';
+import 'widgets/history_pagination_footer.dart';
 
 String _fmtQty(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
@@ -40,11 +41,17 @@ class TransactionHistoryPage extends StatefulWidget {
 }
 
 class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
-  late Future<List<_OrderGroup>> _groupedFuture;
-  StreamSubscription<List<CustomerOrder>>? _orderHistorySubscription;
-  StreamSubscription<void>? _activityHistorySubscription;
-  List<_OrderGroup> _lastOrderGroups = const <_OrderGroup>[];
-  String? _lastOrderGroupsLocationId;
+  late Future<HistoryPageResult<Map<String, dynamic>>> _historyFuture;
+  StreamSubscription<HistoryInvalidation>? _historySubscription;
+  Timer? _searchDebounce;
+  int _salesPage = 1;
+  int _activityPage = 1;
+  HistoryQueryFamily? _renderedFamily;
+  int _knownTotalCount = 0;
+  Map<String, num> _knownMetrics = const <String, num>{};
+  String? _openOrderId;
+  HistoryQueryFamily? _openOrderFamily;
+  ValueNotifier<_OrderGroup>? _openOrderNotifier;
 
   // Sales History State
   String _filterStatus = 'All';
@@ -54,10 +61,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
   // Activity Log State
   late String _activeTab;
-  List<Map<String, dynamic>> _activityLog = [];
-  String? _activityLocationId;
-  bool _isLoadingLog = true;
-  String? _activityError;
   String _logFilter = 'All';
   bool _salesHistoryDirty = false;
   bool _activityHistoryDirty = false;
@@ -66,8 +69,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   void initState() {
     super.initState();
     _activeTab = widget.initialTab;
-    _groupedFuture = Future<List<_OrderGroup>>.value(const <_OrderGroup>[]);
-    if (widget.isActive) _load();
+    _historyFuture = _emptyPage();
+    if (widget.isActive) _loadCurrentPage();
     _bindHistoryInvalidations();
   }
 
@@ -78,237 +81,225 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     if (widget.initialTab != oldWidget.initialTab) {
       setState(() {
         _activeTab = widget.initialTab;
+        _historyFuture = _loadCurrentPageResult();
       });
     }
     if (oldWidget.controller != widget.controller) {
       _bindHistoryInvalidations();
       if (widget.isActive) {
-        _load();
+        _loadCurrentPage();
       } else {
         _salesHistoryDirty = true;
         _activityHistoryDirty = true;
       }
     }
     if (!oldWidget.isActive && widget.isActive) {
-      if (_salesHistoryDirty) _refreshSalesHistory();
-      if (_activityHistoryDirty) unawaited(_fetchLog(showLoading: true));
+      final dirty = _activeTab == 'Sales History'
+          ? _salesHistoryDirty
+          : _activityHistoryDirty;
+      if (dirty) _loadCurrentPage(forceRefresh: true);
     }
   }
 
   @override
   void dispose() {
-    unawaited(_orderHistorySubscription?.cancel());
-    unawaited(_activityHistorySubscription?.cancel());
+    unawaited(_historySubscription?.cancel());
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
-  void _load() {
-    _salesHistoryDirty = false;
-    _activityHistoryDirty = false;
-    _groupedFuture = _fetchGrouped();
-    unawaited(_fetchLog(showLoading: true));
-  }
-
   void _bindHistoryInvalidations() {
-    unawaited(_orderHistorySubscription?.cancel());
-    unawaited(_activityHistorySubscription?.cancel());
-
-    _orderHistorySubscription = widget.controller.orderSnapshots.listen(
-      (_) {
-        _salesHistoryDirty = true;
-        if (widget.isActive) _refreshSalesHistory();
+    unawaited(_historySubscription?.cancel());
+    _historySubscription = widget.controller.historyInvalidations.listen(
+      (invalidation) {
+        if (invalidation.kind == HistoryInvalidationKind.orders) {
+          _salesHistoryDirty = true;
+          unawaited(_refreshOpenOrderDetail());
+        } else {
+          _activityHistoryDirty = true;
+        }
+        if (widget.isActive && invalidation.affects(_currentDomain)) {
+          _loadCurrentPage(forceRefresh: true);
+        }
       },
       onError: (Object error, StackTrace stackTrace) {
-        debugPrint('[TransactionHistoryPage] Order invalidation error: $error');
+        debugPrint(
+          '[TransactionHistoryPage] Activity invalidation error: $error',
+        );
       },
     );
-    _activityHistorySubscription = widget
-        .controller
-        .transactionHistoryInvalidations
-        .listen(
-          (_) {
-            _activityHistoryDirty = true;
-            if (widget.isActive) unawaited(_fetchLog());
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint(
-              '[TransactionHistoryPage] Activity invalidation error: $error',
-            );
-          },
-        );
-  }
-
-  void _refreshSalesHistory() {
-    if (!mounted || !widget.isActive) {
-      _salesHistoryDirty = true;
-      return;
-    }
-    _salesHistoryDirty = false;
-    setState(() {
-      _groupedFuture = _fetchGrouped(preserveOnError: true);
-    });
   }
 
   void _reloadAll() {
-    if (!mounted) return;
+    final family = _currentFamily;
+    if (family != null) widget.controller.invalidateHistoryFamily(family);
+    _loadCurrentPage(forceRefresh: true);
+  }
+
+  HistoryDomain get _currentDomain => _activeTab == 'Sales History'
+      ? HistoryDomain.adminSales
+      : HistoryDomain.adminActivity;
+
+  int get _currentPage =>
+      _activeTab == 'Sales History' ? _salesPage : _activityPage;
+
+  HistoryQueryFamily? get _currentFamily {
+    final locationId = widget.controller.activeLocationId;
+    final accountId = widget.controller.currentUserId;
+    final role = widget.controller.currentUserRole;
+    if (locationId == null || accountId == null || role == null) return null;
+    final range = _periodSelection.range;
+    return HistoryQueryFamily(
+      accountId: accountId,
+      role: role,
+      locationId: locationId,
+      domain: _currentDomain,
+      periodMode: _periodSelection.mode.name,
+      periodStart: range.start,
+      periodEndExclusive: range.end,
+      filter: _activeTab == 'Sales History' ? _filterStatus : _logFilter,
+      search: _searchQuery,
+      sort: 'event_at_desc_id_desc',
+    );
+  }
+
+  Future<HistoryPageResult<Map<String, dynamic>>> _emptyPage() async =>
+      HistoryPageResult<Map<String, dynamic>>(
+        family: null,
+        page: 1,
+        records: const [],
+        totalCount: 0,
+        metrics: const {},
+        loadedAt: DateTime.now(),
+      );
+
+  Future<HistoryPageResult<Map<String, dynamic>>> _loadCurrentPageResult({
+    bool forceRefresh = false,
+  }) {
+    final family = _currentFamily;
+    if (family == null) return _emptyPage();
+    if (_activeTab == 'Sales History') {
+      _salesHistoryDirty = false;
+    } else {
+      _activityHistoryDirty = false;
+    }
+    return widget.controller.loadHistoryPage(
+      family: family,
+      page: _currentPage,
+      forceRefresh: forceRefresh,
+    );
+  }
+
+  void _loadCurrentPage({bool forceRefresh = false}) {
+    if (!mounted || !widget.isActive) return;
     setState(() {
-      _isLoadingLog = true;
-      _groupedFuture = _fetchGrouped(preserveOnError: true);
+      _historyFuture = _loadCurrentPageResult(forceRefresh: forceRefresh);
     });
-    unawaited(_fetchLog());
   }
 
-  Future<void> _fetchLog({bool showLoading = false}) async {
-    if (!mounted || !widget.isActive) {
-      _activityHistoryDirty = true;
-      return;
+  void _queryChanged({bool debounce = false}) {
+    _searchDebounce?.cancel();
+    if (_activeTab == 'Sales History') {
+      _salesPage = 1;
+    } else {
+      _activityPage = 1;
     }
-    _activityHistoryDirty = false;
-    final String? locationId = widget.controller.activeLocationId;
-    if (_activityLocationId != null && _activityLocationId != locationId) {
-      setState(() {
-        _activityLog = const <Map<String, dynamic>>[];
-        _isLoadingLog = true;
-      });
-    }
-    if (showLoading && mounted) {
-      setState(() => _isLoadingLog = true);
-    }
-
-    try {
-      final logs = await widget.controller.loadAllTransactionHistory();
-      if (!mounted) return;
-      setState(() {
-        _activityLog = logs;
-        _activityLocationId = locationId;
-        _isLoadingLog = false;
-        _activityError = null;
-      });
-    } catch (error, stackTrace) {
-      debugPrint('[TransactionHistoryPage] Failed to refresh activity: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      if (mounted) {
-        _activityHistoryDirty = true;
-        setState(() {
-          _isLoadingLog = false;
-          _activityError = 'Unable to load activity history.';
-        });
-      }
+    if (debounce) {
+      _searchDebounce = Timer(
+        const Duration(milliseconds: 400),
+        _loadCurrentPage,
+      );
+    } else {
+      _loadCurrentPage();
     }
   }
 
-  Future<List<_OrderGroup>> _fetchGrouped({
-    bool preserveOnError = false,
-  }) async {
-    final String? locationId = widget.controller.activeLocationId;
-    if (locationId == null || locationId.isEmpty) {
-      return const <_OrderGroup>[];
-    }
-
-    try {
-      final OrderHistoryData history = await widget.controller
-          .loadOrderHistory();
-      final orders = history.orders;
-      final profileNames = history.profileNamesById;
-
-      final List<_OrderGroup> groups = [];
-
-      for (final order in orders) {
-        final status = order['status'] as String? ?? 'pending';
-        final createdAt = DateTime.parse(order['created_at']).toLocal();
-        final rawItems = order['items'] as List<dynamic>? ?? [];
-
-        final items = rawItems.map((i) {
-          final parsedItem = _OrderLineItem.fromJson(i as Map<String, dynamic>);
-
-          double itemPrice = parsedItem.price;
-          if (itemPrice == 0.0) {
-            try {
-              final dbItem = widget.controller.allItems.firstWhere(
-                (inv) => inv.id == parsedItem.productId,
-              );
-              itemPrice = dbItem.price;
-            } catch (_) {}
-          }
-
-          return _OrderLineItem(
-            productId: parsedItem.productId,
-            productName: parsedItem.productName,
-            quantity: parsedItem.quantity,
-            price: itemPrice,
-          );
-        }).toList();
-
-        double calculatedSubtotal = items.fold(
-          0.0,
-          (sum, item) => sum + (item.price * item.quantity),
-        );
-        double totalAmount =
-            (order['total_amount'] as num?)?.toDouble() ?? calculatedSubtotal;
-
-        double discount =
-            (order['discount_amount'] as num?)?.toDouble() ??
-            (calculatedSubtotal - totalAmount);
-        if (discount < 0) discount = 0.0;
-
-        double cashGiven = (order['cash_given'] as num?)?.toDouble() ?? 0.0;
-        double changeAmount =
-            (order['change_amount'] as num?)?.toDouble() ?? 0.0;
-        String paymentMode = order['payment_mode'] as String? ?? 'N/A';
-
-        groups.add(
-          _OrderGroup(
-            id: order['id'].toString(),
-            status: status,
-            createdAt: createdAt,
-            totalAmount: totalAmount,
-            subtotal: calculatedSubtotal,
-            discount: discount,
-            cashGiven: cashGiven,
-            changeAmount: changeAmount,
-            paymentMode: paymentMode,
-            items: items,
-            createdBy:
-                order['created_by_name']?.toString() ??
-                profileNames[(order['created_by_id'] ?? order['created_by'])
-                    ?.toString()],
-            preparedBy:
-                order['prepared_by_name']?.toString() ??
-                profileNames[(order['prepared_by_id'] ?? order['prepared_by'])
-                    ?.toString()],
-            completedBy:
-                order['completed_by_name']?.toString() ??
-                profileNames[(order['completed_by_id'] ?? order['completed_by'])
-                    ?.toString()],
-            cancelledBy:
-                order['cancelled_by_name']?.toString() ??
-                profileNames[(order['cancelled_by_id'] ?? order['cancelled_by'])
-                    ?.toString()],
-            preparedAt: order['prepared_at'] != null
-                ? DateTime.parse(order['prepared_at'].toString()).toLocal()
-                : null,
-            completedAt: order['completed_at'] != null
-                ? DateTime.parse(order['completed_at'].toString()).toLocal()
-                : null,
-            cancelledAt: order['cancelled_at'] != null
-                ? DateTime.parse(order['cancelled_at'].toString()).toLocal()
-                : null,
-          ),
-        );
+  void _selectPage(int page) {
+    if (page < 1 || page == _currentPage) return;
+    setState(() {
+      if (_activeTab == 'Sales History') {
+        _salesPage = page;
+      } else {
+        _activityPage = page;
       }
+      _historyFuture = _loadCurrentPageResult();
+    });
+  }
 
-      groups.sort((a, b) => b.eventAt.compareTo(a.eventAt));
-      _lastOrderGroups = List<_OrderGroup>.unmodifiable(groups);
-      _lastOrderGroupsLocationId = locationId;
-      return _lastOrderGroups;
-    } catch (error, stackTrace) {
-      debugPrint('Error fetching orders: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      return preserveOnError && _lastOrderGroupsLocationId == locationId
-          ? _lastOrderGroups
-          : Future<List<_OrderGroup>>.error(error, stackTrace);
+  List<_OrderGroup> _orderGroupsFromRows(List<Map<String, dynamic>> orders) {
+    final groups = <_OrderGroup>[];
+    for (final order in orders) {
+      final status = order['status'] as String? ?? 'pending';
+      final createdAt = DateTime.parse(order['created_at']).toLocal();
+      final rawItems = order['items'] as List<dynamic>? ?? [];
+
+      final items = rawItems.map((i) {
+        final parsedItem = _OrderLineItem.fromJson(i as Map<String, dynamic>);
+
+        double itemPrice = parsedItem.price;
+        if (itemPrice == 0.0) {
+          try {
+            final dbItem = widget.controller.allItems.firstWhere(
+              (inv) => inv.id == parsedItem.productId,
+            );
+            itemPrice = dbItem.price;
+          } catch (_) {}
+        }
+
+        return _OrderLineItem(
+          productId: parsedItem.productId,
+          productName: parsedItem.productName,
+          quantity: parsedItem.quantity,
+          price: itemPrice,
+        );
+      }).toList();
+
+      double calculatedSubtotal = items.fold(
+        0.0,
+        (sum, item) => sum + (item.price * item.quantity),
+      );
+      double totalAmount =
+          (order['total_amount'] as num?)?.toDouble() ?? calculatedSubtotal;
+
+      double discount =
+          (order['discount_amount'] as num?)?.toDouble() ??
+          (calculatedSubtotal - totalAmount);
+      if (discount < 0) discount = 0.0;
+
+      double cashGiven = (order['cash_given'] as num?)?.toDouble() ?? 0.0;
+      double changeAmount = (order['change_amount'] as num?)?.toDouble() ?? 0.0;
+      String paymentMode = order['payment_mode'] as String? ?? 'N/A';
+
+      groups.add(
+        _OrderGroup(
+          id: order['id'].toString(),
+          status: status,
+          createdAt: createdAt,
+          totalAmount: totalAmount,
+          subtotal: calculatedSubtotal,
+          discount: discount,
+          cashGiven: cashGiven,
+          changeAmount: changeAmount,
+          paymentMode: paymentMode,
+          items: items,
+          createdBy: order['created_by_name']?.toString(),
+          preparedBy: order['prepared_by_name']?.toString(),
+          completedBy: order['completed_by_name']?.toString(),
+          cancelledBy: order['cancelled_by_name']?.toString(),
+          preparedAt: order['prepared_at'] != null
+              ? DateTime.parse(order['prepared_at'].toString()).toLocal()
+              : null,
+          completedAt: order['completed_at'] != null
+              ? DateTime.parse(order['completed_at'].toString()).toLocal()
+              : null,
+          cancelledAt: order['cancelled_at'] != null
+              ? DateTime.parse(order['cancelled_at'].toString()).toLocal()
+              : null,
+        ),
+      );
     }
+    return List<_OrderGroup>.unmodifiable(groups);
   }
 
   @override
@@ -317,18 +308,45 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   Widget _buildHistoryWorkspace(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      body: FutureBuilder<List<_OrderGroup>>(
-        future: _groupedFuture,
+      body: FutureBuilder<HistoryPageResult<Map<String, dynamic>>>(
+        future: _historyFuture,
         builder: (context, snapshot) {
-          final allOrders = snapshot.data ?? _lastOrderGroups;
-          final periodOrders = allOrders
-              .where((order) => _isInSelectedPeriod(order.eventAt))
-              .toList(growable: false);
-          final periodLogs = _activityLog
-              .where((log) => _isInSelectedPeriod(_activityDate(log)))
-              .toList(growable: false);
-          final filteredOrders = _filteredOrders(periodOrders);
-          final filteredLogs = _filteredActivity(periodLogs);
+          final currentFamily = _currentFamily;
+          if (_renderedFamily != currentFamily) {
+            _renderedFamily = currentFamily;
+            _knownTotalCount = 0;
+            _knownMetrics = const <String, num>{};
+          }
+          final rawResult = snapshot.data;
+          final scopedResult = rawResult?.family == currentFamily
+              ? rawResult
+              : null;
+          final result = scopedResult?.page == _currentPage
+              ? scopedResult
+              : null;
+          if (scopedResult != null) {
+            _knownTotalCount = scopedResult.totalCount;
+            _knownMetrics = scopedResult.metrics;
+          }
+          if (scopedResult != null && scopedResult.page != _currentPage) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || scopedResult.page == _currentPage) return;
+              setState(() {
+                if (_activeTab == 'Sales History') {
+                  _salesPage = scopedResult.page;
+                } else {
+                  _activityPage = scopedResult.page;
+                }
+              });
+            });
+          }
+          final orders = _activeTab == 'Sales History' && result != null
+              ? _orderGroupsFromRows(result.records)
+              : const <_OrderGroup>[];
+          final logs = _activeTab == 'Activity Log' && result != null
+              ? result.records
+              : const <Map<String, dynamic>>[];
+          final loading = snapshot.connectionState == ConnectionState.waiting;
           return SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -346,8 +364,16 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         10,
                       ),
                       child: _buildPageHeader(
-                        salesCount: periodOrders.length,
-                        activityCount: periodLogs.length,
+                        salesCount: _activeTab == 'Sales History'
+                            ? ((result?.metrics ?? _knownMetrics)['records'] ??
+                                      0)
+                                  .toInt()
+                            : 0,
+                        activityCount: _activeTab == 'Activity Log'
+                            ? ((result?.metrics ?? _knownMetrics)['changes'] ??
+                                      0)
+                                  .toInt()
+                            : 0,
                       ),
                     ),
                     Padding(
@@ -355,8 +381,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         horizontal: horizontalPadding,
                       ),
                       child: _buildCompactMetrics(
-                        periodOrders: periodOrders,
-                        periodLogs: periodLogs,
+                        metrics: result?.metrics ?? _knownMetrics,
                       ),
                     ),
                     Padding(
@@ -378,10 +403,21 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         ),
                         child: _activeTab == 'Sales History'
                             ? _buildSalesWorkspace(
-                                snapshot: snapshot,
-                                orders: filteredOrders,
+                                loading: loading,
+                                error: snapshot.error,
+                                orders: orders,
+                                result: result,
+                                totalItems:
+                                    result?.totalCount ?? _knownTotalCount,
                               )
-                            : _buildActivityWorkspace(filteredLogs),
+                            : _buildActivityWorkspace(
+                                logs,
+                                loading: loading,
+                                error: snapshot.error,
+                                result: result,
+                                totalItems:
+                                    result?.totalCount ?? _knownTotalCount,
+                              ),
                       ),
                     ),
                   ],
@@ -510,27 +546,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     );
   }
 
-  Widget _buildCompactMetrics({
-    required List<_OrderGroup> periodOrders,
-    required List<Map<String, dynamic>> periodLogs,
-  }) {
-    final metrics = <_HistoryMetric>[];
+  Widget _buildCompactMetrics({required Map<String, num> metrics}) {
+    final cards = <_HistoryMetric>[];
     if (_activeTab == 'Sales History') {
-      final totalOrders = periodOrders
-          .where((order) => order.status != 'cancelled')
-          .length;
-      final pending = periodOrders
-          .where(
-            (order) =>
-                order.status == 'pending' ||
-                order.status == 'prepared' ||
-                order.status == 'solo_picking',
-          )
-          .length;
-      final revenue = periodOrders
-          .where((order) => order.status == 'completed')
-          .fold<double>(0, (sum, order) => sum + order.totalAmount);
-      metrics.addAll([
+      final totalOrders = (metrics['orders'] ?? 0).toInt();
+      final pending = (metrics['pending'] ?? 0).toInt();
+      final revenue = (metrics['revenue'] ?? 0).toDouble();
+      cards.addAll([
         _HistoryMetric(
           'Orders',
           totalOrders.toString(),
@@ -540,19 +562,11 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         _HistoryMetric('Revenue', _money(revenue), const Color(0xFF15803D)),
       ]);
     } else {
-      double stockIn = 0;
-      double stockOut = 0;
-      for (final log in periodLogs) {
-        final quantity = (log['quantity_change'] as num?)?.toDouble() ?? 0;
-        if (quantity > 0) stockIn += quantity;
-        if (quantity < 0) stockOut += quantity.abs();
-      }
-      metrics.addAll([
-        _HistoryMetric(
-          'Changes',
-          periodLogs.length.toString(),
-          const Color(0xFF0F172A),
-        ),
+      final changes = (metrics['changes'] ?? 0).toInt();
+      final stockIn = (metrics['stock_in'] ?? 0).toDouble();
+      final stockOut = (metrics['stock_out'] ?? 0).toDouble();
+      cards.addAll([
+        _HistoryMetric('Changes', changes.toString(), const Color(0xFF0F172A)),
         _HistoryMetric(
           'Stock in',
           '+${_fmtQty(stockIn)}',
@@ -574,7 +588,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         return Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: metrics
+          children: cards
               .map(
                 (metric) => SizedBox(
                   width: width,
@@ -628,29 +642,57 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final filterGroups = <Widget>[
+          final primaryGroups = <Widget>[
             _buildTabSelector(),
             _buildPeriodSelector(),
             HistoryPeriodControls(
               selection: _periodSelection,
-              onChanged: (selection) =>
-                  setState(() => _periodSelection = selection),
+              onChanged: (selection) {
+                setState(() => _periodSelection = selection);
+                _queryChanged();
+              },
             ),
-            if (_activeTab == 'Sales History')
-              _buildStatusSelector()
-            else
-              _buildActivitySelector(),
           ];
+          final resultFilter = _activeTab == 'Sales History'
+              ? _buildStatusSelector()
+              : _buildActivitySelector();
+          final singleRowMinWidth = _activeTab == 'Sales History'
+              ? 1080.0
+              : 900.0;
 
-          if (constraints.maxWidth >= 1160) {
+          if (constraints.maxWidth >= singleRowMinWidth) {
             return Row(
               children: [
-                for (var index = 0; index < filterGroups.length; index++) ...[
+                for (var index = 0; index < primaryGroups.length; index++) ...[
                   if (index > 0) const SizedBox(width: 10),
-                  filterGroups[index],
+                  primaryGroups[index],
                 ],
                 const SizedBox(width: 10),
+                resultFilter,
+                const SizedBox(width: 10),
                 Expanded(child: _buildSearchField()),
+              ],
+            );
+          }
+
+          if (constraints.maxWidth >= 620) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: primaryGroups,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    resultFilter,
+                    const SizedBox(width: 10),
+                    Expanded(child: _buildSearchField()),
+                  ],
+                ),
               ],
             );
           }
@@ -662,7 +704,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                 spacing: 10,
                 runSpacing: 8,
                 crossAxisAlignment: WrapCrossAlignment.center,
-                children: filterGroups,
+                children: [...primaryGroups, resultFilter],
               ),
               const SizedBox(height: 8),
               _buildSearchField(),
@@ -676,7 +718,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   Widget _buildTabSelector() => _SegmentedControl(
     options: const ['Sales History', 'Activity Log'],
     selected: _activeTab,
-    onSelected: (value) => setState(() => _activeTab = value),
+    onSelected: (value) {
+      if (value == _activeTab) return;
+      setState(() {
+        _activeTab = value;
+        _historyFuture = _loadCurrentPageResult();
+      });
+    },
     darkSelection: true,
   );
 
@@ -692,19 +740,26 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         };
         _periodSelection = _periodSelection.withMode(mode);
       });
+      _queryChanged();
     },
   );
 
   Widget _buildStatusSelector() => _SegmentedControl(
     options: const ['All', 'Pending', 'Prepared', 'Completed', 'Cancelled'],
     selected: _filterStatus,
-    onSelected: (value) => setState(() => _filterStatus = value),
+    onSelected: (value) {
+      setState(() => _filterStatus = value);
+      _queryChanged();
+    },
   );
 
   Widget _buildActivitySelector() => _SegmentedControl(
     options: const ['All', 'Stock In', 'Stock Out'],
     selected: _logFilter,
-    onSelected: (value) => setState(() => _logFilter = value),
+    onSelected: (value) {
+      setState(() => _logFilter = value);
+      _queryChanged();
+    },
   );
 
   Widget _buildSearchField() {
@@ -712,7 +767,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       height: 36,
       child: TextField(
         controller: _searchController,
-        onChanged: (value) => setState(() => _searchQuery = value),
+        onChanged: (value) {
+          setState(() => _searchQuery = value);
+          _queryChanged(debounce: true);
+        },
         style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
         decoration: InputDecoration(
           hintText: _activeTab == 'Sales History'
@@ -731,6 +789,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                   onPressed: () {
                     _searchController.clear();
                     setState(() => _searchQuery = '');
+                    _queryChanged();
                   },
                   icon: const Icon(LucideIcons.x, size: 14),
                 ),
@@ -755,45 +814,72 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   }
 
   Widget _buildSalesWorkspace({
-    required AsyncSnapshot<List<_OrderGroup>> snapshot,
+    required bool loading,
+    required Object? error,
     required List<_OrderGroup> orders,
+    required HistoryPageResult<Map<String, dynamic>>? result,
+    required int totalItems,
   }) {
-    if (snapshot.connectionState == ConnectionState.waiting &&
-        snapshot.data == null &&
-        _lastOrderGroups.isEmpty) {
-      return const _BoundedState(
+    Widget content;
+    if (loading && result == null) {
+      content = const _BoundedState(
         icon: LucideIcons.loaderCircle,
         title: 'Loading transaction history',
         loading: true,
       );
-    }
-    if (snapshot.hasError && _lastOrderGroups.isEmpty) {
-      return _BoundedState(
+    } else if (error != null && result == null) {
+      content = _BoundedState(
         icon: LucideIcons.circleAlert,
         title: 'Unable to load transaction history',
         message: 'Check your connection and try again.',
         actionLabel: 'Retry',
         onAction: _reloadAll,
       );
-    }
-    if (orders.isEmpty) {
-      return _BoundedState(
+    } else if (orders.isEmpty) {
+      content = _BoundedState(
         icon: LucideIcons.receipt,
         title: _emptySalesTitle(),
         message: 'Try another period, status, or search term.',
         actionLabel: 'Reset filters',
         onAction: _resetSalesFilters,
       );
+    } else {
+      content = LayoutBuilder(
+        builder: (context, constraints) {
+          final useTable = constraints.maxWidth >= 820;
+          return useTable
+              ? _buildTransactionTable(orders)
+              : _buildTransactionCards(orders);
+        },
+      );
     }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final useTable = constraints.maxWidth >= 820;
-        return useTable
-            ? _buildTransactionTable(orders)
-            : _buildTransactionCards(orders);
-      },
-    );
+    return _withPagination(content, totalItems: totalItems, loading: loading);
   }
+
+  Widget _withPagination(
+    Widget content, {
+    required int totalItems,
+    required bool loading,
+  }) => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFFE2E8F0)),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      children: [
+        Expanded(child: content),
+        HistoryPaginationFooter(
+          currentPage: _currentPage,
+          totalItems: totalItems,
+          pageSize: historyPageSize,
+          loading: loading,
+          onPageSelected: _selectPage,
+        ),
+      ],
+    ),
+  );
 
   Widget _buildTransactionTable(List<_OrderGroup> orders) {
     return Container(
@@ -983,254 +1069,249 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     );
   }
 
-  Widget _buildActivityWorkspace(List<Map<String, dynamic>> logs) {
-    if (_isLoadingLog && _activityLog.isEmpty) {
-      return const _BoundedState(
-        icon: LucideIcons.loaderCircle,
-        title: 'Loading activity history',
-        loading: true,
-      );
-    }
-    if (_activityError != null && _activityLog.isEmpty) {
-      return _BoundedState(
+  Widget _buildActivityWorkspace(
+    List<Map<String, dynamic>> logs, {
+    required bool loading,
+    required Object? error,
+    required HistoryPageResult<Map<String, dynamic>>? result,
+    required int totalItems,
+  }) {
+    Widget content;
+    if (loading && result == null) {
+      content = const _ActivityLoadingRows();
+    } else if (error != null && result == null) {
+      content = _BoundedState(
         icon: LucideIcons.circleAlert,
-        title: _activityError!,
+        title: 'Unable to load activity history',
         message: 'Check your connection and try again.',
         actionLabel: 'Retry',
-        onAction: () => _fetchLog(showLoading: true),
+        onAction: _reloadAll,
       );
-    }
-    if (logs.isEmpty) {
-      return _BoundedState(
+    } else if (logs.isEmpty) {
+      content = _BoundedState(
         icon: LucideIcons.history,
         title: 'No activity found ${_periodContextLabel()}',
         message: 'Try another period, activity type, or search term.',
         actionLabel: 'Reset filters',
         onAction: _resetActivityFilters,
       );
-    }
-    final entries = <Object>[];
-    String? previousGroup;
-    for (final log in logs) {
-      final group = _activityGroupLabel(_activityDate(log));
-      if (group != previousGroup) {
-        entries.add(group);
-        previousGroup = group;
+    } else {
+      final entries = <Object>[];
+      String? previousGroup;
+      for (final log in logs) {
+        final group = _activityGroupLabel(_activityDate(log));
+        if (group != previousGroup) {
+          entries.add(group);
+          previousGroup = group;
+        }
+        entries.add(log);
       }
-      entries.add(log);
-    }
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: ListView.builder(
-        itemCount: entries.length,
-        itemBuilder: (context, index) {
-          final entry = entries[index];
-          if (entry is String) {
+      content = Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: ListView.builder(
+          itemCount: entries.length,
+          itemBuilder: (context, index) {
+            final entry = entries[index];
+            if (entry is String) {
+              return Container(
+                height: 32,
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                color: const Color(0xFFF8FAFC),
+                child: Text(
+                  entry,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.7,
+                  ),
+                ),
+              );
+            }
+            final log = entry as Map<String, dynamic>;
+            final quantity =
+                (log['quantity_change'] as num?)?.toDouble() ?? 0.0;
+            final newQuantity =
+                (log['new_quantity'] as num?)?.toDouble() ?? 0.0;
+            final type = log['transaction_type']?.toString() ?? 'activity';
+            final positive = quantity > 0;
+            final color = type == 'manual_adjustment'
+                ? const Color(0xFF2563EB)
+                : positive
+                ? const Color(0xFF15803D)
+                : const Color(0xFFDC2626);
+            final product = log['products'] is Map
+                ? Map<String, dynamic>.from(log['products'] as Map)
+                : null;
+            final profile = log['profiles'] is Map
+                ? Map<String, dynamic>.from(log['profiles'] as Map)
+                : null;
+            final productName =
+                product?['product_name']?.toString() ?? 'Unknown item';
+            final userName = profile?['name']?.toString() ?? 'Admin';
+            final date = _activityDate(log);
             return Container(
-              height: 32,
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              color: const Color(0xFFF8FAFC),
-              child: Text(
-                entry,
-                style: const TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.7,
-                ),
+              constraints: const BoxConstraints(minHeight: 62),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
               ),
-            );
-          }
-          final log = entry as Map<String, dynamic>;
-          final quantity = (log['quantity_change'] as num?)?.toDouble() ?? 0.0;
-          final newQuantity = (log['new_quantity'] as num?)?.toDouble() ?? 0.0;
-          final type = log['transaction_type']?.toString() ?? 'activity';
-          final positive = quantity > 0;
-          final color = type == 'manual_adjustment'
-              ? const Color(0xFF2563EB)
-              : positive
-              ? const Color(0xFF15803D)
-              : const Color(0xFFDC2626);
-          final product = log['products'] is Map
-              ? Map<String, dynamic>.from(log['products'] as Map)
-              : null;
-          final profile = log['profiles'] is Map
-              ? Map<String, dynamic>.from(log['profiles'] as Map)
-              : null;
-          final productName =
-              product?['product_name']?.toString() ?? 'Unknown item';
-          final userName = profile?['name']?.toString() ?? 'Admin';
-          final date = _activityDate(log);
-          return Container(
-            constraints: const BoxConstraints(minHeight: 62),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      positive ? LucideIcons.plus : LucideIcons.minus,
+                      size: 15,
+                      color: color,
+                    ),
                   ),
-                  child: Icon(
-                    positive ? LucideIcons.plus : LucideIcons.minus,
-                    size: 15,
-                    color: color,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 7,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            productName,
-                            style: const TextStyle(
-                              color: Color(0xFF0F172A),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 7,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              productName,
+                              style: const TextStyle(
+                                color: Color(0xFF0F172A),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
+                            _ActivityTypeChip(label: type, color: color),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$userName \u2022 ${_compactDate(date)}, ${_compactTime(date)}',
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 11,
                           ),
-                          _ActivityTypeChip(label: type, color: color),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
                       Text(
-                        '$userName \u2022 ${_compactDate(date)}, ${_compactTime(date)}',
+                        (positive ? '+' : '') + _fmtQty(quantity),
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        'New qty ${_fmtQty(newQuantity)}',
                         style: const TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 11,
+                          color: Color(0xFF94A3B8),
+                          fontSize: 10,
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      (positive ? '+' : '') + _fmtQty(quantity),
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    Text(
-                      'New qty ${_fmtQty(newQuantity)}',
-                      style: const TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontSize: 10,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }
+    return _withPagination(content, totalItems: totalItems, loading: loading);
   }
 
   void _openOrder(_OrderGroup order) {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: const Color(0x8A0F172A),
-      useSafeArea: true,
-      builder: (dialogContext) {
-        final viewport = MediaQuery.sizeOf(dialogContext);
-        final narrow = viewport.width < 600;
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: narrow ? 12 : 32,
-            vertical: narrow ? 16 : 28,
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 760,
-              maxHeight: viewport.height * 0.78,
+    final family = _currentFamily;
+    if (family == null) return;
+    final notifier = ValueNotifier<_OrderGroup>(order);
+    _openOrderId = order.id;
+    _openOrderFamily = family;
+    _openOrderNotifier = notifier;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        barrierColor: const Color(0x8A0F172A),
+        useSafeArea: true,
+        builder: (dialogContext) {
+          final viewport = MediaQuery.sizeOf(dialogContext);
+          final narrow = viewport.width < 600;
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: narrow ? 12 : 32,
+              vertical: narrow ? 16 : 28,
             ),
-            child: _OrderDetailPanel(
-              group: order,
-              onClose: () => Navigator.pop(dialogContext),
-              onCompleteOrder: widget.onCompleteOrder,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 760,
+                maxHeight: viewport.height * 0.78,
+              ),
+              child: ValueListenableBuilder<_OrderGroup>(
+                valueListenable: notifier,
+                builder: (context, currentOrder, _) => _OrderDetailPanel(
+                  group: currentOrder,
+                  onClose: () => Navigator.pop(dialogContext),
+                  onCompleteOrder: widget.onCompleteOrder,
+                ),
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ).whenComplete(() {
+        if (identical(_openOrderNotifier, notifier)) {
+          _openOrderId = null;
+          _openOrderFamily = null;
+          _openOrderNotifier = null;
+        }
+        notifier.dispose();
+      }),
     );
   }
 
-  List<_OrderGroup> _filteredOrders(List<_OrderGroup> orders) {
-    final query = _searchQuery.trim().toLowerCase();
-    return orders
-        .where((order) {
-          final statusMatches =
-              _filterStatus == 'All' ||
-              order.status == _filterStatus.toLowerCase();
-          if (!statusMatches) return false;
-          if (query.isEmpty) return true;
-          return order.id.toLowerCase().contains(query) ||
-              order.items.any(
-                (item) => item.productName.toLowerCase().contains(query),
-              );
-        })
-        .toList(growable: false);
-  }
-
-  List<Map<String, dynamic>> _filteredActivity(
-    List<Map<String, dynamic>> logs,
-  ) {
-    final query = _searchQuery.trim().toLowerCase();
-    return logs
-        .where((log) {
-          final quantity = (log['quantity_change'] as num?)?.toDouble() ?? 0;
-          final type = log['transaction_type']?.toString() ?? '';
-          final filterMatches = switch (_logFilter) {
-            'Stock In' => quantity > 0,
-            'Stock Out' => quantity < 0,
-            'Adjustments' => type == 'manual_adjustment',
-            _ => true,
-          };
-          if (!filterMatches) return false;
-          if (query.isEmpty) return true;
-          final product = log['products'];
-          final name = product is Map
-              ? product['product_name']?.toString().toLowerCase() ?? ''
-              : '';
-          return name.contains(query);
-        })
-        .toList(growable: false);
-  }
-
-  ({DateTime start, DateTime end}) _selectedPeriodRange() {
-    return _periodSelection.range;
-  }
-
-  bool _isInSelectedPeriod(DateTime value) {
-    final range = _selectedPeriodRange();
-    final local = value.toLocal();
-    return !local.isBefore(range.start) && local.isBefore(range.end);
+  Future<void> _refreshOpenOrderDetail() async {
+    final orderId = _openOrderId;
+    final family = _openOrderFamily;
+    final notifier = _openOrderNotifier;
+    if (orderId == null || family == null || notifier == null) return;
+    try {
+      final row = await widget.controller.loadHistoryOrderDetail(
+        family: family,
+        orderId: orderId,
+      );
+      if (!mounted ||
+          row == null ||
+          _openOrderId != orderId ||
+          !identical(_openOrderNotifier, notifier)) {
+        return;
+      }
+      notifier.value = _orderGroupsFromRows([row]).single;
+    } catch (error) {
+      debugPrint(
+        '[TransactionHistoryPage] Detail reconciliation failed: $error',
+      );
+    }
   }
 
   DateTime _activityDate(Map<String, dynamic> log) {
@@ -1270,6 +1351,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _filterStatus = 'All';
       _searchQuery = '';
     });
+    _queryChanged();
   }
 
   void _resetActivityFilters() {
@@ -1279,6 +1361,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _logFilter = 'All';
       _searchQuery = '';
     });
+    _queryChanged();
   }
 
   String _periodLabel() => _periodSelection.mode.label;
@@ -1334,10 +1417,11 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     );
 
     try {
-      final allGroups = await _groupedFuture;
-      final periodSales = allGroups
-          .where((g) => g.status == 'completed' && range.contains(g.eventAt))
-          .toList();
+      final rows = await widget.controller.loadSalesExport(
+        start: range.start,
+        endExclusive: range.endExclusive,
+      );
+      final periodSales = _orderGroupsFromRows(rows);
 
       if (periodSales.isEmpty) {
         if (context.mounted) {
@@ -1810,6 +1894,90 @@ class _BoundedState extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ActivityLoadingRows extends StatelessWidget {
+  const _ActivityLoadingRows();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          ListView.separated(
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: 8,
+            separatorBuilder: (_, _) =>
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            itemBuilder: (context, index) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF1F5F9),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 180,
+                          height: 9,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE2E8F0),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 110,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 58,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: LinearProgressIndicator(
+              minHeight: 2,
+              color: Color(0xFF60A5FA),
+              backgroundColor: Color(0xFFEFF6FF),
+            ),
+          ),
+        ],
       ),
     );
   }

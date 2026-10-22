@@ -7,6 +7,7 @@ import 'ui/main_screen.dart';
 import 'logic/inventory_controller.dart'; 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'login/auth_service.dart';
 import 'services/realtime/realtime_sync_service.dart';
 
 Future<void> main() async {
@@ -116,24 +117,22 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     final prefs = await SharedPreferences.getInstance();
     final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-    final userId = prefs.getString('userId');
+    final sessionToken = prefs.getString('sessionToken');
     
-    if (isLoggedIn && userId != null) {
+    if (isLoggedIn && sessionToken != null && sessionToken.isNotEmpty) {
       try {
-        // Fetch user profile from the 'profiles' table.
-        final userProfile = await Supabase.instance.client
-            .from('profiles') 
-            .select()
-            .eq('id', userId)
-            .maybeSingle();
+        final userProfile = await AuthService().restoreSession(sessionToken);
 
         if (userProfile != null) {
           final String? assignedLocationId = userProfile['location_id'];
+          final userId = userProfile['id'].toString();
 
           widget.controller.setLoggedInUser(
             name: userProfile['name'] ?? 'User',
             id: userId,
             role: userProfile['role'] ?? 'staff',
+            email: userProfile['email']?.toString(),
+            sessionToken: sessionToken,
           );
 
           if (assignedLocationId != null && assignedLocationId.isNotEmpty) {
@@ -154,7 +153,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
           }
         }
       } catch (e) {
-        print("Error restoring session: $e");
+        debugPrint("Error restoring session: $e");
       }
       // If profile restoration fails, clear the session and fall back to login.
       await prefs.clear();
