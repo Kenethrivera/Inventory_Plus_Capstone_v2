@@ -2,6 +2,9 @@
 -- Apply manually after the Phase 5B app-session migration. The only caller
 -- input is the opaque session token; role and location are derived server-side.
 
+-- Remove the prerelease overload that accepted a caller-supplied location.
+-- Keeping only the token signature prevents an older, weaker entry point from
+-- surviving when this migration is reapplied to a development database.
 drop function if exists public.auto_assign_pending_orders_v1(uuid);
 
 create or replace function public.auto_assign_pending_orders_v1(

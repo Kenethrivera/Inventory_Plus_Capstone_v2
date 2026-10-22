@@ -110,6 +110,8 @@ class _SerializedHistoryQuery {
 }
 
 class InventoryController {
+  static const Duration _operationalOrderLookback = Duration(days: 60);
+
   // shared realtime controlelrs
   final StreamController<List<CustomerOrder>> _ordersController =
       StreamController<List<CustomerOrder>>.broadcast();
@@ -2518,10 +2520,24 @@ class InventoryController {
     }
 
     try {
+      final now = DateTime.now();
+      final startOfToday = DateTime(now.year, now.month, now.day).toUtc();
+      final dashboardLookbackStart = startOfToday.subtract(
+        _operationalOrderLookback,
+      );
+      final operationalScope = <String>[
+        'status.in.(pending,prepared,solo_picking)',
+        'created_at.gte.${dashboardLookbackStart.toIso8601String()}',
+        'prepared_at.gte.${startOfToday.toIso8601String()}',
+        'completed_at.gte.${startOfToday.toIso8601String()}',
+        'cancelled_at.gte.${startOfToday.toIso8601String()}',
+        'returned_at.gte.${startOfToday.toIso8601String()}',
+      ].join(',');
       final rows = await supabase
           .from('orders')
           .select()
           .eq('location_id', locationId)
+          .or(operationalScope)
           .order('created_at', ascending: false);
 
       // The active store may have changed while the query was running.
@@ -2695,10 +2711,12 @@ class InventoryController {
   /// Postgres; the client does not submit either as an authorization claim.
   Future<void> reconcileAutomaticHelperAssignments({
     required String expectedLocationId,
+    required String expectedAccountId,
   }) async {
     final sessionToken = _sessionToken;
     if (sessionToken == null ||
         sessionToken.isEmpty ||
+        currentUserId != expectedAccountId ||
         activeLocationId != expectedLocationId) {
       return;
     }

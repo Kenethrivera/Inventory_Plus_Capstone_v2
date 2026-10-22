@@ -18,11 +18,13 @@ class OrderAutoAssignmentService {
     required String locationId,
   }) : _inventoryController = inventoryController,
        _presenceService = presenceService,
-       _locationId = locationId;
+       _locationId = locationId,
+       _accountId = inventoryController.currentUserId ?? '';
 
   final InventoryController _inventoryController;
   final StaffPresenceService _presenceService;
   final String _locationId;
+  final String _accountId;
 
   StreamSubscription<List<CustomerOrder>>? _ordersSubscription;
   bool _started = false;
@@ -60,12 +62,27 @@ class OrderAutoAssignmentService {
     });
   }
 
+  bool get _hasCurrentScope {
+    return !_disposed &&
+        _started &&
+        _accountId.isNotEmpty &&
+        _inventoryController.currentUserId == _accountId &&
+        _inventoryController.activeLocationId == _locationId;
+  }
+
   void _scheduleReconciliation() {
-    if (_disposed || !_started) return;
+    if (!_hasCurrentScope) {
+      _reconcileQueued = false;
+      return;
+    }
     unawaited(_reconcile());
   }
 
   Future<void> _reconcile() async {
+    if (!_hasCurrentScope) {
+      _reconcileQueued = false;
+      return;
+    }
     if (_reconcileInFlight) {
       _reconcileQueued = true;
       return;
@@ -76,6 +93,8 @@ class OrderAutoAssignmentService {
       do {
         _reconcileQueued = false;
 
+        if (!_hasCurrentScope) break;
+
         // These are only cheap guards. Eligibility, location, workload, and
         // order ownership are revalidated atomically by the database RPC.
         if (!_hasEligibleHelper || !_hasUnassignedPendingOrder) continue;
@@ -83,6 +102,7 @@ class OrderAutoAssignmentService {
         try {
           await _inventoryController.reconcileAutomaticHelperAssignments(
             expectedLocationId: _locationId,
+            expectedAccountId: _accountId,
           );
         } catch (error, stackTrace) {
           // Keep the operational snapshot intact. A later order/presence event
@@ -90,7 +110,7 @@ class OrderAutoAssignmentService {
           debugPrint('[OrderAutoAssignment] reconciliation failed: $error');
           debugPrintStack(stackTrace: stackTrace);
         }
-      } while (_reconcileQueued && !_disposed);
+      } while (_reconcileQueued && _hasCurrentScope);
     } finally {
       _reconcileInFlight = false;
     }
@@ -99,6 +119,8 @@ class OrderAutoAssignmentService {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _started = false;
+    _reconcileQueued = false;
     _presenceService.removeListener(_handlePresenceChanged);
     unawaited(_ordersSubscription?.cancel());
     _ordersSubscription = null;
