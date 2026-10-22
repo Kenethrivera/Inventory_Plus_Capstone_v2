@@ -859,41 +859,11 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
 
         _buildInfoRow('Item count', order.items.length.toString()),
         _buildInfoRow('Total amount', _money(order.totalAmount)),
-        
+
         if (isDelayed) ...[
           const SizedBox(height: 14),
           _buildWarningNotice(
             'This order is delayed because it has been waiting for 30 minutes or more.',
-          ),
-        ],
-        if (status == 'pending') ...[
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: ElevatedButton.icon(
-              onPressed: () => _showAssignHelperDialog(order),
-              icon: const Icon(
-                Icons.assignment_ind_outlined,
-                color: Colors.white,
-                size: 18,
-              ),
-              label: Text(
-                _hasAssignedHelper(order) ? 'Reassign Helper' : 'Assign Helper',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: _fontFam,
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryBlue,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
           ),
         ],
         const SizedBox(height: 20),
@@ -910,7 +880,7 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
         ...order.items.map(_buildItemRow),
         const SizedBox(height: 18),
         _buildLockedNotice(
-          'Admin can assign helpers, but only helpers can mark orders as prepared.',
+          'Helper assignment is automatic. This monitor is read-only.',
         ),
       ],
     );
@@ -1124,7 +1094,6 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                             }
 
                             if (!mounted) return;
-
 
                             if (dialogContext.mounted) {
                               Navigator.pop(dialogContext);

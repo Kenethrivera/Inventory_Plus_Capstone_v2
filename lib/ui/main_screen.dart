@@ -28,13 +28,14 @@ import 'pos_cart_page.dart';
 import 'profile_info_page.dart';
 import 'system_settings_page.dart';
 import 'transaction_history_page.dart';
-import 'pos_monitor_page.dart';
-import 'order_queue_monitor_page.dart';
+import 'cash_monitor_table_page.dart';
+import 'queue_monitor_table_page.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/change_password_dialog.dart';
 import 'widgets/startup_restoration_surface.dart';
 import '../services/staff_presence_service.dart';
+import '../services/order_auto_assignment_service.dart';
 import 'widgets/active_staff_button.dart';
 import '../services/store_access_service.dart';
 import '../services/main_section_url.dart';
@@ -70,6 +71,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _isCheckingStockAlerts = false;
   bool _isCheckingExportReminders = false;
   StaffPresenceService? _staffPresenceService;
+  OrderAutoAssignmentService? _orderAutoAssignmentService;
   StoreAccessService? _storeAccessService;
   StreamSubscription<StoreAccessSettings>? _storeAccessSubscription;
   StreamSubscription<CurrentUserProfileSnapshot?>? _currentProfileSubscription;
@@ -244,6 +246,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _deferredControllerData.complete();
     }
     _notificationController?.dispose();
+    _orderAutoAssignmentService?.dispose();
     _staffPresenceService?.dispose();
     widget.controller.onRestockRecorded = null;
     super.dispose();
@@ -339,7 +342,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           return 'Forecasting';
 
         case 2:
-          return 'POS Monitor';
+          return 'Cash Monitor';
 
         case 3:
           return 'Queue Monitor';
@@ -1117,6 +1120,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
     service.bindRealtimeSync(widget.realtimeSync);
     _staffPresenceService = service;
+    final autoAssignmentService = OrderAutoAssignmentService(
+      inventoryController: widget.controller,
+      presenceService: service,
+      locationId: locationId,
+    );
+    autoAssignmentService.start();
+    _orderAutoAssignmentService = autoAssignmentService;
   }
 
   Future<void> _startStaffPresence() async {
@@ -2774,7 +2784,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   _buildSidebarItem(
                     posIndex,
                     LucideIcons.shoppingCart,
-                    'POS Monitor',
+                    'Cash Monitor',
                   ),
                   _buildSidebarItem(
                     orderQueueIndex,

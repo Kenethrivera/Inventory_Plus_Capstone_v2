@@ -336,7 +336,7 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'POS Monitor',
+                'Cash Monitor',
                 style: TextStyle(
                   color: _darkText,
                   fontSize: 28,

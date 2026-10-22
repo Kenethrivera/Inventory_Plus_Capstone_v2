@@ -163,6 +163,7 @@ class InventoryController {
   String? _ordersSnapshotLocationId;
 
   bool _ordersSnapshotLoaded = false;
+  Object? _ordersSnapshotError;
   bool _ordersAwaitingRealtimeInitial = false;
 
   Future<void>? _ordersRefreshInFlight;
@@ -2379,6 +2380,7 @@ class InventoryController {
     _ordersSnapshot = const <CustomerOrder>[];
     _ordersSnapshotLocationId = null;
     _ordersSnapshotLoaded = false;
+    _ordersSnapshotError = null;
     _ordersController.add(_ordersSnapshot);
   }
 
@@ -2508,6 +2510,7 @@ class InventoryController {
       _ordersSnapshot = const <CustomerOrder>[];
       _ordersSnapshotLocationId = null;
       _ordersSnapshotLoaded = true;
+      _ordersSnapshotError = null;
 
       _ordersController.add(_ordersSnapshot);
 
@@ -2536,6 +2539,7 @@ class InventoryController {
 
       _ordersSnapshotLocationId = locationId;
       _ordersSnapshotLoaded = true;
+      _ordersSnapshotError = null;
 
       _ordersController.add(_ordersSnapshot);
 
@@ -2544,6 +2548,11 @@ class InventoryController {
         'location=$locationId count=${orders.length}',
       );
     } catch (error, stackTrace) {
+      if (activeLocationId == locationId) {
+        _ordersSnapshotError = error;
+      } else {
+        _ordersRefreshQueued = true;
+      }
       debugPrint('[InventoryController] Failed to refresh orders: $error');
 
       debugPrintStack(stackTrace: stackTrace);
@@ -2552,6 +2561,13 @@ class InventoryController {
 
   List<CustomerOrder> get currentOrders =>
       List<CustomerOrder>.unmodifiable(_ordersSnapshot);
+
+  bool get hasUsableOrdersSnapshot =>
+      _ordersSnapshotLoaded && _ordersSnapshotLocationId == activeLocationId;
+
+  Object? get ordersSnapshotError => _ordersSnapshotError;
+
+  Future<void> retryOrdersSnapshot() => _refreshOrdersFromDatabase();
 
   CustomerOrder? orderById(Object? orderId) {
     if (orderId == null) {
@@ -2672,6 +2688,25 @@ class InventoryController {
 
       return false;
     }
+  }
+
+  /// Runs the database-owned, deterministic Helper assignment reconciliation.
+  /// Identity and location are derived from the opaque app session in
+  /// Postgres; the client does not submit either as an authorization claim.
+  Future<void> reconcileAutomaticHelperAssignments({
+    required String expectedLocationId,
+  }) async {
+    final sessionToken = _sessionToken;
+    if (sessionToken == null ||
+        sessionToken.isEmpty ||
+        activeLocationId != expectedLocationId) {
+      return;
+    }
+
+    await supabase.rpc(
+      'auto_assign_pending_orders_v1',
+      params: {'p_session_token': sessionToken},
+    );
   }
 
   Future<void> assignOrderToHelper({
