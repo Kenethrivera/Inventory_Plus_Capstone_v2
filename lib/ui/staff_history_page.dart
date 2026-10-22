@@ -201,25 +201,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   }
 
   DateTime _activityDate(CustomerOrder order) {
-    if (_isHelper) {
-      if (_sameUser(order.preparedById) && order.preparedAt != null) {
-        return order.preparedAt!;
-      }
-      if (_sameUser(order.assignedHelperId) && order.assignedAt != null) {
-        return order.assignedAt!;
-      }
-      return order.createdAt;
-    }
-    if (_sameUser(order.completedById) && order.completedAt != null) {
-      return order.completedAt!;
-    }
-    if (_sameUser(order.cancelledById) && order.cancelledAt != null) {
-      return order.cancelledAt!;
-    }
-    if (_sameUser(order.returnedById) && order.returnedAt != null) {
-      return order.returnedAt!;
-    }
-    return order.createdAt;
+    return order.eventAt;
   }
 
   String _myActionLabel(CustomerOrder order) {
@@ -429,11 +411,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   }) {
     Widget content;
     if (loading && result == null) {
-      content = const _HistoryState(
-        icon: Icons.history,
-        title: 'Loading history',
-        loading: true,
-      );
+      content = const HistoryLoadingRows();
     } else if (error != null && result == null) {
       content = _HistoryState(
         icon: Icons.error_outline,
@@ -1755,7 +1733,6 @@ class _HistoryState extends StatelessWidget {
   final String? message;
   final String? actionLabel;
   final VoidCallback? onAction;
-  final bool loading;
 
   const _HistoryState({
     required this.icon,
@@ -1763,7 +1740,6 @@ class _HistoryState extends StatelessWidget {
     this.message,
     this.actionLabel,
     this.onAction,
-    this.loading = false,
   });
 
   @override
@@ -1780,17 +1756,7 @@ class _HistoryState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (loading)
-                const SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: _primaryBlue,
-                  ),
-                )
-              else
-                Icon(icon, size: 38, color: const Color(0xFF94A3B8)),
+              Icon(icon, size: 38, color: const Color(0xFF94A3B8)),
               const SizedBox(height: 10),
               Text(
                 title,

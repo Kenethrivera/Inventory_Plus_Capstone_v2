@@ -29,10 +29,15 @@ class AuthService {
       'profile_restore_session_v1',
       params: {'p_session_token': sessionToken},
     );
-    return _profileFromSessionPayload(
+    if (response == null) return null;
+    final profile = _profileFromSessionPayload(
       response,
       existingSessionToken: sessionToken,
     );
+    if (profile == null) {
+      throw const FormatException('Invalid session restoration response.');
+    }
+    return profile;
   }
 
   Future<void> logout(String sessionToken) async {

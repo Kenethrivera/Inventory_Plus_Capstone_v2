@@ -232,6 +232,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     for (final order in orders) {
       final status = order['status'] as String? ?? 'pending';
       final createdAt = DateTime.parse(order['created_at']).toLocal();
+      final eventAt =
+          DateTime.tryParse(order['event_at']?.toString() ?? '')?.toLocal() ??
+          createdAt;
       final rawItems = order['items'] as List<dynamic>? ?? [];
 
       final items = rawItems.map((i) {
@@ -276,6 +279,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           id: order['id'].toString(),
           status: status,
           createdAt: createdAt,
+          eventAt: eventAt,
           totalAmount: totalAmount,
           subtotal: calculatedSubtotal,
           discount: discount,
@@ -657,19 +661,19 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               ? _buildStatusSelector()
               : _buildActivitySelector();
           final singleRowMinWidth = _activeTab == 'Sales History'
-              ? 1080.0
-              : 900.0;
+              ? 930.0
+              : 850.0;
 
           if (constraints.maxWidth >= singleRowMinWidth) {
             return Row(
               children: [
                 for (var index = 0; index < primaryGroups.length; index++) ...[
-                  if (index > 0) const SizedBox(width: 10),
+                  if (index > 0) const SizedBox(width: 8),
                   primaryGroups[index],
                 ],
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 resultFilter,
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(child: _buildSearchField()),
               ],
             );
@@ -754,7 +758,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   );
 
   Widget _buildActivitySelector() => _SegmentedControl(
-    options: const ['All', 'Stock In', 'Stock Out'],
+    options: const ['All', 'Stock In', 'Stock Out', 'Adjustments'],
     selected: _logFilter,
     onSelected: (value) {
       setState(() => _logFilter = value);
@@ -822,11 +826,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   }) {
     Widget content;
     if (loading && result == null) {
-      content = const _BoundedState(
-        icon: LucideIcons.loaderCircle,
-        title: 'Loading transaction history',
-        loading: true,
-      );
+      content = const HistoryLoadingRows();
     } else if (error != null && result == null) {
       content = _BoundedState(
         icon: LucideIcons.circleAlert,
@@ -1078,7 +1078,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   }) {
     Widget content;
     if (loading && result == null) {
-      content = const _ActivityLoadingRows();
+      content = const HistoryLoadingRows();
     } else if (error != null && result == null) {
       content = _BoundedState(
         icon: LucideIcons.circleAlert,
@@ -1545,6 +1545,7 @@ class _OrderGroup {
   final String id;
   final String status;
   final DateTime createdAt;
+  final DateTime eventAt;
   final double totalAmount;
   final double subtotal;
   final double discount;
@@ -1564,6 +1565,7 @@ class _OrderGroup {
     required this.id,
     required this.status,
     required this.createdAt,
+    required this.eventAt,
     required this.totalAmount,
     required this.subtotal,
     required this.discount,
@@ -1582,8 +1584,6 @@ class _OrderGroup {
 
   String get shortId =>
       id.length >= 8 ? id.substring(0, 8).toUpperCase() : id.toUpperCase();
-
-  DateTime get eventAt => completedAt ?? preparedAt ?? createdAt;
 
   String get handledBy {
     if (status == 'completed') {
@@ -1663,7 +1663,7 @@ class _SegmentedControl extends StatelessWidget {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
+                    horizontal: 8,
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
@@ -1830,7 +1830,6 @@ class _BoundedState extends StatelessWidget {
   final String? message;
   final String? actionLabel;
   final VoidCallback? onAction;
-  final bool loading;
 
   const _BoundedState({
     required this.icon,
@@ -1838,7 +1837,6 @@ class _BoundedState extends StatelessWidget {
     this.message,
     this.actionLabel,
     this.onAction,
-    this.loading = false,
   });
 
   @override
@@ -1855,17 +1853,7 @@ class _BoundedState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (loading)
-                const SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: Color(0xFF2563EB),
-                  ),
-                )
-              else
-                Icon(icon, size: 36, color: const Color(0xFF94A3B8)),
+              Icon(icon, size: 36, color: const Color(0xFF94A3B8)),
               const SizedBox(height: 12),
               Text(
                 title,
@@ -1894,90 +1882,6 @@ class _BoundedState extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ActivityLoadingRows extends StatelessWidget {
-  const _ActivityLoadingRows();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          ListView.separated(
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: 8,
-            separatorBuilder: (_, _) =>
-                const Divider(height: 1, color: Color(0xFFE2E8F0)),
-            itemBuilder: (context, index) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-              child: Row(
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFF1F5F9),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 180,
-                          height: 9,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE2E8F0),
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: 110,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    width: 58,
-                    height: 18,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: LinearProgressIndicator(
-              minHeight: 2,
-              color: Color(0xFF60A5FA),
-              backgroundColor: Color(0xFFEFF6FF),
-            ),
-          ),
-        ],
       ),
     );
   }

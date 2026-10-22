@@ -1859,7 +1859,7 @@ class InventoryController {
     final response = await supabase
         .from('order_history')
         .select(
-          'id:order_id, status, items, created_at, total_amount, '
+          'id:order_id, status, items, created_at, event_at, total_amount, '
           'discount_amount, created_by_id, created_by_name, '
           'assigned_helper_id, assigned_helper_name, assigned_at, '
           'prepared_by_id, prepared_by_name, prepared_at, '

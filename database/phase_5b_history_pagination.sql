@@ -69,6 +69,7 @@ begin
         o.status,
         o.items,
         o.created_at,
+        o.event_at,
         o.created_by_id,
         o.created_by_name,
         o.assigned_helper_id,
@@ -89,19 +90,6 @@ begin
         o.cash_given,
         o.change_amount,
         o.payment_mode,
-        case
-          when p_domain = 'helperWork' then coalesce(greatest(
-            case when o.assigned_helper_id = v_account_id then o.assigned_at end,
-            case when o.prepared_by_id = v_account_id then o.prepared_at end
-          ), o.created_at)
-          when p_domain = 'cashierOrders' then coalesce(greatest(
-            case when o.created_by_id = v_account_id then o.created_at end,
-            case when o.completed_by_id = v_account_id then o.completed_at end,
-            case when o.cancelled_by_id = v_account_id then o.cancelled_at end,
-            case when o.returned_by_id = v_account_id then o.returned_at end
-          ), o.created_at)
-          else coalesce(o.completed_at, o.prepared_at, o.created_at)
-        end as event_at,
         coalesce(o.created_by_name, (
           select name from public.profiles
           where id::text = o.created_by_id::text
@@ -177,6 +165,7 @@ begin
           -- column is selected into either page or detail responses.
           when p_domain = 'helperWork' then jsonb_build_object(
             'id', id, 'status', status, 'created_at', created_at,
+            'event_at', event_at,
             'assigned_helper_id', assigned_helper_id, 'assigned_at', assigned_at,
             'prepared_by_id', prepared_by_id, 'prepared_at', prepared_at,
             'items', coalesce((
@@ -192,6 +181,7 @@ begin
           )
           when p_domain = 'cashierOrders' then jsonb_build_object(
             'id', id, 'status', status, 'created_at', created_at,
+            'event_at', event_at,
             'total_amount', total_amount, 'created_by_id', created_by_id,
             'assigned_helper_id', assigned_helper_id, 'assigned_at', assigned_at,
             'prepared_by_id', prepared_by_id, 'prepared_at', prepared_at,
@@ -211,6 +201,7 @@ begin
           )
           else jsonb_build_object(
             'id', id, 'status', status, 'created_at', created_at,
+            'event_at', event_at,
             'total_amount', total_amount, 'discount_amount', discount_amount,
             'cash_given', cash_given, 'change_amount', change_amount,
             'payment_mode', payment_mode,
@@ -345,12 +336,7 @@ begin
             o.completed_by_id,
             o.cancelled_by_id,
             o.returned_by_id,
-            coalesce(greatest(
-              case when o.created_by_id = v_account_id then o.created_at end,
-              case when o.completed_by_id = v_account_id then o.completed_at end,
-              case when o.cancelled_by_id = v_account_id then o.cancelled_at end,
-              case when o.returned_by_id = v_account_id then o.returned_at end
-            ), o.created_at) event_at
+            o.event_at
           from public.order_history o
           where o.location_id = v_location_id and (
             o.created_by_id = v_account_id
@@ -397,6 +383,7 @@ begin
   select case
     when v_role = 'helper' then jsonb_build_object(
       'id', o.order_id, 'status', o.status, 'created_at', o.created_at,
+      'event_at', o.event_at,
       'assigned_helper_id', o.assigned_helper_id, 'assigned_at', o.assigned_at,
       'prepared_by_id', o.prepared_by_id, 'prepared_at', o.prepared_at,
       'items', coalesce((
@@ -411,6 +398,7 @@ begin
     )
     when v_role in ('staff', 'cashier') then jsonb_build_object(
       'id', o.order_id, 'status', o.status, 'created_at', o.created_at,
+      'event_at', o.event_at,
       'total_amount', o.total_amount, 'created_by_id', o.created_by_id,
       'assigned_helper_id', o.assigned_helper_id, 'assigned_at', o.assigned_at,
       'prepared_by_id', o.prepared_by_id, 'prepared_at', o.prepared_at,
@@ -429,6 +417,7 @@ begin
     )
     else jsonb_build_object(
       'id', o.order_id, 'status', o.status, 'created_at', o.created_at,
+      'event_at', o.event_at,
       'total_amount', o.total_amount, 'discount_amount', o.discount_amount,
       'cash_given', o.cash_given, 'change_amount', o.change_amount,
       'payment_mode', o.payment_mode,
@@ -504,6 +493,7 @@ begin
   return query
     select jsonb_build_object(
       'id', o.order_id, 'status', o.status, 'created_at', o.created_at,
+      'event_at', o.event_at,
       'total_amount', o.total_amount, 'discount_amount', o.discount_amount,
       'cash_given', o.cash_given, 'change_amount', o.change_amount,
       'payment_mode', o.payment_mode,
@@ -526,10 +516,9 @@ begin
     )
     from public.order_history o
     where o.location_id = v_location_id and lower(o.status) = 'completed'
-      and coalesce(o.completed_at, o.prepared_at, o.created_at) >= p_period_start
-      and coalesce(o.completed_at, o.prepared_at, o.created_at) < p_period_end
-    order by coalesce(o.completed_at, o.prepared_at, o.created_at) desc,
-      o.order_id desc;
+      and o.event_at >= p_period_start
+      and o.event_at < p_period_end
+    order by o.event_at desc, o.order_id desc;
 end;
 $$;
 

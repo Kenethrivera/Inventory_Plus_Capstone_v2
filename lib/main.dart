@@ -103,6 +103,9 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
+  _AuthRestoreState _restoreState = _AuthRestoreState.restoring;
+  bool _restoreInFlight = false;
+
   @override
   void initState() {
     super.initState();
@@ -112,66 +115,143 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Future<void> _checkAuth() async {
+    if (_restoreInFlight) return;
+    _restoreInFlight = true;
+    if (mounted) {
+      setState(() => _restoreState = _AuthRestoreState.restoring);
+    }
     final stopwatch = Stopwatch()..start();
     if (kDebugMode) debugPrint('[Startup] Auth restore started');
 
-    final prefs = await SharedPreferences.getInstance();
-    final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-    final sessionToken = prefs.getString('sessionToken');
-    
-    if (isLoggedIn && sessionToken != null && sessionToken.isNotEmpty) {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+      final sessionToken = prefs.getString('sessionToken');
+
+      if (!isLoggedIn || sessionToken == null || sessionToken.isEmpty) {
+        await prefs.clear();
+        await _routeToLogin();
+        return;
+      }
+
       try {
         final userProfile = await AuthService().restoreSession(sessionToken);
 
-        if (userProfile != null) {
-          final String? assignedLocationId = userProfile['location_id'];
-          final userId = userProfile['id'].toString();
-
-          widget.controller.setLoggedInUser(
-            name: userProfile['name'] ?? 'User',
-            id: userId,
-            role: userProfile['role'] ?? 'staff',
-            email: userProfile['email']?.toString(),
-            sessionToken: sessionToken,
-          );
-
-          if (assignedLocationId != null && assignedLocationId.isNotEmpty) {
-            widget.controller.setActiveLocation(assignedLocationId);
-            if (kDebugMode) {
-              debugPrint(
-                '[Startup] Restored profile and location '
-                'elapsed=${stopwatch.elapsedMilliseconds}ms',
-              );
-            }
-            if (mounted) {
-              Navigator.pushReplacementNamed(context, '/main');
-              if (kDebugMode) {
-                debugPrint('[Startup] MainScreen route requested');
-              }
-              return;
-            }
-          }
+        if (userProfile == null) {
+          await prefs.clear();
+          await _routeToLogin();
+          return;
         }
-      } catch (e) {
-        debugPrint("Error restoring session: $e");
-      }
-      // If profile restoration fails, clear the session and fall back to login.
-      await prefs.clear();
-    }
-    
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
-      if (kDebugMode) {
-        debugPrint(
-          '[Startup] LoginPage route requested '
-          'elapsed=${stopwatch.elapsedMilliseconds}ms',
+
+        final assignedLocationId = userProfile['location_id']?.toString();
+        final userId = userProfile['id']?.toString();
+        final role = userProfile['role']?.toString();
+        if (assignedLocationId == null ||
+            assignedLocationId.isEmpty ||
+            userId == null ||
+            userId.isEmpty ||
+            role == null ||
+            role.isEmpty) {
+          throw const FormatException(
+            'Session restoration returned an incomplete profile.',
+          );
+        }
+
+        widget.controller.setLoggedInUser(
+          name: userProfile['name']?.toString() ?? 'User',
+          id: userId,
+          role: role,
+          email: userProfile['email']?.toString(),
+          sessionToken: sessionToken,
         );
+        widget.controller.setActiveLocation(assignedLocationId);
+
+        if (!mounted) return;
+        setState(() => _restoreState = _AuthRestoreState.authenticated);
+        if (kDebugMode) {
+          debugPrint(
+            '[Startup] Restored profile, role, location, and session '
+            'elapsed=${stopwatch.elapsedMilliseconds}ms',
+          );
+        }
+        Navigator.pushReplacementNamed(context, '/main');
+        if (kDebugMode) {
+          debugPrint('[Startup] MainScreen route requested');
+        }
+      } catch (error, stackTrace) {
+        debugPrint('[Startup] Session restore temporarily failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        if (mounted) {
+          setState(() => _restoreState = _AuthRestoreState.failed);
+        }
       }
+    } catch (error, stackTrace) {
+      debugPrint('[Startup] Session storage restore failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() => _restoreState = _AuthRestoreState.failed);
+      }
+    } finally {
+      _restoreInFlight = false;
     }
+  }
+
+  Future<void> _routeToLogin() async {
+    if (!mounted) return;
+    setState(() => _restoreState = _AuthRestoreState.invalid);
+    Navigator.pushReplacementNamed(context, '/login');
+    if (kDebugMode) debugPrint('[Startup] LoginPage route requested');
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_restoreState == _AuthRestoreState.failed) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.cloud_off_outlined,
+                    color: Colors.white70,
+                    size: 32,
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Unable to restore your session',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Check your connection and try again. Your saved session '
+                    'has not been cleared.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70, height: 1.4),
+                  ),
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: _checkAuth,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return const Scaffold(
       backgroundColor: Color(0xFF0F172A),
       body: Center(
@@ -180,3 +260,5 @@ class _AuthWrapperState extends State<AuthWrapper> {
     );
   }
 }
+
+enum _AuthRestoreState { restoring, authenticated, invalid, failed }

@@ -206,6 +206,7 @@ class CustomerOrder {
   final List<CustomerOrderItem> items;
   final String status;
   final DateTime createdAt;
+  final DateTime? _canonicalEventAt;
   final double totalAmount;
   final double discountAmount;
 
@@ -240,6 +241,7 @@ class CustomerOrder {
     required this.items,
     required this.status,
     required this.createdAt,
+    DateTime? eventAt,
     this.totalAmount = 0.0,
     this.discountAmount = 0.0,
     this.createdById,
@@ -262,13 +264,30 @@ class CustomerOrder {
     this.returnedByName,
     this.returnedAt,
     this.returnReason,
-  });
+  }) : _canonicalEventAt = eventAt;
+
+  DateTime get eventAt {
+    final canonical = _canonicalEventAt;
+    if (canonical != null) return canonical;
+    final candidates = <DateTime?>[
+      createdAt,
+      assignedAt,
+      preparedAt,
+      completedAt,
+      cancelledAt,
+      returnedAt,
+    ].whereType<DateTime>();
+    return candidates.reduce(
+      (latest, value) => value.isAfter(latest) ? value : latest,
+    );
+  }
 
   factory CustomerOrder.fromJson(Map<String, dynamic> json) {
     return CustomerOrder(
       id: json['id'].toString(),
       status: json['status'] ?? 'pending',
       createdAt: _parseDate(json['created_at']) ?? DateTime.now(),
+      eventAt: _parseDate(json['event_at']),
       totalAmount: (json['total_amount'] as num?)?.toDouble() ?? 0.0,
       discountAmount: (json['discount_amount'] as num?)?.toDouble() ?? 0.0,
 

@@ -105,19 +105,24 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _startRealtimeSync() async {
     final locationId = widget.controller.activeLocationId;
     final userId = widget.controller.currentUserId;
+    final userRole = widget.controller.currentUserRole;
 
     if (locationId == null ||
         locationId.isEmpty ||
         userId == null ||
-        userId.isEmpty) {
-      debugPrint('[RealtimeSync] Not started: missing location or user.');
+        userId.isEmpty ||
+        userRole == null ||
+        userRole.isEmpty) {
+      debugPrint(
+        '[RealtimeSync] Not started: session identity is still incomplete.',
+      );
       return;
     }
 
     await widget.realtimeSync.start(
       locationId: locationId,
       userId: userId,
-      userRole: widget.controller.currentUserRole ?? 'staff',
+      userRole: userRole,
     );
   }
 

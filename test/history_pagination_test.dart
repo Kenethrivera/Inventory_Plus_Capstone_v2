@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:inventory_plus/data/inventory.dart';
 import 'package:inventory_plus/logic/history_pagination.dart';
 
 void main() {
@@ -57,6 +58,19 @@ void main() {
     expect(empty.totalPagesFor(historyPageSize), 1);
   });
 
+  test('order parser uses the server canonical lifecycle event timestamp', () {
+    final order = CustomerOrder.fromJson(<String, dynamic>{
+      'id': 'order-1',
+      'status': 'prepared',
+      'created_at': '2026-10-22T04:40:00Z',
+      'prepared_at': '2026-10-22T05:05:00Z',
+      'event_at': '2026-10-22T05:10:00Z',
+      'items': const <dynamic>[],
+    });
+
+    expect(order.eventAt.toUtc(), DateTime.utc(2026, 10, 22, 5, 10));
+  });
+
   test('cache is LRU bounded and can stale a query family', () {
     final cache = HistoryPageCache<String>(maximumEntries: 2);
     final query = family();
@@ -74,4 +88,39 @@ void main() {
     expect(cache.read(first)?.stale, isTrue);
     expect(cache.read(third)?.stale, isTrue);
   });
+
+  test(
+    'fresh page revisits avoid fetches and stale pages fetch once',
+    () async {
+      final cache = HistoryPageCache<String>(maximumEntries: 32);
+      final query = family();
+      var fetchCount = 0;
+
+      Future<HistoryPageResult<String>> load(int page) async {
+        final key = HistoryPageKey(query, page);
+        final cached = cache.read(key);
+        if (cached != null && !cached.stale) return cached;
+
+        fetchCount += 1;
+        final fetched = result(query, page);
+        cache.write(key, fetched);
+        return fetched;
+      }
+
+      await load(1);
+      expect(fetchCount, 1);
+      await load(2);
+      expect(fetchCount, 2);
+
+      await load(1);
+      await load(2);
+      expect(fetchCount, 2);
+
+      cache.markFamilyStale(query);
+      await load(2);
+      expect(fetchCount, 3);
+      await load(2);
+      expect(fetchCount, 3);
+    },
+  );
 }

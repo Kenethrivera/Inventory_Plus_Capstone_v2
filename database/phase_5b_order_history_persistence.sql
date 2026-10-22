@@ -8,6 +8,7 @@ create table if not exists public.order_history (
   status text not null,
   items jsonb not null default '[]'::jsonb,
   created_at timestamptz not null,
+  event_at timestamptz not null,
   assigned_at timestamptz,
   prepared_at timestamptz,
   completed_at timestamptz,
@@ -33,6 +34,33 @@ create table if not exists public.order_history (
   snapshot_updated_at timestamptz not null default now()
 );
 
+-- Existing Phase 5B deployments predate event_at. Backfill it from business
+-- timestamps before enforcing NOT NULL; snapshot_updated_at is intentionally
+-- excluded because it is persistence metadata rather than a lifecycle event.
+alter table public.order_history
+  add column if not exists event_at timestamptz;
+
+update public.order_history
+set event_at = coalesce(greatest(
+  created_at,
+  assigned_at,
+  prepared_at,
+  completed_at,
+  cancelled_at,
+  returned_at
+), created_at)
+where event_at is distinct from coalesce(greatest(
+  created_at,
+  assigned_at,
+  prepared_at,
+  completed_at,
+  cancelled_at,
+  returned_at
+), created_at);
+
+alter table public.order_history
+  alter column event_at set not null;
+
 -- There is deliberately no anon SELECT policy. The separate History migration
 -- exposes only token-bound, explicitly projected read RPCs.
 alter table public.order_history enable row level security;
@@ -50,7 +78,17 @@ set search_path = public, pg_temp
 as $$
 declare
   v_returned_by_name text;
+  v_event_at timestamptz;
 begin
+  v_event_at := coalesce(greatest(
+    new.created_at,
+    new.assigned_at,
+    new.prepared_at,
+    new.completed_at,
+    new.cancelled_at,
+    new.returned_at
+  ), new.created_at);
+
   if new.returned_by_id is not null then
     select profile.name
       into v_returned_by_name
@@ -59,7 +97,7 @@ begin
   end if;
 
   insert into public.order_history (
-    order_id, location_id, status, items, created_at,
+    order_id, location_id, status, items, created_at, event_at,
     assigned_at, prepared_at, completed_at, cancelled_at, returned_at,
     created_by_id, created_by_name,
     assigned_helper_id, assigned_helper_name,
@@ -71,7 +109,7 @@ begin
     snapshot_updated_at
   ) values (
     new.id::text, new.location_id, new.status,
-    coalesce(new.items::jsonb, '[]'::jsonb), new.created_at,
+    coalesce(new.items::jsonb, '[]'::jsonb), new.created_at, v_event_at,
     new.assigned_at, new.prepared_at, new.completed_at,
     new.cancelled_at, new.returned_at,
     new.created_by_id::text, new.created_by_name,
@@ -88,6 +126,7 @@ begin
     status = excluded.status,
     items = excluded.items,
     created_at = excluded.created_at,
+    event_at = excluded.event_at,
     assigned_at = excluded.assigned_at,
     prepared_at = excluded.prepared_at,
     completed_at = excluded.completed_at,
@@ -129,7 +168,7 @@ for each row execute function public.sync_order_history_v1();
 -- Capture any operational rows that existed before this trigger was installed.
 -- The same logical key and ON CONFLICT update make this safe to rerun.
 insert into public.order_history (
-  order_id, location_id, status, items, created_at,
+  order_id, location_id, status, items, created_at, event_at,
   assigned_at, prepared_at, completed_at, cancelled_at, returned_at,
   created_by_id, created_by_name,
   assigned_helper_id, assigned_helper_name,
@@ -143,6 +182,14 @@ insert into public.order_history (
 select
   o.id::text, o.location_id, o.status,
   coalesce(o.items::jsonb, '[]'::jsonb), o.created_at,
+  coalesce(greatest(
+    o.created_at,
+    o.assigned_at,
+    o.prepared_at,
+    o.completed_at,
+    o.cancelled_at,
+    o.returned_at
+  ), o.created_at),
   o.assigned_at, o.prepared_at, o.completed_at,
   o.cancelled_at, o.returned_at,
   o.created_by_id::text, o.created_by_name,
@@ -162,6 +209,7 @@ on conflict (order_id) do update set
   status = excluded.status,
   items = excluded.items,
   created_at = excluded.created_at,
+  event_at = excluded.event_at,
   assigned_at = excluded.assigned_at,
   prepared_at = excluded.prepared_at,
   completed_at = excluded.completed_at,
@@ -187,11 +235,11 @@ on conflict (order_id) do update set
   change_amount = excluded.change_amount,
   snapshot_updated_at = excluded.snapshot_updated_at;
 
--- Admin Sales location/range/order scans using its canonical event expression.
-create index if not exists order_history_event_idx on public.order_history (
-  location_id,
-  (coalesce(completed_at, prepared_at, created_at)) desc,
-  order_id desc
+-- Replace the earlier expression index with the canonical lifecycle ordering
+-- index. Reusing the same name prevents duplicate equivalent indexes.
+drop index if exists public.order_history_event_idx;
+create index order_history_event_idx on public.order_history (
+  location_id, event_at desc, order_id desc
 );
 
 -- Actor membership is an OR across lifecycle roles. Separate indexes allow a

@@ -2,6 +2,89 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+class HistoryLoadingRows extends StatelessWidget {
+  const HistoryLoadingRows({super.key, this.rowCount = 8});
+
+  final int rowCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        ListView.separated(
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: rowCount,
+          separatorBuilder: (_, _) =>
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          itemBuilder: (context, index) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1F5F9),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SkeletonBar(width: 180, color: Color(0xFFE2E8F0)),
+                      const SizedBox(height: 8),
+                      _SkeletonBar(width: 110, color: Color(0xFFF1F5F9)),
+                    ],
+                  ),
+                ),
+                const _SkeletonBar(
+                  width: 58,
+                  height: 18,
+                  color: Color(0xFFF1F5F9),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: LinearProgressIndicator(
+            minHeight: 2,
+            color: Color(0xFF60A5FA),
+            backgroundColor: Color(0xFFEFF6FF),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SkeletonBar extends StatelessWidget {
+  const _SkeletonBar({
+    required this.width,
+    required this.color,
+    this.height = 9,
+  });
+
+  final double width;
+  final double height;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: width,
+    height: height,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(height / 2),
+    ),
+  );
+}
+
 class HistoryPaginationFooter extends StatelessWidget {
   const HistoryPaginationFooter({
     super.key,
