@@ -175,7 +175,7 @@ class HistoryPageCache<T> {
   void clear() => _entries.clear();
 }
 
-enum HistoryInvalidationKind { orders, transactions, scope }
+enum HistoryInvalidationKind { orderHistory, transactions, scope }
 
 class HistoryInvalidation {
   const HistoryInvalidation({required this.kind, required this.locationId});
@@ -185,7 +185,7 @@ class HistoryInvalidation {
 
   bool affects(HistoryDomain domain) => switch (kind) {
     HistoryInvalidationKind.scope => true,
-    HistoryInvalidationKind.orders =>
+    HistoryInvalidationKind.orderHistory =>
       domain == HistoryDomain.adminSales ||
           domain == HistoryDomain.cashierOrders ||
           domain == HistoryDomain.helperWork,

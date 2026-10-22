@@ -17,6 +17,8 @@ class RealtimeSyncService {
 
   final StreamController<void> _orderChangesController =
       StreamController<void>.broadcast();
+  final StreamController<void> _orderHistoryChangesController =
+      StreamController<void>.broadcast();
   final StreamController<void> _inventoryChangesController =
       StreamController<void>.broadcast();
   final StreamController<void> _notificationChangesController =
@@ -50,6 +52,7 @@ class RealtimeSyncService {
   String? get locationId => _locationId;
   String? get userId => _userId;
   Stream<void> get orderChanges => _orderChangesController.stream;
+  Stream<void> get orderHistoryChanges => _orderHistoryChangesController.stream;
   Stream<void> get inventoryChanges => _inventoryChangesController.stream;
   Stream<void> get notificationChanges => _notificationChangesController.stream;
   Stream<void> get staffPresenceChanges =>
@@ -97,6 +100,7 @@ class RealtimeSyncService {
       );
 
       await _subscribeToOrderChanges();
+      await _subscribeToOrderHistoryChanges();
       await _subscribeToInventoryChanges();
       await _subscribeToNotificationChanges();
       await _subscribeToStaffPresenceChanges();
@@ -266,6 +270,61 @@ class RealtimeSyncService {
       '[RealtimeSync] INVENTORY SNAPSHOT REQUESTED location=$locationId',
     );
     debugPrint('[RealtimeSync] INVENTORY SUBSCRIBED location=$locationId');
+  }
+
+  Future<void> _subscribeToOrderHistoryChanges() async {
+    final String? locationId = _locationId;
+
+    if (!_isStarted || locationId == null || locationId.isEmpty) {
+      return;
+    }
+
+    const String channelKey = 'order_history';
+    final RealtimeChannel? previous = _channels.remove(channelKey);
+
+    if (previous != null) {
+      await _safeRemoveChannel(previous);
+    }
+
+    void signalChange(String source) {
+      if (!_isStarted || _locationId != locationId) return;
+
+      debugPrint(
+        '[RealtimeSync] ORDER HISTORY CHANGE '
+        'location=$locationId source=$source',
+      );
+      _orderHistoryChangesController.add(null);
+    }
+
+    bool hasSubscribed = false;
+    final RealtimeChannel channel = _supabase
+        .channel('inventory-plus:order-history:$locationId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          // order_history itself is intentionally unreadable by anon. This
+          // safe, location-only signal is maintained by an order_history
+          // trigger and contains no order, customer, item, or payment data.
+          table: 'order_history_realtime_signals',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'location_id',
+            value: locationId,
+          ),
+          callback: (_) => signalChange('order_history'),
+        )
+        .subscribe((status, error) {
+          debugPrint(
+            '[RealtimeSync] ORDER HISTORY STATUS=$status error=$error',
+          );
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            if (hasSubscribed) signalChange('order_history_resubscribed');
+            hasSubscribed = true;
+          }
+        });
+
+    _channels[channelKey] = channel;
+    debugPrint('[RealtimeSync] ORDER HISTORY SUBSCRIBED location=$locationId');
   }
 
   Future<void> _subscribeToNotificationChanges() async {

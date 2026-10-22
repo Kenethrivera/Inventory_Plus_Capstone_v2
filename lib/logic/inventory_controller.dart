@@ -132,6 +132,7 @@ class InventoryController {
       StreamController<CurrentUserProfileSnapshot?>.broadcast();
 
   StreamSubscription<void>? _orderChangesSubscription;
+  StreamSubscription<void>? _orderHistoryChangesSubscription;
   StreamSubscription<void>? _inventoryChangesSubscription;
   StreamSubscription<void>? _transactionHistoryChangesSubscription;
   StreamSubscription<void>? _mapLayoutChangesSubscription;
@@ -149,6 +150,10 @@ class InventoryController {
       <HistoryPageKey, Future<HistoryPageResult<Map<String, dynamic>>>>{};
   final Map<String, Future<Map<String, dynamic>?>> _historyDetailRequests =
       <String, Future<Map<String, dynamic>?>>{};
+  final Map<HistoryDomain, int> _historyDomainGenerations =
+      <HistoryDomain, int>{
+        for (final domain in HistoryDomain.values) domain: 0,
+      };
   int _historyCacheGeneration = 0;
   Future<OrderHistoryData>? _orderHistoryRefreshInFlight;
   bool _orderHistoryRefreshQueued = false;
@@ -1624,14 +1629,24 @@ class InventoryController {
     final inFlight = _historyPageRequests[key];
     if (inFlight != null) return inFlight;
 
-    final generation = _historyCacheGeneration;
+    final scopeGeneration = _historyCacheGeneration;
     late final Future<HistoryPageResult<Map<String, dynamic>>> request;
-    request = _fetchHistoryPage(family, page)
-        .then((result) {
-          _validateHistoryFamilyScope(family);
-          if (generation != _historyCacheGeneration) {
-            throw StateError('History request became stale.');
+    request =
+        () async {
+          late HistoryPageResult<Map<String, dynamic>> result;
+          while (true) {
+            final domainGeneration =
+                _historyDomainGenerations[family.domain] ?? 0;
+            result = await _fetchHistoryPage(family, page);
+            _validateHistoryFamilyScope(family);
+            if (scopeGeneration != _historyCacheGeneration) {
+              throw StateError('History request became stale.');
+            }
+            if (domainGeneration == _historyDomainGenerations[family.domain]) {
+              break;
+            }
           }
+
           _historyPageCache.write(key, result);
           if (result.page != page) {
             _historyPageCache.write(
@@ -1640,8 +1655,7 @@ class InventoryController {
             );
           }
           return result;
-        })
-        .whenComplete(() {
+        }().whenComplete(() {
           if (identical(_historyPageRequests[key], request)) {
             _historyPageRequests.remove(key);
           }
@@ -1654,11 +1668,20 @@ class InventoryController {
     HistoryQueryFamily family,
     int page,
   ) async {
-    final sessionToken = _requireSessionToken();
-    final response = await supabase.rpc(
-      'history_page_v1',
-      params: family.toRpcParameters(page, sessionToken: sessionToken),
-    );
+    dynamic response;
+    try {
+      final sessionToken = _requireSessionToken();
+      response = await supabase.rpc(
+        'history_page_v1',
+        params: family.toRpcParameters(page, sessionToken: sessionToken),
+      );
+    } on PostgrestException catch (error) {
+      debugPrint(
+        '[History] RPC failed domain=${family.domain.name} page=$page '
+        'code=${error.code} message=${error.message}',
+      );
+      rethrow;
+    }
     final payload = Map<String, dynamic>.from(response as Map);
     final rawRecords = payload['records'] as List<dynamic>? ?? const [];
     final rawMetrics = payload['metrics'];
@@ -1690,6 +1713,14 @@ class InventoryController {
     _historyPageCache.markFamilyStale(family);
   }
 
+  HistoryPageResult<Map<String, dynamic>>? cachedHistoryPage({
+    required HistoryQueryFamily family,
+    required int page,
+  }) {
+    _validateHistoryFamilyScope(family);
+    return _historyPageCache.read(HistoryPageKey(family, page));
+  }
+
   void clearHistorySession() {
     _clearPaginatedHistoryState();
   }
@@ -1719,26 +1750,31 @@ class InventoryController {
         '${family.accountId}:${family.role}:${family.locationId}:$orderId';
     final inFlight = _historyDetailRequests[key];
     if (inFlight != null) return inFlight;
-    final generation = _historyCacheGeneration;
+    final scopeGeneration = _historyCacheGeneration;
     late final Future<Map<String, dynamic>?> request;
-    request = supabase
-        .rpc(
-          'history_order_detail_v1',
-          params: <String, dynamic>{
-            'p_session_token': _requireSessionToken(),
-            'p_order_id': orderId,
-          },
-        )
-        .then((response) {
-          _validateHistoryFamilyScope(family);
-          if (generation != _historyCacheGeneration) {
-            throw StateError('History detail request became stale.');
+    request =
+        () async {
+          while (true) {
+            final domainGeneration =
+                _historyDomainGenerations[family.domain] ?? 0;
+            final response = await supabase.rpc(
+              'history_order_detail_v1',
+              params: <String, dynamic>{
+                'p_session_token': _requireSessionToken(),
+                'p_order_id': orderId,
+              },
+            );
+            _validateHistoryFamilyScope(family);
+            if (scopeGeneration != _historyCacheGeneration) {
+              throw StateError('History detail request became stale.');
+            }
+            if (domainGeneration == _historyDomainGenerations[family.domain]) {
+              return response == null
+                  ? null
+                  : Map<String, dynamic>.from(response as Map);
+            }
           }
-          return response == null
-              ? null
-              : Map<String, dynamic>.from(response as Map);
-        })
-        .whenComplete(() {
+        }().whenComplete(() {
           if (identical(_historyDetailRequests[key], request)) {
             _historyDetailRequests.remove(key);
           }
@@ -1800,11 +1836,8 @@ class InventoryController {
     HistoryInvalidationKind kind,
     String locationId,
   ) {
-    _historyCacheGeneration++;
-    _historyPageRequests.clear();
-    _historyDetailRequests.clear();
     final domains = switch (kind) {
-      HistoryInvalidationKind.orders => <HistoryDomain>{
+      HistoryInvalidationKind.orderHistory => <HistoryDomain>{
         HistoryDomain.adminSales,
         HistoryDomain.cashierOrders,
         HistoryDomain.helperWork,
@@ -1815,6 +1848,10 @@ class InventoryController {
       },
       HistoryInvalidationKind.scope => HistoryDomain.values.toSet(),
     };
+    for (final domain in domains) {
+      _historyDomainGenerations[domain] =
+          (_historyDomainGenerations[domain] ?? 0) + 1;
+    }
     _historyPageCache.markStale(locationId: locationId, domains: domains);
     _historyInvalidationsController.add(
       HistoryInvalidation(kind: kind, locationId: locationId),
@@ -2161,19 +2198,30 @@ class InventoryController {
     _orderChangesSubscription ??= realtimeSync.orderChanges.listen(
       (_) {
         _ordersAwaitingRealtimeInitial = false;
-        final locationId = activeLocationId;
-        if (locationId != null) {
-          _invalidatePaginatedHistory(
-            HistoryInvalidationKind.orders,
-            locationId,
-          );
-        }
         unawaited(_refreshOrdersFromDatabase());
       },
       onError: (Object error, StackTrace stackTrace) {
         debugPrint('[InventoryController] Order realtime error: $error');
       },
     );
+
+    _orderHistoryChangesSubscription ??= realtimeSync.orderHistoryChanges
+        .listen(
+          (_) {
+            final locationId = activeLocationId;
+            if (locationId != null) {
+              _invalidatePaginatedHistory(
+                HistoryInvalidationKind.orderHistory,
+                locationId,
+              );
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint(
+              '[InventoryController] Order history realtime error: $error',
+            );
+          },
+        );
 
     _inventoryChangesSubscription ??= realtimeSync.inventoryChanges.listen(
       (_) {
@@ -2286,8 +2334,8 @@ class InventoryController {
   Stream<void> get transactionHistoryInvalidations =>
       _transactionHistoryInvalidationsController.stream;
 
-  /// Emits after the shared canonical Order snapshot changes. History screens
-  /// use this as invalidation rather than creating a second Orders channel.
+  /// Emits after the shared operational Order snapshot changes. Durable
+  /// History invalidation is driven separately by order_history changes.
   Stream<List<CustomerOrder>> get orderSnapshots => _ordersController.stream;
 
   Stream<List<InventoryItem>> streamInventory() {

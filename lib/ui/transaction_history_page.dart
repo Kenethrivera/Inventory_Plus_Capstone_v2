@@ -47,6 +47,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   int _salesPage = 1;
   int _activityPage = 1;
   HistoryQueryFamily? _renderedFamily;
+  HistoryPageResult<Map<String, dynamic>>? _lastVisibleResult;
   int _knownTotalCount = 0;
   Map<String, num> _knownMetrics = const <String, num>{};
   String? _openOrderId;
@@ -113,11 +114,15 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     unawaited(_historySubscription?.cancel());
     _historySubscription = widget.controller.historyInvalidations.listen(
       (invalidation) {
-        if (invalidation.kind == HistoryInvalidationKind.orders) {
-          _salesHistoryDirty = true;
-          unawaited(_refreshOpenOrderDetail());
-        } else {
-          _activityHistoryDirty = true;
+        switch (invalidation.kind) {
+          case HistoryInvalidationKind.orderHistory:
+            _salesHistoryDirty = true;
+            unawaited(_refreshOpenOrderDetail());
+          case HistoryInvalidationKind.transactions:
+            _activityHistoryDirty = true;
+          case HistoryInvalidationKind.scope:
+            _salesHistoryDirty = true;
+            _activityHistoryDirty = true;
         }
         if (widget.isActive && invalidation.affects(_currentDomain)) {
           _loadCurrentPage(forceRefresh: true);
@@ -179,6 +184,11 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   }) {
     final family = _currentFamily;
     if (family == null) return _emptyPage();
+    final cached = widget.controller.cachedHistoryPage(
+      family: family,
+      page: _currentPage,
+    );
+    if (cached != null) _lastVisibleResult = cached;
     if (_activeTab == 'Sales History') {
       _salesHistoryDirty = false;
     } else {
@@ -325,9 +335,17 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           final scopedResult = rawResult?.family == currentFamily
               ? rawResult
               : null;
-          final result = scopedResult?.page == _currentPage
+          final currentResult = scopedResult?.page == _currentPage
               ? scopedResult
               : null;
+          if (currentResult != null) _lastVisibleResult = currentResult;
+          final retainedResult = _lastVisibleResult;
+          final result =
+              currentResult ??
+              (retainedResult?.family == currentFamily &&
+                      retainedResult?.page == _currentPage
+                  ? retainedResult
+                  : null);
           if (scopedResult != null) {
             _knownTotalCount = scopedResult.totalCount;
             _knownMetrics = scopedResult.metrics;
@@ -853,13 +871,21 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         },
       );
     }
-    return _withPagination(content, totalItems: totalItems, loading: loading);
+    return _withPagination(
+      content,
+      totalItems: totalItems,
+      loading: loading,
+      backgroundRefreshing: loading && result != null,
+      refreshError: result == null ? null : error,
+    );
   }
 
   Widget _withPagination(
     Widget content, {
     required int totalItems,
     required bool loading,
+    bool backgroundRefreshing = false,
+    Object? refreshError,
   }) => Container(
     decoration: BoxDecoration(
       color: Colors.white,
@@ -869,7 +895,14 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     clipBehavior: Clip.antiAlias,
     child: Column(
       children: [
-        Expanded(child: content),
+        Expanded(
+          child: HistoryRefreshLayer(
+            refreshing: backgroundRefreshing,
+            refreshFailed: refreshError != null,
+            onRetry: _reloadAll,
+            child: content,
+          ),
+        ),
         HistoryPaginationFooter(
           currentPage: _currentPage,
           totalItems: totalItems,
@@ -1237,7 +1270,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         ),
       );
     }
-    return _withPagination(content, totalItems: totalItems, loading: loading);
+    return _withPagination(
+      content,
+      totalItems: totalItems,
+      loading: loading,
+      backgroundRefreshing: loading && result != null,
+      refreshError: result == null ? null : error,
+    );
   }
 
   void _openOrder(_OrderGroup order) {

@@ -11,6 +11,7 @@ import 'login/auth_service.dart';
 import 'navigation/main_section.dart';
 import 'services/main_section_url.dart';
 import 'services/realtime/realtime_sync_service.dart';
+import 'ui/widgets/startup_restoration_surface.dart';
 
 Future<void> main() async {
   final startupStopwatch = Stopwatch()..start();
@@ -91,6 +92,7 @@ class InventoryApp extends StatelessWidget {
       routes: {
         '/': (context) => AuthWrapper(
           controller: controller,
+          realtimeSync: realtimeSync,
           requestedPath: initialRequestedPath,
         ),
         '/login': (context) => LoginPage(controller: controller),
@@ -103,6 +105,7 @@ class InventoryApp extends StatelessWidget {
               settings: settings,
               builder: (context) => AuthWrapper(
                 controller: controller,
+                realtimeSync: realtimeSync,
                 requestedPath: settings.name ?? '/main',
               ),
             );
@@ -124,11 +127,13 @@ class InventoryApp extends StatelessWidget {
 
 class AuthWrapper extends StatefulWidget {
   final InventoryController controller;
+  final RealtimeSyncService realtimeSync;
   final String requestedPath;
 
   const AuthWrapper({
     super.key,
     required this.controller,
+    required this.realtimeSync,
     required this.requestedPath,
   });
 
@@ -213,6 +218,26 @@ class _AuthWrapperState extends State<AuthWrapper> {
           requestedSection,
           role,
         );
+        try {
+          await widget.realtimeSync.start(
+            locationId: assignedLocationId,
+            userId: userId,
+            userRole: role,
+          );
+        } catch (error, stackTrace) {
+          // Realtime transport failure is not proof that the restored
+          // application session is invalid. MainScreen will safely retry the
+          // same idempotent session start after its first frame.
+          debugPrint('[Startup] Realtime restore start failed: $error');
+          debugPrintStack(stackTrace: stackTrace);
+          try {
+            await widget.realtimeSync.stop();
+          } catch (stopError, stopStackTrace) {
+            debugPrint('[Startup] Partial realtime cleanup failed: $stopError');
+            debugPrintStack(stackTrace: stopStackTrace);
+          }
+        }
+        if (!mounted) return;
         Navigator.pushReplacementNamed(
           context,
           restoredSection.routePath,
@@ -250,7 +275,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     if (_restoreState == _AuthRestoreState.failed) {
       return Scaffold(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFFF4F6F8),
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 360),
@@ -261,7 +286,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
                 children: [
                   const Icon(
                     Icons.cloud_off_outlined,
-                    color: Colors.white70,
+                    color: Color(0xFF64748B),
                     size: 32,
                   ),
                   const SizedBox(height: 14),
@@ -269,7 +294,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
                     'Unable to restore your session',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Color(0xFF0F172A),
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
                     ),
@@ -279,7 +304,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
                     'Check your connection and try again. Your saved session '
                     'has not been cleared.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white70, height: 1.4),
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      height: 1.4,
+                    ),
                   ),
                   const SizedBox(height: 18),
                   FilledButton.icon(
@@ -295,12 +323,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       );
     }
 
-    return const Scaffold(
-      backgroundColor: Color(0xFF0F172A),
-      body: Center(
-        child: CircularProgressIndicator(color: Colors.orange),
-      ),
-    );
+    return const StartupRestorationSurface();
   }
 }
 

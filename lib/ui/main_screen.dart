@@ -33,6 +33,7 @@ import 'order_queue_monitor_page.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/change_password_dialog.dart';
+import 'widgets/startup_restoration_surface.dart';
 import '../services/staff_presence_service.dart';
 import 'widgets/active_staff_button.dart';
 import '../services/store_access_service.dart';
@@ -2089,18 +2090,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (widget.controller.currentUserId == null) {
-      return const Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
-      );
+      return const StartupRestorationSurface();
     }
 
     if (_sessionRole == 'helper') {
       if (!_helperProfileResolved) {
-        return const Scaffold(
-          backgroundColor: Colors.white,
-          body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
-        );
+        return const StartupRestorationSurface();
       }
       if (_helperProfileLoadFailed) {
         return _buildHelperProfileLoadFailure();
@@ -2113,10 +2108,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final notificationController = _notificationController;
 
     if (notificationController == null) {
-      return const Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
-      );
+      return const StartupRestorationSurface();
     }
 
     return NotificationProvider(
@@ -2343,7 +2335,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         );
 
         if (isHelper || isCashier) {
-          pages.add(StaffHistoryPage(controller: widget.controller));
+          pages.add(
+            StaffHistoryPage(
+              controller: widget.controller,
+              isActive: _currentIndex == staffHistoryIndex,
+            ),
+          );
         }
 
         if (isAdmin) {

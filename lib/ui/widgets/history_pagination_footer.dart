@@ -2,6 +2,88 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+class HistoryRefreshLayer extends StatelessWidget {
+  const HistoryRefreshLayer({
+    super.key,
+    required this.child,
+    required this.refreshing,
+    required this.refreshFailed,
+    required this.onRetry,
+  });
+
+  final Widget child;
+  final bool refreshing;
+  final bool refreshFailed;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Positioned.fill(child: child),
+      if (refreshing)
+        const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: LinearProgressIndicator(
+            minHeight: 2,
+            color: Color(0xFF60A5FA),
+            backgroundColor: Color(0xFFEFF6FF),
+          ),
+        ),
+      if (refreshFailed)
+        Positioned(
+          top: 8,
+          right: 10,
+          child: Material(
+            color: const Color(0xFFFFFBEB),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: const BorderSide(color: Color(0xFFFDE68A)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.info_outline,
+                    size: 14,
+                    color: Color(0xFF92400E),
+                  ),
+                  const SizedBox(width: 5),
+                  const Text(
+                    'Could not refresh',
+                    style: TextStyle(
+                      color: Color(0xFF92400E),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: onRetry,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: const Color(0xFF2563EB),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    child: const Text(
+                      'Retry',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
 class HistoryLoadingRows extends StatelessWidget {
   const HistoryLoadingRows({super.key, this.rowCount = 8});
 

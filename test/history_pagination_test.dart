@@ -58,6 +58,19 @@ void main() {
     expect(empty.totalPagesFor(historyPageSize), 1);
   });
 
+  test('order history invalidation affects only logical order domains', () {
+    const invalidation = HistoryInvalidation(
+      kind: HistoryInvalidationKind.orderHistory,
+      locationId: 'store-a',
+    );
+
+    expect(invalidation.affects(HistoryDomain.adminSales), isTrue);
+    expect(invalidation.affects(HistoryDomain.cashierOrders), isTrue);
+    expect(invalidation.affects(HistoryDomain.helperWork), isTrue);
+    expect(invalidation.affects(HistoryDomain.adminActivity), isFalse);
+    expect(invalidation.affects(HistoryDomain.cashierRestocks), isFalse);
+  });
+
   test('order parser uses the server canonical lifecycle event timestamp', () {
     final order = CustomerOrder.fromJson(<String, dynamic>{
       'id': 'order-1',
@@ -86,6 +99,7 @@ void main() {
 
     cache.markFamilyStale(query);
     expect(cache.read(first)?.stale, isTrue);
+    expect(cache.read(first)?.records, const ['record']);
     expect(cache.read(third)?.stale, isTrue);
   });
 

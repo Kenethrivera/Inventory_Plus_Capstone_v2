@@ -17,8 +17,13 @@ const String _fontFam = 'Hellix';
 
 class StaffHistoryPage extends StatefulWidget {
   final InventoryController controller;
+  final bool isActive;
 
-  const StaffHistoryPage({super.key, required this.controller});
+  const StaffHistoryPage({
+    super.key,
+    required this.controller,
+    required this.isActive,
+  });
 
   @override
   State<StaffHistoryPage> createState() => _StaffHistoryPageState();
@@ -36,11 +41,14 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   int _ordersPage = 1;
   int _restocksPage = 1;
   HistoryQueryFamily? _renderedFamily;
+  HistoryPageResult<Map<String, dynamic>>? _lastVisibleResult;
   int _knownTotalCount = 0;
   Map<String, num> _knownMetrics = const <String, num>{};
   String? _openOrderId;
   HistoryQueryFamily? _openOrderFamily;
   ValueNotifier<CustomerOrder>? _openOrderNotifier;
+  bool _ordersHistoryDirty = false;
+  bool _restocksHistoryDirty = false;
 
   String get _role =>
       widget.controller.currentUserRole?.toLowerCase() ?? 'staff';
@@ -67,6 +75,12 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
       _bindHistoryInvalidations();
       _historyFuture = _loadCurrentPageResult();
     }
+    if (!oldWidget.isActive && widget.isActive) {
+      final dirty = _currentDomain == HistoryDomain.cashierRestocks
+          ? _restocksHistoryDirty
+          : _ordersHistoryDirty;
+      if (dirty) _refreshCurrent(forceRefresh: true);
+    }
   }
 
   @override
@@ -81,10 +95,17 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     unawaited(_historySubscription?.cancel());
     _historySubscription = widget.controller.historyInvalidations.listen(
       (invalidation) {
-        if (invalidation.kind == HistoryInvalidationKind.orders) {
-          unawaited(_refreshOpenOrderDetail());
+        switch (invalidation.kind) {
+          case HistoryInvalidationKind.orderHistory:
+            _ordersHistoryDirty = true;
+            unawaited(_refreshOpenOrderDetail());
+          case HistoryInvalidationKind.transactions:
+            _restocksHistoryDirty = true;
+          case HistoryInvalidationKind.scope:
+            _ordersHistoryDirty = true;
+            _restocksHistoryDirty = true;
         }
-        if (invalidation.affects(_currentDomain)) {
+        if (widget.isActive && invalidation.affects(_currentDomain)) {
           _refreshCurrent(forceRefresh: true);
         }
       },
@@ -142,6 +163,16 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   }) {
     final family = _currentFamily;
     if (family == null) return _emptyPage();
+    final cached = widget.controller.cachedHistoryPage(
+      family: family,
+      page: _currentPage,
+    );
+    if (cached != null) _lastVisibleResult = cached;
+    if (_currentDomain == HistoryDomain.cashierRestocks) {
+      _restocksHistoryDirty = false;
+    } else {
+      _ordersHistoryDirty = false;
+    }
     return widget.controller.loadHistoryPage(
       family: family,
       page: _currentPage,
@@ -150,7 +181,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   }
 
   void _refreshCurrent({bool forceRefresh = false}) {
-    if (!mounted) return;
+    if (!mounted || !widget.isActive) return;
     setState(() {
       _historyFuture = _loadCurrentPageResult(forceRefresh: forceRefresh);
     });
@@ -315,9 +346,17 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
           final scopedResult = rawResult?.family == currentFamily
               ? rawResult
               : null;
-          final result = scopedResult?.page == _currentPage
+          final currentResult = scopedResult?.page == _currentPage
               ? scopedResult
               : null;
+          if (currentResult != null) _lastVisibleResult = currentResult;
+          final retainedResult = _lastVisibleResult;
+          final result =
+              currentResult ??
+              (retainedResult?.family == currentFamily &&
+                      retainedResult?.page == _currentPage
+                  ? retainedResult
+                  : null);
           if (scopedResult != null) {
             _knownTotalCount = scopedResult.totalCount;
             _knownMetrics = scopedResult.metrics;
@@ -442,7 +481,14 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          Expanded(child: content),
+          Expanded(
+            child: HistoryRefreshLayer(
+              refreshing: loading && result != null,
+              refreshFailed: error != null && result != null,
+              onRetry: () => _refreshCurrent(forceRefresh: true),
+              child: content,
+            ),
+          ),
           HistoryPaginationFooter(
             currentPage: _currentPage,
             totalItems: totalItems,
