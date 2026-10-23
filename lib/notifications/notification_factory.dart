@@ -462,4 +462,56 @@ class NotificationFactory {
       },
     );
   }
+
+  static AppNotification inventoryApproval({
+    required String locationId,
+    required String requestId,
+    required String requestType,
+    required String status,
+    required String productId,
+    required String productName,
+    required double quantity,
+    required String unit,
+    required String requestedById,
+    required String requestedByName,
+    required String requestedByRole,
+  }) {
+    final formattedQuantity = quantity == quantity.roundToDouble()
+        ? quantity.toInt().toString()
+        : quantity.toStringAsFixed(2);
+    final isPending = status == 'pending';
+    final isApproved = status == 'approved';
+    final action = requestType == 'restock' ? 'Restock' : 'Write-off';
+
+    return create(
+      locationId: locationId,
+      targetRoles: isPending ? const ['admin'] : [requestedByRole],
+      title: isPending
+          ? '$action approval requested'
+          : '$action request ${isApproved ? 'approved' : 'rejected'}',
+      body: isPending
+          ? '$requestedByName requested $action of $formattedQuantity $unit '
+                'for $productName.'
+          : 'Your $action request for $formattedQuantity $unit of '
+                '$productName was ${isApproved ? 'approved' : 'rejected'}.',
+      type: NotificationType.system,
+      priority: isPending
+          ? NotificationPriority.high
+          : NotificationPriority.medium,
+      payload: {
+        'category': 'inventoryApproval',
+        'approvalRequestId': requestId,
+        'requestType': requestType,
+        'status': status,
+        'stage': status,
+        'productId': productId,
+        'productName': productName,
+        'quantity': quantity,
+        'unit': unit,
+        'requestedById': requestedById,
+        'requestedByName': requestedByName,
+        'recipientId': isPending ? null : requestedById,
+      },
+    );
+  }
 }

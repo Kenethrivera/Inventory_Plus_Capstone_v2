@@ -7,6 +7,7 @@ import '../logic/staff_management.dart';
 import '../services/store_access_service.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
+import 'widgets/pending_approvals_section.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart'
@@ -2511,6 +2512,8 @@ Widget _buildPaymentSettings() {
                   const SizedBox(height: 32),
 
                   // ─── SECTION 1: STORE HOURS & STAFF ACCESS ─────────────────────
+                  PendingApprovalsSection(controller: widget.controller),
+                  const SizedBox(height: 24),
                   _buildStoreAccessSection(),
                   const SizedBox(height: 24),
 

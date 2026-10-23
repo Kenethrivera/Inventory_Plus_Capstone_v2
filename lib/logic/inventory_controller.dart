@@ -9,6 +9,7 @@ import '../data/inventory.dart';
 import '../services/realtime/realtime_sync_service.dart';
 import 'helper_assignment.dart';
 import 'history_pagination.dart';
+import 'inventory_approval.dart';
 import 'staff_management.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
@@ -134,6 +135,8 @@ class InventoryController {
   final StreamController<CurrentUserProfileSnapshot?>
   _currentUserProfileController =
       StreamController<CurrentUserProfileSnapshot?>.broadcast();
+  final StreamController<InventoryApprovalPage> _approvalPagesController =
+      StreamController<InventoryApprovalPage>.broadcast();
 
   StreamSubscription<void>? _orderChangesSubscription;
   StreamSubscription<void>? _orderHistoryChangesSubscription;
@@ -144,6 +147,7 @@ class InventoryController {
   _runtimeSettingsChangesSubscription;
   StreamSubscription<void>? _staffConfigurationChangesSubscription;
   StreamSubscription<void>? _currentProfileChangesSubscription;
+  StreamSubscription<void>? _approvalRequestChangesSubscription;
 
   final Map<String, _SerializedHistoryQuery> _historyQueries =
       <String, _SerializedHistoryQuery>{};
@@ -161,6 +165,12 @@ class InventoryController {
   int _historyCacheGeneration = 0;
   Future<OrderHistoryData>? _orderHistoryRefreshInFlight;
   bool _orderHistoryRefreshQueued = false;
+  final InventoryApprovalPageCache _approvalPageCache =
+      InventoryApprovalPageCache();
+  final Map<InventoryApprovalPageKey, Future<InventoryApprovalPage>>
+  _approvalPageRequests =
+      <InventoryApprovalPageKey, Future<InventoryApprovalPage>>{};
+  InventoryApprovalPageKey? _activeApprovalPageKey;
 
   List<CustomerOrder> _ordersSnapshot = const <CustomerOrder>[];
 
@@ -265,6 +275,8 @@ class InventoryController {
   })?
   onRestockRecorded;
 
+  InventoryApprovalNotificationCallback? onApprovalRequestChanged;
+
   Future<void> _loadStockBaselines() async {
     final locId = activeLocationId;
     if (locId == null) return;
@@ -342,6 +354,7 @@ class InventoryController {
     String? email,
   }) {
     final accountChanged = currentUserId != id;
+    final roleChanged = currentUserRole?.toLowerCase() != role.toLowerCase();
     _clearPaginatedHistoryState();
     if (accountChanged) {
       _clearInventorySnapshot();
@@ -350,7 +363,9 @@ class InventoryController {
       _ordersAwaitingRealtimeInitial = true;
       _clearStaffConfigurationSnapshot();
       _currentProfileSnapshot = null;
+      _clearApprovalState();
     }
+    if (!accountChanged && roleChanged) _clearApprovalState();
 
     currentUserName = name;
     currentUserId = id;
@@ -390,6 +405,7 @@ class InventoryController {
     _mapLayoutRefreshQueued = false;
     _publishMapLayoutSnapshot();
     _clearStaffConfigurationSnapshot();
+    _clearApprovalState();
   }
 
   String _hashPassword(String password) {
@@ -785,6 +801,246 @@ class InventoryController {
           ? reason
           : '$reason: ${note.trim()}',
     );
+  }
+
+  bool get canRequestInventoryApproval {
+    final role = currentUserRole?.toLowerCase();
+    return role == 'helper' || role == 'staff' || role == 'cashier';
+  }
+
+  Stream<InventoryApprovalPage> get approvalPageSnapshots =>
+      _approvalPagesController.stream;
+
+  InventoryApprovalPage? cachedApprovalPage({
+    required InventoryApprovalStatus status,
+    required int page,
+    int pageSize = 20,
+  }) {
+    final accountId = currentUserId;
+    final locationId = activeLocationId;
+    if (accountId == null || locationId == null) return null;
+    return _approvalPageCache.read(
+      InventoryApprovalPageKey(
+        accountId: accountId,
+        locationId: locationId,
+        status: status,
+        page: page,
+        pageSize: pageSize,
+      ),
+    );
+  }
+
+  Future<InventoryApprovalRequest> submitInventoryApprovalRequest({
+    required InventoryApprovalType type,
+    required String productId,
+    required double quantity,
+    String? reason,
+    String? note,
+  }) async {
+    if (!canRequestInventoryApproval) {
+      throw StateError(
+        'Only Cashier or Helper accounts may request stock changes.',
+      );
+    }
+    final matches = _items.where((candidate) => candidate.id == productId);
+    if (matches.isEmpty) throw StateError('Item not found or is disabled.');
+    final item = matches.first;
+    if (!quantity.isFinite || quantity <= 0) {
+      throw ArgumentError.value(quantity, 'quantity', 'Must be greater than 0');
+    }
+    if (type == InventoryApprovalType.writeOff && quantity > item.quantity) {
+      throw StateError('Cannot request more than the current stock.');
+    }
+    if (type == InventoryApprovalType.writeOff &&
+        (reason == null || reason.trim().isEmpty)) {
+      throw ArgumentError.value(reason, 'reason', 'A reason is required');
+    }
+    final numericProductId = int.tryParse(productId);
+    if (numericProductId == null) {
+      throw StateError('The current product identifier is not supported.');
+    }
+
+    final response = await supabase.rpc(
+      'create_inventory_approval_request_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_request_type': type.databaseValue,
+        'p_product_id': numericProductId,
+        'p_quantity': quantity,
+        'p_reason': reason?.trim(),
+        'p_note': note?.trim(),
+      },
+    );
+    final request = InventoryApprovalRequest.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+    _invalidateApprovalPages(refreshVisible: false);
+    await _notifyApprovalLifecycle(request);
+    return request;
+  }
+
+  Future<InventoryApprovalRequest> approveInventoryApprovalRequest(
+    String requestId, {
+    String? reviewNote,
+  }) => _reviewInventoryApprovalRequest(
+    requestId,
+    approve: true,
+    reviewNote: reviewNote,
+  );
+
+  Future<InventoryApprovalRequest> rejectInventoryApprovalRequest(
+    String requestId, {
+    String? reviewNote,
+  }) => _reviewInventoryApprovalRequest(
+    requestId,
+    approve: false,
+    reviewNote: reviewNote,
+  );
+
+  Future<InventoryApprovalRequest> _reviewInventoryApprovalRequest(
+    String requestId, {
+    required bool approve,
+    String? reviewNote,
+  }) async {
+    if (!isAdmin) {
+      throw StateError('Only Admin accounts may review approval requests.');
+    }
+    final response = await supabase.rpc(
+      approve
+          ? 'approve_inventory_approval_request_v1'
+          : 'reject_inventory_approval_request_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_request_id': requestId,
+        'p_review_note': reviewNote?.trim(),
+      },
+    );
+    final request = InventoryApprovalRequest.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+    _invalidateApprovalPages(refreshVisible: true);
+    await _notifyApprovalLifecycle(request);
+    return request;
+  }
+
+  Future<void> _notifyApprovalLifecycle(
+    InventoryApprovalRequest request,
+  ) async {
+    final callback = onApprovalRequestChanged;
+    if (callback == null) return;
+    try {
+      await callback(request);
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[InventoryController] Approval notification failed: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<InventoryApprovalPage> activateApprovalPage({
+    InventoryApprovalStatus status = InventoryApprovalStatus.pending,
+    int page = 1,
+    int pageSize = 20,
+    bool force = false,
+  }) {
+    if (!isAdmin) {
+      throw StateError('Only Admin accounts may review approval requests.');
+    }
+    final accountId = currentUserId;
+    final locationId = activeLocationId;
+    if (accountId == null || locationId == null) {
+      throw StateError('Approval review requires an active user and location.');
+    }
+    final key = InventoryApprovalPageKey(
+      accountId: accountId,
+      locationId: locationId,
+      status: status,
+      page: page < 1 ? 1 : page,
+      pageSize: pageSize,
+    );
+    _activeApprovalPageKey = key;
+    final cached = _approvalPageCache.read(key);
+    if (!force && cached != null && !cached.stale) {
+      _approvalPagesController.add(cached);
+      return Future<InventoryApprovalPage>.value(cached);
+    }
+    if (cached != null) _approvalPagesController.add(cached);
+    return _fetchApprovalPage(key);
+  }
+
+  Future<InventoryApprovalPage> _fetchApprovalPage(
+    InventoryApprovalPageKey key,
+  ) {
+    final existing = _approvalPageRequests[key];
+    if (existing != null) return existing;
+    late final Future<InventoryApprovalPage> request;
+    request = () async {
+      final response = await supabase.rpc(
+        'approval_requests_page_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_status': key.status.databaseValue,
+          'p_page': key.page,
+          'p_page_size': key.pageSize,
+        },
+      );
+      if (key.accountId != currentUserId ||
+          key.locationId != activeLocationId ||
+          !isAdmin) {
+        throw StateError('Approval request scope changed while loading.');
+      }
+      final json = Map<String, dynamic>.from(response as Map);
+      final rawRecords = json['records'] as List<dynamic>? ?? const [];
+      final page = InventoryApprovalPage(
+        key: key,
+        requests: List<InventoryApprovalRequest>.unmodifiable(
+          rawRecords.map(
+            (row) => InventoryApprovalRequest.fromJson(
+              Map<String, dynamic>.from(row as Map),
+            ),
+          ),
+        ),
+        totalCount: (json['total_count'] as num?)?.toInt() ?? 0,
+        loadedAt: DateTime.now(),
+      );
+      _approvalPageCache.write(page);
+      if (_activeApprovalPageKey == key) _approvalPagesController.add(page);
+      return page;
+    }().whenComplete(() {
+      if (identical(_approvalPageRequests[key], request)) {
+        _approvalPageRequests.remove(key);
+      }
+    });
+    _approvalPageRequests[key] = request;
+    return request;
+  }
+
+  void _invalidateApprovalPages({required bool refreshVisible}) {
+    _approvalPageCache.markAllStale();
+    if (refreshVisible) unawaited(_refreshActiveApprovalPage());
+  }
+
+  Future<void> _refreshActiveApprovalPage() async {
+    final key = _activeApprovalPageKey;
+    if (key == null ||
+        key.accountId != currentUserId ||
+        key.locationId != activeLocationId ||
+        !isAdmin) {
+      return;
+    }
+    try {
+      await _fetchApprovalPage(key);
+    } catch (error, stackTrace) {
+      debugPrint('[InventoryController] Approval refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  void _clearApprovalState() {
+    _approvalPageCache.clear();
+    _approvalPageRequests.clear();
+    _activeApprovalPageKey = null;
   }
 
   Future<String?> uploadImageBytes(
@@ -2370,6 +2626,22 @@ class InventoryController {
           onError: (Object error, StackTrace stackTrace) {
             debugPrint(
               '[InventoryController] Current profile realtime error: $error',
+            );
+          },
+        );
+
+    _approvalRequestChangesSubscription ??= realtimeSync
+        .approvalRequestChanges
+        .listen(
+          (_) {
+            _approvalPageCache.markAllStale();
+            if (_activeApprovalPageKey != null && isAdmin) {
+              unawaited(_refreshActiveApprovalPage());
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint(
+              '[InventoryController] Approval realtime error: $error',
             );
           },
         );

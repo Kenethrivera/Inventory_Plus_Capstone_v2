@@ -2,6 +2,7 @@ import 'models/app_notification.dart';
 import 'models/notification_type.dart';
 import 'notification_factory.dart';
 import 'notification_repository.dart';
+import '../logic/inventory_approval.dart';
 
 class NotificationService {
   final NotificationRepository _repository;
@@ -167,6 +168,10 @@ class NotificationService {
       case NotificationType.inventoryDeleted:
         return null;
       case NotificationType.system:
+        if (payload['category']?.toString() == 'inventoryApproval') {
+          final requestId = payload['approvalRequestId']?.toString();
+          return requestId == null ? null : 'inventory-approval:$requestId';
+        }
         if (payload['category']?.toString() != 'storeAccess') return null;
         final lifecycleKind = payload['lifecycleKind']?.toString();
         final windowKey = payload['windowKey']?.toString();
@@ -584,6 +589,25 @@ class NotificationService {
       newQuantity: newQuantity,
     );
 
+    await createNotification(notification);
+  }
+
+  Future<void> notifyInventoryApproval(
+    InventoryApprovalRequest request,
+  ) async {
+    final notification = NotificationFactory.inventoryApproval(
+      locationId: request.locationId,
+      requestId: request.id,
+      requestType: request.type.databaseValue,
+      status: request.status.databaseValue,
+      productId: request.productId,
+      productName: request.productName,
+      quantity: request.quantity,
+      unit: request.unit,
+      requestedById: request.requestedById,
+      requestedByName: request.requestedByName,
+      requestedByRole: request.requestedByRole,
+    );
     await createNotification(notification);
   }
 

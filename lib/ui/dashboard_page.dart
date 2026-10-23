@@ -1280,6 +1280,9 @@ class _DashboardPageState extends State<DashboardPage> {
   // Note: Omitted the full `_showRestockDialog` from this rewrite since it's an overlay and large, 
   // but I have ensured `fontFamily` is used in the parts shown below.
 
+  // Retained as a non-mutating legacy helper while the dashboard card remains
+  // monitoring-only; Admin stock changes now happen through approvals.
+  // ignore: unused_element
   Future<void> _showRestockDialog(InventoryItem item) async {
     final qtyCtrl = TextEditingController();
     final unit = item.unit;
@@ -1319,17 +1322,12 @@ class _DashboardPageState extends State<DashboardPage> {
               saving = true;
             });
             try {
-              final qty = double.parse(qtyCtrl.text.trim());
-              final updated = item.copyWith(
-                quantity: item.quantity + qty,
-              );
-              await widget.controller.updateItem(updated);
-              
               if (dialogContext.mounted) Navigator.pop(dialogContext);
-              
               if (mounted) {
-                AppToast.success(context, 'Restocked ${item.name}: +${_fmt(qty)} $unit');
-                setState(() {}); // Refresh dashboard state
+                AppToast.error(
+                  context,
+                  'Admins review Restock requests in Pending Approvals.',
+                );
               }
             } catch (e) {
               if (dialogContext.mounted) setDialogState(() => saving = false);
@@ -1615,7 +1613,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 16),
                     child: InkWell(
-                      onTap: () => _showRestockDialog(item),
+                      onTap: null,
                       borderRadius: BorderRadius.circular(12),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../services/realtime/realtime_sync_service.dart';
 import 'models/app_notification.dart';
 import 'notification_service.dart';
+import '../logic/inventory_approval.dart';
 
 class NotificationController extends ChangeNotifier {
   final NotificationService _service;
@@ -525,6 +526,20 @@ class NotificationController extends ChangeNotifier {
       await loadNotifications();
     } catch (e) {
       _errorMessage = 'Could not create restock notification: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> notifyInventoryApproval(
+    InventoryApprovalRequest request,
+  ) async {
+    _errorMessage = null;
+    try {
+      await _service.notifyInventoryApproval(request);
+      await loadNotifications();
+    } catch (e) {
+      _errorMessage = 'Could not update approval notification: $e';
       notifyListeners();
       rethrow;
     }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../data/inventory.dart';
 import '../../logic/inventory_controller.dart';
+import '../../logic/inventory_approval.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -191,24 +192,20 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             });
             try {
               final qty = double.parse(qtyCtrl.text.trim());
-              final updated = _currentItem.copyWith(
-                quantity: _currentItem.quantity + qty,
+              await widget.controller.submitInventoryApprovalRequest(
+                type: InventoryApprovalType.restock,
+                productId: _currentItem.id,
+                quantity: qty,
               );
-              await widget.onUpdate(updated);
               if (!mounted) return;
-              setState(() {
-                _currentItem = updated;
-                _stockController.text = updated.quantity.toString();
-              });
               if (dialogContext.mounted) Navigator.pop(dialogContext);
               _toast(
-                'Restocked ${_currentItem.name}: +${_fmt(qty)} $unit '
-                '(now ${_fmt(updated.quantity)})',
+                'Restock request submitted. Inventory remains unchanged '
+                'until Admin approval.',
               );
-              _loadHistory();
             } catch (e) {
               if (dialogContext.mounted) setDialogState(() => saving = false);
-              _toast('Restock failed: $e', isError: true);
+              _toast('Could not submit request: $e', isError: true);
             }
           }
 
@@ -233,7 +230,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
           return AppDialog(
             icon: LucideIcons.packagePlus,
             color: _primaryBlue,
-            title: 'Restock',
+            title: 'Request restock',
             subtitle: _currentItem.name,
             actions: [
               OutlinedButton(
@@ -269,7 +266,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         ),
                       )
                     : const Text(
-                        'Add stock',
+                        'Submit for Approval',
                         style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
                       ),
               ),
@@ -1669,31 +1666,33 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   }
 
   Widget _buildBottomActions() {
-  final isAdmin = widget.controller.currentUserRole?.toLowerCase() == 'admin';
+  final role = widget.controller.currentUserRole?.toLowerCase();
+  final isAdmin = role == 'admin';
+  final canRequest = role == 'helper' || role == 'staff' || role == 'cashier';
   final disabled = _isDisabled;
 
   final buttons = <Widget>[];
 
   if (!disabled) {
     // Active item
-    buttons.add(
-      ElevatedButton.icon(
-        onPressed: _showRestockDialog,
-        icon: const Icon(LucideIcons.plus, size: 18),
-        label: const Text("Restock", style: TextStyle(fontFamily: _fontFam)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _primaryBlue,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
+    if (canRequest) {
+      buttons.add(
+        ElevatedButton.icon(
+          onPressed: _showRestockDialog,
+          icon: const Icon(LucideIcons.plus, size: 18),
+          label: const Text("Request Restock", style: TextStyle(fontFamily: _fontFam)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _primaryBlue,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+          ),
         ),
-      ),
-    );
-    if (isAdmin) {
+      );
       buttons.add(
         OutlinedButton.icon(
           onPressed: _currentItem.quantity > 0 ? _showWriteOffDialog : null,
           icon: const Icon(LucideIcons.packageMinus, size: 18),
-          label: const Text("Write off", style: TextStyle(fontFamily: _fontFam)),
+          label: const Text("Request Write-off", style: TextStyle(fontFamily: _fontFam)),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.red,
             side: const BorderSide(color: Colors.red),
@@ -1701,6 +1700,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
           ),
         ),
       );
+    }
+    if (isAdmin) {
       buttons.add(
         OutlinedButton.icon(
           onPressed: _showDisableDialog,
@@ -2039,24 +2040,19 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             });
             try {
               final qty = double.parse(qtyCtrl.text.trim());
-              await widget.controller.writeOffStock(
-                _currentItem.id,
-                qty,
+              await widget.controller.submitInventoryApprovalRequest(
+                type: InventoryApprovalType.writeOff,
+                productId: _currentItem.id,
+                quantity: qty,
                 reason: reason,
                 note: noteCtrl.text,
               );
               if (!mounted) return;
-              final newQty = _currentItem.quantity - qty;
-              setState(() {
-                _currentItem = _currentItem.copyWith(quantity: newQty);
-                _stockController.text = newQty.toString();
-              });
-              widget.onStatusChanged?.call();
               if (dialogContext.mounted) Navigator.pop(dialogContext);
               _toast(
-                'Removed ${_fmt(qty)} $unit of ${_currentItem.name} ($reason)',
+                'Write-off request submitted. Inventory remains unchanged '
+                'until Admin approval.',
               );
-              _loadHistory();
             } catch (e) {
               if (dialogContext.mounted) setDialogState(() => saving = false);
               _toast(
@@ -2075,7 +2071,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
           return AppDialog(
             icon: LucideIcons.packageMinus,
             color: Colors.red,
-            title: 'Write off stock',
+            title: 'Request write-off',
             subtitle: _currentItem.name,
             actions: [
               OutlinedButton(
@@ -2111,7 +2107,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         ),
                       )
                     : const Text(
-                        'Remove stock',
+                        'Submit for Approval',
                         style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
                       ),
               ),

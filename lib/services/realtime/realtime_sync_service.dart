@@ -38,6 +38,8 @@ class RealtimeSyncService {
       StreamController<void>.broadcast();
   final StreamController<void> _currentProfileChangesController =
       StreamController<void>.broadcast();
+  final StreamController<void> _approvalRequestChangesController =
+      StreamController<void>.broadcast();
 
   final Map<String, RealtimeChannel> _channels = <String, RealtimeChannel>{};
 
@@ -67,6 +69,8 @@ class RealtimeSyncService {
       _staffConfigurationChangesController.stream;
   Stream<void> get currentProfileChanges =>
       _currentProfileChangesController.stream;
+  Stream<void> get approvalRequestChanges =>
+      _approvalRequestChangesController.stream;
 
   /// Starts one realtime session for the currently authenticated user/location.
   ///
@@ -109,6 +113,7 @@ class RealtimeSyncService {
       await _subscribeToStoreAccessChanges();
       await _subscribeToRuntimeSettingsChanges();
       await _subscribeToStaffConfigurationChanges();
+      await _subscribeToApprovalRequestChanges();
     });
   }
 
@@ -325,6 +330,55 @@ class RealtimeSyncService {
 
     _channels[channelKey] = channel;
     debugPrint('[RealtimeSync] ORDER HISTORY SUBSCRIBED location=$locationId');
+  }
+
+  Future<void> _subscribeToApprovalRequestChanges() async {
+    final String? locationId = _locationId;
+    if (!_isStarted || locationId == null || locationId.isEmpty) return;
+
+    const String channelKey = 'approval_requests';
+    final previous = _channels.remove(channelKey);
+    if (previous != null) await _safeRemoveChannel(previous);
+
+    void signalChange(String source) {
+      if (!_isStarted || _locationId != locationId) return;
+      debugPrint(
+        '[RealtimeSync] APPROVAL REQUEST CHANGE '
+        'location=$locationId source=$source',
+      );
+      _approvalRequestChangesController.add(null);
+    }
+
+    bool hasSubscribed = false;
+    final channel = _supabase
+        .channel('inventory-plus:approval-requests:$locationId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'approval_request_realtime_signals',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'location_id',
+            value: locationId,
+          ),
+          callback: (_) => signalChange('approval_requests'),
+        )
+        .subscribe((status, error) {
+          debugPrint(
+            '[RealtimeSync] APPROVAL REQUESTS STATUS=$status error=$error',
+          );
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            if (hasSubscribed) signalChange('approval_requests_resubscribed');
+            hasSubscribed = true;
+          }
+        });
+
+    _channels[channelKey] = channel;
+    _approvalRequestChangesController.add(null);
+    debugPrint(
+      '[RealtimeSync] APPROVAL REQUESTS SNAPSHOT REQUESTED '
+      'location=$locationId',
+    );
   }
 
   Future<void> _subscribeToNotificationChanges() async {

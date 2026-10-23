@@ -213,6 +213,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             );
           };
 
+      widget.controller.onApprovalRequestChanged = (request) async {
+        final controller = _notificationController;
+        if (controller == null) {
+          throw StateError('Notification controller not initialized.');
+        }
+        await controller.notifyInventoryApproval(request);
+      };
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _scanExportReminderNotifications();
@@ -251,6 +259,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _orderAutoAssignmentService?.dispose();
     _staffPresenceService?.dispose();
     widget.controller.onRestockRecorded = null;
+    widget.controller.onApprovalRequestChanged = null;
     super.dispose();
   }
 
@@ -1707,11 +1716,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return inventoryIndex >= 0 &&
             widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
             (payload['productId']?.toString().isNotEmpty ?? false);
+      case NotificationType.system:
+        return payload['category'] == 'inventoryApproval' &&
+            payload['status'] == 'pending' &&
+            widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
+            _mainSections.contains(MainSection.systemSettings);
       case NotificationType.orderCancelled:
       case NotificationType.inventoryAdded:
       case NotificationType.inventoryUpdated:
       case NotificationType.inventoryDeleted:
-      case NotificationType.system:
         return false;
     }
   }
@@ -1895,6 +1908,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           _handleSelectItem(matches.first);
         });
 
+        return true;
+
+      case NotificationType.system:
+        if (notification.payload['category'] != 'inventoryApproval' ||
+            notification.payload['status'] != 'pending') {
+          return false;
+        }
+        final settingsIndex = _mainSections.indexOf(
+          MainSection.systemSettings,
+        );
+        if (settingsIndex < 0) {
+          AppToast.error(context, 'Pending Approvals is Admin-only.');
+          return false;
+        }
+        _selectMainIndex(settingsIndex);
         return true;
 
       default:
