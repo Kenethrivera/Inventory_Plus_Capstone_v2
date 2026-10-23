@@ -56,10 +56,12 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   bool _isSavingStoreAccess = false;
   TimeOfDay _openingTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _closingTime = const TimeOfDay(hour: 21, minute: 0);
-  final TextEditingController _beforeMinutesCtrl =
-      TextEditingController(text: '30');
-  final TextEditingController _afterMinutesCtrl =
-      TextEditingController(text: '30');
+  final TextEditingController _beforeMinutesCtrl = TextEditingController(
+    text: '30',
+  );
+  final TextEditingController _afterMinutesCtrl = TextEditingController(
+    text: '30',
+  );
   bool _restrictStaffLogin = true;
   bool _allowAdminAnytime = true;
   String? _storeAccessError;
@@ -73,6 +75,13 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   bool _isSavingThresholds = false;
   StockThresholdSettings? _thresholdBaseline;
   bool _thresholdConflictNotified = false;
+
+  // Cashier discount approval threshold state.
+  final TextEditingController _discountLimitCtrl = TextEditingController();
+  double? _discountLimitBaseline;
+  String? _discountLimitError;
+  bool _isSavingDiscountLimit = false;
+  bool _discountLimitConflictNotified = false;
 
   //QR Uploader
   bool _isUploadingQr = false;
@@ -103,6 +112,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     _afterMinutesCtrl.dispose();
     _lowPercentCtrl.dispose();
     _criticalPercentCtrl.dispose();
+    _discountLimitCtrl.dispose();
     super.dispose();
   }
 
@@ -128,6 +138,12 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         double.tryParse(_criticalPercentCtrl.text) != baseline.critical;
   }
 
+  bool get _discountLimitDraftDirty {
+    final baseline = _discountLimitBaseline;
+    if (baseline == null) return false;
+    return double.tryParse(_discountLimitCtrl.text) != baseline;
+  }
+
   bool get _storeAccessDraftDirty {
     final baseline = _storeAccessBaseline;
     if (baseline == null) return false;
@@ -141,10 +157,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         _allowAdminAnytime != baseline.allowAdminAnytime;
   }
 
-  bool _sameStoreAccess(
-    StoreAccessSettings left,
-    StoreAccessSettings right,
-  ) {
+  bool _sameStoreAccess(StoreAccessSettings left, StoreAccessSettings right) {
     return left.locationId == right.locationId &&
         left.openingTime == right.openingTime &&
         left.closingTime == right.closingTime &&
@@ -158,6 +171,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     InventoryRuntimeSettingsSnapshot snapshot,
   ) {
     if (!mounted) return;
+    _applyDiscountLimitSnapshot(snapshot);
     if (!snapshot.thresholdsLoaded) {
       setState(() {
         if (snapshot.measurementsLoaded) {
@@ -171,15 +185,16 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       low: snapshot.lowStockPercent,
       critical: snapshot.criticalStockPercent,
     );
-    final thresholdChanged = _thresholdBaseline != null &&
+    final thresholdChanged =
+        _thresholdBaseline != null &&
         (_thresholdBaseline!.low != incomingThresholds.low ||
             _thresholdBaseline!.critical != incomingThresholds.critical);
     final incomingMatchesDraft =
         double.tryParse(_lowPercentCtrl.text) == incomingThresholds.low &&
         double.tryParse(_criticalPercentCtrl.text) ==
             incomingThresholds.critical;
-    final protectDraft = _thresholdDraftDirty &&
-        !(_isSavingThresholds && incomingMatchesDraft);
+    final protectDraft =
+        _thresholdDraftDirty && !(_isSavingThresholds && incomingMatchesDraft);
     setState(() {
       if (snapshot.measurementsLoaded) {
         _measurements = _measurementsFromController();
@@ -202,12 +217,38 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     }
   }
 
+  void _applyDiscountLimitSnapshot(InventoryRuntimeSettingsSnapshot snapshot) {
+    if (!snapshot.paymentLoaded) return;
+    final incoming = snapshot.cashierAutoApprovedDiscountLimitPct;
+    final changed =
+        _discountLimitBaseline != null && _discountLimitBaseline != incoming;
+    final incomingMatchesDraft =
+        double.tryParse(_discountLimitCtrl.text) == incoming;
+    final protectDraft =
+        _discountLimitDraftDirty &&
+        !(_isSavingDiscountLimit && incomingMatchesDraft);
+    setState(() {
+      if (!protectDraft) {
+        _discountLimitCtrl.text = _formatPct(incoming);
+        _discountLimitBaseline = incoming;
+        _discountLimitConflictNotified = false;
+      }
+    });
+    if (protectDraft && changed && !_discountLimitConflictNotified) {
+      _discountLimitConflictNotified = true;
+      _showConflictToast(
+        'The cashier discount limit changed elsewhere. '
+        'Your unsaved value was kept.',
+      );
+    }
+  }
+
   void _handleStoreAccessSnapshot(StoreAccessSettings settings) {
-    if (!mounted ||
-        settings.locationId != widget.controller.activeLocationId) {
+    if (!mounted || settings.locationId != widget.controller.activeLocationId) {
       return;
     }
-    final changed = _storeAccessBaseline != null &&
+    final changed =
+        _storeAccessBaseline != null &&
         !_sameStoreAccess(_storeAccessBaseline!, settings);
     final incomingMatchesDraft =
         _formatClockTime(_openingTime) == settings.openingTime &&
@@ -218,7 +259,8 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             settings.staffAccessAfterMinutes &&
         _restrictStaffLogin == settings.restrictStaffLogin &&
         _allowAdminAnytime == settings.allowAdminAnytime;
-    final protectDraft = _storeAccessDraftDirty &&
+    final protectDraft =
+        _storeAccessDraftDirty &&
         !(_isSavingStoreAccess && incomingMatchesDraft);
     if (protectDraft) {
       if (changed) {
@@ -288,28 +330,34 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     if (!mounted) return;
     _handleStaffSnapshot(staff);
   }
+
   Future<void> _uploadGcashQr() async {
     final picker = ImagePicker();
     final XFile? file = await picker.pickImage(source: ImageSource.gallery);
-    
+
     if (file == null) return;
 
     setState(() => _isUploadingQr = true);
 
     try {
       String? uploadedUrl;
-      final String fileName = 'gcash_qr_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final String fileName =
+          'gcash_qr_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final path = 'public/$fileName';
 
       // --- NEW: Upload explicitly to the 'store_assets' bucket ---
       if (kIsWeb) {
         final bytes = await file.readAsBytes();
         await widget.controller.supabase.storage
-            .from('store_assets') // Change to 'store_asset' if you didn't add the 's'
+            .from(
+              'store_assets',
+            ) // Change to 'store_asset' if you didn't add the 's'
             .uploadBinary(path, bytes);
       } else {
         await widget.controller.supabase.storage
-            .from('store_assets') // Change to 'store_asset' if you didn't add the 's'
+            .from(
+              'store_assets',
+            ) // Change to 'store_asset' if you didn't add the 's'
             .upload(path, File(file.path));
       }
 
@@ -352,9 +400,40 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         ? AppToast.error(context, message)
         : AppToast.success(context, message);
   }
-Widget _buildPaymentSettings() {
+
+  Future<void> _saveDiscountLimit() async {
+    final value = double.tryParse(_discountLimitCtrl.text.trim());
+    if (value == null || value < 0 || value > 100) {
+      setState(() {
+        _discountLimitError = 'Enter a percentage from 0 to 100.';
+      });
+      return;
+    }
+    setState(() {
+      _discountLimitError = null;
+      _isSavingDiscountLimit = true;
+    });
+    try {
+      await widget.controller.updateCashierAutoApprovedDiscountLimit(value);
+      if (!mounted) return;
+      setState(() {
+        _discountLimitBaseline = value;
+        _discountLimitConflictNotified = false;
+        _isSavingDiscountLimit = false;
+      });
+      _showToast('Cashier discount limit updated');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isSavingDiscountLimit = false;
+        _discountLimitError = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  Widget _buildPaymentSettings() {
     final qrUrl = widget.controller.gcashQrUrl;
-    
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -368,19 +447,91 @@ Widget _buildPaymentSettings() {
           const Text(
             "Payment Settings",
             style: TextStyle(
-              fontSize: 16, 
-              fontWeight: FontWeight.bold, 
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
               color: Color(0xFF0F172A),
               fontFamily: 'Hellix',
             ),
           ),
           const SizedBox(height: 16),
           Text(
+            "Cashier auto-approved discount limit",
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade600,
+              fontFamily: 'Hellix',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _discountLimitCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                  ],
+                  onChanged: (_) => setState(() => _discountLimitError = null),
+                  decoration: InputDecoration(
+                    suffixText: '%',
+                    errorText: _discountLimitError,
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: _isSavingDiscountLimit ? null : _saveDiscountLimit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primaryBlue,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: _isSavingDiscountLimit
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Save'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Cashier discounts above this effective percentage require Admin approval.',
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 12,
+              fontFamily: _fontFam,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Divider(height: 1),
+          const SizedBox(height: 20),
+          Text(
             "Store GCash QR Code",
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade600, fontFamily: 'Hellix'),
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade600,
+              fontFamily: 'Hellix',
+            ),
           ),
           const SizedBox(height: 12),
-          
+
           // --- QR Code Display Area ---
           Container(
             height: 240,
@@ -398,33 +549,47 @@ Widget _buildPaymentSettings() {
                 : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(LucideIcons.qrCode, size: 40, color: Colors.grey.shade300),
+                      Icon(
+                        LucideIcons.qrCode,
+                        size: 40,
+                        color: Colors.grey.shade300,
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         "No QR code uploaded",
-                        style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Hellix'),
+                        style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontFamily: 'Hellix',
+                        ),
                       ),
                     ],
                   ),
           ),
           const SizedBox(height: 16),
-          
+
           // --- Upload Button ---
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: _isUploadingQr ? null : _uploadGcashQr,
-              icon: _isUploadingQr 
+              icon: _isUploadingQr
                   ? const SizedBox(
-                      width: 16, 
-                      height: 16, 
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue)
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.blue,
+                      ),
                     )
-                  : const Icon(LucideIcons.uploadCloud, size: 18, color: Colors.blue),
+                  : const Icon(
+                      LucideIcons.uploadCloud,
+                      size: 18,
+                      color: Colors.blue,
+                    ),
               label: Text(
                 _isUploadingQr ? "Uploading..." : "Upload GCash QR",
                 style: const TextStyle(
-                  fontFamily: 'Hellix', 
+                  fontFamily: 'Hellix',
                   fontWeight: FontWeight.bold,
                   color: Colors.blue,
                 ),
@@ -442,6 +607,7 @@ Widget _buildPaymentSettings() {
       ),
     );
   }
+
   // ─── STORE HOURS & STAFF ACCESS ─────────────────────────────────────────────
   Future<void> _fetchStoreAccessSettings() async {
     final locationId = widget.controller.activeLocationId;
@@ -489,8 +655,10 @@ Widget _buildPaymentSettings() {
       return;
     }
 
-    if (beforeMinutes < 0 || beforeMinutes > 240 ||
-        afterMinutes < 0 || afterMinutes > 240) {
+    if (beforeMinutes < 0 ||
+        beforeMinutes > 240 ||
+        afterMinutes < 0 ||
+        afterMinutes > 240) {
       setState(() {
         _storeAccessError = 'Allowance must be between 0 and 240 minutes.';
       });
@@ -542,9 +710,7 @@ Widget _buildPaymentSettings() {
     }
   }
 
-  Future<void> _showStoreAccessConflict(
-    StoreAccessSettings latest,
-  ) async {
+  Future<void> _showStoreAccessConflict(StoreAccessSettings latest) async {
     final reload = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AppDialog(
@@ -651,7 +817,7 @@ Widget _buildPaymentSettings() {
       }
     });
   }
-  
+
   TimeOfDay _parseClockTime(String value) {
     final parts = value.split(':');
 
@@ -914,7 +1080,9 @@ Widget _buildPaymentSettings() {
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton.icon(
-                onPressed: _isSavingStoreAccess ? null : _saveStoreAccessSettings,
+                onPressed: _isSavingStoreAccess
+                    ? null
+                    : _saveStoreAccessSettings,
                 icon: _isSavingStoreAccess
                     ? const SizedBox(
                         width: 16,
@@ -1208,8 +1376,7 @@ Widget _buildPaymentSettings() {
                           child: const Text('Keep Editing'),
                         ),
                         ElevatedButton(
-                          onPressed: () =>
-                              Navigator.pop(conflictContext, true),
+                          onPressed: () => Navigator.pop(conflictContext, true),
                           child: const Text('Reload Latest'),
                         ),
                       ],
@@ -1297,7 +1464,10 @@ Widget _buildPaymentSettings() {
                   ),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
+                child: const Text(
+                  "Cancel",
+                  style: TextStyle(fontFamily: _fontFam),
+                ),
               ),
               ElevatedButton(
                 onPressed: saving ? null : validateAndSave,
@@ -1344,7 +1514,11 @@ Widget _buildPaymentSettings() {
         subtitle: item.name,
         child: Text(
           "Are you sure you want to remove '${item.name}'? Existing inventory using this unit will not be altered.",
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontFamily: _fontFam),
+          style: TextStyle(
+            color: Colors.grey.shade600,
+            fontSize: 13,
+            fontFamily: _fontFam,
+          ),
         ),
         actions: [
           OutlinedButton(
@@ -1436,10 +1610,17 @@ Widget _buildPaymentSettings() {
         TextField(
           controller: controller,
           keyboardType: keyboardType,
-          style: const TextStyle(color: Color(0xFF1A1F36), fontSize: 14, fontFamily: _fontFam),
+          style: const TextStyle(
+            color: Color(0xFF1A1F36),
+            fontSize: 14,
+            fontFamily: _fontFam,
+          ),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(color: Color(0xFFB0B7C3), fontFamily: _fontFam),
+            hintStyle: const TextStyle(
+              color: Color(0xFFB0B7C3),
+              fontFamily: _fontFam,
+            ),
             prefixIcon: Icon(icon, color: const Color(0xFF8892A4), size: 16),
             filled: true,
             fillColor: const Color(0xFFF8FAFC),
@@ -1596,11 +1777,26 @@ Widget _buildPaymentSettings() {
                         ),
                       ),
                       items: const [
-                        DropdownMenuItem(value: 'staff', child: Text('Staff', style: TextStyle(fontFamily: _fontFam))),
-                        DropdownMenuItem(value: 'admin', child: Text('Admin', style: TextStyle(fontFamily: _fontFam))),
+                        DropdownMenuItem(
+                          value: 'staff',
+                          child: Text(
+                            'Staff',
+                            style: TextStyle(fontFamily: _fontFam),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'admin',
+                          child: Text(
+                            'Admin',
+                            style: TextStyle(fontFamily: _fontFam),
+                          ),
+                        ),
                         DropdownMenuItem(
                           value: 'helper',
-                          child: Text('Helper', style: TextStyle(fontFamily: _fontFam)),
+                          child: Text(
+                            'Helper',
+                            style: TextStyle(fontFamily: _fontFam),
+                          ),
                         ),
                       ],
                       onChanged: (val) =>
@@ -1669,7 +1865,10 @@ Widget _buildPaymentSettings() {
                   ),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
+                child: const Text(
+                  "Cancel",
+                  style: TextStyle(fontFamily: _fontFam),
+                ),
               ),
               ElevatedButton(
                 onPressed: isSaving
@@ -1739,7 +1938,10 @@ Widget _buildPaymentSettings() {
                       )
                     : const Text(
                         "Create Account",
-                        style: TextStyle(fontWeight: FontWeight.w600, fontFamily: _fontFam),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontFamily: _fontFam,
+                        ),
                       ),
               ),
             ],
@@ -1766,7 +1968,11 @@ Widget _buildPaymentSettings() {
             child: DropdownButtonFormField<String>(
               key: ValueKey<String>(selectedRole),
               initialValue: selectedRole,
-              style: const TextStyle(fontFamily: _fontFam, color: Colors.black87, fontSize: 14),
+              style: const TextStyle(
+                fontFamily: _fontFam,
+                color: Colors.black87,
+                fontSize: 14,
+              ),
               decoration: InputDecoration(
                 labelText: "Role",
                 labelStyle: const TextStyle(fontFamily: _fontFam),
@@ -1787,9 +1993,18 @@ Widget _buildPaymentSettings() {
                 prefixIcon: const Icon(LucideIcons.shield),
               ),
               items: const [
-                DropdownMenuItem(value: 'staff', child: Text('Staff', style: TextStyle(fontFamily: _fontFam))),
-                DropdownMenuItem(value: 'admin', child: Text('Admin', style: TextStyle(fontFamily: _fontFam))),
-                DropdownMenuItem(value: 'helper', child: Text('Helper', style: TextStyle(fontFamily: _fontFam))),
+                DropdownMenuItem(
+                  value: 'staff',
+                  child: Text('Staff', style: TextStyle(fontFamily: _fontFam)),
+                ),
+                DropdownMenuItem(
+                  value: 'admin',
+                  child: Text('Admin', style: TextStyle(fontFamily: _fontFam)),
+                ),
+                DropdownMenuItem(
+                  value: 'helper',
+                  child: Text('Helper', style: TextStyle(fontFamily: _fontFam)),
+                ),
               ],
               onChanged: (val) => setModalState(() => selectedRole = val!),
             ),
@@ -1804,7 +2019,10 @@ Widget _buildPaymentSettings() {
                   ),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                child: const Text("Cancel", style: TextStyle(fontFamily: _fontFam)),
+                child: const Text(
+                  "Cancel",
+                  style: TextStyle(fontFamily: _fontFam),
+                ),
               ),
               ElevatedButton(
                 onPressed: isSaving
@@ -1834,8 +2052,7 @@ Widget _buildPaymentSettings() {
                                 icon: LucideIcons.triangleAlert,
                                 color: Colors.orange,
                                 title: 'Staff role changed',
-                                subtitle:
-                                    'Another admin saved a newer role.',
+                                subtitle: 'Another admin saved a newer role.',
                                 child: const Text(
                                   'Your unsaved selection was kept. Reload '
                                   'the latest role, or keep editing.',
@@ -1843,17 +2060,13 @@ Widget _buildPaymentSettings() {
                                 ),
                                 actions: [
                                   OutlinedButton(
-                                    onPressed: () => Navigator.pop(
-                                      conflictContext,
-                                      false,
-                                    ),
+                                    onPressed: () =>
+                                        Navigator.pop(conflictContext, false),
                                     child: const Text('Keep Editing'),
                                   ),
                                   ElevatedButton(
-                                    onPressed: () => Navigator.pop(
-                                      conflictContext,
-                                      true,
-                                    ),
+                                    onPressed: () =>
+                                        Navigator.pop(conflictContext, true),
                                     child: const Text('Reload Latest'),
                                   ),
                                 ],
@@ -1905,7 +2118,10 @@ Widget _buildPaymentSettings() {
                           strokeWidth: 2,
                         ),
                       )
-                    : const Text("Save Changes", style: TextStyle(fontFamily: _fontFam)),
+                    : const Text(
+                        "Save Changes",
+                        style: TextStyle(fontFamily: _fontFam),
+                      ),
               ),
             ],
           );
@@ -1931,9 +2147,15 @@ Widget _buildPaymentSettings() {
             children: [
               TextSpan(
                 text: "${staff['name']}",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontFamily: _fontFam,
+                ),
               ),
-              const TextSpan(text: "?\n\nIt will be updated to: ", style: TextStyle(fontFamily: _fontFam)),
+              const TextSpan(
+                text: "?\n\nIt will be updated to: ",
+                style: TextStyle(fontFamily: _fontFam),
+              ),
               TextSpan(
                 text: newPass,
                 style: const TextStyle(
@@ -1994,7 +2216,10 @@ Widget _buildPaymentSettings() {
               ),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: const Text("Confirm Reset", style: TextStyle(fontFamily: _fontFam)),
+            child: const Text(
+              "Confirm Reset",
+              style: TextStyle(fontFamily: _fontFam),
+            ),
           ),
         ],
       ),
@@ -2011,7 +2236,11 @@ Widget _buildPaymentSettings() {
         subtitle: staff['name'],
         child: Text(
           "Are you sure you want to completely remove this staff account? This action cannot be undone.",
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontFamily: _fontFam),
+          style: TextStyle(
+            color: Colors.grey.shade600,
+            fontSize: 13,
+            fontFamily: _fontFam,
+          ),
         ),
         actions: [
           OutlinedButton(
@@ -2160,16 +2389,16 @@ Widget _buildPaymentSettings() {
                                                 Container(
                                                   padding:
                                                       const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
-                                                  ),
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
                                                   decoration: BoxDecoration(
                                                     color: Colors.blue
                                                         .withOpacity(0.1),
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                      12,
-                                                    ),
+                                                          12,
+                                                        ),
                                                   ),
                                                   child: Text(
                                                     (staff['role'] ?? 'staff')
@@ -2356,7 +2585,10 @@ Widget _buildPaymentSettings() {
                                         LucideIcons.pencil,
                                         size: 16,
                                       ),
-                                      label: const Text("Change Role", style: TextStyle(fontFamily: _fontFam)),
+                                      label: const Text(
+                                        "Change Role",
+                                        style: TextStyle(fontFamily: _fontFam),
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 12),
@@ -2385,7 +2617,10 @@ Widget _buildPaymentSettings() {
                                         LucideIcons.refreshCw,
                                         size: 16,
                                       ),
-                                      label: const Text("Reset Password", style: TextStyle(fontFamily: _fontFam)),
+                                      label: const Text(
+                                        "Reset Password",
+                                        style: TextStyle(fontFamily: _fontFam),
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 12),
@@ -2414,7 +2649,10 @@ Widget _buildPaymentSettings() {
                                         LucideIcons.trash2,
                                         size: 16,
                                       ),
-                                      label: const Text("Delete Account", style: TextStyle(fontFamily: _fontFam)),
+                                      label: const Text(
+                                        "Delete Account",
+                                        style: TextStyle(fontFamily: _fontFam),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -2506,7 +2744,11 @@ Widget _buildPaymentSettings() {
                   const SizedBox(height: 4),
                   Text(
                     "Manage global configurations, units, and user accounts",
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontFamily: _fontFam),
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 13,
+                      fontFamily: _fontFam,
+                    ),
                   ),
                   const SizedBox(height: 32),
 
@@ -2640,7 +2882,10 @@ Widget _buildPaymentSettings() {
                             child: Center(
                               child: Text(
                                 "No other staff members found.",
-                                style: TextStyle(color: Colors.grey, fontFamily: _fontFam),
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontFamily: _fontFam,
+                                ),
                               ),
                             ),
                           )
@@ -2718,7 +2963,7 @@ Widget _buildPaymentSettings() {
                                               _showStaffDetailsModal(staff),
                                           tooltip: "View Details",
                                         ),
-                                        
+
                                         IconButton(
                                           icon: Icon(
                                             LucideIcons.trash2,
@@ -2736,9 +2981,9 @@ Widget _buildPaymentSettings() {
                               );
                             },
                           ),
-                        ],
-                      ),
+                      ],
                     ),
+                  ),
                   const SizedBox(height: 24),
 
                   // ─── SECTION 3: GLOBAL STOCK THRESHOLDS ─────────────────────
@@ -2826,7 +3071,9 @@ Widget _buildPaymentSettings() {
                                   TextField(
                                     controller: _lowPercentCtrl,
                                     keyboardType: TextInputType.number,
-                                    style: const TextStyle(fontFamily: _fontFam),
+                                    style: const TextStyle(
+                                      fontFamily: _fontFam,
+                                    ),
                                     inputFormatters: [
                                       FilteringTextInputFormatter.allow(
                                         RegExp(r'^\d*\.?\d*'),
@@ -2844,9 +3091,9 @@ Widget _buildPaymentSettings() {
                                       ),
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 14,
-                                      ),
+                                            horizontal: 16,
+                                            vertical: 14,
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -2870,7 +3117,9 @@ Widget _buildPaymentSettings() {
                                   TextField(
                                     controller: _criticalPercentCtrl,
                                     keyboardType: TextInputType.number,
-                                    style: const TextStyle(fontFamily: _fontFam),
+                                    style: const TextStyle(
+                                      fontFamily: _fontFam,
+                                    ),
                                     inputFormatters: [
                                       FilteringTextInputFormatter.allow(
                                         RegExp(r'^\d*\.?\d*'),
@@ -2888,9 +3137,9 @@ Widget _buildPaymentSettings() {
                                       ),
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 14,
-                                      ),
+                                            horizontal: 16,
+                                            vertical: 14,
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -3031,7 +3280,10 @@ Widget _buildPaymentSettings() {
                             child: Center(
                               child: Text(
                                 "No measurement units found.",
-                                style: TextStyle(color: Colors.grey, fontFamily: _fontFam),
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontFamily: _fontFam,
+                                ),
                               ),
                             ),
                           )
@@ -3136,5 +3388,4 @@ Widget _buildPaymentSettings() {
             ),
     );
   }
-
 }

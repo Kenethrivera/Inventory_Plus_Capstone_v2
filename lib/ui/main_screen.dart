@@ -1721,10 +1721,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
             (payload['productId']?.toString().isNotEmpty ?? false);
       case NotificationType.system:
-        return payload['category'] == 'inventoryApproval' &&
-            payload['status'] == 'pending' &&
-            widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
-            _mainSections.contains(MainSection.approvals);
+        if (payload['category'] != 'inventoryApproval') return false;
+        if (payload['status'] == 'pending') {
+          return widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
+              _mainSections.contains(MainSection.approvals);
+        }
+        final role = widget.controller.currentUserRole?.toLowerCase();
+        return payload['requestType'] == 'discount' &&
+            (role == 'staff' || role == 'cashier') &&
+            posIndex >= 0;
       case NotificationType.orderCancelled:
       case NotificationType.inventoryAdded:
       case NotificationType.inventoryUpdated:
@@ -1915,13 +1920,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return true;
 
       case NotificationType.system:
-        if (notification.payload['category'] != 'inventoryApproval' ||
-            notification.payload['status'] != 'pending') {
+        if (notification.payload['category'] != 'inventoryApproval') {
           return false;
         }
-        final approvalsIndex = _mainSections.indexOf(
-          MainSection.approvals,
-        );
+        if (notification.payload['requestType'] == 'discount' &&
+            notification.payload['status'] != 'pending' &&
+            posIndex >= 0) {
+          _selectMainIndex(posIndex);
+          return true;
+        }
+        if (notification.payload['status'] != 'pending') return false;
+        final approvalsIndex = _mainSections.indexOf(MainSection.approvals);
         if (approvalsIndex < 0) {
           AppToast.error(context, 'Pending Approvals is Admin-only.');
           return false;

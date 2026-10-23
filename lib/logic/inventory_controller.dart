@@ -72,6 +72,7 @@ class InventoryRuntimeSettingsSnapshot {
     required this.criticalStockPercent,
     required this.measurements,
     required this.gcashQrUrl,
+    required this.cashierAutoApprovedDiscountLimitPct,
     required this.thresholdsLoaded,
     required this.measurementsLoaded,
     required this.paymentLoaded,
@@ -81,6 +82,7 @@ class InventoryRuntimeSettingsSnapshot {
   final double criticalStockPercent;
   final List<Map<String, dynamic>> measurements;
   final String gcashQrUrl;
+  final double cashierAutoApprovedDiscountLimitPct;
   final bool thresholdsLoaded;
   final bool measurementsLoaded;
   final bool paymentLoaded;
@@ -138,6 +140,9 @@ class InventoryController {
       StreamController<CurrentUserProfileSnapshot?>.broadcast();
   final StreamController<InventoryApprovalPage> _approvalPagesController =
       StreamController<InventoryApprovalPage>.broadcast();
+  final StreamController<InventoryApprovalRequest?>
+  _discountApprovalController =
+      StreamController<InventoryApprovalRequest?>.broadcast();
 
   StreamSubscription<void>? _orderChangesSubscription;
   StreamSubscription<void>? _orderHistoryChangesSubscription;
@@ -172,6 +177,9 @@ class InventoryController {
   _approvalPageRequests =
       <InventoryApprovalPageKey, Future<InventoryApprovalPage>>{};
   InventoryApprovalPageKey? _activeApprovalPageKey;
+  String? _activeDiscountApprovalId;
+  InventoryApprovalRequest? _activeDiscountApproval;
+  Future<void>? _discountApprovalRefreshInFlight;
 
   List<CustomerOrder> _ordersSnapshot = const <CustomerOrder>[];
 
@@ -242,6 +250,7 @@ class InventoryController {
   Map<String, double> _baselineByProduct = {};
 
   String gcashQrUrl = '';
+  double cashierAutoApprovedDiscountLimitPct = 10.0;
 
   Future<void> loadStoreSettings() async {
     if (_paymentSettingsLoaded) return;
@@ -249,11 +258,17 @@ class InventoryController {
   }
 
   Future<void> updateGcashQrUrl(String newUrl) async {
+    if (activeLocationId == null) {
+      throw StateError('Payment settings require an active location.');
+    }
     try {
-      await supabase
-          .from('store_settings')
-          .update({'gcash_qr_url': newUrl})
-          .eq('id', 1);
+      await supabase.rpc(
+        'update_store_payment_settings_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_gcash_qr_url': newUrl,
+        },
+      );
 
       gcashQrUrl = newUrl;
       _paymentSettingsLoaded = true;
@@ -262,6 +277,22 @@ class InventoryController {
       debugPrint("Error updating GCash QR: $e");
       throw Exception("Failed to save QR URL to database.");
     }
+  }
+
+  Future<void> updateCashierAutoApprovedDiscountLimit(double value) async {
+    if (!value.isFinite || value < 0 || value > 100) {
+      throw ArgumentError.value(value, 'value', 'Must be between 0 and 100');
+    }
+    final response = await supabase.rpc(
+      'update_cashier_discount_limit_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_limit_pct': value,
+      },
+    );
+    cashierAutoApprovedDiscountLimitPct = (response as num).toDouble();
+    _paymentSettingsLoaded = true;
+    _publishRuntimeSettings();
   }
 
   Future<void> Function({
@@ -407,6 +438,10 @@ class InventoryController {
     _publishMapLayoutSnapshot();
     _clearStaffConfigurationSnapshot();
     _clearApprovalState();
+    gcashQrUrl = '';
+    cashierAutoApprovedDiscountLimitPct = 10.0;
+    _paymentSettingsLoaded = false;
+    _publishRuntimeSettings();
   }
 
   String _hashPassword(String password) {
@@ -419,6 +454,7 @@ class InventoryController {
     await Future.wait<void>([
       if (!_thresholdSettingsLoaded) _refreshThresholdSettings(),
       if (!_measurementSettingsLoaded) _refreshMeasurementSettings(),
+      if (!_paymentSettingsLoaded) _refreshPaymentSettings(),
     ]);
   }
 
@@ -440,6 +476,8 @@ class InventoryController {
           availableMeasurements.map(Map<String, dynamic>.from),
         ),
         gcashQrUrl: gcashQrUrl,
+        cashierAutoApprovedDiscountLimitPct:
+            cashierAutoApprovedDiscountLimitPct,
         thresholdsLoaded: _thresholdSettingsLoaded,
         measurementsLoaded: _measurementSettingsLoaded,
         paymentLoaded: _paymentSettingsLoaded,
@@ -552,13 +590,20 @@ class InventoryController {
   }
 
   Future<void> _performPaymentRefresh() async {
+    final locationId = activeLocationId;
+    if (locationId == null) return;
     try {
       final response = await supabase
           .from('store_settings')
-          .select('gcash_qr_url')
-          .eq('id', 1)
+          .select('gcash_qr_url, cashier_auto_approved_discount_limit_pct')
+          .eq('location_id', locationId)
           .maybeSingle();
+      if (activeLocationId != locationId) return;
       gcashQrUrl = response?['gcash_qr_url']?.toString() ?? '';
+      cashierAutoApprovedDiscountLimitPct =
+          (response?['cashier_auto_approved_discount_limit_pct'] as num?)
+              ?.toDouble() ??
+          10.0;
       _paymentSettingsLoaded = true;
       _publishRuntimeSettings();
       debugPrint('[InventoryController] PAYMENT SETTINGS REFRESHED');
@@ -812,6 +857,91 @@ class InventoryController {
   Stream<InventoryApprovalPage> get approvalPageSnapshots =>
       _approvalPagesController.stream;
 
+  Stream<InventoryApprovalRequest?> streamDiscountApproval() async* {
+    yield _activeDiscountApproval;
+    yield* _discountApprovalController.stream;
+  }
+
+  Future<InventoryApprovalRequest> submitDiscountApprovalRequest({
+    required List<CustomerOrderItem> items,
+    required String discountMode,
+    required double discountValue,
+    required String checkoutToken,
+    String? reason,
+  }) async {
+    final role = currentUserRole?.toLowerCase();
+    if (role != 'staff' && role != 'cashier') {
+      throw StateError('Only Cashier accounts may request discount approval.');
+    }
+    if (items.isEmpty) throw ArgumentError('The cart cannot be empty.');
+    if (!discountValue.isFinite || discountValue < 0) {
+      throw ArgumentError.value(
+        discountValue,
+        'discountValue',
+        'Must be zero or greater',
+      );
+    }
+    final response = await supabase.rpc(
+      'create_discount_approval_request_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_items': items.map((item) => item.toJson()).toList(growable: false),
+        'p_discount_mode': discountMode,
+        'p_discount_value': discountValue,
+        'p_reason': reason?.trim(),
+        'p_checkout_token': checkoutToken,
+      },
+    );
+    final request = InventoryApprovalRequest.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+    _activeDiscountApprovalId = request.id;
+    _activeDiscountApproval = request;
+    _discountApprovalController.add(request);
+    _invalidateApprovalPages(refreshVisible: false);
+    await _notifyApprovalLifecycle(request);
+    return request;
+  }
+
+  void clearDiscountApprovalTracking() {
+    _activeDiscountApprovalId = null;
+    _activeDiscountApproval = null;
+    _discountApprovalController.add(null);
+  }
+
+  Future<void> _refreshActiveDiscountApproval() async {
+    final requestId = _activeDiscountApprovalId;
+    if (requestId == null || _discountApprovalRefreshInFlight != null) return;
+    final refresh = () async {
+      try {
+        final response = await supabase.rpc(
+          'discount_approval_request_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_request_id': requestId,
+          },
+        );
+        if (_activeDiscountApprovalId != requestId || response == null) return;
+        final request = InventoryApprovalRequest.fromJson(
+          Map<String, dynamic>.from(response as Map),
+        );
+        _activeDiscountApproval = request;
+        _discountApprovalController.add(request);
+      } catch (error, stackTrace) {
+        debugPrint(
+          '[InventoryController] Discount approval refresh failed: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }();
+    _discountApprovalRefreshInFlight = refresh;
+    await refresh.whenComplete(() {
+      if (identical(_discountApprovalRefreshInFlight, refresh)) {
+        _discountApprovalRefreshInFlight = null;
+      }
+    });
+  }
+
   InventoryApprovalPage? cachedApprovalPage({
     required InventoryApprovalStatus status,
     required int page,
@@ -909,9 +1039,7 @@ class InventoryController {
     }
     final response = await supabase.functions.invoke(
       'approval-evidence',
-      headers: <String, String>{
-        'x-app-session-token': _requireSessionToken(),
-      },
+      headers: <String, String>{'x-app-session-token': _requireSessionToken()},
       body: <String, String>{
         'action': 'upload',
         'fileName': fileName,
@@ -932,13 +1060,8 @@ class InventoryController {
   Future<String?> fetchApprovalEvidenceUrl(String requestId) async {
     final response = await supabase.functions.invoke(
       'approval-evidence',
-      headers: <String, String>{
-        'x-app-session-token': _requireSessionToken(),
-      },
-      body: <String, dynamic>{
-        'action': 'signedUrl',
-        'requestId': requestId,
-      },
+      headers: <String, String>{'x-app-session-token': _requireSessionToken()},
+      body: <String, dynamic>{'action': 'signedUrl', 'requestId': requestId},
     );
     final data = Map<String, dynamic>.from(response.data as Map);
     return data['signedUrl']?.toString();
@@ -972,7 +1095,11 @@ class InventoryController {
       throw StateError('Approval summary scope changed while loading.');
     }
     return <InventoryApprovalStatus, int>{
-      for (var index = 0; index < InventoryApprovalStatus.values.length; index++)
+      for (
+        var index = 0;
+        index < InventoryApprovalStatus.values.length;
+        index++
+      )
         InventoryApprovalStatus.values[index]:
             (Map<String, dynamic>.from(responses[index] as Map)['total_count']
                     as num?)
@@ -1033,9 +1160,7 @@ class InventoryController {
     try {
       await callback(request);
     } catch (error, stackTrace) {
-      debugPrint(
-        '[InventoryController] Approval notification failed: $error',
-      );
+      debugPrint('[InventoryController] Approval notification failed: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
@@ -1077,43 +1202,44 @@ class InventoryController {
     final existing = _approvalPageRequests[key];
     if (existing != null) return existing;
     late final Future<InventoryApprovalPage> request;
-    request = () async {
-      final response = await supabase.rpc(
-        'approval_requests_page_v1',
-        params: <String, dynamic>{
-          'p_session_token': _requireSessionToken(),
-          'p_status': key.status.databaseValue,
-          'p_page': key.page,
-          'p_page_size': key.pageSize,
-        },
-      );
-      if (key.accountId != currentUserId ||
-          key.locationId != activeLocationId ||
-          !isAdmin) {
-        throw StateError('Approval request scope changed while loading.');
-      }
-      final json = Map<String, dynamic>.from(response as Map);
-      final rawRecords = json['records'] as List<dynamic>? ?? const [];
-      final page = InventoryApprovalPage(
-        key: key,
-        requests: List<InventoryApprovalRequest>.unmodifiable(
-          rawRecords.map(
-            (row) => InventoryApprovalRequest.fromJson(
-              Map<String, dynamic>.from(row as Map),
+    request =
+        () async {
+          final response = await supabase.rpc(
+            'approval_requests_page_v1',
+            params: <String, dynamic>{
+              'p_session_token': _requireSessionToken(),
+              'p_status': key.status.databaseValue,
+              'p_page': key.page,
+              'p_page_size': key.pageSize,
+            },
+          );
+          if (key.accountId != currentUserId ||
+              key.locationId != activeLocationId ||
+              !isAdmin) {
+            throw StateError('Approval request scope changed while loading.');
+          }
+          final json = Map<String, dynamic>.from(response as Map);
+          final rawRecords = json['records'] as List<dynamic>? ?? const [];
+          final page = InventoryApprovalPage(
+            key: key,
+            requests: List<InventoryApprovalRequest>.unmodifiable(
+              rawRecords.map(
+                (row) => InventoryApprovalRequest.fromJson(
+                  Map<String, dynamic>.from(row as Map),
+                ),
+              ),
             ),
-          ),
-        ),
-        totalCount: (json['total_count'] as num?)?.toInt() ?? 0,
-        loadedAt: DateTime.now(),
-      );
-      _approvalPageCache.write(page);
-      if (_activeApprovalPageKey == key) _approvalPagesController.add(page);
-      return page;
-    }().whenComplete(() {
-      if (identical(_approvalPageRequests[key], request)) {
-        _approvalPageRequests.remove(key);
-      }
-    });
+            totalCount: (json['total_count'] as num?)?.toInt() ?? 0,
+            loadedAt: DateTime.now(),
+          );
+          _approvalPageCache.write(page);
+          if (_activeApprovalPageKey == key) _approvalPagesController.add(page);
+          return page;
+        }().whenComplete(() {
+          if (identical(_approvalPageRequests[key], request)) {
+            _approvalPageRequests.remove(key);
+          }
+        });
     _approvalPageRequests[key] = request;
     return request;
   }
@@ -1143,6 +1269,10 @@ class InventoryController {
     _approvalPageCache.clear();
     _approvalPageRequests.clear();
     _activeApprovalPageKey = null;
+    _activeDiscountApprovalId = null;
+    _activeDiscountApproval = null;
+    _discountApprovalRefreshInFlight = null;
+    _discountApprovalController.add(null);
   }
 
   Future<String?> uploadImageBytes(
@@ -2486,6 +2616,11 @@ class InventoryController {
     List<CustomerOrderItem> items, {
     required double totalAmount,
     required double discountAmount,
+    required String discountMode,
+    required double discountValue,
+    required String checkoutToken,
+    String? discountReason,
+    String? discountApprovalRequestId,
     String? paymentMode,
     double? cashGiven,
     double? changeAmount,
@@ -2523,25 +2658,30 @@ class InventoryController {
               helper: assignedHelper,
               assignedAt: DateTime.now().toUtc(),
             );
-      final response = await supabase
-          .from('orders')
-          .insert({
-            'location_id': locId,
-            'status': soloHandled ? 'solo_picking' : 'pending',
-            'total_amount': totalAmount,
-            'discount_amount': discountAmount,
-            'payment_mode': paymentMode ?? 'Cash',
-            'cash_given': cashGiven,
-            'change_amount': changeAmount,
-            'items': items.map((i) => i.toJson()).toList(),
-
-            // ownership
-            'created_by_id': currentUserId,
-            'created_by_name': currentUserName ?? 'Unknown User',
-            ...initialAssignment,
-          })
-          .select()
-          .single();
+      final response = await supabase.rpc(
+        'create_customer_order_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_items': items.map((i) => i.toJson()).toList(growable: false),
+          'p_total_amount': totalAmount,
+          'p_discount_amount': discountAmount,
+          'p_discount_mode': discountMode,
+          'p_discount_value': discountValue,
+          'p_discount_reason': discountReason?.trim(),
+          'p_checkout_token': checkoutToken,
+          'p_discount_approval_request_id': discountApprovalRequestId,
+          'p_solo_handled': soloHandled,
+          'p_assigned_helper_id': initialAssignment['assigned_helper_id'],
+          'p_assigned_helper_name': initialAssignment['assigned_helper_name'],
+          'p_assigned_at': initialAssignment['assigned_at'],
+          'p_assigned_by_admin_id': initialAssignment['assigned_by_admin_id'],
+          'p_assigned_by_admin_name':
+              initialAssignment['assigned_by_admin_name'],
+          'p_payment_mode': paymentMode ?? 'Cash',
+          'p_cash_given': cashGiven,
+          'p_change_amount': changeAmount,
+        },
+      );
 
       for (var orderItem in items) {
         final index = _items.indexWhere((i) => i.id == orderItem.productId);
@@ -2558,7 +2698,7 @@ class InventoryController {
         }
       }
 
-      return CustomerOrder.fromJson(Map<String, dynamic>.from(response));
+      return CustomerOrder.fromJson(Map<String, dynamic>.from(response as Map));
     } catch (e) {
       rethrow;
     }
@@ -2742,19 +2882,19 @@ class InventoryController {
           },
         );
 
-    _approvalRequestChangesSubscription ??= realtimeSync
-        .approvalRequestChanges
+    _approvalRequestChangesSubscription ??= realtimeSync.approvalRequestChanges
         .listen(
           (_) {
             _approvalPageCache.markAllStale();
             if (_activeApprovalPageKey != null && isAdmin) {
               unawaited(_refreshActiveApprovalPage());
             }
+            if (_activeDiscountApprovalId != null) {
+              unawaited(_refreshActiveDiscountApproval());
+            }
           },
           onError: (Object error, StackTrace stackTrace) {
-            debugPrint(
-              '[InventoryController] Approval realtime error: $error',
-            );
+            debugPrint('[InventoryController] Approval realtime error: $error');
           },
         );
   }

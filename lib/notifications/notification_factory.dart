@@ -475,13 +475,26 @@ class NotificationFactory {
     required String requestedById,
     required String requestedByName,
     required String requestedByRole,
+    String? discountMode,
+    double? discountValue,
+    double? discountAmount,
+    double? discountEffectivePercentage,
+    double? subtotalAmount,
   }) {
     final formattedQuantity = quantity == quantity.roundToDouble()
         ? quantity.toInt().toString()
         : quantity.toStringAsFixed(2);
     final isPending = status == 'pending';
     final isApproved = status == 'approved';
-    final action = requestType == 'restock' ? 'Restock' : 'Write-off';
+    final action = switch (requestType) {
+      'restock' => 'Restock',
+      'write_off' => 'Write-off',
+      _ => 'Discount',
+    };
+    final isDiscount = requestType == 'discount';
+    final discountSummary =
+        '${(discountEffectivePercentage ?? 0).toStringAsFixed(2)}% '
+        '(₱${(discountAmount ?? 0).toStringAsFixed(2)})';
 
     return create(
       locationId: locationId,
@@ -490,8 +503,13 @@ class NotificationFactory {
           ? '$action approval requested'
           : '$action request ${isApproved ? 'approved' : 'rejected'}',
       body: isPending
-          ? '$requestedByName requested $action of $formattedQuantity $unit '
-                'for $productName.'
+          ? isDiscount
+                ? '$requestedByName requested a $discountSummary discount.'
+                : '$requestedByName requested $action of $formattedQuantity '
+                      '$unit for $productName.'
+          : isDiscount
+          ? 'Your $discountSummary discount request was '
+                '${isApproved ? 'approved' : 'rejected'}.'
           : 'Your $action request for $formattedQuantity $unit of '
                 '$productName was ${isApproved ? 'approved' : 'rejected'}.',
       type: NotificationType.system,
@@ -511,6 +529,13 @@ class NotificationFactory {
         'requestedById': requestedById,
         'requestedByName': requestedByName,
         'recipientId': isPending ? null : requestedById,
+        if (isDiscount) ...{
+          'discountMode': discountMode,
+          'discountValue': discountValue,
+          'discountAmount': discountAmount,
+          'effectivePercentage': discountEffectivePercentage,
+          'subtotalAmount': subtotalAmount,
+        },
       },
     );
   }

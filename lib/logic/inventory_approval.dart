@@ -1,19 +1,22 @@
-enum InventoryApprovalType { restock, writeOff }
+enum InventoryApprovalType { restock, writeOff, discount }
 
 extension InventoryApprovalTypeValue on InventoryApprovalType {
   String get databaseValue => switch (this) {
     InventoryApprovalType.restock => 'restock',
     InventoryApprovalType.writeOff => 'write_off',
+    InventoryApprovalType.discount => 'discount',
   };
 
   String get label => switch (this) {
     InventoryApprovalType.restock => 'Restock',
     InventoryApprovalType.writeOff => 'Write-off',
+    InventoryApprovalType.discount => 'Discount',
   };
 
   static InventoryApprovalType fromDatabase(String value) => switch (value) {
     'restock' => InventoryApprovalType.restock,
     'write_off' => InventoryApprovalType.writeOff,
+    'discount' => InventoryApprovalType.discount,
     _ => throw FormatException('Unknown approval request type: $value'),
   };
 }
@@ -64,6 +67,15 @@ class InventoryApprovalRequest {
     this.proofStoragePath,
     this.proofFileName,
     this.proofMimeType,
+    this.discountMode,
+    this.discountValue,
+    this.discountAmount,
+    this.discountEffectivePercentage,
+    this.subtotalAmount,
+    this.cartFingerprint,
+    this.checkoutToken,
+    this.usedAt,
+    this.usedOrderId,
   });
 
   final String id;
@@ -91,8 +103,21 @@ class InventoryApprovalRequest {
   final String? proofStoragePath;
   final String? proofFileName;
   final String? proofMimeType;
+  final String? discountMode;
+  final double? discountValue;
+  final double? discountAmount;
+  final double? discountEffectivePercentage;
+  final double? subtotalAmount;
+  final String? cartFingerprint;
+  final String? checkoutToken;
+  final DateTime? usedAt;
+  final String? usedOrderId;
 
   bool get hasProof => proofStoragePath?.isNotEmpty ?? false;
+
+  bool get isDiscount => type == InventoryApprovalType.discount;
+
+  double get resultingTotal => (subtotalAmount ?? 0) - (discountAmount ?? 0);
 
   double get resultingStock => type == InventoryApprovalType.restock
       ? currentStock + quantity
@@ -120,8 +145,8 @@ class InventoryApprovalRequest {
       requestedByName: json['requested_by_name']?.toString() ?? 'Unknown User',
       requestedByRole: json['requested_by_role']?.toString() ?? 'staff',
       requestedAt: DateTime.parse(json['requested_at'].toString()).toLocal(),
-      productId: json['product_id'].toString(),
-      productName: json['product_name']?.toString() ?? 'Unknown Item',
+      productId: json['product_id']?.toString() ?? '',
+      productName: json['product_name']?.toString() ?? '',
       productSku: json['product_sku']?.toString() ?? '',
       unit: json['unit']?.toString() ?? 'pcs',
       quantity: number('requested_quantity'),
@@ -137,6 +162,23 @@ class InventoryApprovalRequest {
       proofStoragePath: json['proof_storage_path']?.toString(),
       proofFileName: json['proof_file_name']?.toString(),
       proofMimeType: json['proof_mime_type']?.toString(),
+      discountMode: json['discount_mode']?.toString(),
+      discountValue: json['discount_value'] == null
+          ? null
+          : number('discount_value'),
+      discountAmount: json['discount_amount'] == null
+          ? null
+          : number('discount_amount'),
+      discountEffectivePercentage: json['discount_effective_percentage'] == null
+          ? null
+          : number('discount_effective_percentage'),
+      subtotalAmount: json['subtotal_amount'] == null
+          ? null
+          : number('subtotal_amount'),
+      cartFingerprint: json['cart_fingerprint']?.toString(),
+      checkoutToken: json['checkout_token']?.toString(),
+      usedAt: optionalDate('used_at'),
+      usedOrderId: json['used_order_id']?.toString(),
     );
   }
 }

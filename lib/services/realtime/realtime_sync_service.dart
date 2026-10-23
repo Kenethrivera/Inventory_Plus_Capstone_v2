@@ -711,6 +711,8 @@ class RealtimeSyncService {
   Future<void> _subscribeToRuntimeSettingsChanges() async {
     if (!_isStarted) return;
     final role = _userRole;
+    final locationId = _locationId;
+    if (locationId == null || locationId.isEmpty) return;
 
     const keys = <String>[
       'threshold_settings',
@@ -786,8 +788,8 @@ class RealtimeSyncService {
         kind: RuntimeSettingsChangeKind.payment,
         filter: PostgresChangeFilter(
           type: PostgresChangeFilterType.eq,
-          column: 'id',
-          value: 1,
+          column: 'location_id',
+          value: locationId,
         ),
       );
       _runtimeSettingsChangesController.add(RuntimeSettingsChangeKind.payment);

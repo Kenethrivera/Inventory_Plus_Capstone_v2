@@ -156,6 +156,8 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       ? value.toInt().toString()
       : value.toStringAsFixed(2);
 
+  String _money(double? value) => '₱${(value ?? 0).toStringAsFixed(2)}';
+
   String _when(DateTime value) {
     final date = value.toLocal();
     final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
@@ -190,12 +192,16 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AppDialog(
-        icon: request.type == InventoryApprovalType.restock
-            ? LucideIcons.packagePlus
-            : LucideIcons.packageMinus,
+        icon: switch (request.type) {
+          InventoryApprovalType.restock => LucideIcons.packagePlus,
+          InventoryApprovalType.writeOff => LucideIcons.packageMinus,
+          InventoryApprovalType.discount => LucideIcons.badgePercent,
+        },
         color: request.hasStockConflict ? Colors.orange : _blue,
         title: '${request.type.label} request',
-        subtitle: request.productName,
+        subtitle: request.isDiscount
+            ? request.requestedByName
+            : request.productName,
         // AppDialog intentionally keeps its content before its action row.
         // ignore: sort_child_properties_last
         child: ConstrainedBox(
@@ -205,40 +211,64 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _detail('Status', request.status.label),
-                _detail(
-                  'Item',
-                  '${request.productName} (${request.productSku})',
-                ),
                 _detail('Type', request.type.label),
-                _detail(
-                  'Quantity',
-                  '${_qty(request.quantity)} ${request.unit}',
-                ),
                 _detail('Requested by', request.requestedByName),
                 _detail('Requested at', _when(request.requestedAt)),
+                if (request.isDiscount) ...[
+                  _detail(
+                    'Discount mode',
+                    request.discountMode == 'fixed'
+                        ? 'Fixed amount'
+                        : 'Percentage',
+                  ),
+                  _detail(
+                    'Requested discount',
+                    request.discountMode == 'fixed'
+                        ? _money(request.discountValue)
+                        : '${_qty(request.discountValue ?? 0)}%',
+                  ),
+                  _detail(
+                    'Effective percentage',
+                    '${_qty(request.discountEffectivePercentage ?? 0)}%',
+                  ),
+                  _detail('Discount amount', _money(request.discountAmount)),
+                  _detail('Subtotal', _money(request.subtotalAmount)),
+                  _detail('Resulting total', _money(request.resultingTotal)),
+                ] else ...[
+                  _detail(
+                    'Item',
+                    '${request.productName} (${request.productSku})',
+                  ),
+                  _detail(
+                    'Quantity',
+                    '${_qty(request.quantity)} ${request.unit}',
+                  ),
+                  _detail(
+                    'Stock at request',
+                    '${_qty(request.stockAtRequest)} ${request.unit}',
+                  ),
+                  _detail(
+                    'Current stock',
+                    '${_qty(request.currentStock)} ${request.unit}',
+                  ),
+                  _detail(
+                    'Result if approved',
+                    '${_qty(request.resultingStock)} ${request.unit}',
+                    danger: request.hasStockConflict,
+                  ),
+                ],
                 _detail('Reason', request.reason ?? '-'),
-                _detail('Note', request.note ?? '-'),
-                _detail(
-                  'Stock at request',
-                  '${_qty(request.stockAtRequest)} ${request.unit}',
-                ),
-                _detail(
-                  'Current stock',
-                  '${_qty(request.currentStock)} ${request.unit}',
-                ),
-                _detail(
-                  'Result if approved',
-                  '${_qty(request.resultingStock)} ${request.unit}',
-                  danger: request.hasStockConflict,
-                ),
+                if (!request.isDiscount) _detail('Note', request.note ?? '-'),
                 if (request.reviewedByName != null)
                   _detail('Reviewed by', request.reviewedByName!),
                 if (request.reviewedAt != null)
                   _detail('Reviewed at', _when(request.reviewedAt!)),
                 if (request.reviewNote?.isNotEmpty ?? false)
                   _detail('Review note', request.reviewNote!),
-                const SizedBox(height: 16),
-                _proofPanel(request, proofUrl),
+                if (!request.isDiscount) ...[
+                  const SizedBox(height: 16),
+                  _proofPanel(request, proofUrl),
+                ],
                 if (request.hasStockConflict)
                   Container(
                     width: double.infinity,
@@ -383,7 +413,9 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         title: conflict
             ? 'Stock conflict'
             : '${approve ? 'Approve' : 'Reject'} request?',
-        subtitle: '${request.type.label} - ${request.productName}',
+        subtitle: request.isDiscount
+            ? '${_qty(request.discountEffectivePercentage ?? 0)}% effective discount'
+            : '${request.type.label} - ${request.productName}',
         // AppDialog intentionally keeps its content before its action row.
         // ignore: sort_child_properties_last
         child: Column(
@@ -391,14 +423,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              conflict
-                  ? 'This request needs ${_qty(request.quantity)} '
-                        '${request.unit}, but only '
-                        '${_qty(request.currentStock)} remains.'
-                  : approve
-                  ? 'Approval immediately applies the inventory change and '
-                        'writes transaction history.'
-                  : 'Rejection does not change inventory quantity.',
+              _reviewExplanation(request, approve: approve, conflict: conflict),
               style: TextStyle(
                 color: conflict ? Colors.orange.shade900 : Colors.black87,
                 fontFamily: _font,
@@ -471,6 +496,27 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         unawaited(_loadSummary());
       }
     }
+  }
+
+  String _reviewExplanation(
+    InventoryApprovalRequest request, {
+    required bool approve,
+    required bool conflict,
+  }) {
+    if (conflict) {
+      return 'This request needs ${_qty(request.quantity)} ${request.unit}, '
+          'but only ${_qty(request.currentStock)} remains.';
+    }
+    if (request.isDiscount) {
+      return approve
+          ? 'Approval authorizes only this exact cart, subtotal, and discount. '
+                'The Cashier must still finalize checkout.'
+          : 'The Cashier cannot use this discount for checkout.';
+    }
+    return approve
+        ? 'Approval immediately applies the inventory change and writes '
+              'transaction history.'
+        : 'Rejection does not change inventory quantity.';
   }
 
   Widget _detail(String label, String value, {bool danger = false}) => Padding(
@@ -757,14 +803,43 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
             ),
           ),
         ),
-        DataCell(_bodyCell(request.productName, 176, strong: true)),
-        DataCell(_bodyCell('${_qty(request.quantity)} ${request.unit}', 82)),
+        DataCell(
+          _bodyCell(
+            request.isDiscount ? 'POS checkout' : request.productName,
+            176,
+            strong: true,
+          ),
+        ),
+        DataCell(
+          _bodyCell(
+            request.isDiscount
+                ? '${_qty(request.discountEffectivePercentage ?? 0)}%'
+                : '${_qty(request.quantity)} ${request.unit}',
+            82,
+          ),
+        ),
         DataCell(_bodyCell(request.requestedByName, 128)),
         DataCell(_bodyCell(_when(request.requestedAt), 130)),
         DataCell(
           SizedBox(
             width: 72,
-            child: request.hasProof
+            child: request.isDiscount
+                ? const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Tooltip(
+                      message: 'Proof is not required for discount requests',
+                      child: Text(
+                        'N/A',
+                        style: TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: _font,
+                        ),
+                      ),
+                    ),
+                  )
+                : request.hasProof
                 ? Align(
                     alignment: Alignment.centerLeft,
                     child: Tooltip(
@@ -931,8 +1006,11 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     ),
   );
 
-  Color _typeColor(InventoryApprovalType type) =>
-      type == InventoryApprovalType.restock ? _blue : const Color(0xFFEA580C);
+  Color _typeColor(InventoryApprovalType type) => switch (type) {
+    InventoryApprovalType.restock => _blue,
+    InventoryApprovalType.writeOff => const Color(0xFFEA580C),
+    InventoryApprovalType.discount => const Color(0xFF7C3AED),
+  };
 
   Color _statusColor(InventoryApprovalStatus status) => switch (status) {
     InventoryApprovalStatus.pending => const Color(0xFFD97706),

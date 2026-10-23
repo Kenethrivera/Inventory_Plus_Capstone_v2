@@ -17,6 +17,9 @@ import 'widgets/order_checklist_view.dart';
 import 'visual_search_page.dart';
 import 'package:inventory_plus/notifications/notification_provider.dart';
 import 'dart:async';
+import 'dart:math' as math;
+
+import '../logic/inventory_approval.dart';
 
 const double _kSnapFull = 0.75;
 const double _kBaseChromeHeight = 320.0;
@@ -52,6 +55,9 @@ class _PosCartPageState extends State<PosCartPage>
   double _discountValue = 0.0;
   bool _isDiscountPercentage = true;
   String _discountReason = '';
+  InventoryApprovalRequest? _discountApproval;
+  bool _isRequestingDiscountApproval = false;
+  late String _checkoutSnapshotToken;
 
   double _cartHeightFraction = 0.0;
   late AnimationController _snapAnim;
@@ -67,14 +73,22 @@ class _PosCartPageState extends State<PosCartPage>
   String? _pendingAutoOpenOrderId;
   StreamSubscription<InventoryRuntimeSettingsSnapshot>?
   _runtimeSettingsSubscription;
+  StreamSubscription<InventoryApprovalRequest?>? _discountApprovalSubscription;
 
   @override
   void initState() {
     super.initState();
+    _checkoutSnapshotToken = _newCheckoutSnapshotToken();
+    unawaited(widget.controller.loadStoreSettings());
     _runtimeSettingsSubscription = widget.controller
         .streamRuntimeSettings()
         .listen((_) {
           if (mounted) setState(() {});
+        });
+    _discountApprovalSubscription = widget.controller
+        .streamDiscountApproval()
+        .listen((request) {
+          if (mounted) setState(() => _discountApproval = request);
         });
     _pendingAutoOpenOrderId = widget.targetOrderId;
     _snapAnim = AnimationController(
@@ -96,8 +110,25 @@ class _PosCartPageState extends State<PosCartPage>
   @override
   void dispose() {
     unawaited(_runtimeSettingsSubscription?.cancel());
+    unawaited(_discountApprovalSubscription?.cancel());
+    widget.controller.clearDiscountApprovalTracking();
     _snapAnim.dispose();
     super.dispose();
+  }
+
+  String _newCheckoutSnapshotToken() {
+    final random = math.Random.secure();
+    final entropy = List<String>.generate(
+      4,
+      (_) => random.nextInt(0x100000000).toRadixString(16).padLeft(8, '0'),
+    ).join();
+    return '${DateTime.now().microsecondsSinceEpoch}-$entropy';
+  }
+
+  void _invalidateDiscountApproval() {
+    _checkoutSnapshotToken = _newCheckoutSnapshotToken();
+    _discountApproval = null;
+    widget.controller.clearDiscountApprovalTracking();
   }
 
   @override
@@ -181,7 +212,10 @@ class _PosCartPageState extends State<PosCartPage>
       );
       return false;
     }
-    setState(() => _cart[item.id] = currentQty + 1);
+    setState(() {
+      _invalidateDiscountApproval();
+      _cart[item.id] = currentQty + 1;
+    });
     return true;
   }
 
@@ -203,6 +237,7 @@ class _PosCartPageState extends State<PosCartPage>
     } catch (_) {}
 
     setState(() {
+      _invalidateDiscountApproval();
       if (qty <= 0) {
         _cart.remove(itemId);
       } else {
@@ -218,6 +253,12 @@ class _PosCartPageState extends State<PosCartPage>
 
   Future<void> _processOrder() async {
     if (_cart.isEmpty || _isProcessingCart) return;
+    final subtotalBeforeDiscount = _calculateTotal();
+    if (_requiresDiscountApproval(subtotalBeforeDiscount) &&
+        !_hasUsableDiscountApproval(subtotalBeforeDiscount)) {
+      AppToast.error(context, 'Admin approval is required before checkout.');
+      return;
+    }
     setState(() => _isProcessingCart = true);
     try {
       final items = _cart.entries.map((entry) {
@@ -244,6 +285,13 @@ class _PosCartPageState extends State<PosCartPage>
             items,
             totalAmount: totalDue,
             discountAmount: discountAmt,
+            discountMode: _discountMode,
+            discountValue: _discountValue,
+            discountReason: _discountReason,
+            checkoutToken: _checkoutSnapshotToken,
+            discountApprovalRequestId: _requiresDiscountApproval(subtotal)
+                ? _discountApproval?.id
+                : null,
             soloHandled: _soloMode,
             assignedHelper: assignedHelper,
           );
@@ -281,6 +329,7 @@ class _PosCartPageState extends State<PosCartPage>
       if (!mounted) return;
 
       setState(() {
+        _invalidateDiscountApproval();
         _cart.clear();
         _discountValue = 0.0;
         _discountReason = '';
@@ -489,6 +538,7 @@ class _PosCartPageState extends State<PosCartPage>
       );
       if (!mounted) return true;
       setState(() {
+        _invalidateDiscountApproval();
         for (final item in order.items) {
           _cart[item.productId] = (_cart[item.productId] ?? 0) + item.quantity;
         }
@@ -519,6 +569,92 @@ class _PosCartPageState extends State<PosCartPage>
       } catch (_) {}
     }
     return total;
+  }
+
+  String get _discountMode => _isDiscountPercentage ? 'percentage' : 'fixed';
+
+  double _discountAmountFor(double subtotal) {
+    if (subtotal <= 0 || _discountValue <= 0) return 0;
+    final amount = _isDiscountPercentage
+        ? subtotal * (_discountValue / 100)
+        : _discountValue;
+    return amount.clamp(0, subtotal).toDouble();
+  }
+
+  double _effectiveDiscountPercentage(double subtotal) {
+    if (subtotal <= 0) return 0;
+    return (_discountAmountFor(subtotal) / subtotal) * 100;
+  }
+
+  bool _requiresDiscountApproval(double subtotal) {
+    final role = widget.controller.currentUserRole?.toLowerCase();
+    if (role == 'admin' || _discountValue <= 0) return false;
+    return _effectiveDiscountPercentage(subtotal) >
+        widget.controller.cashierAutoApprovedDiscountLimitPct;
+  }
+
+  bool _hasUsableDiscountApproval(double subtotal) {
+    final request = _discountApproval;
+    if (request == null ||
+        request.status != InventoryApprovalStatus.approved ||
+        request.checkoutToken != _checkoutSnapshotToken ||
+        request.usedAt != null) {
+      return false;
+    }
+    const tolerance = 0.005;
+    return request.discountMode == _discountMode &&
+        ((request.discountValue ?? -1) - _discountValue).abs() < tolerance &&
+        ((request.subtotalAmount ?? -1) - subtotal).abs() < tolerance &&
+        ((request.discountAmount ?? -1) - _discountAmountFor(subtotal)).abs() <
+            tolerance;
+  }
+
+  List<CustomerOrderItem> _currentCartItems() => _cart.entries
+      .map((entry) {
+        final item = widget.controller.allItems.firstWhere(
+          (candidate) => candidate.id == entry.key,
+        );
+        return CustomerOrderItem(
+          productId: item.id,
+          productName: item.name,
+          quantity: entry.value,
+        );
+      })
+      .toList(growable: false);
+
+  Future<void> _requestDiscountApproval() async {
+    if (_cart.isEmpty || _isRequestingDiscountApproval) return;
+    final subtotal = _calculateTotal();
+    if (!_requiresDiscountApproval(subtotal)) return;
+    if (_discountReason.trim().isEmpty) {
+      AppToast.error(
+        context,
+        'Enter a reason before requesting Admin approval.',
+      );
+      return;
+    }
+    setState(() => _isRequestingDiscountApproval = true);
+    try {
+      final request = await widget.controller.submitDiscountApprovalRequest(
+        items: _currentCartItems(),
+        discountMode: _discountMode,
+        discountValue: _discountValue,
+        reason: _discountReason,
+        checkoutToken: _checkoutSnapshotToken,
+      );
+      if (!mounted) return;
+      setState(() => _discountApproval = request);
+      AppToast.success(context, 'Discount approval requested.');
+    } catch (error) {
+      if (mounted) {
+        AppToast.error(
+          context,
+          error.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRequestingDiscountApproval = false);
+    }
   }
 
   void _openAIObjectScanner() {
@@ -558,6 +694,7 @@ class _PosCartPageState extends State<PosCartPage>
             final textVal = valueCtrl.text.trim();
             if (textVal.isEmpty) {
               setState(() {
+                _invalidateDiscountApproval();
                 _discountValue = 0.0;
                 _isDiscountPercentage = isPercent;
                 _discountReason = '';
@@ -594,6 +731,7 @@ class _PosCartPageState extends State<PosCartPage>
             }
 
             setState(() {
+              _invalidateDiscountApproval();
               _discountValue = val;
               _isDiscountPercentage = isPercent;
               _discountReason = reasonCtrl.text;
@@ -3817,6 +3955,11 @@ class _PosCartPageState extends State<PosCartPage>
         : _discountValue;
     if (discountAmt > subtotal) discountAmt = subtotal; // Cap discount
     double totalDue = subtotal - discountAmt;
+    final requiresDiscountApproval = _requiresDiscountApproval(subtotal);
+    final hasDiscountApproval = _hasUsableDiscountApproval(subtotal);
+    final approvalPending =
+        requiresDiscountApproval &&
+        _discountApproval?.status == InventoryApprovalStatus.pending;
 
     return ClipRect(
       child: Container(
@@ -4147,6 +4290,7 @@ class _PosCartPageState extends State<PosCartPage>
                           InkWell(
                             onTap: () {
                               setState(() {
+                                _invalidateDiscountApproval();
                                 _discountValue = 0.0;
                                 _discountReason = '';
                               });
@@ -4288,6 +4432,13 @@ class _PosCartPageState extends State<PosCartPage>
                     ],
                   ),
                   const SizedBox(height: 16),
+                  if (requiresDiscountApproval) ...[
+                    _buildDiscountApprovalStatus(
+                      subtotal: subtotal,
+                      approved: hasDiscountApproval,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   _buildHelperAssignmentControl(),
                   const SizedBox(height: 12),
 
@@ -4295,10 +4446,16 @@ class _PosCartPageState extends State<PosCartPage>
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton.icon(
-                      onPressed: _cart.isEmpty || _isProcessingCart
+                      onPressed:
+                          _cart.isEmpty ||
+                              _isProcessingCart ||
+                              _isRequestingDiscountApproval ||
+                              approvalPending
                           ? null
+                          : requiresDiscountApproval && !hasDiscountApproval
+                          ? _requestDiscountApproval
                           : _processOrder,
-                      icon: _isProcessingCart
+                      icon: _isProcessingCart || _isRequestingDiscountApproval
                           ? const SizedBox(
                               width: 16,
                               height: 16,
@@ -4307,8 +4464,10 @@ class _PosCartPageState extends State<PosCartPage>
                                 strokeWidth: 2,
                               ),
                             )
-                          : const Icon(
-                              LucideIcons.check,
+                          : Icon(
+                              requiresDiscountApproval && !hasDiscountApproval
+                                  ? LucideIcons.shieldCheck
+                                  : LucideIcons.check,
                               color: Colors.white,
                               size: 20,
                             ),
@@ -4323,6 +4482,12 @@ class _PosCartPageState extends State<PosCartPage>
                       label: Text(
                         _isProcessingCart
                             ? 'Processing...'
+                            : _isRequestingDiscountApproval
+                            ? 'Requesting...'
+                            : approvalPending
+                            ? 'Awaiting Admin Approval'
+                            : requiresDiscountApproval && !hasDiscountApproval
+                            ? 'Request Approval'
                             : (_soloMode ? 'Process & Pack' : 'Send to Helper'),
                         style: const TextStyle(
                           fontSize: 15,
@@ -4338,6 +4503,85 @@ class _PosCartPageState extends State<PosCartPage>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDiscountApprovalStatus({
+    required double subtotal,
+    required bool approved,
+  }) {
+    final request = _discountApproval;
+    final rejected = request?.status == InventoryApprovalStatus.rejected;
+    final pending = request?.status == InventoryApprovalStatus.pending;
+    final color = approved
+        ? const Color(0xFF15803D)
+        : rejected
+        ? const Color(0xFFDC2626)
+        : const Color(0xFFD97706);
+    final title = approved
+        ? 'Discount approved'
+        : rejected
+        ? 'Discount rejected'
+        : pending
+        ? 'Admin approval pending'
+        : 'Admin approval required';
+    final effective = _effectiveDiscountPercentage(subtotal);
+    final limit = widget.controller.cashierAutoApprovedDiscountLimitPct;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            approved
+                ? LucideIcons.badgeCheck
+                : rejected
+                ? LucideIcons.circleX
+                : LucideIcons.shieldAlert,
+            size: 18,
+            color: color,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  '${effective.toStringAsFixed(2)}% effective discount; '
+                  'Cashier limit ${limit.toStringAsFixed(2)}%.',
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 11,
+                  ),
+                ),
+                if (rejected &&
+                    (request?.reviewNote?.trim().isNotEmpty ?? false))
+                  Text(
+                    request!.reviewNote!,
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

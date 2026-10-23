@@ -592,9 +592,7 @@ class NotificationService {
     await createNotification(notification);
   }
 
-  Future<void> notifyInventoryApproval(
-    InventoryApprovalRequest request,
-  ) async {
+  Future<void> notifyInventoryApproval(InventoryApprovalRequest request) async {
     final notification = NotificationFactory.inventoryApproval(
       locationId: request.locationId,
       requestId: request.id,
@@ -607,6 +605,11 @@ class NotificationService {
       requestedById: request.requestedById,
       requestedByName: request.requestedByName,
       requestedByRole: request.requestedByRole,
+      discountMode: request.discountMode,
+      discountValue: request.discountValue,
+      discountAmount: request.discountAmount,
+      discountEffectivePercentage: request.discountEffectivePercentage,
+      subtotalAmount: request.subtotalAmount,
     );
     await createNotification(notification);
   }
