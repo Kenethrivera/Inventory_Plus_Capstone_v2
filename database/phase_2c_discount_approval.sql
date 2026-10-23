@@ -98,6 +98,7 @@ alter table public.approval_requests
   add column if not exists discount_amount numeric,
   add column if not exists discount_effective_percentage numeric,
   add column if not exists subtotal_amount numeric,
+  add column if not exists cart_items jsonb,
   add column if not exists cart_fingerprint text,
   add column if not exists checkout_token text,
   add column if not exists used_at timestamptz,
@@ -139,13 +140,15 @@ begin
     alter table public.approval_requests
       add constraint approval_request_discount_fields_check check (
         request_type <> 'discount' or (
-          discount_mode in ('percentage', 'fixed')
+          discount_mode in ('percentage', 'amount')
           and discount_value is not null and discount_value >= 0
           and discount_amount is not null and discount_amount >= 0
           and discount_effective_percentage is not null
           and discount_effective_percentage >= 0
           and discount_effective_percentage <= 100
           and subtotal_amount is not null and subtotal_amount >= 0
+          and jsonb_typeof(cart_items) = 'array'
+          and jsonb_array_length(cart_items) > 0
           and cart_fingerprint is not null
           and checkout_token is not null
           and nullif(trim(reason), '') is not null
@@ -192,6 +195,7 @@ create or replace function private.discount_cart_snapshot_v1(
   p_items jsonb,
   p_discount_mode text,
   p_discount_value numeric,
+  p_reason text,
   p_checkout_token text
 ) returns table (
   normalized_items jsonb,
@@ -220,7 +224,7 @@ begin
   if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'The cart cannot be empty';
   end if;
-  if v_mode not in ('percentage', 'fixed') then
+  if v_mode not in ('percentage', 'amount') then
     raise exception 'Unsupported discount mode';
   end if;
   if v_value < 0 then raise exception 'Discount cannot be negative'; end if;
@@ -267,7 +271,9 @@ begin
       jsonb_build_object(
         'product_id', scoped.id,
         'product_name', scoped.product_name,
-        'quantity', scoped.quantity
+        'quantity', scoped.quantity,
+        'unit_price', scoped.product_price,
+        'line_total', round(scoped.product_price * scoped.quantity, 2)
       ) order by scoped.id
     ),
     round(sum(scoped.product_price * scoped.quantity), 2)
@@ -295,6 +301,8 @@ begin
       'discount_mode', v_mode,
       'discount_value', v_value,
       'discount_amount', v_discount,
+      'effective_percentage', v_effective,
+      'reason', trim(coalesce(p_reason, '')),
       'checkout_token', trim(p_checkout_token)
     )::text,
     'UTF8'
@@ -306,7 +314,7 @@ end;
 $$;
 
 revoke all on function private.discount_cart_snapshot_v1(
-  uuid, jsonb, text, numeric, text
+  uuid, jsonb, text, numeric, text, text
 ) from public, anon, authenticated;
 
 create or replace function private.approval_request_json_v1(
@@ -318,6 +326,11 @@ as $$
   select jsonb_build_object(
     'id', p_request.id,
     'location_id', p_request.location_id,
+    'location_name', (
+      select location.location_name
+      from public.locations location
+      where location.id = p_request.location_id
+    ),
     'request_type', p_request.request_type,
     'status', p_request.status,
     'requested_by_id', p_request.requested_by_id,
@@ -352,6 +365,7 @@ as $$
     'discount_effective_percentage',
       p_request.discount_effective_percentage,
     'subtotal_amount', p_request.subtotal_amount,
+    'cart_items', p_request.cart_items,
     'cart_fingerprint', p_request.cart_fingerprint,
     'checkout_token', p_request.checkout_token,
     'used_at', p_request.used_at,
@@ -512,7 +526,7 @@ begin
   select * into v_snapshot
   from private.discount_cart_snapshot_v1(
     v_profile.location_id, p_items, p_discount_mode, p_discount_value,
-    p_checkout_token
+    p_reason, p_checkout_token
   );
 
   select coalesce(settings.cashier_auto_approved_discount_limit_pct, 10)
@@ -542,13 +556,14 @@ begin
     location_id, request_type, requested_by_id, requested_by_name,
     requested_by_role, reason, discount_mode, discount_value,
     discount_amount, discount_effective_percentage, subtotal_amount,
-    cart_fingerprint, checkout_token
+    cart_items, cart_fingerprint, checkout_token
   ) values (
     v_profile.location_id, 'discount', v_profile.profile_id,
     v_profile.profile_name, v_profile.role, v_reason,
     lower(trim(p_discount_mode)), p_discount_value,
     v_snapshot.discount_amount, v_snapshot.effective_percentage,
-    v_snapshot.subtotal_amount, v_snapshot.cart_fingerprint,
+    v_snapshot.subtotal_amount, v_snapshot.normalized_items,
+    v_snapshot.cart_fingerprint,
     trim(p_checkout_token)
   ) returning * into v_request;
 
@@ -830,7 +845,7 @@ begin
   select * into v_snapshot
   from private.discount_cart_snapshot_v1(
     v_profile.location_id, p_items, p_discount_mode, p_discount_value,
-    p_checkout_token
+    p_discount_reason, p_checkout_token
   );
   v_expected_total := v_snapshot.subtotal_amount - v_snapshot.discount_amount;
   if abs(round(coalesce(p_discount_amount, 0), 2)

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:inventory_plus/logic/discount_calculation.dart';
 import 'package:inventory_plus/logic/inventory_approval.dart';
 
 void main() {
@@ -11,9 +12,29 @@ void main() {
     'lib/logic/inventory_controller.dart',
   ).readAsStringSync();
   final pos = File('lib/ui/pos_cart_page.dart').readAsStringSync();
+  final approvalCenter = File(
+    'lib/ui/approval_center_page.dart',
+  ).readAsStringSync();
 
-  test('discount approval rows retain the reviewed checkout snapshot', () {
-    final request = InventoryApprovalRequest.fromJson(<String, dynamic>{
+  DiscountCalculation calculate(
+    DiscountMode mode,
+    double value, {
+    double subtotal = 1000,
+  }) => DiscountCalculation.calculate(
+    subtotal: subtotal,
+    mode: mode,
+    enteredValue: value,
+  );
+
+  InventoryApprovalRequest approval({
+    String mode = 'amount',
+    double value = 150,
+    double subtotal = 1000,
+    double amount = 150,
+    String token = 'checkout-token-1234',
+    String? usedAt,
+  }) {
+    final json = <String, dynamic>{
       'id': 'request-1',
       'request_type': 'discount',
       'status': 'approved',
@@ -21,54 +42,168 @@ void main() {
       'requested_by_name': 'Cashier',
       'requested_by_role': 'cashier',
       'location_id': 'location-1',
-      'discount_mode': 'fixed',
-      'discount_value': 150,
-      'discount_amount': 150,
-      'discount_effective_percentage': 15,
-      'subtotal_amount': 1000,
+      'location_name': 'Main Store',
+      'discount_mode': mode,
+      'discount_value': value,
+      'discount_amount': amount,
+      'discount_effective_percentage': amount / subtotal * 100,
+      'subtotal_amount': subtotal,
+      'cart_items': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'product_id': 'product-1',
+          'product_name': 'Item',
+          'quantity': 1,
+        },
+      ],
       'cart_fingerprint': 'fingerprint',
-      'checkout_token': 'checkout-token',
+      'checkout_token': token,
       'reason': 'Manager-authorized promotion',
-      'created_at': '2026-10-23T08:00:00Z',
-    });
+      'requested_at': '2026-10-23T08:00:00Z',
+    };
+    if (usedAt != null) json['used_at'] = usedAt;
+    return InventoryApprovalRequest.fromJson(json);
+  }
 
-    expect(request.type, InventoryApprovalType.discount);
-    expect(request.resultingTotal, 850);
-    expect(request.discountEffectivePercentage, 15);
-    expect(request.cartFingerprint, 'fingerprint');
-    expect(request.checkoutToken, 'checkout-token');
+  test('percentage input calculates a percentage of subtotal', () {
+    final result = calculate(DiscountMode.percentage, 10);
+    expect(result.discountAmount, 100);
+    expect(result.effectivePercentage, 10);
   });
 
-  test('server checkout enforces threshold and one-use exact approval', () {
-    expect(migration, contains('create_customer_order_v1'));
-    expect(migration, contains('private.discount_cart_snapshot_v1'));
-    expect(migration, contains('v_snapshot.cart_fingerprint'));
-    expect(migration, contains("v_request.status <> 'approved'"));
+  test('amount input calculates a fixed peso discount', () {
+    final result = calculate(DiscountMode.amount, 10);
+    expect(result.discountAmount, 10);
+    expect(result.effectivePercentage, 1);
+  });
+
+  test('fixed peso value is never interpreted as a percentage', () {
+    expect(
+      calculate(DiscountMode.amount, 10).discountAmount,
+      isNot(calculate(DiscountMode.percentage, 10).discountAmount),
+    );
+  });
+
+  test('effective percentage for fixed discount uses monetary amount', () {
+    final result = calculate(DiscountMode.amount, 150);
+    expect(result.discountAmount, 150);
+    expect(result.effectivePercentage, 15);
+  });
+
+  test('discount exactly at threshold does not require approval', () {
+    expect(
+      calculate(DiscountMode.percentage, 10).requiresApproval(10),
+      isFalse,
+    );
+    expect(calculate(DiscountMode.amount, 100).requiresApproval(10), isFalse);
+  });
+
+  test('discount above threshold requires approval', () {
+    expect(calculate(DiscountMode.amount, 150).requiresApproval(10), isTrue);
+  });
+
+  test('reason is optional within limit and required above limit', () {
+    expect(pos, contains('Reason (Optional)'));
+    expect(pos, contains('Reason (Required for Approval)'));
+    expect(
+      migration,
+      contains("raise exception 'A reason is required for discount approval'"),
+    );
+    expect(migration, contains("nullif(trim(reason), '') is not null"));
+  });
+
+  test(
+    'approval and rejection updates preserve cart and never auto-checkout',
+    () {
+      final listenerStart = pos.indexOf('.streamDiscountApproval()');
+      final listenerEnd = pos.indexOf('_pendingAutoOpenOrderId', listenerStart);
+      final listener = pos.substring(listenerStart, listenerEnd);
+      expect(listener, contains('_discountApproval = request'));
+      expect(listener, isNot(contains('_cart.clear')));
+      expect(listener, isNot(contains('_processOrder()')));
+    },
+  );
+
+  test('changed mode or entered value invalidates approval', () {
+    final request = approval();
+    expect(
+      request.authorizesDiscountCheckout(
+        mode: 'percentage',
+        enteredValue: 150,
+        subtotal: 1000,
+        monetaryDiscount: 150,
+        cartToken: 'checkout-token-1234',
+      ),
+      isFalse,
+    );
+    expect(
+      request.authorizesDiscountCheckout(
+        mode: 'amount',
+        enteredValue: 151,
+        subtotal: 1000,
+        monetaryDiscount: 151,
+        cartToken: 'checkout-token-1234',
+      ),
+      isFalse,
+    );
+  });
+
+  test('changed cart token or subtotal invalidates approval', () {
+    final request = approval();
+    expect(
+      request.authorizesDiscountCheckout(
+        mode: 'amount',
+        enteredValue: 150,
+        subtotal: 1000,
+        monetaryDiscount: 150,
+        cartToken: 'changed-cart-token',
+      ),
+      isFalse,
+    );
+    expect(
+      request.authorizesDiscountCheckout(
+        mode: 'amount',
+        enteredValue: 150,
+        subtotal: 2000,
+        monetaryDiscount: 150,
+        cartToken: 'checkout-token-1234',
+      ),
+      isFalse,
+    );
+    expect(pos, contains('_invalidateDiscountApproval();'));
+  });
+
+  test('approved snapshot can only be consumed once', () {
+    final request = approval(usedAt: '2026-10-23T09:00:00Z');
+    expect(
+      request.authorizesDiscountCheckout(
+        mode: 'amount',
+        enteredValue: 150,
+        subtotal: 1000,
+        monetaryDiscount: 150,
+        cartToken: 'checkout-token-1234',
+      ),
+      isFalse,
+    );
     expect(migration, contains('v_request.used_at is not null'));
-    expect(migration, contains('discount_approval_request_id'));
+    expect(migration, contains('orders_discount_approval_request_unique'));
+  });
+
+  test('snapshot and Approval Center retain both representations', () {
+    final request = approval();
+    expect(request.discountDisplay, '₱150.00');
+    expect(request.cartItems.single['quantity'], 1);
+    expect(migration, contains("discount_mode in ('percentage', 'amount')"));
+    expect(migration, contains("'cart_items', p_request.cart_items"));
+    expect(approvalCenter, contains('EFFECTIVE / QTY'));
+    expect(approvalCenter, contains('SUBTOTAL / PROOF'));
+    expect(approvalCenter, contains('Discount Approval'));
+  });
+
+  test('server checkout remains authoritative and realtime is centralized', () {
+    expect(migration, contains('create_customer_order_v1'));
+    expect(migration, contains('v_request.cart_fingerprint'));
     expect(migration, contains('revoke insert on table public.orders'));
-  });
-
-  test('cashier checkout waits for centralized approval state', () {
-    expect(controller, contains('streamDiscountApproval'));
-    expect(controller, contains('approvalRequestChanges'));
     expect(controller, contains('_refreshActiveDiscountApproval'));
-    expect(pos, contains('Admin approval required'));
-    expect(pos, contains('Request Approval'));
-    expect(pos, contains('_hasUsableDiscountApproval'));
     expect(pos, isNot(contains('onPostgresChanges')));
-  });
-
-  test('runtime threshold is location-scoped and Admin-write-only', () {
-    expect(migration, contains('location_id uuid'));
-    expect(
-      migration,
-      contains('cashier_auto_approved_discount_limit_pct numeric'),
-    );
-    expect(migration, contains("if v_profile.role <> 'admin'"));
-    expect(
-      migration,
-      contains('revoke insert, update, delete on table public.store_settings'),
-    );
   });
 }

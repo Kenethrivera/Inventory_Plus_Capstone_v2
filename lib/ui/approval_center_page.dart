@@ -210,23 +210,20 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _detail('Status', request.status.label),
+                _detail('Request', request.id.toUpperCase()),
+                _detail('Status', request.displayStatus),
                 _detail('Type', request.type.label),
                 _detail('Requested by', request.requestedByName),
+                _detail('Location', request.locationName),
                 _detail('Requested at', _when(request.requestedAt)),
                 if (request.isDiscount) ...[
                   _detail(
                     'Discount mode',
-                    request.discountMode == 'fixed'
+                    request.discountMode == 'amount'
                         ? 'Fixed amount'
                         : 'Percentage',
                   ),
-                  _detail(
-                    'Requested discount',
-                    request.discountMode == 'fixed'
-                        ? _money(request.discountValue)
-                        : '${_qty(request.discountValue ?? 0)}%',
-                  ),
+                  _detail('Requested discount', request.discountDisplay),
                   _detail(
                     'Effective percentage',
                     '${_qty(request.discountEffectivePercentage ?? 0)}%',
@@ -234,6 +231,13 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
                   _detail('Discount amount', _money(request.discountAmount)),
                   _detail('Subtotal', _money(request.subtotalAmount)),
                   _detail('Resulting total', _money(request.resultingTotal)),
+                  const SizedBox(height: 12),
+                  _cartSnapshotPanel(request),
+                  const SizedBox(height: 8),
+                  _detail(
+                    'Checkout fingerprint',
+                    request.cartFingerprint ?? '-',
+                  ),
                 ] else ...[
                   _detail(
                     'Item',
@@ -545,6 +549,53 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     ),
   );
 
+  Widget _cartSnapshotPanel(InventoryApprovalRequest request) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF8FAFC),
+      borderRadius: BorderRadius.circular(9),
+      border: Border.all(color: const Color(0xFFE2E8F0)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Reviewed cart snapshot',
+          style: TextStyle(
+            color: Color(0xFF334155),
+            fontWeight: FontWeight.w800,
+            fontFamily: _font,
+          ),
+        ),
+        const SizedBox(height: 7),
+        if (request.cartItems.isEmpty)
+          const Text(
+            'Cart item details are unavailable.',
+            style: TextStyle(color: Color(0xFF94A3B8), fontFamily: _font),
+          )
+        else
+          ...request.cartItems.map((item) {
+            final quantity = (item['quantity'] as num?)?.toDouble() ?? 0;
+            final lineTotal = (item['line_total'] as num?)?.toDouble();
+            return Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                '${_qty(quantity)} × '
+                '${item['product_name']?.toString() ?? 'Unknown item'}'
+                '${lineTotal == null ? '' : ' — ${_money(lineTotal)}'}',
+                style: const TextStyle(
+                  color: Color(0xFF475569),
+                  fontSize: 12,
+                  fontFamily: _font,
+                ),
+              ),
+            );
+          }),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
@@ -764,14 +815,15 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
             dividerThickness: 1,
             headingRowColor: const WidgetStatePropertyAll(Color(0xFFF8FAFC)),
             columns: [
-              DataColumn(label: _headerCell('REQUEST', 78)),
-              DataColumn(label: _headerCell('TYPE', 82)),
-              DataColumn(label: _headerCell('ITEM', 176)),
-              DataColumn(label: _headerCell('QTY', 82)),
-              DataColumn(label: _headerCell('REQUESTED BY', 128)),
-              DataColumn(label: _headerCell('REQUESTED AT', 130)),
-              DataColumn(label: _headerCell('PROOF', 72)),
+              DataColumn(label: _headerCell('TYPE', 112)),
+              DataColumn(label: _headerCell('REQUESTER', 124)),
+              DataColumn(label: _headerCell('LOCATION', 130)),
+              DataColumn(label: _headerCell('DISCOUNT / ITEM', 150)),
+              DataColumn(label: _headerCell('EFFECTIVE / QTY', 92)),
+              DataColumn(label: _headerCell('SUBTOTAL / PROOF', 106)),
+              DataColumn(label: _headerCell('REASON', 150)),
               DataColumn(label: _headerCell('STATUS', 86)),
+              DataColumn(label: _headerCell('REQUESTED', 130)),
               DataColumn(label: _headerCell('ACTIONS', 124)),
             ],
             rows: records.map(_row).toList(growable: false),
@@ -792,21 +844,23 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       ),
       cells: [
         DataCell(
-          _bodyCell(request.id.substring(0, 8).toUpperCase(), 78, strong: true),
-        ),
-        DataCell(
           SizedBox(
-            width: 82,
+            width: 112,
             child: Align(
               alignment: Alignment.centerLeft,
-              child: _chip(request.type.label, _typeColor(request.type)),
+              child: _chip(
+                request.isDiscount ? 'Discount Approval' : request.type.label,
+                _typeColor(request.type),
+              ),
             ),
           ),
         ),
+        DataCell(_bodyCell(request.requestedByName, 124, strong: true)),
+        DataCell(_bodyCell(request.locationName, 130)),
         DataCell(
           _bodyCell(
-            request.isDiscount ? 'POS checkout' : request.productName,
-            176,
+            request.isDiscount ? request.discountDisplay : request.productName,
+            150,
             strong: true,
           ),
         ),
@@ -815,68 +869,18 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
             request.isDiscount
                 ? '${_qty(request.discountEffectivePercentage ?? 0)}%'
                 : '${_qty(request.quantity)} ${request.unit}',
-            82,
+            92,
           ),
         ),
-        DataCell(_bodyCell(request.requestedByName, 128)),
-        DataCell(_bodyCell(_when(request.requestedAt), 130)),
         DataCell(
-          SizedBox(
-            width: 72,
-            child: request.isDiscount
-                ? const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Tooltip(
-                      message: 'Proof is not required for discount requests',
-                      child: Text(
-                        'N/A',
-                        style: TextStyle(
-                          color: Color(0xFF94A3B8),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: _font,
-                        ),
-                      ),
-                    ),
-                  )
-                : request.hasProof
-                ? Align(
-                    alignment: Alignment.centerLeft,
-                    child: Tooltip(
-                      message: 'View proof',
-                      child: InkWell(
-                        onTap: () => _openProof(request),
-                        borderRadius: BorderRadius.circular(7),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                          child: const Icon(
-                            LucideIcons.image,
-                            color: _blue,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  )
-                : const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Legacy',
-                      style: TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: _font,
-                      ),
-                    ),
-                  ),
+          request.isDiscount
+              ? _bodyCell(_money(request.subtotalAmount), 106)
+              : _proofTableCell(request),
+        ),
+        DataCell(
+          _bodyCell(
+            request.reason?.trim().isNotEmpty == true ? request.reason! : '—',
+            150,
           ),
         ),
         DataCell(
@@ -884,10 +888,16 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
             width: 86,
             child: Align(
               alignment: Alignment.centerLeft,
-              child: _chip(request.status.label, _statusColor(request.status)),
+              child: _chip(
+                request.displayStatus,
+                request.usedAt != null
+                    ? const Color(0xFF475569)
+                    : _statusColor(request.status),
+              ),
             ),
           ),
         ),
+        DataCell(_bodyCell(_when(request.requestedAt), 130)),
         DataCell(
           SizedBox(
             width: 124,
@@ -931,6 +941,44 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       ],
     );
   }
+
+  Widget _proofTableCell(InventoryApprovalRequest request) => SizedBox(
+    width: 106,
+    child: request.hasProof
+        ? Align(
+            alignment: Alignment.centerLeft,
+            child: Tooltip(
+              message: 'View proof',
+              child: InkWell(
+                onTap: () => _openProof(request),
+                borderRadius: BorderRadius.circular(7),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: const Icon(LucideIcons.image, color: _blue, size: 16),
+                ),
+              ),
+            ),
+          )
+        : const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Legacy',
+              style: TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                fontFamily: _font,
+              ),
+            ),
+          ),
+  );
 
   Widget _headerCell(String label, double width) => SizedBox(
     width: width,

@@ -7,6 +7,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../data/inventory.dart';
 import '../logic/helper_assignment.dart';
+import '../logic/discount_calculation.dart';
 import '../logic/inventory_controller.dart';
 import '../services/order_auto_assignment_service.dart';
 import '../services/staff_presence_service.dart';
@@ -273,11 +274,9 @@ class _PosCartPageState extends State<PosCartPage>
       }).toList();
 
       final double subtotal = _calculateTotal();
-      double discountAmt = _isDiscountPercentage
-          ? (subtotal * (_discountValue / 100))
-          : _discountValue;
-      if (discountAmt > subtotal) discountAmt = subtotal;
-      final double totalDue = subtotal - discountAmt;
+      final discount = _discountCalculation(subtotal);
+      final double discountAmt = discount.discountAmount;
+      final double totalDue = discount.total;
       final assignedHelper = _soloMode ? null : _selectedEligibleHelper();
 
       final CustomerOrder? createdOrder = await widget.controller
@@ -571,42 +570,42 @@ class _PosCartPageState extends State<PosCartPage>
     return total;
   }
 
-  String get _discountMode => _isDiscountPercentage ? 'percentage' : 'fixed';
+  DiscountMode get _selectedDiscountMode =>
+      _isDiscountPercentage ? DiscountMode.percentage : DiscountMode.amount;
 
-  double _discountAmountFor(double subtotal) {
-    if (subtotal <= 0 || _discountValue <= 0) return 0;
-    final amount = _isDiscountPercentage
-        ? subtotal * (_discountValue / 100)
-        : _discountValue;
-    return amount.clamp(0, subtotal).toDouble();
-  }
+  String get _discountMode => _selectedDiscountMode.databaseValue;
 
-  double _effectiveDiscountPercentage(double subtotal) {
-    if (subtotal <= 0) return 0;
-    return (_discountAmountFor(subtotal) / subtotal) * 100;
-  }
+  DiscountCalculation _discountCalculation(double subtotal) =>
+      DiscountCalculation.calculate(
+        subtotal: subtotal,
+        mode: _selectedDiscountMode,
+        enteredValue: _discountValue,
+      );
+
+  double _discountAmountFor(double subtotal) =>
+      _discountCalculation(subtotal).discountAmount;
+
+  double _effectiveDiscountPercentage(double subtotal) =>
+      _discountCalculation(subtotal).effectivePercentage;
 
   bool _requiresDiscountApproval(double subtotal) {
     final role = widget.controller.currentUserRole?.toLowerCase();
     if (role == 'admin' || _discountValue <= 0) return false;
-    return _effectiveDiscountPercentage(subtotal) >
-        widget.controller.cashierAutoApprovedDiscountLimitPct;
+    return _discountCalculation(
+      subtotal,
+    ).requiresApproval(widget.controller.cashierAutoApprovedDiscountLimitPct);
   }
 
   bool _hasUsableDiscountApproval(double subtotal) {
     final request = _discountApproval;
-    if (request == null ||
-        request.status != InventoryApprovalStatus.approved ||
-        request.checkoutToken != _checkoutSnapshotToken ||
-        request.usedAt != null) {
-      return false;
-    }
-    const tolerance = 0.005;
-    return request.discountMode == _discountMode &&
-        ((request.discountValue ?? -1) - _discountValue).abs() < tolerance &&
-        ((request.subtotalAmount ?? -1) - subtotal).abs() < tolerance &&
-        ((request.discountAmount ?? -1) - _discountAmountFor(subtotal)).abs() <
-            tolerance;
+    return request?.authorizesDiscountCheckout(
+          mode: _discountMode,
+          enteredValue: _discountValue,
+          subtotal: subtotal,
+          monetaryDiscount: _discountAmountFor(subtotal),
+          cartToken: _checkoutSnapshotToken,
+        ) ??
+        false;
   }
 
   List<CustomerOrderItem> _currentCartItems() => _cart.entries
@@ -685,11 +684,26 @@ class _PosCartPageState extends State<PosCartPage>
     final reasonCtrl = TextEditingController(text: _discountReason);
     bool isPercent = _isDiscountPercentage;
     String? errorMessage;
+    String? reasonError;
 
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setModalState) {
+          final enteredValue = double.tryParse(valueCtrl.text.trim()) ?? 0;
+          final draftCalculation = DiscountCalculation.calculate(
+            subtotal: _calculateTotal(),
+            mode: isPercent ? DiscountMode.percentage : DiscountMode.amount,
+            enteredValue: enteredValue,
+          );
+          final role = widget.controller.currentUserRole?.toLowerCase();
+          final approvalRequired =
+              role != 'admin' &&
+              enteredValue > 0 &&
+              draftCalculation.requiresApproval(
+                widget.controller.cashierAutoApprovedDiscountLimitPct,
+              );
+
           void applyDiscount() {
             final textVal = valueCtrl.text.trim();
             if (textVal.isEmpty) {
@@ -718,14 +732,28 @@ class _PosCartPageState extends State<PosCartPage>
             }
 
             final currentSubtotal = _calculateTotal();
-            final discountAmt = isPercent
-                ? (currentSubtotal * (val / 100))
-                : val;
+            final calculation = DiscountCalculation.calculate(
+              subtotal: currentSubtotal,
+              mode: isPercent ? DiscountMode.percentage : DiscountMode.amount,
+              enteredValue: val,
+            );
+            final requiresApproval =
+                role != 'admin' &&
+                calculation.requiresApproval(
+                  widget.controller.cashierAutoApprovedDiscountLimitPct,
+                );
 
-            if (discountAmt > currentSubtotal) {
+            if (!isPercent && val > currentSubtotal) {
               setModalState(
                 () => errorMessage =
                     'Discount cannot exceed subtotal (₱${currentSubtotal.toStringAsFixed(2)}).',
+              );
+              return;
+            }
+            if (requiresApproval && reasonCtrl.text.trim().isEmpty) {
+              setModalState(
+                () => reasonError =
+                    'A reason is required when Admin approval is needed.',
               );
               return;
             }
@@ -737,6 +765,7 @@ class _PosCartPageState extends State<PosCartPage>
               _discountReason = reasonCtrl.text;
             });
             Navigator.pop(dialogContext);
+            if (requiresApproval) unawaited(_requestDiscountApproval());
           }
 
           return Dialog(
@@ -786,8 +815,11 @@ class _PosCartPageState extends State<PosCartPage>
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              onTap: () =>
-                                  setModalState(() => isPercent = true),
+                              onTap: () => setModalState(() {
+                                isPercent = true;
+                                errorMessage = null;
+                                reasonError = null;
+                              }),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 8,
@@ -826,8 +858,11 @@ class _PosCartPageState extends State<PosCartPage>
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () =>
-                                  setModalState(() => isPercent = false),
+                              onTap: () => setModalState(() {
+                                isPercent = false;
+                                errorMessage = null;
+                                reasonError = null;
+                              }),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 8,
@@ -887,16 +922,21 @@ class _PosCartPageState extends State<PosCartPage>
                         decimal: true,
                       ),
                       style: const TextStyle(fontWeight: FontWeight.bold),
+                      onChanged: (_) => setModalState(() {
+                        errorMessage = null;
+                        reasonError = null;
+                      }),
                       onSubmitted: (_) => applyDiscount(),
                       decoration: InputDecoration(
-                        prefixText: isPercent ? "%" : "₱ ",
+                        prefixText: isPercent ? null : "₱ ",
+                        suffixText: isPercent ? "%" : null,
                         prefixStyle: const TextStyle(
                           color: _primaryBlue,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
                         hintText: isPercent
-                            ? "Enter % Discount"
+                            ? "Enter Percentage"
                             : "Enter Amount",
                         hintStyle: TextStyle(color: Colors.grey.shade400),
                         border: OutlineInputBorder(
@@ -921,9 +961,13 @@ class _PosCartPageState extends State<PosCartPage>
                     TextField(
                       controller: reasonCtrl,
                       style: const TextStyle(color: Colors.white, fontSize: 14),
+                      onChanged: (_) => setModalState(() => reasonError = null),
                       onSubmitted: (_) => applyDiscount(),
                       decoration: InputDecoration(
-                        hintText: "Reason (Optional)",
+                        hintText: approvalRequired
+                            ? "Reason (Required for Approval)"
+                            : "Reason (Optional)",
+                        errorText: reasonError,
                         hintStyle: TextStyle(color: Colors.grey.shade400),
                         filled: true,
                         fillColor: const Color(0xFF374151),
@@ -950,9 +994,11 @@ class _PosCartPageState extends State<PosCartPage>
                           elevation: 0,
                         ),
                         onPressed: applyDiscount,
-                        child: const Text(
-                          "Apply Discount",
-                          style: TextStyle(
+                        child: Text(
+                          approvalRequired
+                              ? "Request Approval"
+                              : "Apply Discount",
+                          style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -3950,11 +3996,9 @@ class _PosCartPageState extends State<PosCartPage>
         : totalQty.toStringAsFixed(2);
 
     double subtotal = _calculateTotal();
-    double discountAmt = _isDiscountPercentage
-        ? (subtotal * (_discountValue / 100))
-        : _discountValue;
-    if (discountAmt > subtotal) discountAmt = subtotal; // Cap discount
-    double totalDue = subtotal - discountAmt;
+    final discount = _discountCalculation(subtotal);
+    final discountAmt = discount.discountAmount;
+    final totalDue = discount.total;
     final requiresDiscountApproval = _requiresDiscountApproval(subtotal);
     final hasDiscountApproval = _hasUsableDiscountApproval(subtotal);
     final approvalPending =

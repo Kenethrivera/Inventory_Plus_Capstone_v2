@@ -44,6 +44,7 @@ class InventoryApprovalRequest {
   const InventoryApprovalRequest({
     required this.id,
     required this.locationId,
+    required this.locationName,
     required this.type,
     required this.status,
     required this.requestedById,
@@ -72,6 +73,7 @@ class InventoryApprovalRequest {
     this.discountAmount,
     this.discountEffectivePercentage,
     this.subtotalAmount,
+    this.cartItems = const <Map<String, dynamic>>[],
     this.cartFingerprint,
     this.checkoutToken,
     this.usedAt,
@@ -80,6 +82,7 @@ class InventoryApprovalRequest {
 
   final String id;
   final String locationId;
+  final String locationName;
   final InventoryApprovalType type;
   final InventoryApprovalStatus status;
   final String requestedById;
@@ -108,6 +111,7 @@ class InventoryApprovalRequest {
   final double? discountAmount;
   final double? discountEffectivePercentage;
   final double? subtotalAmount;
+  final List<Map<String, dynamic>> cartItems;
   final String? cartFingerprint;
   final String? checkoutToken;
   final DateTime? usedAt;
@@ -117,7 +121,34 @@ class InventoryApprovalRequest {
 
   bool get isDiscount => type == InventoryApprovalType.discount;
 
+  String get displayStatus =>
+      isDiscount && usedAt != null ? 'Used' : status.label;
+
+  String get discountDisplay {
+    final value = discountValue ?? 0;
+    if (discountMode == 'amount') return '₱${value.toStringAsFixed(2)}';
+    return '${value == value.roundToDouble() ? value.toInt() : value}%';
+  }
+
   double get resultingTotal => (subtotalAmount ?? 0) - (discountAmount ?? 0);
+
+  bool authorizesDiscountCheckout({
+    required String mode,
+    required double enteredValue,
+    required double subtotal,
+    required double monetaryDiscount,
+    required String cartToken,
+  }) {
+    const tolerance = 0.005;
+    return isDiscount &&
+        status == InventoryApprovalStatus.approved &&
+        usedAt == null &&
+        checkoutToken == cartToken &&
+        discountMode == mode &&
+        ((discountValue ?? -1) - enteredValue).abs() < tolerance &&
+        ((subtotalAmount ?? -1) - subtotal).abs() < tolerance &&
+        ((discountAmount ?? -1) - monetaryDiscount).abs() < tolerance;
+  }
 
   double get resultingStock => type == InventoryApprovalType.restock
       ? currentStock + quantity
@@ -135,6 +166,7 @@ class InventoryApprovalRequest {
     return InventoryApprovalRequest(
       id: json['id'].toString(),
       locationId: json['location_id'].toString(),
+      locationName: json['location_name']?.toString() ?? 'Unknown location',
       type: InventoryApprovalTypeValue.fromDatabase(
         json['request_type'].toString(),
       ),
@@ -175,6 +207,11 @@ class InventoryApprovalRequest {
       subtotalAmount: json['subtotal_amount'] == null
           ? null
           : number('subtotal_amount'),
+      cartItems: List<Map<String, dynamic>>.unmodifiable(
+        (json['cart_items'] as List<dynamic>? ?? const <dynamic>[]).map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        ),
+      ),
       cartFingerprint: json['cart_fingerprint']?.toString(),
       checkoutToken: json['checkout_token']?.toString(),
       usedAt: optionalDate('used_at'),
