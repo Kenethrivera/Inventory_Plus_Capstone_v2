@@ -19,6 +19,9 @@ void main() {
   final notificationFactory = File(
     'lib/notifications/notification_factory.dart',
   ).readAsStringSync();
+  final notificationRepository = File(
+    'lib/notifications/notification_repository.dart',
+  ).readAsStringSync();
   final requesterUi = File('lib/ui/item_detail_page.dart').readAsStringSync();
   final approvalUi = File(
     'lib/ui/widgets/pending_approvals_section.dart',
@@ -55,6 +58,20 @@ void main() {
     expect(create, contains("v_type = 'write_off'"));
     expect(create, isNot(contains('update public.products')));
     expect(requesterUi, contains('InventoryApprovalType.writeOff'));
+  });
+
+  test('approval SQL and Dart use live UUID identifier contracts', () {
+    expect(
+      migration,
+      contains('product_id uuid not null references public.products(id)'),
+    );
+    expect(migration, contains('transaction_id uuid'));
+    expect(migration, contains('p_product_id uuid'));
+    expect(migration, contains('v_transaction_id uuid'));
+    expect(migration, contains('text, text, uuid, numeric, text, text'));
+    expect(migration, isNot(contains('request_payload')));
+    expect(controller, contains("'p_product_id': productId"));
+    expect(controller, isNot(contains('numericProductId')));
   });
 
   test('Admin approves Restock and quantity increases once', () {
@@ -149,6 +166,15 @@ void main() {
       contains("'recipientId': isPending ? null : requestedById"),
     );
     expect(controller, contains('onApprovalRequestChanged'));
+    expect(
+      notificationRepository,
+      contains('approvalRecipientId != recipientId'),
+    );
+    expect(
+      migration,
+      contains('notification.location_id = p_request.location_id::text'),
+    );
+    expect(migration, contains('p_request.location_id::text, v_target_roles'));
   });
 
   test('Admin receives pending request through centralized realtime', () {

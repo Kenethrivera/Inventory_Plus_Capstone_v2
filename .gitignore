@@ -51,3 +51,7 @@ AGENTS.md
 .codex/
 # Widget Preview related
 .widget_preview/
+
+# Supabase local/generated files
+supabase/.temp/
+supabase/schemas/.pgdelta-export.json

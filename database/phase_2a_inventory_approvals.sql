@@ -23,7 +23,7 @@ create table if not exists public.approval_requests (
   reviewed_by_id bigint references public.profiles(id),
   reviewed_by_name text,
   reviewed_at timestamptz,
-  product_id bigint not null references public.products(id),
+  product_id uuid not null references public.products(id),
   product_name text not null,
   product_sku text not null default '',
   unit text not null default 'pcs',
@@ -32,8 +32,7 @@ create table if not exists public.approval_requests (
   reason text,
   note text,
   review_note text,
-  transaction_id bigint,
-  request_payload jsonb not null default '{}'::jsonb,
+  transaction_id uuid,
   constraint approval_request_write_off_reason check (
     request_type <> 'write_off' or nullif(trim(reason), '') is not null
   )
@@ -208,7 +207,7 @@ begin
 
   select notification.id into v_notification_id
   from public.notifications notification
-  where notification.location_id = p_request.location_id
+  where notification.location_id = p_request.location_id::text
     and notification.is_resolved = false
     and notification.type = 'system'
     and notification.payload ->> 'category' = 'inventoryApproval'
@@ -222,7 +221,7 @@ begin
       location_id, target_roles, title, body, type, priority, payload,
       created_at, is_resolved, resolved_at
     ) values (
-      p_request.location_id, v_target_roles, v_title, v_body, 'system',
+      p_request.location_id::text, v_target_roles, v_title, v_body, 'system',
       v_priority, v_payload, now(), false, null
     ) returning id into v_notification_id;
   else
@@ -247,7 +246,7 @@ begin
   update public.notifications notification
   set is_resolved = true,
       resolved_at = now()
-  where notification.location_id = p_request.location_id
+  where notification.location_id = p_request.location_id::text
     and notification.id <> v_notification_id
     and notification.is_resolved = false
     and notification.type = 'system'
@@ -263,7 +262,7 @@ revoke all on function private.upsert_inventory_approval_notification_v1(
 create or replace function public.create_inventory_approval_request_v1(
   p_session_token text,
   p_request_type text,
-  p_product_id bigint,
+  p_product_id uuid,
   p_quantity numeric,
   p_reason text default null,
   p_note text default null
@@ -315,21 +314,12 @@ begin
   insert into public.approval_requests (
     location_id, request_type, requested_by_id, requested_by_name,
     requested_by_role, product_id, product_name, product_sku, unit,
-    requested_quantity, stock_at_request, reason, note, request_payload
+    requested_quantity, stock_at_request, reason, note
   ) values (
     v_profile.location_id, v_type, v_profile.profile_id,
     v_profile.profile_name, v_profile.role, v_product.id,
     v_product.product_name, coalesce(v_product.sku, ''), v_product.unit,
-    p_quantity, v_product.product_quantity, v_reason, v_note,
-    jsonb_build_object(
-      'product_id', v_product.id,
-      'product_name', v_product.product_name,
-      'product_sku', coalesce(v_product.sku, ''),
-      'unit', v_product.unit,
-      'requested_quantity', p_quantity,
-      'reason', v_reason,
-      'note', v_note
-    )
+    p_quantity, v_product.product_quantity, v_reason, v_note
   ) returning * into v_request;
 
   perform private.upsert_inventory_approval_notification_v1(v_request);
@@ -407,7 +397,7 @@ declare
   v_request public.approval_requests;
   v_product record;
   v_new_quantity numeric;
-  v_transaction_id bigint;
+  v_transaction_id uuid;
 begin
   select * into v_profile
   from private.require_app_session_v1(p_session_token);
@@ -546,7 +536,7 @@ end;
 $$;
 
 revoke all on function public.create_inventory_approval_request_v1(
-  text, text, bigint, numeric, text, text
+  text, text, uuid, numeric, text, text
 ) from public, authenticated;
 revoke all on function public.approval_requests_page_v1(
   text, text, integer, integer
@@ -559,7 +549,7 @@ revoke all on function public.reject_inventory_approval_request_v1(
 ) from public, authenticated;
 
 grant execute on function public.create_inventory_approval_request_v1(
-  text, text, bigint, numeric, text, text
+  text, text, uuid, numeric, text, text
 ) to anon;
 grant execute on function public.approval_requests_page_v1(
   text, text, integer, integer

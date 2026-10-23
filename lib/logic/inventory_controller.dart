@@ -855,17 +855,12 @@ class InventoryController {
         (reason == null || reason.trim().isEmpty)) {
       throw ArgumentError.value(reason, 'reason', 'A reason is required');
     }
-    final numericProductId = int.tryParse(productId);
-    if (numericProductId == null) {
-      throw StateError('The current product identifier is not supported.');
-    }
-
     final response = await supabase.rpc(
       'create_inventory_approval_request_v1',
       params: <String, dynamic>{
         'p_session_token': _requireSessionToken(),
         'p_request_type': type.databaseValue,
-        'p_product_id': numericProductId,
+        'p_product_id': productId,
         'p_quantity': quantity,
         'p_reason': reason?.trim(),
         'p_note': note?.trim(),
