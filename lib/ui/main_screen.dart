@@ -21,6 +21,7 @@ import '../services/debug_clock.dart';
 import '../services/export_period.dart';
 import '../services/export_reminder_service.dart';
 import 'dashboard_page.dart';
+import 'approval_center_page.dart';
 import 'forecasting_page.dart';
 import 'inventory_page.dart';
 import 'item_detail_page.dart';
@@ -362,12 +363,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           return 'Inventory';
 
         case 5:
-          return 'Transactions';
+          return 'Approval Center';
 
         case 6:
-          return 'Store Map';
+          return 'Transactions';
 
         case 7:
+          return 'Store Map';
+
+        case 8:
           return 'System Settings';
 
         default:
@@ -1720,7 +1724,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return payload['category'] == 'inventoryApproval' &&
             payload['status'] == 'pending' &&
             widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
-            _mainSections.contains(MainSection.systemSettings);
+            _mainSections.contains(MainSection.approvals);
       case NotificationType.orderCancelled:
       case NotificationType.inventoryAdded:
       case NotificationType.inventoryUpdated:
@@ -1915,14 +1919,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             notification.payload['status'] != 'pending') {
           return false;
         }
-        final settingsIndex = _mainSections.indexOf(
-          MainSection.systemSettings,
+        final approvalsIndex = _mainSections.indexOf(
+          MainSection.approvals,
         );
-        if (settingsIndex < 0) {
+        if (approvalsIndex < 0) {
           AppToast.error(context, 'Pending Approvals is Admin-only.');
           return false;
         }
-        _selectMainIndex(settingsIndex);
+        _selectMainIndex(approvalsIndex);
         return true;
 
       default:
@@ -2287,6 +2291,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         final int inventoryIndex = pageIndex++;
 
+        final int approvalsIndex = isAdmin ? pageIndex++ : -1;
+
         final int staffHistoryIndex = (isHelper || isCashier)
             ? pageIndex++
             : -1;
@@ -2397,6 +2403,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           ),
         );
 
+        if (isAdmin) {
+          pages.add(ApprovalCenterPage(controller: widget.controller));
+        }
+
         if (isHelper || isCashier) {
           pages.add(
             StaffHistoryPage(
@@ -2473,6 +2483,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   posIndex: posIndex,
                   orderQueueIndex: orderQueueIndex,
                   inventoryIndex: inventoryIndex,
+                  approvalsIndex: approvalsIndex,
                   transactionIndex: transactionIndex,
                   mapIndex: mapIndex,
                   systemSettingsIndex: systemSettingsIndex,
@@ -2724,6 +2735,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             selectedIcon: Icon(LucideIcons.box, color: _primaryBlue),
             label: 'Inventory',
           ),
+          if (isAdmin)
+            const NavigationDestination(
+              icon: Icon(LucideIcons.clipboardCheck, color: _inactiveText),
+              selectedIcon: Icon(
+                LucideIcons.clipboardCheck,
+                color: _primaryBlue,
+              ),
+              label: 'Approvals',
+            ),
           if (isHelper || isCashier)
             const NavigationDestination(
               icon: Icon(LucideIcons.history, color: _inactiveText),
@@ -2759,6 +2779,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     required int posIndex,
     required int orderQueueIndex,
     required int inventoryIndex,
+    required int approvalsIndex,
     required int transactionIndex,
     required int mapIndex,
     required int systemSettingsIndex,
@@ -2848,6 +2869,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     inventoryIndex,
                     LucideIcons.box,
                     'Inventory',
+                  ),
+                  _buildSidebarItem(
+                    approvalsIndex,
+                    LucideIcons.clipboardCheck,
+                    'Approval Center',
                   ),
                   _buildSidebarItem(
                     transactionIndex,

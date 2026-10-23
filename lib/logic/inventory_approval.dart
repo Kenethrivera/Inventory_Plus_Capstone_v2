@@ -61,6 +61,9 @@ class InventoryApprovalRequest {
     this.reviewedAt,
     this.reviewNote,
     this.transactionId,
+    this.proofStoragePath,
+    this.proofFileName,
+    this.proofMimeType,
   });
 
   final String id;
@@ -85,6 +88,11 @@ class InventoryApprovalRequest {
   final DateTime? reviewedAt;
   final String? reviewNote;
   final String? transactionId;
+  final String? proofStoragePath;
+  final String? proofFileName;
+  final String? proofMimeType;
+
+  bool get hasProof => proofStoragePath?.isNotEmpty ?? false;
 
   double get resultingStock => type == InventoryApprovalType.restock
       ? currentStock + quantity
@@ -126,6 +134,9 @@ class InventoryApprovalRequest {
       reviewedAt: optionalDate('reviewed_at'),
       reviewNote: json['review_note']?.toString(),
       transactionId: json['transaction_id']?.toString(),
+      proofStoragePath: json['proof_storage_path']?.toString(),
+      proofFileName: json['proof_file_name']?.toString(),
+      proofMimeType: json['proof_mime_type']?.toString(),
     );
   }
 }

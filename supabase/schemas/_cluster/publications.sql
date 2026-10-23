@@ -1,3 +1,5 @@
+ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."approval_request_realtime_signals";
+
 ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."locations";
 
 ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."measurements";

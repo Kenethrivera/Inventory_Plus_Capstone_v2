@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import 'package:inventory_plus/ui/widgets/app_dialog.dart';
+import 'package:inventory_plus/ui/widgets/approval_proof_picker.dart';
 import 'store_map.dart'; // Adjust the path if necessary depending on your folder structure
 
 const Color _primaryBlue = Color(0xFF2563EB);
@@ -157,8 +158,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       'ml',
     }.contains(unit.toLowerCase());
     bool saving = false;
+    bool uploadingProof = false;
     bool touched = false;
     String? error;
+    ApprovalProofSelection? proof;
 
     String? validate(String text) {
       final t = text.trim();
@@ -178,24 +181,39 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
           final newQty = (value != null && value > 0)
               ? _currentItem.quantity + value
               : null;
+          final canSubmit =
+              validate(qtyCtrl.text) == null && proof != null && !saving;
 
           Future<void> submit() async {
             touched = true;
             final err = validate(qtyCtrl.text);
-            if (err != null) {
+            if (err != null || proof == null) {
               setDialogState(() => error = err);
               return;
             }
             setDialogState(() {
               error = null;
               saving = true;
+              uploadingProof = true;
             });
             try {
               final qty = double.parse(qtyCtrl.text.trim());
+              final selectedProof = proof!;
+              final proofPath = await widget.controller.uploadApprovalEvidence(
+                bytes: selectedProof.bytes,
+                fileName: selectedProof.fileName,
+                mimeType: selectedProof.mimeType,
+              );
+              if (dialogContext.mounted) {
+                setDialogState(() => uploadingProof = false);
+              }
               await widget.controller.submitInventoryApprovalRequest(
                 type: InventoryApprovalType.restock,
                 productId: _currentItem.id,
                 quantity: qty,
+                proofStoragePath: proofPath,
+                proofFileName: selectedProof.fileName,
+                proofMimeType: selectedProof.mimeType,
               );
               if (!mounted) return;
               if (dialogContext.mounted) Navigator.pop(dialogContext);
@@ -204,7 +222,12 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 'until Admin approval.',
               );
             } catch (e) {
-              if (dialogContext.mounted) setDialogState(() => saving = false);
+              if (dialogContext.mounted) {
+                setDialogState(() {
+                  saving = false;
+                  uploadingProof = false;
+                });
+              }
               _toast('Could not submit request: $e', isError: true);
             }
           }
@@ -246,7 +269,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 child: const Text('Cancel', style: TextStyle(fontFamily: _fontFam)),
               ),
               ElevatedButton(
-                onPressed: saving ? null : submit,
+                onPressed: canSubmit ? submit : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _primaryBlue,
                   foregroundColor: Colors.white,
@@ -403,6 +426,13 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         ),
                       )
                       .toList(),
+                ),
+                const SizedBox(height: 20),
+                ApprovalProofPicker(
+                  busy: uploadingProof,
+                  onChanged: (selection) {
+                    setDialogState(() => proof = selection);
+                  },
                 ),
               ],
             ),
@@ -2001,8 +2031,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     const reasons = ['Damaged', 'Expired', 'Lost', 'Other'];
     String reason = reasons.first;
     bool saving = false;
+    bool uploadingProof = false;
     bool touched = false;
     String? error;
+    ApprovalProofSelection? proof;
 
     String? validate(String text) {
       final t = text.trim();
@@ -2026,26 +2058,41 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               (value != null && value > 0 && value <= _currentItem.quantity)
               ? _currentItem.quantity - value
               : null;
+          final canSubmit =
+              validate(qtyCtrl.text) == null && proof != null && !saving;
 
           Future<void> submit() async {
             touched = true;
             final err = validate(qtyCtrl.text);
-            if (err != null) {
+            if (err != null || proof == null) {
               setDialogState(() => error = err);
               return;
             }
             setDialogState(() {
               error = null;
               saving = true;
+              uploadingProof = true;
             });
             try {
               final qty = double.parse(qtyCtrl.text.trim());
+              final selectedProof = proof!;
+              final proofPath = await widget.controller.uploadApprovalEvidence(
+                bytes: selectedProof.bytes,
+                fileName: selectedProof.fileName,
+                mimeType: selectedProof.mimeType,
+              );
+              if (dialogContext.mounted) {
+                setDialogState(() => uploadingProof = false);
+              }
               await widget.controller.submitInventoryApprovalRequest(
                 type: InventoryApprovalType.writeOff,
                 productId: _currentItem.id,
                 quantity: qty,
                 reason: reason,
                 note: noteCtrl.text,
+                proofStoragePath: proofPath,
+                proofFileName: selectedProof.fileName,
+                proofMimeType: selectedProof.mimeType,
               );
               if (!mounted) return;
               if (dialogContext.mounted) Navigator.pop(dialogContext);
@@ -2054,7 +2101,12 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 'until Admin approval.',
               );
             } catch (e) {
-              if (dialogContext.mounted) setDialogState(() => saving = false);
+              if (dialogContext.mounted) {
+                setDialogState(() {
+                  saving = false;
+                  uploadingProof = false;
+                });
+              }
               _toast(
                 e.toString().replaceFirst('Exception: ', ''),
                 isError: true,
@@ -2087,7 +2139,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 child: const Text('Cancel', style: TextStyle(fontFamily: _fontFam)),
               ),
               ElevatedButton(
-                onPressed: saving ? null : submit,
+                onPressed: canSubmit ? submit : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
@@ -2265,6 +2317,13 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                     enabledBorder: border(Colors.grey.shade300),
                     focusedBorder: border(Colors.red.shade300, 1.5),
                   ),
+                ),
+                const SizedBox(height: 20),
+                ApprovalProofPicker(
+                  busy: uploadingProof,
+                  onChanged: (selection) {
+                    setDialogState(() => proof = selection);
+                  },
                 ),
               ],
             ),

@@ -10,6 +10,12 @@ void main() {
   final controller = File(
     'lib/logic/inventory_controller.dart',
   ).readAsStringSync();
+  final evidenceMigration = File(
+    'database/phase_2a_approval_evidence.sql',
+  ).readAsStringSync();
+  final evidenceFunction = File(
+    'supabase/functions/approval-evidence/index.ts',
+  ).readAsStringSync();
   final realtime = File(
     'lib/services/realtime/realtime_sync_service.dart',
   ).readAsStringSync();
@@ -24,7 +30,7 @@ void main() {
   ).readAsStringSync();
   final requesterUi = File('lib/ui/item_detail_page.dart').readAsStringSync();
   final approvalUi = File(
-    'lib/ui/widgets/pending_approvals_section.dart',
+    'lib/ui/approval_center_page.dart',
   ).readAsStringSync();
 
   String sqlFunction(String name) {
@@ -72,6 +78,47 @@ void main() {
     expect(migration, isNot(contains('request_payload')));
     expect(controller, contains("'p_product_id': productId"));
     expect(controller, isNot(contains('numericProductId')));
+  });
+
+  test('new requests require a one-use durable proof image', () {
+    expect(evidenceMigration, contains('proof_storage_path text'));
+    expect(
+      evidenceMigration,
+      isNot(contains('proof_storage_path text not null')),
+    );
+    expect(evidenceMigration, contains('private.approval_evidence_uploads'));
+    expect(evidenceMigration, contains('for update'));
+    expect(
+      evidenceMigration,
+      contains("evidence.bucket_id = 'approval_evidence'"),
+    );
+    expect(
+      evidenceMigration,
+      contains('delete from private.approval_evidence_uploads'),
+    );
+    expect(
+      controller,
+      contains("'p_proof_storage_path': proofStoragePath.trim()"),
+    );
+  });
+
+  test('evidence uses private storage and scoped signed previews', () {
+    expect(evidenceMigration, contains("'approval_evidence',\n  false"));
+    expect(
+      evidenceMigration,
+      contains('inventory_approval_evidence_access_v1'),
+    );
+    expect(evidenceFunction, contains('SUPABASE_SERVICE_ROLE_KEY'));
+    expect(evidenceFunction, contains('createSignedUrl(storagePath, 300)'));
+    expect(evidenceFunction, contains(".from('approval_evidence')"));
+    expect(controller, isNot(contains('approvalEvidencePublicUrl')));
+  });
+
+  test('Approval Center requires proof viewing before review actions', () {
+    expect(approvalUi, contains('Approval Center'));
+    expect(approvalUi, contains('No proof — legacy request'));
+    expect(approvalUi, contains('_viewedRequests.contains(request.id)'));
+    expect(approvalUi, contains('fetchApprovalEvidenceUrl(request.id)'));
   });
 
   test('Admin approves Restock and quantity increases once', () {

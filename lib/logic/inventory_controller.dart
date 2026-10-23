@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
 import '../data/inventory.dart';
 import '../services/realtime/realtime_sync_service.dart';
 import 'helper_assignment.dart';
@@ -834,6 +835,9 @@ class InventoryController {
     required InventoryApprovalType type,
     required String productId,
     required double quantity,
+    required String proofStoragePath,
+    required String proofFileName,
+    required String proofMimeType,
     String? reason,
     String? note,
   }) async {
@@ -855,6 +859,11 @@ class InventoryController {
         (reason == null || reason.trim().isEmpty)) {
       throw ArgumentError.value(reason, 'reason', 'A reason is required');
     }
+    if (proofStoragePath.trim().isEmpty ||
+        proofFileName.trim().isEmpty ||
+        proofMimeType.trim().isEmpty) {
+      throw ArgumentError('Photo evidence is required.');
+    }
     final response = await supabase.rpc(
       'create_inventory_approval_request_v1',
       params: <String, dynamic>{
@@ -864,6 +873,9 @@ class InventoryController {
         'p_quantity': quantity,
         'p_reason': reason?.trim(),
         'p_note': note?.trim(),
+        'p_proof_storage_path': proofStoragePath.trim(),
+        'p_proof_file_name': proofFileName.trim(),
+        'p_proof_mime_type': proofMimeType.trim().toLowerCase(),
       },
     );
     final request = InventoryApprovalRequest.fromJson(
@@ -872,6 +884,101 @@ class InventoryController {
     _invalidateApprovalPages(refreshVisible: false);
     await _notifyApprovalLifecycle(request);
     return request;
+  }
+
+  Future<String> uploadApprovalEvidence({
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+  }) async {
+    const allowedMimeTypes = <String>{
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+    };
+    final normalizedMimeType = mimeType.trim().toLowerCase();
+    if (!allowedMimeTypes.contains(normalizedMimeType)) {
+      throw ArgumentError('Only JPG, PNG, WebP, or GIF images are allowed.');
+    }
+    if (bytes.isEmpty || bytes.length > 10 * 1024 * 1024) {
+      throw ArgumentError('Proof image must be between 1 byte and 10 MB.');
+    }
+    if (activeLocationId == null || currentUserId == null) {
+      throw StateError('Evidence upload requires an active session.');
+    }
+    final response = await supabase.functions.invoke(
+      'approval-evidence',
+      headers: <String, String>{
+        'x-app-session-token': _requireSessionToken(),
+      },
+      body: <String, String>{
+        'action': 'upload',
+        'fileName': fileName,
+        'mimeType': normalizedMimeType,
+      },
+      files: <http.MultipartFile>[
+        http.MultipartFile.fromBytes('file', bytes, filename: fileName),
+      ],
+    );
+    final data = Map<String, dynamic>.from(response.data as Map);
+    final storagePath = data['storagePath']?.toString();
+    if (storagePath == null || storagePath.isEmpty) {
+      throw StateError('Evidence upload did not return a storage path.');
+    }
+    return storagePath;
+  }
+
+  Future<String?> fetchApprovalEvidenceUrl(String requestId) async {
+    final response = await supabase.functions.invoke(
+      'approval-evidence',
+      headers: <String, String>{
+        'x-app-session-token': _requireSessionToken(),
+      },
+      body: <String, dynamic>{
+        'action': 'signedUrl',
+        'requestId': requestId,
+      },
+    );
+    final data = Map<String, dynamic>.from(response.data as Map);
+    return data['signedUrl']?.toString();
+  }
+
+  Future<Map<InventoryApprovalStatus, int>> fetchApprovalStatusCounts() async {
+    if (!isAdmin) {
+      throw StateError('Only Admin accounts may review approval requests.');
+    }
+    final accountId = currentUserId;
+    final locationId = activeLocationId;
+    if (accountId == null || locationId == null) {
+      throw StateError('Approval summary requires an active session.');
+    }
+    final responses = await Future.wait(
+      InventoryApprovalStatus.values.map(
+        (status) => supabase.rpc(
+          'approval_requests_page_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_status': status.databaseValue,
+            'p_page': 1,
+            'p_page_size': 1,
+          },
+        ),
+      ),
+    );
+    if (accountId != currentUserId ||
+        locationId != activeLocationId ||
+        !isAdmin) {
+      throw StateError('Approval summary scope changed while loading.');
+    }
+    return <InventoryApprovalStatus, int>{
+      for (var index = 0; index < InventoryApprovalStatus.values.length; index++)
+        InventoryApprovalStatus.values[index]:
+            (Map<String, dynamic>.from(responses[index] as Map)['total_count']
+                    as num?)
+                ?.toInt() ??
+            0,
+    };
   }
 
   Future<InventoryApprovalRequest> approveInventoryApprovalRequest(
@@ -2531,6 +2638,9 @@ class InventoryController {
       (_) {
         _inventoryAwaitingRealtimeInitial = false;
         unawaited(_refreshInventoryFromDatabase());
+        _invalidateApprovalPages(
+          refreshVisible: isAdmin && _activeApprovalPageKey != null,
+        );
       },
       onError: (Object error, StackTrace stackTrace) {
         debugPrint('[InventoryController] Inventory realtime error: $error');
