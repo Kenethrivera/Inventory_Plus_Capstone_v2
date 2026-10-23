@@ -285,11 +285,15 @@ void main() {
     'Cashier UI removes solo CTA and immediately reconciles Auto-assign',
     () {
       final cashierUi = File('lib/ui/pos_cart_page.dart').readAsStringSync();
+      final selectorUi = File(
+        'lib/ui/widgets/helper_assignment_selector.dart',
+      ).readAsStringSync();
 
-      expect(cashierUi, contains('Helper packs'));
-      expect(cashierUi, contains('Auto-assign — least loaded'));
-      expect(cashierUi, contains("count == 1 ? 'order' : 'orders'"));
+      expect(selectorUi, contains('Helper packs'));
+      expect(selectorUi, contains('Auto-assign — least loaded'));
+      expect(selectorUi, contains("count == 1 ? 'order' : 'orders'"));
       expect(cashierUi.toLowerCase(), isNot(contains("i'll pack it")));
+      expect(selectorUi.toLowerCase(), isNot(contains("i'll pack it")));
       expect(cashierUi, contains('reconcileCreatedOrder()'));
     },
   );

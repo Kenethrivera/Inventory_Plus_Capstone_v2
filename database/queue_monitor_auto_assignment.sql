@@ -73,7 +73,7 @@ begin
            -- assignment lookup index can remain usable.
            and work.assigned_helper_id = profile.id::text
       ) workload on true
-     where presence.location_id = v_location_id
+     where presence.location_id = v_location_id::text
        and presence.is_online = true
        and presence.last_seen_at >= clock_timestamp() - interval '2 minutes'
        and lower(presence.user_role) = 'helper'

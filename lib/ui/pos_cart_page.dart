@@ -12,6 +12,7 @@ import '../services/order_auto_assignment_service.dart';
 import '../services/staff_presence_service.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
+import 'widgets/helper_assignment_selector.dart';
 import 'widgets/order_checklist_view.dart';
 import 'visual_search_page.dart';
 import 'package:inventory_plus/notifications/notification_provider.dart';
@@ -313,9 +314,6 @@ class _PosCartPageState extends State<PosCartPage>
       orders: widget.controller.currentOrders,
     );
   }
-
-  Map<String, int> _helperWorkloads() =>
-      activePreparationWorkloads(widget.controller.currentOrders);
 
   HelperAssignmentCandidate? _selectedEligibleHelper() {
     final selectedId = _selectedHelperId;
@@ -4347,7 +4345,7 @@ class _PosCartPageState extends State<PosCartPage>
   Widget _buildHelperAssignmentControl() {
     final presenceService = widget.presenceService;
     if (presenceService == null) {
-      return const _HelperAssignmentControl(
+      return const HelperAssignmentSelector(
         helpers: <HelperAssignmentCandidate>[],
         workloads: <String, int>{},
         selectedHelperId: null,
@@ -4356,111 +4354,31 @@ class _PosCartPageState extends State<PosCartPage>
       );
     }
 
-    return AnimatedBuilder(
-      animation: presenceService,
-      builder: (context, _) {
-        final helpers = _eligibleHelpers();
-        final selectedId =
-            helpers.any((helper) => helper.id == _selectedHelperId)
-            ? _selectedHelperId
-            : null;
-        return _HelperAssignmentControl(
-          helpers: helpers,
-          workloads: _helperWorkloads(),
-          selectedHelperId: selectedId,
-          enabled: !_isProcessingCart,
-          onChanged: (helperId) {
-            setState(() => _selectedHelperId = helperId);
+    return StreamBuilder<List<CustomerOrder>>(
+      stream: widget.controller.orderSnapshots,
+      initialData: widget.controller.currentOrders,
+      builder: (context, orderSnapshot) {
+        final orders = orderSnapshot.data ?? widget.controller.currentOrders;
+        return AnimatedBuilder(
+          animation: presenceService,
+          builder: (context, _) {
+            final helpers = rankHelpersByActiveWorkload(
+              helpers: presenceService.eligibleHelpersForAssignment,
+              orders: orders,
+            );
+            return HelperAssignmentSelector(
+              helpers: helpers,
+              workloads: activePreparationWorkloads(orders),
+              selectedHelperId: _selectedHelperId,
+              enabled: !_isProcessingCart,
+              onChanged: (helperId) {
+                if (_selectedHelperId == helperId) return;
+                setState(() => _selectedHelperId = helperId);
+              },
+            );
           },
         );
       },
-    );
-  }
-}
-
-class _HelperAssignmentControl extends StatelessWidget {
-  const _HelperAssignmentControl({
-    required this.helpers,
-    required this.workloads,
-    required this.selectedHelperId,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  static const String _autoAssignValue = '__auto_assign__';
-
-  final List<HelperAssignmentCandidate> helpers;
-  final Map<String, int> workloads;
-  final String? selectedHelperId;
-  final bool enabled;
-  final ValueChanged<String?>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          const Icon(LucideIcons.userCheck, size: 18, color: _primaryBlue),
-          const SizedBox(width: 10),
-          const Text(
-            'Helper packs',
-            style: TextStyle(
-              color: Color(0xFF475569),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'Hellix',
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: selectedHelperId ?? _autoAssignValue,
-                isExpanded: true,
-                isDense: true,
-                style: const TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Hellix',
-                ),
-                items: [
-                  const DropdownMenuItem<String>(
-                    value: _autoAssignValue,
-                    child: Text(
-                      'Auto-assign — least loaded',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  ...helpers.map((helper) {
-                    final count = workloads[helper.id] ?? 0;
-                    final suffix = count == 1 ? 'order' : 'orders';
-                    return DropdownMenuItem<String>(
-                      value: helper.id,
-                      child: Text(
-                        '${helper.name} — $count $suffix',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }),
-                ],
-                onChanged: enabled
-                    ? (value) => onChanged?.call(
-                        value == _autoAssignValue ? null : value,
-                      )
-                    : null,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
