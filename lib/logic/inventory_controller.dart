@@ -680,8 +680,8 @@ class InventoryController {
     );
     if (skuTaken) {
       throw Exception(
-        'This SKU belongs to a disabled item. Restore it from '
-        'Inventory > Show disabled instead of adding a new one.',
+        'This SKU already belongs to a legacy inventory record and cannot '
+        'be reused.',
       );
     }
 
@@ -776,7 +776,7 @@ class InventoryController {
     String? note,
   }) async {
     final index = _items.indexWhere((i) => i.id == id);
-    if (index == -1) throw Exception('Item not found or is disabled.');
+    if (index == -1) throw Exception('Item not found or unavailable.');
     final item = _items[index];
 
     if (qty <= 0) throw Exception('Quantity must be greater than 0.');
@@ -847,7 +847,7 @@ class InventoryController {
       );
     }
     final matches = _items.where((candidate) => candidate.id == productId);
-    if (matches.isEmpty) throw StateError('Item not found or is disabled.');
+    if (matches.isEmpty) throw StateError('Item not found or unavailable.');
     final item = matches.first;
     if (!quantity.isFinite || quantity <= 0) {
       throw ArgumentError.value(quantity, 'quantity', 'Must be greater than 0');
@@ -1294,9 +1294,7 @@ class InventoryController {
   Future<void> deleteItem(String id) async {
     final index = _disabledItems.indexWhere((i) => i.id == id);
     if (index == -1) {
-      throw Exception(
-        'Only disabled items can be deleted. Disable the item first.',
-      );
+      throw Exception('Only legacy inactive items can be deleted.');
     }
 
     await supabase.from('products').delete().eq('id', id); // throws on failure
@@ -1366,6 +1364,15 @@ class InventoryController {
     required String query,
     required String category,
   }) => _applyFilter(_items, query, category);
+
+  List<InventoryItem> filterDeadStock({
+    required String query,
+    required String category,
+  }) => _applyFilter(
+    _items.where((item) => item.quantity <= 0).toList(growable: false),
+    query,
+    category,
+  );
 
   List<InventoryItem> filterDisabled({
     required String query,

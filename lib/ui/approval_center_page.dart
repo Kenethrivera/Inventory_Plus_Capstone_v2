@@ -7,6 +7,7 @@ import '../logic/inventory_approval.dart';
 import '../logic/inventory_controller.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
+import 'widgets/history_pagination_footer.dart';
 
 class ApprovalCenterPage extends StatefulWidget {
   const ApprovalCenterPage({super.key, required this.controller});
@@ -128,6 +129,27 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       request.id,
       () => widget.controller.fetchApprovalEvidenceUrl(request.id),
     );
+  }
+
+  Future<void> _openProof(InventoryApprovalRequest request) async {
+    try {
+      final url = await _proofUrl(request);
+      if (!mounted) return;
+      if (url == null) {
+        AppToast.error(context, 'Proof image is unavailable.');
+        return;
+      }
+      await _showLargeProof(url);
+    } catch (error) {
+      _proofUrls.remove(request.id);
+      if (mounted) {
+        AppToast.error(
+          context,
+          'Could not securely load proof: '
+          '${error.toString().replaceFirst('Exception: ', '')}',
+        );
+      }
+    }
   }
 
   String _qty(double value) => value == value.roundToDouble()
@@ -253,13 +275,23 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         width: double.infinity,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFFBEB),
+          color: const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFFDE68A)),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
-        child: const Text(
-          'No proof — legacy request',
-          style: TextStyle(fontWeight: FontWeight.w700, fontFamily: _font),
+        child: const Row(
+          children: [
+            Icon(LucideIcons.archive, size: 17, color: Color(0xFF94A3B8)),
+            SizedBox(width: 8),
+            Text(
+              'No proof — legacy request',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w700,
+                fontFamily: _font,
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -471,118 +503,111 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
     final records = snapshot?.requests ?? const <InventoryApprovalRequest>[];
-    final totalPages = snapshot?.totalPages ?? 1;
     return ColoredBox(
       color: const Color(0xFFF4F6F8),
       child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Approval Center',
-                style: TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  fontFamily: _font,
-                ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final horizontalPadding = constraints.maxWidth < 700 ? 14.0 : 22.0;
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                14,
+                horizontalPadding,
+                16,
               ),
-              const SizedBox(height: 4),
-              const Text(
-                'Review and verify inventory change requests',
-                style: TextStyle(color: Color(0xFF64748B), fontFamily: _font),
-              ),
-              const SizedBox(height: 22),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _summaryTile('Pending', InventoryApprovalStatus.pending),
-                  _summaryTile('Approved', InventoryApprovalStatus.approved),
-                  _summaryTile('Rejected', InventoryApprovalStatus.rejected),
+                  const Text(
+                    'Approval Center',
+                    style: TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: _font,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Review and verify inventory change requests',
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: _font,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSummaryMetrics(),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: _buildStatusTabs(),
+                          ),
+                        ),
+                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                        _tableBody(records),
+                        HistoryPaginationFooter(
+                          currentPage: _page,
+                          totalItems:
+                              snapshot?.totalCount ?? _summary[_status] ?? 0,
+                          pageSize: snapshot?.key.pageSize ?? 20,
+                          loading: _loading,
+                          onPageSelected: (page) {
+                            if (page == _page) return;
+                            setState(() => _page = page);
+                            unawaited(_load());
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 20),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: SegmentedButton<InventoryApprovalStatus>(
-                          style: SegmentedButton.styleFrom(
-                            selectedBackgroundColor: _blue,
-                            selectedForegroundColor: Colors.white,
-                            foregroundColor: const Color(0xFF475569),
-                            side: const BorderSide(color: Color(0xFFCBD5E1)),
-                          ),
-                          segments: InventoryApprovalStatus.values
-                              .map(
-                                (status) => ButtonSegment(
-                                  value: status,
-                                  label: Text(status.label),
-                                ),
-                              )
-                              .toList(growable: false),
-                          selected: <InventoryApprovalStatus>{_status},
-                          onSelectionChanged: (selection) =>
-                              _changeStatus(selection.first),
-                        ),
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    _tableBody(records),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Text('Page $_page of $totalPages'),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: _page > 1
-                                ? () {
-                                    setState(() => _page--);
-                                    unawaited(_load());
-                                  }
-                                : null,
-                            icon: const Icon(LucideIcons.chevronLeft),
-                          ),
-                          IconButton(
-                            onPressed: _page < totalPages
-                                ? () {
-                                    setState(() => _page++);
-                                    unawaited(_load());
-                                  }
-                                : null,
-                            icon: const Icon(LucideIcons.chevronRight),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
   }
 
+  Widget _buildSummaryMetrics() => LayoutBuilder(
+    builder: (context, constraints) {
+      final stacked = constraints.maxWidth < 440;
+      final width = stacked
+          ? constraints.maxWidth
+          : (constraints.maxWidth - 16) / 3;
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: InventoryApprovalStatus.values
+            .map(
+              (status) => SizedBox(
+                width: width,
+                child: _summaryTile(status.label, status),
+              ),
+            )
+            .toList(growable: false),
+      );
+    },
+  );
+
   Widget _summaryTile(String label, InventoryApprovalStatus status) =>
       Container(
-        width: 180,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(10),
@@ -590,39 +615,56 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         ),
         child: Row(
           children: [
-            Container(
-              width: 8,
-              height: 36,
-              decoration: BoxDecoration(
-                color: _statusColor(status),
-                borderRadius: BorderRadius.circular(99),
+            Expanded(
+              child: Text(
+                label.toUpperCase(),
+                style: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  fontFamily: _font,
+                ),
               ),
             ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Color(0xFF64748B),
-                    fontSize: 12,
-                    fontFamily: _font,
-                  ),
-                ),
-                Text(
-                  _summaryLoading ? '—' : '${_summary[status] ?? 0}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    fontFamily: _font,
-                  ),
-                ),
-              ],
+            Text(
+              _summaryLoading ? '—' : '${_summary[status] ?? 0}',
+              style: TextStyle(
+                color: _statusColor(status),
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                fontFamily: _font,
+              ),
             ),
           ],
         ),
       );
+
+  Widget _buildStatusTabs() => SegmentedButton<InventoryApprovalStatus>(
+    showSelectedIcon: false,
+    style: SegmentedButton.styleFrom(
+      selectedBackgroundColor: _blue,
+      selectedForegroundColor: Colors.white,
+      foregroundColor: const Color(0xFF475569),
+      backgroundColor: const Color(0xFFF8FAFC),
+      side: const BorderSide(color: Color(0xFFCBD5E1)),
+      minimumSize: const Size(0, 34),
+      padding: const EdgeInsets.symmetric(horizontal: 13),
+      visualDensity: VisualDensity.compact,
+      textStyle: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w800,
+        fontFamily: _font,
+      ),
+    ),
+    segments: InventoryApprovalStatus.values
+        .map(
+          (status) => ButtonSegment(value: status, label: Text(status.label)),
+        )
+        .toList(growable: false),
+    selected: <InventoryApprovalStatus>{_status},
+    onSelectionChanged: (selection) => _changeStatus(selection.first),
+  );
 
   Widget _tableBody(List<InventoryApprovalRequest> records) {
     if (_loading && _snapshot == null) {
@@ -668,19 +710,23 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         child: ConstrainedBox(
           constraints: BoxConstraints(minWidth: constraints.maxWidth),
           child: DataTable(
-            horizontalMargin: 20,
-            columnSpacing: 26,
+            horizontalMargin: 16,
+            columnSpacing: 16,
+            headingRowHeight: 40,
+            dataRowMinHeight: 50,
+            dataRowMaxHeight: 50,
+            dividerThickness: 1,
             headingRowColor: const WidgetStatePropertyAll(Color(0xFFF8FAFC)),
-            columns: const [
-              DataColumn(label: Text('Request')),
-              DataColumn(label: Text('Type')),
-              DataColumn(label: Text('Item')),
-              DataColumn(label: Text('Qty')),
-              DataColumn(label: Text('Requested By')),
-              DataColumn(label: Text('Requested At')),
-              DataColumn(label: Text('Proof')),
-              DataColumn(label: Text('Status')),
-              DataColumn(label: Text('Actions')),
+            columns: [
+              DataColumn(label: _headerCell('REQUEST', 78)),
+              DataColumn(label: _headerCell('TYPE', 82)),
+              DataColumn(label: _headerCell('ITEM', 176)),
+              DataColumn(label: _headerCell('QTY', 82)),
+              DataColumn(label: _headerCell('REQUESTED BY', 128)),
+              DataColumn(label: _headerCell('REQUESTED AT', 130)),
+              DataColumn(label: _headerCell('PROOF', 72)),
+              DataColumn(label: _headerCell('STATUS', 86)),
+              DataColumn(label: _headerCell('ACTIONS', 124)),
             ],
             rows: records.map(_row).toList(growable: false),
           ),
@@ -699,62 +745,108 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
             : Colors.transparent,
       ),
       cells: [
-        DataCell(Text(request.id.substring(0, 8).toUpperCase())),
-        DataCell(_chip(request.type.label, _typeColor(request.type))),
         DataCell(
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 190),
-            child: Text(request.productName, overflow: TextOverflow.ellipsis),
+          _bodyCell(request.id.substring(0, 8).toUpperCase(), 78, strong: true),
+        ),
+        DataCell(
+          SizedBox(
+            width: 82,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _chip(request.type.label, _typeColor(request.type)),
+            ),
           ),
         ),
-        DataCell(Text('${_qty(request.quantity)} ${request.unit}')),
-        DataCell(Text(request.requestedByName)),
-        DataCell(Text(_when(request.requestedAt))),
+        DataCell(_bodyCell(request.productName, 176, strong: true)),
+        DataCell(_bodyCell('${_qty(request.quantity)} ${request.unit}', 82)),
+        DataCell(_bodyCell(request.requestedByName, 128)),
+        DataCell(_bodyCell(_when(request.requestedAt), 130)),
         DataCell(
-          request.hasProof
-              ? const Tooltip(
-                  message: 'Proof attached',
-                  child: Icon(LucideIcons.image, color: _blue, size: 19),
-                )
-              : const Text(
-                  'Legacy',
-                  style: TextStyle(color: Color(0xFFB45309), fontSize: 12),
-                ),
-        ),
-        DataCell(_chip(request.status.label, _statusColor(request.status))),
-        DataCell(
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Wrap(
-              spacing: 4,
-              children: [
-                TextButton(
-                  onPressed: () => _details(request),
-                  child: const Text('View'),
-                ),
-                if (request.status == InventoryApprovalStatus.pending) ...[
-                  Tooltip(
-                    message: viewed
-                        ? 'Approve request'
-                        : 'View proof before approving',
-                    child: TextButton(
-                      onPressed: busy || request.hasStockConflict || !viewed
-                          ? null
-                          : () => _review(request, approve: true),
-                      child: const Text('Approve'),
+          SizedBox(
+            width: 72,
+            child: request.hasProof
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: Tooltip(
+                      message: 'View proof',
+                      child: InkWell(
+                        onTap: () => _openProof(request),
+                        borderRadius: BorderRadius.circular(7),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          child: const Icon(
+                            LucideIcons.image,
+                            color: _blue,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Legacy',
+                      style: TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: _font,
+                      ),
                     ),
                   ),
-                  Tooltip(
-                    message: viewed
+          ),
+        ),
+        DataCell(
+          SizedBox(
+            width: 86,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _chip(request.status.label, _statusColor(request.status)),
+            ),
+          ),
+        ),
+        DataCell(
+          SizedBox(
+            width: 124,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _actionButton(
+                  label: 'View',
+                  icon: LucideIcons.eye,
+                  color: _blue,
+                  onPressed: () => _details(request),
+                ),
+                if (request.status == InventoryApprovalStatus.pending) ...[
+                  const SizedBox(width: 4),
+                  _actionButton(
+                    label: viewed
+                        ? 'Approve request'
+                        : 'View request before approving',
+                    icon: LucideIcons.check,
+                    color: const Color(0xFF15803D),
+                    onPressed: busy || request.hasStockConflict || !viewed
+                        ? null
+                        : () => _review(request, approve: true),
+                  ),
+                  const SizedBox(width: 4),
+                  _actionButton(
+                    label: viewed
                         ? 'Reject request'
-                        : 'View proof before rejecting',
-                    child: TextButton(
-                      onPressed: busy || !viewed
-                          ? null
-                          : () => _review(request, approve: false),
-                      style: TextButton.styleFrom(foregroundColor: Colors.red),
-                      child: const Text('Reject'),
-                    ),
+                        : 'View request before rejecting',
+                    icon: LucideIcons.x,
+                    color: const Color(0xFFDC2626),
+                    onPressed: busy || !viewed
+                        ? null
+                        : () => _review(request, approve: false),
                   ),
                 ],
               ],
@@ -764,6 +856,63 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       ],
     );
   }
+
+  Widget _headerCell(String label, double width) => SizedBox(
+    width: width,
+    child: Text(
+      label,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: Color(0xFF64748B),
+        fontSize: 10,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.35,
+        fontFamily: _font,
+      ),
+    ),
+  );
+
+  Widget _bodyCell(String value, double width, {bool strong = false}) =>
+      SizedBox(
+        width: width,
+        child: Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: const Color(0xFF334155),
+            fontSize: 12,
+            fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+            fontFamily: _font,
+          ),
+        ),
+      );
+
+  Widget _actionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback? onPressed,
+  }) => Tooltip(
+    message: label,
+    child: SizedBox(
+      width: 36,
+      height: 32,
+      child: IconButton(
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(
+          foregroundColor: color,
+          disabledForegroundColor: const Color(0xFFCBD5E1),
+          backgroundColor: color.withValues(alpha: 0.09),
+          disabledBackgroundColor: const Color(0xFFF8FAFC),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+        ),
+        icon: Icon(icon, size: 16),
+      ),
+    ),
+  );
 
   Widget _chip(String label, Color color) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),

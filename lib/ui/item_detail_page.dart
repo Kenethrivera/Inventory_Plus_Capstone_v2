@@ -947,8 +947,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'This item is disabled. It is hidden from POS and '
-                                  'the inventory list. Restore it to sell it again.',
+                                  'This legacy item is inactive. It remains hidden '
+                                  'from POS and the current inventory list.',
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: Colors.orange.shade900,
@@ -1731,22 +1731,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         ),
       );
     }
-    if (isAdmin) {
-      buttons.add(
-        OutlinedButton.icon(
-          onPressed: _showDisableDialog,
-          icon: const Icon(LucideIcons.eyeOff, size: 18),
-          label: const Text("Disable", style: TextStyle(fontFamily: _fontFam)),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.orange.shade800,
-            side: BorderSide(color: Colors.orange.shade600),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-          ),
-        ),
-      );
-    }
   } else if (isAdmin) {
-    // Disabled item
+    // Legacy inactive item compatibility actions.
     buttons.add(
       ElevatedButton.icon(
         onPressed: _restoreItem,
@@ -1796,121 +1782,6 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     ),
   );
 }
-
-
-  Future<void> _showDisableDialog() async {
-    final hasStock = _currentItem.quantity > 0;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AppDialog(
-        icon: LucideIcons.eyeOff,
-        color: Colors.orange,
-        title: 'Disable item?',
-        subtitle: 'Hidden from POS and inventory',
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.black87,
-              side: BorderSide(color: Colors.grey.shade300),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: const Text('Cancel', style: TextStyle(fontFamily: _fontFam)),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            icon: const Icon(LucideIcons.eyeOff, size: 16),
-            label: const Text(
-              'Disable',
-              style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ],
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.withOpacity(0.2)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _currentItem.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                      color: Color(0xFF0F172A),
-                      fontFamily: _fontFam,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${_currentItem.sku}  •  ${_fmt(_currentItem.quantity)} ${_currentItem.unit} in stock',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontFamily: _fontFam),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'Past sales, history and reports keep this item. '
-              'You can restore it anytime from Inventory > Show disabled.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700, fontFamily: _fontFam),
-            ),
-            if (hasStock) ...[
-              const SizedBox(height: 10),
-              Text(
-                'It still has stock, so it will not appear in low-stock alerts while disabled.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.orange.shade800,
-                  fontWeight: FontWeight.w600,
-                  fontFamily: _fontFam,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    final overlay = Overlay.of(context, rootOverlay: true);
-    final name = _currentItem.name;
-    try {
-      await widget.controller.disableItem(_currentItem.id);
-      widget.onStatusChanged?.call();
-      widget.onBack();
-      AppToast.showOn(overlay, '"$name" disabled');
-    } catch (e) {
-      AppToast.showOn(
-        overlay,
-        e.toString().replaceFirst('Exception: ', ''),
-        isError: true,
-      );
-    }
-  }
-
   Future<void> _restoreItem() async {
     final overlay = Overlay.of(context, rootOverlay: true);
     final name = _currentItem.name;
@@ -1935,7 +1806,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         icon: LucideIcons.trash2,
         color: Colors.red,
         title: 'Delete permanently?',
-        subtitle: "This permanently removes the disabled item. Its past sales will show as Deleted item in the dashboard and activity log.",
+        subtitle: "This permanently removes the legacy inactive item. Its past sales will show as Deleted item in the dashboard and activity log.",
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(dialogContext, false),

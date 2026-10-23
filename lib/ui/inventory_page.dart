@@ -44,7 +44,7 @@ class InventoryPage extends StatefulWidget {
 class _InventoryPageState extends State<InventoryPage> {
   String _searchQuery = "";
   String _selectedCategory = "All";
-  bool _showDisabled = false;
+  bool _showDeadStock = false;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -93,8 +93,8 @@ class _InventoryPageState extends State<InventoryPage> {
         .where((category) => category.toLowerCase() != 'unassigned')
         .toList();
 
-    final filteredInventory = _showDisabled
-        ? widget.controller.filterDisabled(
+    final filteredInventory = _showDeadStock
+        ? widget.controller.filterDeadStock(
             query: _searchQuery,
             category: _selectedCategory,
           )
@@ -332,16 +332,14 @@ class _InventoryPageState extends State<InventoryPage> {
                           },
                         ),
                       ),
-                      if (widget.controller.isAdmin) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          width: 1,
-                          height: 20,
-                          color: Colors.grey.shade300,
-                        ),
-                        const SizedBox(width: 8),
-                        _buildDisabledPill(),
-                      ],
+                      const SizedBox(width: 8),
+                      Container(
+                        width: 1,
+                        height: 20,
+                        color: Colors.grey.shade300,
+                      ),
+                      const SizedBox(width: 8),
+                      _buildDeadStockPill(),
                     ],
                   ),
                 ),
@@ -374,29 +372,32 @@ class _InventoryPageState extends State<InventoryPage> {
     );
   }
 
-  Widget _buildDisabledPill() {
-    final color = _showDisabled ? _primaryBlue : Colors.grey.shade600;
+  Widget _buildDeadStockPill() {
+    final color = _showDeadStock ? _primaryBlue : Colors.grey.shade600;
+    final deadStockCount = widget.controller
+        .filterDeadStock(query: '', category: 'All')
+        .length;
     return GestureDetector(
-      onTap: () => setState(() => _showDisabled = !_showDisabled),
+      onTap: () => setState(() => _showDeadStock = !_showDeadStock),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: _showDisabled
+          color: _showDeadStock
               ? _primaryBlue.withOpacity(0.1)
               : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(100),
           border: Border.all(
-            color: _showDisabled ? _primaryBlue : Colors.transparent,
+            color: _showDeadStock ? _primaryBlue : Colors.transparent,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(LucideIcons.eyeOff, size: 14, color: color),
+            Icon(LucideIcons.packageX, size: 14, color: color),
             const SizedBox(width: 6),
             Text(
-              'Show disabled (${widget.controller.disabledItems.length})',
+              'Dead Stock ($deadStockCount)',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
