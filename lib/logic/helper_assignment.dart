@@ -100,21 +100,42 @@ Map<String, dynamic> initialHelperAssignmentFields({
   };
 }
 
+List<CustomerOrder> assignedPendingOrdersForHelper({
+  required Iterable<CustomerOrder> orders,
+  required String helperId,
+}) {
+  final normalizedHelperId = helperId.trim();
+  if (normalizedHelperId.isEmpty) return const <CustomerOrder>[];
+  return List<CustomerOrder>.unmodifiable(
+    orders.where((order) {
+      return order.status.trim().toLowerCase() == 'pending' &&
+          order.assignedHelperId?.trim() == normalizedHelperId;
+    }),
+  );
+}
+
+Map<String, int> activePreparationWorkloads(Iterable<CustomerOrder> orders) {
+  final activeCounts = <String, int>{};
+  for (final order in orders) {
+    if (order.status.trim().toLowerCase() != 'pending') continue;
+    final helperId = order.assignedHelperId?.trim();
+    if (helperId == null || helperId.isEmpty) continue;
+    activeCounts[helperId] = (activeCounts[helperId] ?? 0) + 1;
+  }
+  return Map<String, int>.unmodifiable(activeCounts);
+}
+
 List<HelperAssignmentCandidate> rankHelpersByActiveWorkload({
   required Iterable<HelperAssignmentCandidate> helpers,
   required Iterable<CustomerOrder> orders,
 }) {
   final helperList = helpers.toList(growable: false);
-  final activeCounts = <String, int>{};
+  final activeCounts = activePreparationWorkloads(orders);
   final lastAssignedAt = <String, DateTime>{};
 
   for (final order in orders) {
     final helperId = order.assignedHelperId?.trim();
     if (helperId == null || helperId.isEmpty) continue;
-
-    if (order.status.trim().toLowerCase() == 'pending') {
-      activeCounts[helperId] = (activeCounts[helperId] ?? 0) + 1;
-    }
 
     final assignedAt = order.assignedAt;
     final previous = lastAssignedAt[helperId];
@@ -158,17 +179,24 @@ class AssignmentReconciliationGate {
   bool _inFlight = false;
   bool _rerunQueued = false;
   bool _disposed = false;
+  Future<void>? _activeCycle;
 
   bool get isInFlight => _inFlight;
 
-  Future<void> schedule(Future<void> Function() reconcileOnce) async {
-    if (_disposed) return;
+  Future<void> schedule(Future<void> Function() reconcileOnce) {
+    if (_disposed) return Future<void>.value();
     if (_inFlight) {
       _rerunQueued = true;
-      return;
+      return _activeCycle ?? Future<void>.value();
     }
 
     _inFlight = true;
+    final cycle = _runCycle(reconcileOnce);
+    _activeCycle = cycle;
+    return cycle;
+  }
+
+  Future<void> _runCycle(Future<void> Function() reconcileOnce) async {
     try {
       do {
         _rerunQueued = false;
@@ -176,6 +204,7 @@ class AssignmentReconciliationGate {
       } while (_rerunQueued && !_disposed);
     } finally {
       _inFlight = false;
+      _activeCycle = null;
     }
   }
 

@@ -1,15 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:inventory_plus/notifications/notification_provider.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../logic/helper_assignment.dart';
 import '../logic/inventory_controller.dart';
 import '../data/inventory.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'store_map.dart';
 import 'scanner_search_page.dart';
-import 'package:inventory_plus/notifications/notification_provider.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const String _fontFam = 'Hellix';
@@ -34,7 +35,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   Timer? _timer;
   Duration? _timeOffset;
   String? _pendingAutoOpenId;
-  String _pendingFilter = 'All';
   String _searchQuery = '';
 
   final TextEditingController _searchController = TextEditingController();
@@ -97,54 +97,17 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
     return '${diff.inDays}d ago';
   }
 
-  Future<bool> _claimAndOpenOrderChecklist(CustomerOrder order) async {
-    final bool claimed = await widget.controller.claimOrderForCurrentHelper(
-      order.id,
-    );
-
-    if (!mounted) {
-      return false;
-    }
-
-    if (!claimed) {
-      AppToast.error(
-        context,
-        'This order was already claimed by another helper.',
-      );
-      return false;
-    }
-
+  bool _openAssignedOrderChecklist(CustomerOrder order) {
     final CustomerOrder? latestOrder = widget.controller.orderById(order.id);
 
     if (latestOrder == null ||
         latestOrder.status != 'pending' ||
-        !_canCurrentHelperPrepare(latestOrder)) {
-      AppToast.error(
-        context,
-        'This order is no longer available for preparation.',
-      );
+        !_isAssignedToCurrentHelper(latestOrder)) {
+      AppToast.error(context, 'This order is no longer assigned to you.');
       return false;
     }
 
-    final notificationController = NotificationProvider.maybeOf(context);
-    final locationId = widget.controller.activeLocationId;
-    final helperId = widget.controller.currentUserNumericId?.toString();
-    final helperName = widget.controller.currentUserName ?? 'Helper';
-    if (notificationController != null &&
-        locationId != null &&
-        helperId != null) {
-      await notificationController.notifyOrderAssigned(
-        locationId: locationId,
-        orderId: order.id,
-        helperId: helperId,
-        helperName: helperName,
-        assignedByName: helperName,
-        assignedAt: DateTime.now(),
-      );
-    }
-
     _openOrderChecklist(latestOrder);
-
     return true;
   }
 
@@ -189,31 +152,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
     return order.assignedHelperId?.toString() == currentUserId.toString();
   }
 
-  bool _isUnassigned(CustomerOrder order) {
-    return order.assignedHelperId == null ||
-        order.assignedHelperId.toString().trim().isEmpty;
-  }
-
-  bool _canCurrentHelperPrepare(CustomerOrder order) {
-    return _isUnassigned(order) || _isAssignedToCurrentHelper(order);
-  }
-
-  String _assignmentLabel(CustomerOrder order) {
-    if (_isAssignedToCurrentHelper(order)) {
-      final bool assignedByAdmin =
-          order.assignedByAdminId != null ||
-          (order.assignedByAdminName?.trim().isNotEmpty ?? false);
-
-      return assignedByAdmin ? 'Assigned to you' : 'Claimed by you';
-    }
-
-    if (_isUnassigned(order)) {
-      return 'Unassigned';
-    }
-
-    return 'Assigned to ${order.assignedHelperName ?? 'another helper'}';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -249,7 +187,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             final bool selectedOrderStillValid =
                 selectedOrder != null &&
                 selectedOrder.status == 'pending' &&
-                _canCurrentHelperPrepare(selectedOrder);
+                _isAssignedToCurrentHelper(selectedOrder);
 
             if (!selectedOrderStillValid) {
               selectedOrder = null;
@@ -268,19 +206,22 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
           if (_pendingAutoOpenId != null) {
             final match = _cachedOrders
-                .where((o) => o.id.toString() == _pendingAutoOpenId)
+                .where(
+                  (o) =>
+                      o.id.toString() == _pendingAutoOpenId &&
+                      o.status == 'pending' &&
+                      _isAssignedToCurrentHelper(o),
+                )
                 .toList();
 
             if (match.isNotEmpty) {
               final orderToOpen = match.first;
               _pendingAutoOpenId = null;
 
-              WidgetsBinding.instance.addPostFrameCallback((_) async {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted) return;
 
-                final bool opened = await _claimAndOpenOrderChecklist(
-                  orderToOpen,
-                );
+                final bool opened = _openAssignedOrderChecklist(orderToOpen);
 
                 if (opened) {
                   widget.onOrderOpened?.call();
@@ -307,48 +248,14 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             );
           }
 
-          final pendingOrders =
-              _cachedOrders
-                  .where(
-                    (o) =>
-                        o.status == 'pending' &&
-                        (_isUnassigned(o) || _isAssignedToCurrentHelper(o)),
-                  )
-                  .toList()
-                ..sort((a, b) {
-                  final aAssignedToMe = _isAssignedToCurrentHelper(a);
-                  final bAssignedToMe = _isAssignedToCurrentHelper(b);
-
-                  if (aAssignedToMe && !bAssignedToMe) return -1;
-                  if (!aAssignedToMe && bAssignedToMe) return 1;
-
-                  return b.createdAt.compareTo(a.createdAt);
-                });
+          final pendingOrders = assignedPendingOrdersForHelper(
+            orders: _cachedOrders,
+            helperId: widget.controller.currentUserId ?? '',
+          ).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
           final normalizedSearchQuery = _searchQuery.trim().toLowerCase();
 
           final visiblePendingOrders = pendingOrders.where((order) {
-            final bool matchesPendingFilter;
-
-            switch (_pendingFilter) {
-              case 'Unassigned':
-                matchesPendingFilter = _isUnassigned(order);
-                break;
-
-              case 'Mine':
-                matchesPendingFilter = _isAssignedToCurrentHelper(order);
-                break;
-
-              case 'All':
-              default:
-                matchesPendingFilter = true;
-                break;
-            }
-
-            if (!matchesPendingFilter) {
-              return false;
-            }
-
             if (normalizedSearchQuery.isEmpty) {
               return true;
             }
@@ -382,19 +289,20 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
           }
 
           final readyTodayCount = _cachedOrders
-              .where((o) => o.status == 'prepared' && _isToday(o.createdAt))
+              .where(
+                (o) =>
+                    o.status == 'prepared' &&
+                    _isAssignedToCurrentHelper(o) &&
+                    _isToday(o.preparedAt ?? o.createdAt),
+              )
               .length;
 
           final String emptyQueueMessage;
           if (_searchQuery.trim().isNotEmpty) {
             emptyQueueMessage =
                 'No pending orders match "${_searchQuery.trim()}".';
-          } else if (_pendingFilter == 'Mine') {
-            emptyQueueMessage = 'No orders assigned or claimed by you.';
-          } else if (_pendingFilter == 'Unassigned') {
-            emptyQueueMessage = 'No unassigned pending orders right now.';
           } else {
-            emptyQueueMessage = 'No pending orders right now!';
+            emptyQueueMessage = 'No orders are assigned to you right now.';
           }
 
           return Padding(
@@ -471,10 +379,8 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                               timeAgo: _timeAgo(order.createdAt),
                               pickedCount: pickedCount,
                               totalItems: totalItems,
-                              assignmentLabel: _assignmentLabel(order),
-                              assignedToMe: _isAssignedToCurrentHelper(order),
                               onPrepare: () {
-                                _claimAndOpenOrderChecklist(order);
+                                _openAssignedOrderChecklist(order);
                               },
                             );
                           },
@@ -529,10 +435,8 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   Widget _buildQueueToolbar() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool compact = constraints.maxWidth < 820;
-
         final Widget searchField = SizedBox(
-          width: compact ? double.infinity : 360,
+          width: constraints.maxWidth < 600 ? double.infinity : 360,
           height: 44,
           child: TextField(
             controller: _searchController,
@@ -596,72 +500,8 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             ),
           ),
         );
-
-        final Widget filterControls = Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(right: 4),
-              child: Text(
-                'Pending filter',
-                style: TextStyle(
-                  color: Color(0xFF475569),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: _fontFam,
-                ),
-              ),
-            ),
-            _buildPendingFilterChip('All'),
-            _buildPendingFilterChip('Unassigned'),
-            _buildPendingFilterChip('Mine'),
-          ],
-        );
-
-        if (compact) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              searchField,
-              const SizedBox(height: 12),
-              Align(alignment: Alignment.centerRight, child: filterControls),
-            ],
-          );
-        }
-
-        return Row(children: [searchField, const Spacer(), filterControls]);
+        return Align(alignment: Alignment.centerLeft, child: searchField);
       },
-    );
-  }
-
-  Widget _buildPendingFilterChip(String label) {
-    final bool selected = _pendingFilter == label;
-
-    return ChoiceChip(
-      label: Text(
-        label,
-        style: TextStyle(
-          color: selected ? Colors.white : const Color(0xFF475569),
-          fontWeight: FontWeight.w700,
-          fontFamily: _fontFam,
-        ),
-      ),
-      selected: selected,
-      onSelected: (_) {
-        setState(() {
-          _pendingFilter = label;
-        });
-      },
-      selectedColor: _primaryBlue,
-      backgroundColor: Colors.white,
-      side: BorderSide(
-        color: selected ? _primaryBlue : const Color(0xFFE2E8F0),
-      ),
-      showCheckmark: false,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
     );
   }
 }
@@ -671,8 +511,6 @@ class _OrderCard extends StatelessWidget {
   final String timeAgo;
   final int pickedCount;
   final int totalItems;
-  final String assignmentLabel;
-  final bool assignedToMe;
   final VoidCallback onPrepare;
 
   const _OrderCard({
@@ -681,8 +519,6 @@ class _OrderCard extends StatelessWidget {
     required this.timeAgo,
     required this.pickedCount,
     required this.totalItems,
-    required this.assignmentLabel,
-    required this.assignedToMe,
     required this.onPrepare,
   });
 
@@ -690,7 +526,7 @@ class _OrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final String shortId = order.id.toString().substring(0, 8).toUpperCase();
     final bool isPicking = pickedCount > 0;
-    final Color assignmentColor = assignedToMe ? _primaryBlue : Colors.orange;
+    const Color assignmentColor = _primaryBlue;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -751,15 +587,13 @@ class _OrderCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          assignedToMe
-                              ? Icons.person_pin_circle_outlined
-                              : Icons.person_off_outlined,
+                          Icons.person_pin_circle_outlined,
                           size: 14,
                           color: assignmentColor,
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          assignmentLabel,
+                          'Assigned to you',
                           style: TextStyle(
                             color: assignmentColor,
                             fontSize: 11,

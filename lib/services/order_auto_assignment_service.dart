@@ -37,6 +37,7 @@ class OrderAutoAssignmentService {
       AssignmentReconciliationGate();
   bool _started = false;
   bool _disposed = false;
+  bool _createdOrderReconciliationQueued = false;
 
   void start() {
     if (_started || _disposed) return;
@@ -52,6 +53,16 @@ class OrderAutoAssignmentService {
   }
 
   void _handlePresenceChanged() => _scheduleReconciliation();
+
+  /// Requests the same serialized database reconciliation immediately after
+  /// an Auto-assign order insert. The insert may not have reached the local
+  /// canonical snapshot yet, so this one queued pass bypasses only the cheap
+  /// local-order guard; Postgres still revalidates every assignment rule.
+  Future<void> reconcileCreatedOrder() {
+    if (!_hasCurrentScope) return Future<void>.value();
+    _createdOrderReconciliationQueued = true;
+    return _reconciliationGate.schedule(_reconcileOnce);
+  }
 
   bool get _hasEligibleHelper {
     return _presenceService.eligibleHelpersForAssignment.isNotEmpty;
@@ -81,9 +92,15 @@ class OrderAutoAssignmentService {
   Future<void> _reconcileOnce() async {
     if (!_hasCurrentScope) return;
 
+    final createdOrderReconciliation = _createdOrderReconciliationQueued;
+    _createdOrderReconciliationQueued = false;
+
     // These are only cheap guards. Eligibility, location, workload, and
     // order ownership are revalidated atomically by the database RPC.
-    if (!_hasEligibleHelper || !_hasUnassignedPendingOrder) return;
+    if (!_hasEligibleHelper ||
+        (!createdOrderReconciliation && !_hasUnassignedPendingOrder)) {
+      return;
+    }
 
     try {
       final assignments = await _inventoryController
@@ -105,6 +122,7 @@ class OrderAutoAssignmentService {
     if (_disposed) return;
     _disposed = true;
     _started = false;
+    _createdOrderReconciliationQueued = false;
     _reconciliationGate.dispose();
     _presenceService.removeListener(_handlePresenceChanged);
     unawaited(_ordersSubscription?.cancel());

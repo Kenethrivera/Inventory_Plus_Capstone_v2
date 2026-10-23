@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../data/inventory.dart';
 import '../logic/helper_assignment.dart';
 import '../logic/inventory_controller.dart';
+import '../services/order_auto_assignment_service.dart';
 import '../services/staff_presence_service.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
@@ -23,6 +24,7 @@ const Color _primaryBlue = Color(0xFF2563EB); // Centralized theme color
 class PosCartPage extends StatefulWidget {
   final InventoryController controller;
   final StaffPresenceService? presenceService;
+  final OrderAutoAssignmentService? autoAssignmentService;
   final String? targetOrderId;
   final VoidCallback? onOrderOpened;
 
@@ -30,6 +32,7 @@ class PosCartPage extends StatefulWidget {
     super.key,
     required this.controller,
     this.presenceService,
+    this.autoAssignmentService,
     this.targetOrderId,
     this.onOrderOpened,
   });
@@ -57,7 +60,7 @@ class _PosCartPageState extends State<PosCartPage>
 
   double _kBaseChromeHeight = 368.0; // was 320
 
-  bool _soloMode = false;
+  final bool _soloMode = false;
   String? _selectedHelperId;
 
   String? _pendingAutoOpenOrderId;
@@ -270,6 +273,10 @@ class _PosCartPageState extends State<PosCartPage>
         }
       }
 
+      if (!_soloMode && assignedHelper == null) {
+        await widget.autoAssignmentService?.reconcileCreatedOrder();
+      }
+
       if (!mounted) return;
 
       setState(() {
@@ -306,6 +313,9 @@ class _PosCartPageState extends State<PosCartPage>
       orders: widget.controller.currentOrders,
     );
   }
+
+  Map<String, int> _helperWorkloads() =>
+      activePreparationWorkloads(widget.controller.currentOrders);
 
   HelperAssignmentCandidate? _selectedEligibleHelper() {
     final selectedId = _selectedHelperId;
@@ -4280,18 +4290,7 @@ class _PosCartPageState extends State<PosCartPage>
                     ],
                   ),
                   const SizedBox(height: 16),
-                  _HandlingToggle(
-                    packMyself: _soloMode,
-                    enabled: !_isProcessingCart,
-                    onChanged: (v) => setState(() {
-                      _soloMode = v;
-                      if (v) _selectedHelperId = null;
-                    }),
-                  ),
-                  if (!_soloMode) ...[
-                    const SizedBox(height: 12),
-                    _buildHelperAssignmentControl(),
-                  ],
+                  _buildHelperAssignmentControl(),
                   const SizedBox(height: 12),
 
                   SizedBox(
@@ -4350,6 +4349,7 @@ class _PosCartPageState extends State<PosCartPage>
     if (presenceService == null) {
       return const _HelperAssignmentControl(
         helpers: <HelperAssignmentCandidate>[],
+        workloads: <String, int>{},
         selectedHelperId: null,
         enabled: false,
         onChanged: null,
@@ -4366,6 +4366,7 @@ class _PosCartPageState extends State<PosCartPage>
             : null;
         return _HelperAssignmentControl(
           helpers: helpers,
+          workloads: _helperWorkloads(),
           selectedHelperId: selectedId,
           enabled: !_isProcessingCart,
           onChanged: (helperId) {
@@ -4380,6 +4381,7 @@ class _PosCartPageState extends State<PosCartPage>
 class _HelperAssignmentControl extends StatelessWidget {
   const _HelperAssignmentControl({
     required this.helpers,
+    required this.workloads,
     required this.selectedHelperId,
     required this.enabled,
     required this.onChanged,
@@ -4388,6 +4390,7 @@ class _HelperAssignmentControl extends StatelessWidget {
   static const String _autoAssignValue = '__auto_assign__';
 
   final List<HelperAssignmentCandidate> helpers;
+  final Map<String, int> workloads;
   final String? selectedHelperId;
   final bool enabled;
   final ValueChanged<String?>? onChanged;
@@ -4395,7 +4398,8 @@ class _HelperAssignmentControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(8),
@@ -4405,61 +4409,54 @@ class _HelperAssignmentControl extends StatelessWidget {
         children: [
           const Icon(LucideIcons.userCheck, size: 18, color: _primaryBlue),
           const SizedBox(width: 10),
+          const Text(
+            'Helper packs',
+            style: TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'Hellix',
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Assign Helper',
-                  style: TextStyle(
-                    color: Color(0xFF475569),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'Hellix',
-                  ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: selectedHelperId ?? _autoAssignValue,
+                isExpanded: true,
+                isDense: true,
+                style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Hellix',
                 ),
-                SizedBox(
-                  height: 28,
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: selectedHelperId ?? _autoAssignValue,
-                      isExpanded: true,
-                      isDense: true,
-                      style: const TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Hellix',
-                      ),
-                      items: [
-                        DropdownMenuItem<String>(
-                          value: _autoAssignValue,
-                          child: Text(
-                            helpers.isEmpty
-                                ? 'Auto-assign (waiting for Helper)'
-                                : 'Auto-assign',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        ...helpers.map(
-                          (helper) => DropdownMenuItem<String>(
-                            value: helper.id,
-                            child: Text(
-                              helper.name,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
-                      onChanged: enabled
-                          ? (value) => onChanged?.call(
-                              value == _autoAssignValue ? null : value,
-                            )
-                          : null,
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: _autoAssignValue,
+                    child: Text(
+                      'Auto-assign — least loaded',
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                ),
-              ],
+                  ...helpers.map((helper) {
+                    final count = workloads[helper.id] ?? 0;
+                    final suffix = count == 1 ? 'order' : 'orders';
+                    return DropdownMenuItem<String>(
+                      value: helper.id,
+                      child: Text(
+                        '${helper.name} — $count $suffix',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: enabled
+                    ? (value) => onChanged?.call(
+                        value == _autoAssignValue ? null : value,
+                      )
+                    : null,
+              ),
             ),
           ),
         ],
@@ -4743,108 +4740,6 @@ class _QuantityStepperState extends State<_QuantityStepper> {
               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Icon(Icons.add, size: 16, color: Colors.black),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HandlingToggle extends StatelessWidget {
-  final bool packMyself;
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
-
-  const _HandlingToggle({
-    required this.packMyself,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  static const _dur = Duration(milliseconds: 220);
-
-  Widget _label(String text, IconData icon, bool selected, VoidCallback onTap) {
-    return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: enabled ? onTap : null,
-        child: Center(
-          child: TweenAnimationBuilder<Color?>(
-            tween: ColorTween(
-              end: selected ? _primaryBlue : Colors.grey.shade600,
-            ),
-            duration: _dur,
-            builder: (context, color, _) => Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 14, color: color),
-                const SizedBox(width: 6),
-                Text(
-                  text,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: color,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 36,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: _dur,
-            curve: Curves.easeOutCubic,
-            alignment: packMyself
-                ? Alignment.centerRight
-                : Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: 0.5,
-              heightFactor: 1.0,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(6),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
-                      blurRadius: 4,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              _label(
-                "Helper packs",
-                LucideIcons.users,
-                !packMyself,
-                () => onChanged(false),
-              ),
-              _label(
-                "I'll pack it",
-                LucideIcons.zap,
-                packMyself,
-                () => onChanged(true),
-              ),
-            ],
           ),
         ],
       ),

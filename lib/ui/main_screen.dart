@@ -2322,6 +2322,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             PosCartPage(
               controller: widget.controller,
               presenceService: _staffPresenceService,
+              autoAssignmentService: _orderAutoAssignmentService,
               targetOrderId: _targetPosOrderId,
               onOrderOpened: () {
                 if (mounted) {

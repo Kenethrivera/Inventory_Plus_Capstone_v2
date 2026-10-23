@@ -19,7 +19,7 @@ void main() {
 
   CustomerOrder order({
     required String id,
-    required String helperId,
+    String? helperId,
     required String status,
     required DateTime assignedAt,
   }) {
@@ -55,6 +55,29 @@ void main() {
       isEmpty,
     );
   });
+
+  test(
+    'Helper Queue includes only pending work assigned to current Helper',
+    () {
+      final orders = <CustomerOrder>[
+        order(id: 'mine', helperId: '1', status: 'pending', assignedAt: now),
+        order(id: 'unassigned', status: 'pending', assignedAt: now),
+        order(id: 'other', helperId: '2', status: 'pending', assignedAt: now),
+        order(
+          id: 'prepared',
+          helperId: '1',
+          status: 'prepared',
+          assignedAt: now,
+        ),
+      ];
+
+      final visible = assignedPendingOrdersForHelper(
+        orders: orders,
+        helperId: '1',
+      );
+      expect(visible.map((entry) => entry.id), ['mine']);
+    },
+  );
 
   test('eligible Helpers are online, fresh, same-location Helper profiles', () {
     final rows = <Map<String, dynamic>>[
@@ -141,6 +164,42 @@ void main() {
     expect(ranked, hasLength(3));
   });
 
+  test('workload counts only assigned pending preparation orders', () {
+    final orders = <CustomerOrder>[
+      order(id: 'active', helperId: '1', status: 'pending', assignedAt: now),
+      order(
+        id: 'active-two',
+        helperId: '1',
+        status: 'pending',
+        assignedAt: now,
+      ),
+      order(id: 'unassigned', status: 'pending', assignedAt: now),
+      order(id: 'prepared', helperId: '1', status: 'prepared', assignedAt: now),
+      order(
+        id: 'completed',
+        helperId: '1',
+        status: 'completed',
+        assignedAt: now,
+      ),
+      order(
+        id: 'cancelled',
+        helperId: '1',
+        status: 'cancelled',
+        assignedAt: now,
+      ),
+      order(id: 'solo', helperId: '1', status: 'solo_picking', assignedAt: now),
+    ];
+
+    expect(activePreparationWorkloads(orders), {'1': 2});
+    expect(
+      rankHelpersByActiveWorkload(
+        helpers: [helper('1', 'H1'), helper('2', 'H2')],
+        orders: orders,
+      ).first.id,
+      '2',
+    );
+  });
+
   test('equal workload uses least-recent assignment then stable ID', () {
     final rankedByTime = rankHelpersByActiveWorkload(
       helpers: [helper('1', 'H1'), helper('2', 'H2')],
@@ -197,14 +256,41 @@ void main() {
 
       final first = gate.schedule(reconcile);
       await Future<void>.delayed(Duration.zero);
-      await gate.schedule(reconcile);
-      await gate.schedule(reconcile);
-      await gate.schedule(reconcile);
+      final second = gate.schedule(reconcile);
+      final third = gate.schedule(reconcile);
+      final fourth = gate.schedule(reconcile);
       releaseFirst.complete();
-      await first;
+      await Future.wait([first, second, third, fourth]);
 
       expect(runs, 2);
       expect(maxConcurrent, 1);
+    },
+  );
+
+  test('normal Helper UI has no claim pool and backend claim remains', () {
+    final helperUi = File('lib/ui/order_queue_page.dart').readAsStringSync();
+    final controller = File(
+      'lib/logic/inventory_controller.dart',
+    ).readAsStringSync();
+
+    expect(helperUi, contains('assignedPendingOrdersForHelper'));
+    expect(helperUi, contains('_openAssignedOrderChecklist'));
+    expect(helperUi, isNot(contains('claimOrderForCurrentHelper(')));
+    expect(helperUi.toLowerCase(), isNot(contains('claimed by you')));
+    expect(helperUi.toLowerCase(), isNot(contains('unassigned pending')));
+    expect(controller, contains('claimOrderForCurrentHelper('));
+  });
+
+  test(
+    'Cashier UI removes solo CTA and immediately reconciles Auto-assign',
+    () {
+      final cashierUi = File('lib/ui/pos_cart_page.dart').readAsStringSync();
+
+      expect(cashierUi, contains('Helper packs'));
+      expect(cashierUi, contains('Auto-assign — least loaded'));
+      expect(cashierUi, contains("count == 1 ? 'order' : 'orders'"));
+      expect(cashierUi.toLowerCase(), isNot(contains("i'll pack it")));
+      expect(cashierUi, contains('reconcileCreatedOrder()'));
     },
   );
 
