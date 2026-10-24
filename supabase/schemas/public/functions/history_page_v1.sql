@@ -74,11 +74,7 @@ begin
         o.cash_given,
         o.change_amount,
         o.payment_mode,
-        (
-          select current_order.payment_reference
-          from public.orders current_order
-          where current_order.id = o.order_id::uuid
-        ) as payment_reference,
+        o.payment_reference,
         case
           when p_domain = 'helperWork' then coalesce(greatest(
             case when o.assigned_helper_id = v_account_id then o.assigned_at end,

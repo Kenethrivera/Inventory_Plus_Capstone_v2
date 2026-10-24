@@ -1505,6 +1505,7 @@ class _PosCartPageState extends State<PosCartPage>
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(13),
                                 ],
                                 onChanged: (val) {
                                   setDialogState(() => referenceError = null);

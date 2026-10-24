@@ -23,8 +23,8 @@ begin
     completed_by_id, completed_by_name,
     cancelled_by_id, cancelled_by_name,
     returned_by_id, returned_by_name,
-    total_amount, discount_amount, payment_mode, cash_given, change_amount,
-    snapshot_updated_at
+    total_amount, discount_amount, payment_mode, payment_reference,
+    cash_given, change_amount, snapshot_updated_at
   ) values (
     new.id::text, new.location_id, new.status,
     coalesce(new.items::jsonb, '[]'::jsonb), new.created_at,
@@ -37,7 +37,8 @@ begin
     new.cancelled_by_id::text, new.cancelled_by_name,
     new.returned_by_id::text, v_returned_by_name,
     coalesce(new.total_amount, 0), coalesce(new.discount_amount, 0),
-    new.payment_mode, new.cash_given, new.change_amount, now()
+    new.payment_mode, new.payment_reference, new.cash_given,
+    new.change_amount, now()
   )
   on conflict (order_id) do update set
     location_id = excluded.location_id,
@@ -65,6 +66,7 @@ begin
     total_amount = excluded.total_amount,
     discount_amount = excluded.discount_amount,
     payment_mode = excluded.payment_mode,
+    payment_reference = excluded.payment_reference,
     cash_given = excluded.cash_given,
     change_amount = excluded.change_amount,
     snapshot_updated_at = excluded.snapshot_updated_at;

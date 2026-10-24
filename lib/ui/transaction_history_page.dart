@@ -2163,7 +2163,7 @@ class _OrderDetailPanel extends StatelessWidget {
                       if (group.paymentMode.toLowerCase() == 'gcash' &&
                           group.paymentReference?.trim().isNotEmpty == true)
                         _DetailRow(
-                          label: 'GCash reference number',
+                          label: 'GCash reference',
                           value: group.paymentReference!.trim(),
                         ),
                       if (group.cashGiven > 0)

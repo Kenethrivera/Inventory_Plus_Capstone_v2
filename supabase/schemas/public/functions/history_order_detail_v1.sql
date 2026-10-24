@@ -44,11 +44,7 @@ begin
       'cancelled_by_id', o.cancelled_by_id, 'cancelled_at', o.cancelled_at,
       'returned_by_id', o.returned_by_id, 'returned_at', o.returned_at,
       'payment_mode', o.payment_mode,
-      'payment_reference', (
-        select current_order.payment_reference
-        from public.orders current_order
-        where current_order.id = o.order_id::uuid
-      ),
+      'payment_reference', o.payment_reference,
       'items', coalesce((
         select jsonb_agg(jsonb_build_object(
           'product_id', coalesce(item ->> 'product_id', item ->> 'productId'),
@@ -64,11 +60,7 @@ begin
       'total_amount', o.total_amount, 'discount_amount', o.discount_amount,
       'cash_given', o.cash_given, 'change_amount', o.change_amount,
       'payment_mode', o.payment_mode,
-      'payment_reference', (
-        select current_order.payment_reference
-        from public.orders current_order
-        where current_order.id = o.order_id::uuid
-      ),
+      'payment_reference', o.payment_reference,
       'created_by_name', coalesce(o.created_by_name, (
         select name from public.profiles
         where id::text = o.created_by_id::text
