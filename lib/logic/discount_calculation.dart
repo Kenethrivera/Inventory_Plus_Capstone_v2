@@ -3,11 +3,14 @@ import 'dart:math' as math;
 enum DiscountMode { percentage, amount }
 
 extension DiscountModeValue on DiscountMode {
-  String get databaseValue => name;
+  String get databaseValue => switch (this) {
+    DiscountMode.percentage => 'percentage',
+    DiscountMode.amount => 'amount',
+  };
 
   static DiscountMode fromDatabase(String value) => switch (value) {
     'percentage' => DiscountMode.percentage,
-    'amount' => DiscountMode.amount,
+    'amount' || 'fixed' => DiscountMode.amount,
     _ => throw FormatException('Unknown discount mode: $value'),
   };
 }

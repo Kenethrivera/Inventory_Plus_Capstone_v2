@@ -7,6 +7,7 @@ class AppDialog extends StatelessWidget {
   final String? subtitle;
   final Widget child;
   final List<Widget> actions; // shown as equal-width buttons
+  final double maxWidth;
 
   const AppDialog({
     super.key,
@@ -16,6 +17,7 @@ class AppDialog extends StatelessWidget {
     this.subtitle,
     required this.child,
     required this.actions,
+    this.maxWidth = 420,
   });
 
   @override
@@ -26,7 +28,7 @@ class AppDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
+        constraints: BoxConstraints(maxWidth: maxWidth),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -39,7 +41,7 @@ class AppDialog extends StatelessWidget {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.12),
+                      color: color.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(icon, color: color, size: 22),

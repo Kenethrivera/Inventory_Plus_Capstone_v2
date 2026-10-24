@@ -8,6 +8,9 @@ void main() {
   final migration = File(
     'database/phase_2c_discount_approval.sql',
   ).readAsStringSync();
+  final repair = File(
+    'database/phase_2c_discount_approval_fix.sql',
+  ).readAsStringSync();
   final controller = File(
     'lib/logic/inventory_controller.dart',
   ).readAsStringSync();
@@ -53,6 +56,9 @@ void main() {
           'product_id': 'product-1',
           'product_name': 'Item',
           'quantity': 1,
+          'unit': 'pcs',
+          'unit_price': 1000,
+          'line_total': 1000,
         },
       ],
       'cart_fingerprint': 'fingerprint',
@@ -68,6 +74,18 @@ void main() {
     final result = calculate(DiscountMode.percentage, 10);
     expect(result.discountAmount, 100);
     expect(result.effectivePercentage, 10);
+  });
+
+  test('discount modes serialize to the canonical database values', () {
+    expect(DiscountMode.percentage.databaseValue, 'percentage');
+    expect(DiscountMode.amount.databaseValue, 'amount');
+    expect(
+      DiscountModeValue.fromDatabase('fixed'),
+      DiscountMode.amount,
+      reason: 'legacy deployed rows remain readable',
+    );
+    expect(repair, contains("discount_mode in ('percentage', 'amount')"));
+    expect(repair, contains("set discount_mode = 'amount'"));
   });
 
   test('amount input calculates a fixed peso discount', () {
@@ -192,11 +210,22 @@ void main() {
     final request = approval();
     expect(request.discountDisplay, '₱150.00');
     expect(request.cartItems.single['quantity'], 1);
+    expect(request.cartItems.single['unit'], 'pcs');
+    expect(request.cartItems.single['unit_price'], 1000);
+    expect(request.cartItems.single['line_total'], 1000);
     expect(migration, contains("discount_mode in ('percentage', 'amount')"));
     expect(migration, contains("'cart_items', p_request.cart_items"));
-    expect(approvalCenter, contains('EFFECTIVE / QTY'));
-    expect(approvalCenter, contains('SUBTOTAL / PROOF'));
-    expect(approvalCenter, contains('Discount Approval'));
+    expect(repair, contains('v_snapshot.normalized_items'));
+    expect(repair, contains("'unit_price', scoped.product_price"));
+    expect(repair, contains("'line_total'"));
+    expect(approvalCenter, contains('REQUESTED BY'));
+    expect(approvalCenter, contains('DETAILS'));
+    expect(
+      approvalCenter,
+      contains('Detailed cart snapshot unavailable for this legacy request.'),
+    );
+    expect(approvalCenter, isNot(contains("'Checkout fingerprint'")));
+    expect(approvalCenter, isNot(contains('scrollDirection: Axis.horizontal')));
   });
 
   test('server checkout remains authoritative and realtime is centralized', () {

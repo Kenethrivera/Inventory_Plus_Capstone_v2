@@ -257,8 +257,8 @@ begin
       (entry.value ->> 'quantity')::numeric as quantity
     from jsonb_array_elements(p_items) entry
   ), scoped as (
-    select product.id, product.product_name, product.product_price,
-      requested.quantity
+    select product.id, product.product_name, product.unit,
+      product.product_price, requested.quantity
     from requested
     join public.products product on product.id = requested.product_id
     where product.location_id = p_location_id
@@ -272,6 +272,7 @@ begin
         'product_id', scoped.id,
         'product_name', scoped.product_name,
         'quantity', scoped.quantity,
+        'unit', coalesce(nullif(trim(scoped.unit), ''), 'pcs'),
         'unit_price', scoped.product_price,
         'line_total', round(scoped.product_price * scoped.quantity, 2)
       ) order by scoped.id
@@ -302,7 +303,6 @@ begin
       'discount_value', v_value,
       'discount_amount', v_discount,
       'effective_percentage', v_effective,
-      'reason', trim(coalesce(p_reason, '')),
       'checkout_token', trim(p_checkout_token)
     )::text,
     'UTF8'

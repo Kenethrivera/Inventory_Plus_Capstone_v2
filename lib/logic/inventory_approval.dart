@@ -1,3 +1,5 @@
+import 'discount_calculation.dart';
+
 enum InventoryApprovalType { restock, writeOff, discount }
 
 extension InventoryApprovalTypeValue on InventoryApprovalType {
@@ -163,10 +165,24 @@ class InventoryApprovalRequest {
         ? null
         : DateTime.parse(json[key].toString()).toLocal();
 
+    final rawDiscountMode = json['discount_mode']?.toString();
+    final normalizedDiscountMode = rawDiscountMode == null
+        ? null
+        : DiscountModeValue.fromDatabase(rawDiscountMode).databaseValue;
+    final rawCartItems = json['cart_items'];
+    final cartItems = rawCartItems is List
+        ? rawCartItems
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList(growable: false)
+        : const <Map<String, dynamic>>[];
+
     return InventoryApprovalRequest(
       id: json['id'].toString(),
       locationId: json['location_id'].toString(),
-      locationName: json['location_name']?.toString() ?? 'Unknown location',
+      locationName: json['location_name']?.toString().trim().isNotEmpty == true
+          ? json['location_name'].toString().trim()
+          : 'Store location',
       type: InventoryApprovalTypeValue.fromDatabase(
         json['request_type'].toString(),
       ),
@@ -194,7 +210,7 @@ class InventoryApprovalRequest {
       proofStoragePath: json['proof_storage_path']?.toString(),
       proofFileName: json['proof_file_name']?.toString(),
       proofMimeType: json['proof_mime_type']?.toString(),
-      discountMode: json['discount_mode']?.toString(),
+      discountMode: normalizedDiscountMode,
       discountValue: json['discount_value'] == null
           ? null
           : number('discount_value'),
@@ -207,11 +223,7 @@ class InventoryApprovalRequest {
       subtotalAmount: json['subtotal_amount'] == null
           ? null
           : number('subtotal_amount'),
-      cartItems: List<Map<String, dynamic>>.unmodifiable(
-        (json['cart_items'] as List<dynamic>? ?? const <dynamic>[]).map(
-          (item) => Map<String, dynamic>.from(item as Map),
-        ),
-      ),
+      cartItems: List<Map<String, dynamic>>.unmodifiable(cartItems),
       cartFingerprint: json['cart_fingerprint']?.toString(),
       checkoutToken: json['checkout_token']?.toString(),
       usedAt: optionalDate('used_at'),
