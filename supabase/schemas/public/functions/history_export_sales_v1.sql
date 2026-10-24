@@ -31,6 +31,11 @@ begin
       'total_amount', o.total_amount, 'discount_amount', o.discount_amount,
       'cash_given', o.cash_given, 'change_amount', o.change_amount,
       'payment_mode', o.payment_mode,
+      'payment_reference', (
+        select current_order.payment_reference
+        from public.orders current_order
+        where current_order.id = o.order_id::uuid
+      ),
       'created_by_name', o.created_by_name,
       'prepared_by_name', o.prepared_by_name,
       'completed_by_name', o.completed_by_name,

@@ -793,6 +793,11 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
 
         _buildInfoRow('Item count', order.items.length.toString()),
         _buildInfoRow('Total amount', _money(order.totalAmount)),
+        if (order.paymentMode?.trim().isNotEmpty == true)
+          _buildInfoRow('Payment method', order.paymentMode!),
+        if (order.paymentMode?.trim().toLowerCase() == 'gcash' &&
+            order.paymentReference?.trim().isNotEmpty == true)
+          _buildInfoRow('GCash reference', order.paymentReference!.trim()),
 
         if (isDelayed) ...[
           const SizedBox(height: 14),

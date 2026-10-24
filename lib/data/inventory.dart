@@ -209,6 +209,10 @@ class CustomerOrder {
   final DateTime? _canonicalEventAt;
   final double totalAmount;
   final double discountAmount;
+  final String? paymentMode;
+  final double cashGiven;
+  final double changeAmount;
+  final String? paymentReference;
 
   final String? createdById;
   final String? createdByName;
@@ -244,6 +248,10 @@ class CustomerOrder {
     DateTime? eventAt,
     this.totalAmount = 0.0,
     this.discountAmount = 0.0,
+    this.paymentMode,
+    this.cashGiven = 0.0,
+    this.changeAmount = 0.0,
+    this.paymentReference,
     this.createdById,
     this.createdByName,
     this.assignedHelperId,
@@ -290,6 +298,10 @@ class CustomerOrder {
       eventAt: _parseDate(json['event_at']),
       totalAmount: (json['total_amount'] as num?)?.toDouble() ?? 0.0,
       discountAmount: (json['discount_amount'] as num?)?.toDouble() ?? 0.0,
+      paymentMode: json['payment_mode']?.toString(),
+      cashGiven: (json['cash_given'] as num?)?.toDouble() ?? 0.0,
+      changeAmount: (json['change_amount'] as num?)?.toDouble() ?? 0.0,
+      paymentReference: json['payment_reference']?.toString(),
 
       createdById: json['created_by_id']?.toString(),
       createdByName: json['created_by_name']?.toString(),

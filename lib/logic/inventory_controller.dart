@@ -11,6 +11,7 @@ import '../services/realtime/realtime_sync_service.dart';
 import 'helper_assignment.dart';
 import 'history_pagination.dart';
 import 'inventory_approval.dart';
+import 'payment_reference.dart';
 import 'staff_management.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
@@ -3348,6 +3349,10 @@ class InventoryController {
     _processingOrders!.add(order.id);
 
     try {
+      final normalizedPaymentReference =
+          paymentMode?.trim().toLowerCase() == 'gcash'
+          ? normalizeGcashReference(paymentReference)
+          : null;
       final checkOrder = await supabase
           .from('orders')
           .select('status')
@@ -3372,8 +3377,8 @@ class InventoryController {
       if (cashGiven != null) updateData['cash_given'] = cashGiven;
       if (changeAmount != null) updateData['change_amount'] = changeAmount;
 
-      if (paymentReference != null && paymentReference.isNotEmpty) {
-        updateData['payment_reference'] = paymentReference;
+      if (normalizedPaymentReference != null) {
+        updateData['payment_reference'] = normalizedPaymentReference;
       }
 
       final row = await supabase

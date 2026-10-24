@@ -283,6 +283,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       double cashGiven = (order['cash_given'] as num?)?.toDouble() ?? 0.0;
       double changeAmount = (order['change_amount'] as num?)?.toDouble() ?? 0.0;
       String paymentMode = order['payment_mode'] as String? ?? 'N/A';
+      final paymentReference = order['payment_reference']?.toString();
 
       groups.add(
         _OrderGroup(
@@ -296,6 +297,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           cashGiven: cashGiven,
           changeAmount: changeAmount,
           paymentMode: paymentMode,
+          paymentReference: paymentReference,
           items: items,
           createdBy: order['created_by_name']?.toString(),
           preparedBy: order['prepared_by_name']?.toString(),
@@ -1286,6 +1288,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     _openOrderId = order.id;
     _openOrderFamily = family;
     _openOrderNotifier = notifier;
+    unawaited(_refreshOpenOrderDetail());
     unawaited(
       showDialog<void>(
         context: context,
@@ -1477,6 +1480,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               date: sale.eventAt,
               cashier: sale.createdBy ?? 'Admin',
               paymentMode: sale.paymentMode,
+              paymentReference: sale.paymentReference,
               subtotal: sale.subtotal,
               discount: sale.discount,
               total: sale.totalAmount,
@@ -1591,6 +1595,7 @@ class _OrderGroup {
   final double cashGiven;
   final double changeAmount;
   final String paymentMode;
+  final String? paymentReference;
   final List<_OrderLineItem> items;
   final String? createdBy;
   final String? preparedBy;
@@ -1611,6 +1616,7 @@ class _OrderGroup {
     required this.cashGiven,
     required this.changeAmount,
     required this.paymentMode,
+    this.paymentReference,
     required this.items,
     this.createdBy,
     this.preparedBy,
@@ -2153,6 +2159,12 @@ class _OrderDetailPanel extends StatelessWidget {
                         _DetailRow(
                           label: 'Payment method',
                           value: group.paymentMode,
+                        ),
+                      if (group.paymentMode.toLowerCase() == 'gcash' &&
+                          group.paymentReference?.trim().isNotEmpty == true)
+                        _DetailRow(
+                          label: 'GCash reference number',
+                          value: group.paymentReference!.trim(),
                         ),
                       if (group.cashGiven > 0)
                         _DetailRow(

@@ -9,6 +9,7 @@ import '../data/inventory.dart';
 import '../logic/helper_assignment.dart';
 import '../logic/discount_calculation.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/payment_reference.dart';
 import '../services/order_auto_assignment_service.dart';
 import '../services/staff_presence_service.dart';
 import 'widgets/app_toast.dart';
@@ -433,6 +434,7 @@ class _PosCartPageState extends State<PosCartPage>
       _showReceiptDialog(
         order,
         paymentMode: paymentData['paymentMode'],
+        paymentReference: paymentData['reference'],
         cashReceived: paymentData['cashReceived'],
         change: paymentData['change'],
         orderedAt: times.createdAt,
@@ -1027,6 +1029,7 @@ class _PosCartPageState extends State<PosCartPage>
     final cashCtrl = TextEditingController();
     double cashReceived = 0.0;
     final refCtrl = TextEditingController();
+    String? referenceError;
 
     return showDialog<Map<String, dynamic>>(
       context: context,
@@ -1488,11 +1491,11 @@ class _PosCartPageState extends State<PosCartPage>
                               const Align(
                                 alignment: Alignment.centerLeft,
                                 child: Text(
-                                  "Note for cashier: Insert last 5 digits of the reference number *",
+                                  'GCash Reference Number',
                                   style: TextStyle(
-                                    fontSize: 11,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.redAccent,
+                                    color: _primaryBlue,
                                   ),
                                 ),
                               ),
@@ -1502,18 +1505,14 @@ class _PosCartPageState extends State<PosCartPage>
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly,
-                                  LengthLimitingTextInputFormatter(
-                                    5,
-                                  ), // Restricts to exactly 5 characters
                                 ],
                                 onChanged: (val) {
-                                  setDialogState(
-                                    () {},
-                                  ); // Rebuilds the UI to unlock the button
+                                  setDialogState(() => referenceError = null);
                                 },
                                 decoration: InputDecoration(
-                                  hintText:
-                                      "************xxxxx", // Updated hint text
+                                  hintText: 'GCash Reference Number',
+                                  helperText: 'Enter the full reference number',
+                                  errorText: referenceError,
                                   hintStyle: TextStyle(
                                     color: Colors.grey.shade500,
                                     fontSize: 12,
@@ -1615,25 +1614,37 @@ class _PosCartPageState extends State<PosCartPage>
                           Expanded(
                             child: ElevatedButton(
                               // --- NEW: Disable button dynamically if rules are broken ---
-                              onPressed:
-                                  ((paymentMode == 'Cash' && hasError) ||
-                                      (paymentMode == 'GCash' &&
-                                          refCtrl.text.trim().length !=
-                                              5)) // <--- NEW CHECK
+                              onPressed: paymentMode == 'Cash' && hasError
                                   ? null
-                                  : () => Navigator.pop(context, {
-                                      'confirmed': true,
-                                      'paymentMode': paymentMode,
-                                      'cashReceived': paymentMode == 'Cash'
-                                          ? cashReceived
-                                          : totalDue,
-                                      'change': paymentMode == 'Cash'
-                                          ? (cashReceived - totalDue)
-                                          : 0.0,
-                                      'reference': paymentMode == 'GCash'
-                                          ? refCtrl.text.trim()
-                                          : null,
-                                    }),
+                                  : () {
+                                      String? reference;
+                                      if (paymentMode == 'GCash') {
+                                        try {
+                                          reference = normalizeGcashReference(
+                                            refCtrl.text,
+                                          );
+                                        } on FormatException catch (error) {
+                                          setDialogState(
+                                            () =>
+                                                referenceError = error.message,
+                                          );
+                                          return;
+                                        }
+                                      }
+                                      Navigator.pop(context, {
+                                        'confirmed': true,
+                                        'paymentMode': paymentMode,
+                                        'cashReceived': paymentMode == 'Cash'
+                                            ? cashReceived
+                                            : totalDue,
+                                        'change': paymentMode == 'Cash'
+                                            ? (cashReceived - totalDue)
+                                            : 0.0,
+                                        'reference': paymentMode == 'GCash'
+                                            ? reference
+                                            : null,
+                                      });
+                                    },
                               // -----------------------------------------------------------
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
@@ -2159,6 +2170,7 @@ class _PosCartPageState extends State<PosCartPage>
   void _showReceiptDialog(
     CustomerOrder o, {
     String? paymentMode,
+    String? paymentReference,
     double? cashReceived,
     double? change,
     DateTime? orderedAt,
@@ -2572,6 +2584,20 @@ class _PosCartPageState extends State<PosCartPage>
                             ],
                           ),
                           const SizedBox(height: 6),
+                          if (paymentMode == 'GCash' &&
+                              paymentReference?.isNotEmpty == true) ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: formLine(
+                                    'GCash Reference Number: ',
+                                    paymentReference!,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                          ],
                           Row(
                             children: [
                               Expanded(flex: 3, child: formLine('TIN: ', '')),

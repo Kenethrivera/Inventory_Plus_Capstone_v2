@@ -10,6 +10,7 @@ class SalesReportEntry {
   final DateTime date;
   final String cashier;
   final String paymentMode;
+  final String? paymentReference;
   final double subtotal;
   final double discount;
   final double total;
@@ -19,6 +20,7 @@ class SalesReportEntry {
     required this.date,
     required this.cashier,
     required this.paymentMode,
+    this.paymentReference,
     required this.subtotal,
     required this.discount,
     required this.total,
@@ -330,7 +332,7 @@ class SalesReportGenerator {
       'Order #',
       'Date & Time',
       'Cashier',
-      'Payment',
+      'Payment / Reference',
       'Subtotal',
       'Discount',
       'Total',
@@ -341,7 +343,10 @@ class SalesReportGenerator {
         s.orderNumber,
         _formatDateTime(s.date),
         s.cashier,
-        s.paymentMode,
+        s.paymentMode.toLowerCase() == 'gcash' &&
+                s.paymentReference?.trim().isNotEmpty == true
+            ? '${s.paymentMode}\n${s.paymentReference!.trim()}'
+            : s.paymentMode,
         _currency(s.subtotal),
         s.discount > 0 ? _currency(s.discount) : '-',
         _currency(s.total),

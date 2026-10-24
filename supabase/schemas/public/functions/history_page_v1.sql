@@ -74,6 +74,11 @@ begin
         o.cash_given,
         o.change_amount,
         o.payment_mode,
+        (
+          select current_order.payment_reference
+          from public.orders current_order
+          where current_order.id = o.order_id::uuid
+        ) as payment_reference,
         case
           when p_domain = 'helperWork' then coalesce(greatest(
             case when o.assigned_helper_id = v_account_id then o.assigned_at end,
@@ -183,6 +188,8 @@ begin
             'completed_by_id', completed_by_id, 'completed_at', completed_at,
             'cancelled_by_id', cancelled_by_id, 'cancelled_at', cancelled_at,
             'returned_by_id', returned_by_id, 'returned_at', returned_at,
+            'payment_mode', payment_mode,
+            'payment_reference', payment_reference,
             'items', coalesce((
               select jsonb_agg(jsonb_build_object(
                 'product_id', coalesce(item ->> 'product_id', item ->> 'productId'),
@@ -199,6 +206,7 @@ begin
             'total_amount', total_amount, 'discount_amount', discount_amount,
             'cash_given', cash_given, 'change_amount', change_amount,
             'payment_mode', payment_mode,
+            'payment_reference', payment_reference,
             'created_by_name', history_created_by_name,
             'prepared_by_name', history_prepared_by_name,
             'completed_by_name', history_completed_by_name,
