@@ -10,6 +10,11 @@ CREATE OR REPLACE FUNCTION private.approval_request_json_v1 (
   select jsonb_build_object(
     'id', p_request.id,
     'location_id', p_request.location_id,
+    'location_name', (
+      select location.location_name
+      from public.locations location
+      where location.id = p_request.location_id
+    ),
     'request_type', p_request.request_type,
     'status', p_request.status,
     'requested_by_id', p_request.requested_by_id,
@@ -25,16 +30,30 @@ CREATE OR REPLACE FUNCTION private.approval_request_json_v1 (
     'unit', p_request.unit,
     'requested_quantity', p_request.requested_quantity,
     'stock_at_request', p_request.stock_at_request,
-    'current_stock', coalesce((
+    'current_stock', case when p_request.product_id is null then null else (
       select product.product_quantity
       from public.products product
       where product.id = p_request.product_id
         and product.location_id = p_request.location_id
-    ), p_request.stock_at_request),
+    ) end,
     'reason', p_request.reason,
     'note', p_request.note,
     'review_note', p_request.review_note,
-    'transaction_id', p_request.transaction_id
+    'transaction_id', p_request.transaction_id,
+    'proof_storage_path', to_jsonb(p_request) ->> 'proof_storage_path',
+    'proof_file_name', to_jsonb(p_request) ->> 'proof_file_name',
+    'proof_mime_type', to_jsonb(p_request) ->> 'proof_mime_type',
+    'discount_mode', p_request.discount_mode,
+    'discount_value', p_request.discount_value,
+    'discount_amount', p_request.discount_amount,
+    'discount_effective_percentage',
+      p_request.discount_effective_percentage,
+    'subtotal_amount', p_request.subtotal_amount,
+    'cart_items', p_request.cart_items,
+    'cart_fingerprint', p_request.cart_fingerprint,
+    'checkout_token', p_request.checkout_token,
+    'used_at', p_request.used_at,
+    'used_order_id', p_request.used_order_id
   )
 $function$;
 

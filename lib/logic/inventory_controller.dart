@@ -12,6 +12,7 @@ import 'helper_assignment.dart';
 import 'history_pagination.dart';
 import 'inventory_approval.dart';
 import 'payment_reference.dart';
+import 'staff_performance.dart';
 import 'staff_management.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
@@ -144,6 +145,8 @@ class InventoryController {
   final StreamController<InventoryApprovalRequest?>
   _discountApprovalController =
       StreamController<InventoryApprovalRequest?>.broadcast();
+  final StreamController<void> _staffPerformanceInvalidationsController =
+      StreamController<void>.broadcast();
 
   StreamSubscription<void>? _orderChangesSubscription;
   StreamSubscription<void>? _orderHistoryChangesSubscription;
@@ -181,6 +184,11 @@ class InventoryController {
   String? _activeDiscountApprovalId;
   InventoryApprovalRequest? _activeDiscountApproval;
   Future<void>? _discountApprovalRefreshInFlight;
+  final Map<String, StaffPerformanceSnapshot> _staffPerformanceCache =
+      <String, StaffPerformanceSnapshot>{};
+  final Map<String, Future<StaffPerformanceSnapshot>>
+  _staffPerformanceRequests = <String, Future<StaffPerformanceSnapshot>>{};
+  int _staffPerformanceGeneration = 0;
 
   List<CustomerOrder> _ordersSnapshot = const <CustomerOrder>[];
 
@@ -389,6 +397,7 @@ class InventoryController {
     final accountChanged = currentUserId != id;
     final roleChanged = currentUserRole?.toLowerCase() != role.toLowerCase();
     _clearPaginatedHistoryState();
+    _invalidateStaffPerformance();
     if (accountChanged) {
       _clearInventorySnapshot();
       _clearOrdersSnapshot();
@@ -420,6 +429,7 @@ class InventoryController {
     if (activeLocationId == locationId) return;
 
     activeLocationId = locationId;
+    _invalidateStaffPerformance();
     _clearPaginatedHistoryState();
     _historyInvalidationsController.add(
       HistoryInvalidation(
@@ -2151,6 +2161,84 @@ class InventoryController {
   Stream<HistoryInvalidation> get historyInvalidations =>
       _historyInvalidationsController.stream;
 
+  Stream<void> get staffPerformanceInvalidations =>
+      _staffPerformanceInvalidationsController.stream;
+
+  void _invalidateStaffPerformance() {
+    _staffPerformanceGeneration++;
+    _staffPerformanceCache.clear();
+    _staffPerformanceInvalidationsController.add(null);
+  }
+
+  Future<StaffPerformanceSnapshot> loadStaffPerformance({
+    required StaffPerformanceRole role,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    bool forceRefresh = false,
+  }) {
+    if (!isAdmin) {
+      throw StateError(
+        'Staff Performance is available to Admin accounts only.',
+      );
+    }
+    final locationId = activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      throw StateError('Select a store location before viewing performance.');
+    }
+    if (!periodEnd.isAfter(periodStart)) {
+      throw ArgumentError('Performance period end must follow its start.');
+    }
+
+    final startUtc = periodStart.toUtc();
+    final endUtc = periodEnd.toUtc();
+    final key =
+        '$locationId:${role.rpcValue}:'
+        '${startUtc.toIso8601String()}:${endUtc.toIso8601String()}';
+    if (!forceRefresh) {
+      final cached = _staffPerformanceCache[key];
+      if (cached != null) return SynchronousFuture(cached);
+    }
+    final existing = _staffPerformanceRequests[key];
+    if (existing != null) return existing;
+
+    late final Future<StaffPerformanceSnapshot> request;
+    request =
+        () async {
+          dynamic response;
+          while (true) {
+            final generation = _staffPerformanceGeneration;
+            response = await supabase.rpc(
+              'staff_performance_v1',
+              params: <String, dynamic>{
+                'p_session_token': _requireSessionToken(),
+                'p_role': role.rpcValue,
+                'p_period_start': startUtc.toIso8601String(),
+                'p_period_end': endUtc.toIso8601String(),
+              },
+            );
+            if (activeLocationId != locationId) {
+              throw StateError('Performance request became stale.');
+            }
+            if (generation == _staffPerformanceGeneration) break;
+          }
+          final snapshot = StaffPerformanceSnapshot.fromJson(
+            Map<String, dynamic>.from(response as Map),
+            role: role,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+          );
+          if (_staffPerformanceCache.length >= 18) {
+            _staffPerformanceCache.remove(_staffPerformanceCache.keys.first);
+          }
+          _staffPerformanceCache[key] = snapshot;
+          return snapshot;
+        }().whenComplete(() {
+          _staffPerformanceRequests.remove(key);
+        });
+    _staffPerformanceRequests[key] = request;
+    return request;
+  }
+
   Future<HistoryPageResult<Map<String, dynamic>>> loadHistoryPage({
     required HistoryQueryFamily family,
     required int page,
@@ -2773,6 +2861,7 @@ class InventoryController {
                 HistoryInvalidationKind.orderHistory,
                 locationId,
               );
+              _invalidateStaffPerformance();
             }
           },
           onError: (Object error, StackTrace stackTrace) {
@@ -2861,6 +2950,7 @@ class InventoryController {
         .staffConfigurationChanges
         .listen(
           (_) {
+            _invalidateStaffPerformance();
             if (_staffSnapshotActivated) {
               unawaited(_refreshStaffConfiguration());
             }
@@ -2887,6 +2977,7 @@ class InventoryController {
         .listen(
           (_) {
             _approvalPageCache.markAllStale();
+            _invalidateStaffPerformance();
             if (_activeApprovalPageKey != null && isAdmin) {
               unawaited(_refreshActiveApprovalPage());
             }

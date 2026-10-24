@@ -14,18 +14,15 @@ declare
 begin
   select * into v_profile
   from private.require_app_session_v1(p_session_token);
-  if not found then
-    raise exception 'Approval session is invalid or expired';
-  end if;
+  if not found then raise exception 'Approval session is invalid or expired'; end if;
   if v_profile.role <> 'admin' then
-    raise exception 'Only Admin accounts may reject stock changes';
+    raise exception 'Only Admin accounts may reject requests';
   end if;
 
   select request.* into v_request
   from public.approval_requests request
   where request.id = p_request_id
   for update;
-
   if not found then raise exception 'Approval request not found'; end if;
   if v_request.location_id <> v_profile.location_id then
     raise exception 'Approval request is outside the active location';
@@ -44,7 +41,6 @@ begin
   returning * into v_request;
 
   perform private.upsert_inventory_approval_notification_v1(v_request);
-
   return private.approval_request_json_v1(v_request);
 end;
 $function$;

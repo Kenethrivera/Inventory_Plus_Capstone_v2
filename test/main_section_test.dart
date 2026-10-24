@@ -22,6 +22,7 @@ void main() {
       MainSection.queue,
       MainSection.inventory,
       MainSection.approvals,
+      MainSection.performance,
       MainSection.transactions,
       MainSection.storeMap,
       MainSection.systemSettings,

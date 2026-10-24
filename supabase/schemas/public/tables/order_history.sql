@@ -24,10 +24,10 @@ CREATE TABLE "public"."order_history" (
   "total_amount"         numeric                  NOT NULL DEFAULT 0,
   "discount_amount"      numeric                  NOT NULL DEFAULT 0,
   "payment_mode"         text,
-  "payment_reference"    text,
   "cash_given"           numeric,
   "change_amount"        numeric,
   "snapshot_updated_at"  timestamp with time zone NOT NULL DEFAULT now(),
+  "payment_reference"    text,
   CONSTRAINT "order_history_pkey" PRIMARY KEY (order_id)
 );
 

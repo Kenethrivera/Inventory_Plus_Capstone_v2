@@ -43,6 +43,7 @@ import 'widgets/active_staff_button.dart';
 import '../services/store_access_service.dart';
 import '../services/main_section_url.dart';
 import 'staff_history_page.dart';
+import 'staff_performance_page.dart';
 import '../services/realtime/realtime_sync_service.dart';
 
 class MainScreen extends StatefulWidget {
@@ -366,12 +367,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           return 'Approval Center';
 
         case 6:
-          return 'Transactions';
+          return 'Staff Performance';
 
         case 7:
-          return 'Store Map';
+          return 'Transactions';
 
         case 8:
+          return 'Store Map';
+
+        case 9:
           return 'System Settings';
 
         default:
@@ -2302,6 +2306,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         final int approvalsIndex = isAdmin ? pageIndex++ : -1;
 
+        final int performanceIndex = isAdmin ? pageIndex++ : -1;
+
         final int staffHistoryIndex = (isHelper || isCashier)
             ? pageIndex++
             : -1;
@@ -2414,6 +2420,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         if (isAdmin) {
           pages.add(ApprovalCenterPage(controller: widget.controller));
+          pages.add(StaffPerformancePage(controller: widget.controller));
         }
 
         if (isHelper || isCashier) {
@@ -2493,6 +2500,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   orderQueueIndex: orderQueueIndex,
                   inventoryIndex: inventoryIndex,
                   approvalsIndex: approvalsIndex,
+                  performanceIndex: performanceIndex,
                   transactionIndex: transactionIndex,
                   mapIndex: mapIndex,
                   systemSettingsIndex: systemSettingsIndex,
@@ -2761,6 +2769,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             ),
           if (isAdmin)
             const NavigationDestination(
+              icon: Icon(LucideIcons.barChart2, color: _inactiveText),
+              selectedIcon: Icon(LucideIcons.barChart2, color: _primaryBlue),
+              label: 'Performance',
+            ),
+          if (isAdmin)
+            const NavigationDestination(
               icon: Icon(LucideIcons.history, color: _inactiveText),
               selectedIcon: Icon(LucideIcons.history, color: _primaryBlue),
               label: 'Logs',
@@ -2789,6 +2803,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     required int orderQueueIndex,
     required int inventoryIndex,
     required int approvalsIndex,
+    required int performanceIndex,
     required int transactionIndex,
     required int mapIndex,
     required int systemSettingsIndex,
@@ -2883,6 +2898,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     approvalsIndex,
                     LucideIcons.clipboardCheck,
                     'Approval Center',
+                  ),
+                  _buildSidebarItem(
+                    performanceIndex,
+                    LucideIcons.barChart2,
+                    'Staff Performance',
                   ),
                   _buildSidebarItem(
                     transactionIndex,

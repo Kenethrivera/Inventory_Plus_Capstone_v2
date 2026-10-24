@@ -9,7 +9,9 @@ CREATE OR REPLACE FUNCTION private.upsert_inventory_approval_notification_v1 (
 declare
   v_notification_id public.notifications.id%type;
   v_action text := case p_request.request_type
-    when 'restock' then 'Restock' else 'Write-off' end;
+    when 'restock' then 'Restock'
+    when 'write_off' then 'Write-off'
+    else 'Discount' end;
   v_title text;
   v_body text;
   v_target_roles text[];
@@ -18,16 +20,25 @@ declare
 begin
   if p_request.status = 'pending' then
     v_title := v_action || ' approval requested';
-    v_body := p_request.requested_by_name || ' requested ' || v_action ||
-      ' of ' || p_request.requested_quantity || ' ' || p_request.unit ||
-      ' for ' || p_request.product_name || '.';
+    v_body := case when p_request.request_type = 'discount' then
+      p_request.requested_by_name || ' requested a ' ||
+      round(p_request.discount_effective_percentage, 2) ||
+      '% discount (PHP ' || round(p_request.discount_amount, 2) || ').'
+    else
+      p_request.requested_by_name || ' requested ' || v_action || ' of ' ||
+      p_request.requested_quantity || ' ' || p_request.unit || ' for ' ||
+      p_request.product_name || '.' end;
     v_target_roles := array['admin']::text[];
     v_priority := 'high';
   else
     v_title := v_action || ' request ' || p_request.status;
-    v_body := 'Your ' || v_action || ' request for ' ||
+    v_body := case when p_request.request_type = 'discount' then
+      'Your ' || round(p_request.discount_effective_percentage, 2) ||
+      '% discount request was ' || p_request.status || '.'
+    else
+      'Your ' || v_action || ' request for ' ||
       p_request.requested_quantity || ' ' || p_request.unit || ' of ' ||
-      p_request.product_name || ' was ' || p_request.status || '.';
+      p_request.product_name || ' was ' || p_request.status || '.' end;
     v_target_roles := array[p_request.requested_by_role]::text[];
     v_priority := 'medium';
   end if;
@@ -42,6 +53,11 @@ begin
     'productName', p_request.product_name,
     'quantity', p_request.requested_quantity,
     'unit', p_request.unit,
+    'discountMode', p_request.discount_mode,
+    'discountValue', p_request.discount_value,
+    'discountAmount', p_request.discount_amount,
+    'effectivePercentage', p_request.discount_effective_percentage,
+    'subtotalAmount', p_request.subtotal_amount,
     'requestedById', p_request.requested_by_id,
     'requestedByName', p_request.requested_by_name,
     'recipientId', case when p_request.status = 'pending'
