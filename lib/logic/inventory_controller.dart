@@ -2846,6 +2846,7 @@ class InventoryController {
       (_) {
         _ordersAwaitingRealtimeInitial = false;
         unawaited(_refreshOrdersFromDatabase());
+        _invalidateStaffPerformance();
       },
       onError: (Object error, StackTrace stackTrace) {
         debugPrint('[InventoryController] Order realtime error: $error');

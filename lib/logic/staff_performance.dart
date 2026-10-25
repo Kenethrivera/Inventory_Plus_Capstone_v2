@@ -37,6 +37,47 @@ abstract final class StaffPerformanceV1 {
     return 1;
   }
 
+  static double percentageShare(num numerator, num denominator) {
+    if (denominator <= 0) return 0;
+    return numerator * 100 / denominator;
+  }
+
+  static double? contributionIndex({
+    required double workloadShare,
+    required double? activeTimeShare,
+  }) {
+    if (activeTimeShare == null || activeTimeShare <= 0) return null;
+    return workloadShare / activeTimeShare;
+  }
+
+  static double weightedScore({
+    required double onTime,
+    required double adjustedThroughput,
+    required double adjustedEfficiency,
+    required double reliability,
+  }) =>
+      onTime * onTimeWeight +
+      adjustedThroughput * throughputWeight +
+      adjustedEfficiency * efficiencyWeight +
+      reliability * reliabilityWeight;
+
+  /// Matches PostgreSQL `percent_rank` for an ascending same-cohort value.
+  /// A one-person or no-spread cohort uses the V1 neutral score explicitly.
+  static double normalizedPeerScore({
+    required double value,
+    required Iterable<double> eligiblePeerValues,
+  }) {
+    final peers = eligiblePeerValues.toList()..sort();
+    if (peers.length <= 1 || peers.first == peers.last) return 50;
+    final lowerCount = peers.where((peer) => peer < value).length;
+    return lowerCount * 100 / (peers.length - 1);
+  }
+
+  static bool isValidDuration(DateTime? startedAt, DateTime? finishedAt) =>
+      startedAt != null &&
+      finishedAt != null &&
+      !finishedAt.isBefore(startedAt);
+
   static String bandFor(double? score) {
     if (score == null) return 'Insufficient data';
     if (score >= 90) return 'Excellent';
@@ -55,9 +96,14 @@ class StaffPerformanceRecord {
     required this.role,
     required this.isActive,
     required this.completedCount,
+    required this.orderShare,
     required this.validTimingCount,
     required this.excludedTimingCount,
     required this.workloadPoints,
+    required this.workloadShare,
+    required this.onTimeCount,
+    required this.totalServiceMinutes,
+    required this.timedWorkloadPoints,
     required this.averageMinutes,
     required this.medianMinutes,
     required this.fastestMinutes,
@@ -66,6 +112,11 @@ class StaffPerformanceRecord {
     required this.delayRate,
     required this.reliability,
     required this.efficiency,
+    required this.adjustedThroughput,
+    required this.adjustedEfficiency,
+    required this.activeHours,
+    required this.activeTimeShare,
+    required this.contributionIndex,
     required this.currentWorkload,
     required this.salesHandled,
     required this.discountedTransactions,
@@ -83,9 +134,14 @@ class StaffPerformanceRecord {
   final StaffPerformanceRole role;
   final bool isActive;
   final int completedCount;
+  final double orderShare;
   final int validTimingCount;
   final int excludedTimingCount;
   final double workloadPoints;
+  final double workloadShare;
+  final int onTimeCount;
+  final double totalServiceMinutes;
+  final double timedWorkloadPoints;
   final double? averageMinutes;
   final double? medianMinutes;
   final double? fastestMinutes;
@@ -93,7 +149,18 @@ class StaffPerformanceRecord {
   final int delayedCount;
   final double delayRate;
   final double reliability;
+
+  /// Raw complexity points completed per valid service minute.
   final double? efficiency;
+
+  /// Same-role/location/period peer-normalized score used by the final score.
+  final double? adjustedThroughput;
+
+  /// Same-role/location/period peer-normalized score used by the final score.
+  final double? adjustedEfficiency;
+  final double? activeHours;
+  final double? activeTimeShare;
+  final double? contributionIndex;
   final int currentWorkload;
   final double salesHandled;
   final int discountedTransactions;
@@ -107,6 +174,16 @@ class StaffPerformanceRecord {
 
   String get scoreBand => StaffPerformanceV1.bandFor(score);
   bool get hasScoredSample => score != null;
+  double get onTimeScoreContribution =>
+      onTimeRate * StaffPerformanceV1.onTimeWeight;
+  double? get throughputScoreContribution => adjustedThroughput == null
+      ? null
+      : adjustedThroughput! * StaffPerformanceV1.throughputWeight;
+  double? get efficiencyScoreContribution => adjustedEfficiency == null
+      ? null
+      : adjustedEfficiency! * StaffPerformanceV1.efficiencyWeight;
+  double get reliabilityScoreContribution =>
+      reliability * StaffPerformanceV1.reliabilityWeight;
 
   factory StaffPerformanceRecord.fromJson(
     Map<String, dynamic> json,
@@ -124,9 +201,14 @@ class StaffPerformanceRecord {
       role: role,
       isActive: json['is_active'] == true,
       completedCount: integer('completed_count'),
+      orderShare: number('order_share'),
       validTimingCount: integer('valid_timing_count'),
       excludedTimingCount: integer('excluded_timing_count'),
       workloadPoints: number('workload_points'),
+      workloadShare: number('workload_share'),
+      onTimeCount: integer('on_time_count'),
+      totalServiceMinutes: number('total_service_minutes'),
+      timedWorkloadPoints: number('timed_workload_points'),
       averageMinutes: optionalNumber('average_minutes'),
       medianMinutes: optionalNumber('median_minutes'),
       fastestMinutes: optionalNumber('fastest_minutes'),
@@ -135,6 +217,11 @@ class StaffPerformanceRecord {
       delayRate: number('delay_rate'),
       reliability: number('reliability'),
       efficiency: optionalNumber('efficiency'),
+      adjustedThroughput: optionalNumber('adjusted_throughput'),
+      adjustedEfficiency: optionalNumber('adjusted_efficiency'),
+      activeHours: optionalNumber('active_hours'),
+      activeTimeShare: optionalNumber('active_time_share'),
+      contributionIndex: optionalNumber('contribution_index'),
       currentWorkload: integer('current_workload'),
       salesHandled: number('sales_handled'),
       discountedTransactions: integer('discounted_transactions'),
@@ -157,7 +244,14 @@ class StaffPerformanceSnapshot {
     required this.periodEnd,
     required this.records,
     required this.loadedAt,
+    required this.totalStoreOrders,
+    required this.totalRoleHandledOrders,
+    required this.totalRoleWorkloadPoints,
+    required this.unattributedOrderCount,
+    required this.totalValidTimingCount,
+    required this.totalExcludedTimingCount,
     required this.activeHoursAvailable,
+    required this.totalRoleActiveHours,
     required this.locationComplexityCoverage,
   });
 
@@ -166,7 +260,14 @@ class StaffPerformanceSnapshot {
   final DateTime periodEnd;
   final List<StaffPerformanceRecord> records;
   final DateTime loadedAt;
+  final int totalStoreOrders;
+  final int totalRoleHandledOrders;
+  final double totalRoleWorkloadPoints;
+  final int unattributedOrderCount;
+  final int totalValidTimingCount;
+  final int totalExcludedTimingCount;
   final bool activeHoursAvailable;
+  final double? totalRoleActiveHours;
   final String locationComplexityCoverage;
 
   factory StaffPerformanceSnapshot.fromJson(
@@ -175,6 +276,9 @@ class StaffPerformanceSnapshot {
     required DateTime periodStart,
     required DateTime periodEnd,
   }) {
+    double number(String key) => (json[key] as num?)?.toDouble() ?? 0;
+    double? optionalNumber(String key) => (json[key] as num?)?.toDouble();
+    int integer(String key) => (json[key] as num?)?.toInt() ?? 0;
     final rawRecords = json['records'] as List<dynamic>? ?? const [];
     return StaffPerformanceSnapshot(
       role: role,
@@ -189,7 +293,14 @@ class StaffPerformanceSnapshot {
         ),
       ),
       loadedAt: DateTime.now(),
+      totalStoreOrders: integer('total_store_orders'),
+      totalRoleHandledOrders: integer('total_role_handled_orders'),
+      totalRoleWorkloadPoints: number('total_role_workload_points'),
+      unattributedOrderCount: integer('unattributed_order_count'),
+      totalValidTimingCount: integer('total_valid_timing_count'),
+      totalExcludedTimingCount: integer('total_excluded_timing_count'),
       activeHoursAvailable: json['active_hours_available'] == true,
+      totalRoleActiveHours: optionalNumber('total_role_active_hours'),
       locationComplexityCoverage:
           json['location_complexity_coverage']?.toString() ??
           'Current product map locations when available',

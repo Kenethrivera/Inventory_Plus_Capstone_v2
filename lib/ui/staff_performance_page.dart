@@ -102,7 +102,8 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
 
   @override
   Widget build(BuildContext context) {
-    final records = _snapshot?.records ?? const <StaffPerformanceRecord>[];
+    final snapshot = _snapshot;
+    final records = snapshot?.records ?? const <StaffPerformanceRecord>[];
     return ColoredBox(
       color: _surface,
       child: SafeArea(
@@ -123,7 +124,7 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
               else if (_error != null && _snapshot == null)
                 _ErrorPanel(onRetry: () => _load(forceRefresh: true))
               else ...[
-                _buildSummary(records),
+                _buildSummary(snapshot!),
                 const SizedBox(height: 18),
                 _buildTable(records),
                 if (_loading) ...[
@@ -194,16 +195,9 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
     );
   }
 
-  Widget _buildSummary(List<StaffPerformanceRecord> records) {
-    final active = records.where((record) => record.isActive).length;
-    final completed = records.fold<int>(
-      0,
-      (sum, record) => sum + record.completedCount,
-    );
-    final valid = records.fold<int>(
-      0,
-      (sum, record) => sum + record.validTimingCount,
-    );
+  Widget _buildSummary(StaffPerformanceSnapshot snapshot) {
+    final records = snapshot.records;
+    final valid = snapshot.totalValidTimingCount;
     final weightedOnTime = valid == 0
         ? 0.0
         : records.fold<double>(
@@ -212,12 +206,6 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
                     sum + record.onTimeRate * record.validTimingCount,
               ) /
               valid;
-    final timedMinutes = records.fold<double>(
-      0,
-      (sum, record) =>
-          sum + (record.averageMinutes ?? 0) * record.validTimingCount,
-    );
-    final averageMinutes = valid == 0 ? null : timedMinutes / valid;
     final helper = _role == StaffPerformanceRole.helpers;
 
     return LayoutBuilder(
@@ -233,27 +221,34 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
           children: [
             _MetricCard(
               width: width,
-              icon: Icons.people_outline,
-              label: helper ? 'Active Helpers' : 'Active Cashiers',
-              value: '$active',
+              icon: Icons.receipt_long_outlined,
+              label: helper ? 'Total Orders' : 'Completed Orders',
+              value: '${snapshot.totalStoreOrders}',
             ),
             _MetricCard(
               width: width,
               icon: Icons.task_alt,
-              label: helper ? 'Prepared Orders' : 'Completed Checkouts',
-              value: '$completed',
+              label: helper
+                  ? 'Helper-Handled Orders'
+                  : 'Cashier-Handled Checkouts',
+              value: '${snapshot.totalRoleHandledOrders}',
+            ),
+            _MetricCard(
+              width: width,
+              icon: Icons.scale_outlined,
+              label: helper
+                  ? 'Total Workload Points'
+                  : 'Total Checkout Workload',
+              value:
+                  '${snapshot.totalRoleWorkloadPoints.toStringAsFixed(2)} pts',
             ),
             _MetricCard(
               width: width,
               icon: Icons.schedule,
-              label: 'Avg On-Time',
+              label: helper
+                  ? 'Average On-Time Rate'
+                  : 'Average Payment On-Time',
               value: '${weightedOnTime.toStringAsFixed(1)}%',
-            ),
-            _MetricCard(
-              width: width,
-              icon: Icons.timer_outlined,
-              label: helper ? 'Avg Prep Time' : 'Avg Payment Time',
-              value: _minutes(averageMinutes),
             ),
           ],
         );
@@ -284,7 +279,6 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
         return _PerformanceTable(
           role: _role,
           records: records,
-          currentWorkload: _currentWorkload,
           onView: _showDetails,
         );
       },
@@ -323,6 +317,7 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
   Future<void> _showDetails(StaffPerformanceRecord record) {
     final helper = record.role == StaffPerformanceRole.helpers;
     final workload = _currentWorkload(record);
+    final snapshot = _snapshot!;
     return showDialog<void>(
       context: context,
       builder: (context) => AppDialog(
@@ -343,14 +338,52 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
             _ScoreBanner(record: record),
             const SizedBox(height: 16),
             _DetailSection(
+              title: 'Contribution',
+              rows: [
+                _DetailValue(
+                  helper ? 'Orders handled' : 'Checkouts handled',
+                  '${record.completedCount} / ${snapshot.totalStoreOrders}',
+                ),
+                _DetailValue(
+                  helper ? 'Order share' : 'Checkout share',
+                  _percent(record.orderShare),
+                ),
+                _DetailValue(
+                  'Workload',
+                  '${record.workloadPoints.toStringAsFixed(2)} / '
+                      '${snapshot.totalRoleWorkloadPoints.toStringAsFixed(2)} points',
+                ),
+                _DetailValue('Workload share', _percent(record.workloadShare)),
+                if (snapshot.activeHoursAvailable &&
+                    record.activeHours != null &&
+                    snapshot.totalRoleActiveHours != null) ...[
+                  _DetailValue(
+                    'Active hours',
+                    '${record.activeHours!.toStringAsFixed(2)} / '
+                        '${snapshot.totalRoleActiveHours!.toStringAsFixed(2)}',
+                  ),
+                  _DetailValue(
+                    'Active time share',
+                    _optionalPercent(record.activeTimeShare),
+                  ),
+                  _DetailValue(
+                    'Contribution Index',
+                    record.contributionIndex?.toStringAsFixed(2) ??
+                        'Not available',
+                  ),
+                ] else
+                  const _DetailValue(
+                    'Active-hour data',
+                    'Unavailable — Contribution Index disabled',
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _DetailSection(
               title: helper
                   ? 'Preparation performance'
                   : 'Checkout performance',
               rows: [
-                _DetailValue(
-                  helper ? 'Orders prepared' : 'Completed checkouts',
-                  '${record.completedCount}',
-                ),
                 _DetailValue(
                   'Valid timing sample',
                   '${record.validTimingCount}',
@@ -360,8 +393,8 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
                   '${record.excludedTimingCount}',
                 ),
                 _DetailValue(
-                  helper ? 'Complexity points' : 'Checkout complexity points',
-                  record.workloadPoints.toStringAsFixed(2),
+                  'Total service minutes',
+                  record.totalServiceMinutes.toStringAsFixed(2),
                 ),
                 _DetailValue(
                   helper ? 'Average prep' : 'Average ready → paid',
@@ -370,21 +403,44 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
                 _DetailValue('Median', _minutes(record.medianMinutes)),
                 _DetailValue('Fastest', _minutes(record.fastestMinutes)),
                 _DetailValue('On-time rate', _percent(record.onTimeRate)),
+                _DetailValue('On-time records', '${record.onTimeCount}'),
                 _DetailValue('Delayed orders', '${record.delayedCount}'),
+                _DetailValue('Delay rate', _percent(record.delayRate)),
                 _DetailValue('Reliability', _percent(record.reliability)),
                 _DetailValue(
-                  'Efficiency',
+                  'Complexity-adjusted efficiency',
                   record.efficiency == null
                       ? 'Not available'
                       : '${record.efficiency!.toStringAsFixed(3)} pts/min',
                 ),
                 _DetailValue(
-                  helper ? 'Workload completed' : 'Checkout workload completed',
-                  '${record.workloadPoints.toStringAsFixed(2)} pts',
+                  'Efficiency basis',
+                  '${record.timedWorkloadPoints.toStringAsFixed(2)} pts / '
+                      '${record.totalServiceMinutes.toStringAsFixed(2)} min',
                 ),
-                if (helper) _DetailValue('Current workload', '$workload'),
+                _DetailValue(
+                  'Adjusted throughput',
+                  _optionalScore(record.adjustedThroughput),
+                ),
+                _DetailValue(
+                  'Adjusted efficiency',
+                  _optionalScore(record.adjustedEfficiency),
+                ),
               ],
             ),
+            if (helper) ...[
+              const SizedBox(height: 14),
+              _DetailSection(
+                title: 'Live workload',
+                rows: [
+                  _DetailValue('Current assigned pending orders', '$workload'),
+                  const _DetailValue(
+                    'Scope',
+                    'Live now — separate from the selected historical period',
+                  ),
+                ],
+              ),
+            ],
             if (!helper) ...[
               const SizedBox(height: 14),
               _DetailSection(
@@ -413,7 +469,32 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
               ),
             ],
             const SizedBox(height: 14),
+            _ScoreBreakdown(record: record),
+            const SizedBox(height: 14),
             _FormulaExplanation(helper: helper, compact: true),
+            const SizedBox(height: 14),
+            _DetailSection(
+              title: 'Data quality',
+              rows: [
+                _DetailValue(
+                  'Employee timing records excluded',
+                  '${record.excludedTimingCount}',
+                ),
+                _DetailValue(
+                  'Period records without ${helper ? 'Helper' : 'Cashier'} attribution',
+                  '${snapshot.unattributedOrderCount}',
+                ),
+                _DetailValue(
+                  'Period timing records excluded',
+                  '${snapshot.totalExcludedTimingCount}',
+                ),
+                if (helper)
+                  _DetailValue(
+                    'Location-complexity coverage',
+                    snapshot.locationComplexityCoverage,
+                  ),
+              ],
+            ),
           ],
         ),
       ),
@@ -542,13 +623,11 @@ class _PerformanceTable extends StatelessWidget {
   const _PerformanceTable({
     required this.role,
     required this.records,
-    required this.currentWorkload,
     required this.onView,
   });
 
   final StaffPerformanceRole role;
   final List<StaffPerformanceRecord> records;
-  final int Function(StaffPerformanceRecord record) currentWorkload;
   final ValueChanged<StaffPerformanceRecord> onView;
 
   @override
@@ -568,19 +647,17 @@ class _PerformanceTable extends StatelessWidget {
               header: true,
               values: [
                 'Employee',
-                helper ? 'Prepared' : 'Checkouts',
+                helper ? 'Orders' : 'Checkouts',
                 'Workload',
                 helper ? 'Avg Prep' : 'Avg Payment',
                 'On-Time',
-                'Delays',
-                helper ? 'Active' : 'Sales',
                 'Score',
                 'View',
               ],
             ),
             for (var index = 0; index < records.length; index++) ...[
               if (index > 0) const Divider(height: 1, color: _border),
-              _dataRow(records[index], helper),
+              _dataRow(records[index]),
             ],
           ],
         ),
@@ -588,23 +665,27 @@ class _PerformanceTable extends StatelessWidget {
     );
   }
 
-  Widget _dataRow(StaffPerformanceRecord record, bool helper) {
-    final active = helper
-        ? '${currentWorkload(record)}'
-        : _compactCurrency(record.salesHandled);
+  Widget _dataRow(StaffPerformanceRecord record) {
     return _row(
       values: [
         record.employeeName,
         '${record.completedCount}',
-        record.workloadPoints.toStringAsFixed(2),
+        '${record.workloadPoints.toStringAsFixed(2)} pts',
         _minutes(record.averageMinutes),
         _percent(record.onTimeRate),
-        '${record.delayedCount}',
-        active,
         record.score == null
             ? 'Insufficient data'
             : record.score!.toStringAsFixed(1),
         '',
+      ],
+      secondaryValues: [
+        null,
+        '${record.orderShare.toStringAsFixed(1)}% of total',
+        '${record.workloadShare.toStringAsFixed(1)}% share',
+        null,
+        null,
+        record.score == null ? null : record.scoreBand,
+        null,
       ],
       record: record,
     );
@@ -612,10 +693,11 @@ class _PerformanceTable extends StatelessWidget {
 
   Widget _row({
     required List<String> values,
+    List<String?>? secondaryValues,
     bool header = false,
     StaffPerformanceRecord? record,
   }) {
-    const flexes = [24, 9, 11, 12, 10, 8, 10, 11, 5];
+    const flexes = [26, 12, 14, 13, 11, 14, 6];
     return Container(
       color: header ? _surface : Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -637,20 +719,43 @@ class _PerformanceTable extends StatelessWidget {
                     )
                   : Padding(
                       padding: const EdgeInsets.only(right: 8),
-                      child: Text(
-                        values[index],
-                        maxLines: index == 0 ? 2 : 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: index == 0
-                            ? TextAlign.left
-                            : TextAlign.center,
-                        style: TextStyle(
-                          color: header ? _muted : _ink,
-                          fontSize: header ? 11 : 12,
-                          fontWeight: header
-                              ? FontWeight.w800
-                              : FontWeight.w600,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: index == 0
+                            ? CrossAxisAlignment.start
+                            : CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            values[index],
+                            maxLines: index == 0 ? 2 : 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: index == 0
+                                ? TextAlign.left
+                                : TextAlign.center,
+                            style: TextStyle(
+                              color: header ? _muted : _ink,
+                              fontSize: header ? 11 : 12,
+                              fontWeight: header
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                            ),
+                          ),
+                          if (!header && secondaryValues?[index] != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              secondaryValues![index]!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: index == 0
+                                  ? TextAlign.left
+                                  : TextAlign.center,
+                              style: const TextStyle(
+                                color: _muted,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
             ),
@@ -708,11 +813,18 @@ class _PerformanceCard extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
-                Expanded(child: _mini('Completed', '${record.completedCount}')),
+                Expanded(
+                  child: _mini(
+                    helper ? 'Orders' : 'Checkouts',
+                    '${record.completedCount} '
+                    '(${record.orderShare.toStringAsFixed(1)}%)',
+                  ),
+                ),
                 Expanded(
                   child: _mini(
                     'Workload',
-                    record.workloadPoints.toStringAsFixed(2),
+                    '${record.workloadPoints.toStringAsFixed(2)} '
+                        '(${record.workloadShare.toStringAsFixed(1)}%)',
                   ),
                 ),
                 Expanded(child: _mini('On-Time', _percent(record.onTimeRate))),
@@ -801,6 +913,61 @@ class _ScoreBanner extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ScoreBreakdown extends StatelessWidget {
+  const _ScoreBreakdown({required this.record});
+
+  final StaffPerformanceRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    if (record.score == null) {
+      return _DetailSection(
+        title: 'Performance score breakdown',
+        rows: [
+          _DetailValue(
+            'Final Score',
+            'Insufficient data (${record.validTimingCount} / '
+                '${StaffPerformanceV1.minimumScoredSample} valid records)',
+          ),
+        ],
+      );
+    }
+
+    return _DetailSection(
+      title: 'Performance score breakdown',
+      rows: [
+        _DetailValue(
+          'On-Time',
+          '${record.onTimeRate.toStringAsFixed(2)} × 40% = '
+              '${record.onTimeScoreContribution.toStringAsFixed(2)}',
+        ),
+        _DetailValue(
+          'Adjusted Throughput',
+          '${record.adjustedThroughput!.toStringAsFixed(2)} × 30% = '
+              '${record.throughputScoreContribution!.toStringAsFixed(2)}',
+        ),
+        _DetailValue(
+          'Adjusted Efficiency',
+          '${record.adjustedEfficiency!.toStringAsFixed(2)} × 20% = '
+              '${record.efficiencyScoreContribution!.toStringAsFixed(2)}',
+        ),
+        _DetailValue(
+          'Reliability',
+          '${record.reliability.toStringAsFixed(2)} × 10% = '
+              '${record.reliabilityScoreContribution.toStringAsFixed(2)}',
+        ),
+        _DetailValue('Final Score', record.score!.toStringAsFixed(2)),
+        _DetailValue(
+          'Peer cohort',
+          record.peerCount == 1
+              ? '1 eligible employee — neutral 50 used for peer components'
+              : '${record.peerCount} eligible same-role employees',
+        ),
+      ],
     );
   }
 }
@@ -930,14 +1097,20 @@ class _FormulaExplanation extends StatelessWidget {
           const SizedBox(height: 7),
           Text(
             helper
-                ? 'Complexity starts at 1 point and considers distinct order lines, per-line quantity burden, and currently resolvable product map locations.'
-                : 'Checkout complexity starts at 1 point and considers distinct lines, per-line quantity burden, GCash, discounts, and exact approved discount requests.',
+                ? 'Complexity: 1 base point + 1 per distinct item line + '
+                      'quantity burden per line (0 / 0.25 / 0.50 / 0.75 / 1.00) '
+                      '+ 0.50 per additional currently resolvable storage location.'
+                : 'Complexity: 1 base point + 1 per distinct item line + '
+                      'quantity burden per line (0 / 0.25 / 0.50 / 0.75 / 1.00) '
+                      '+ 0.50 for GCash + 0.50 for a discount + 1.00 for an '
+                      'approved discount workflow.',
             style: const TextStyle(color: _muted, fontSize: 11, height: 1.4),
           ),
           const SizedBox(height: 6),
           Text(
             'Throughput and efficiency are peer-normalized within the same role, location, and period. '
-            'Session hours are not used because overlapping/open session logs cannot provide reliable active hours.',
+            'Contribution Index is informational and is not part of the final score. '
+            'Active-hour data remains unavailable because normal historical login/logout sessions are not reliably recorded.',
             style: const TextStyle(color: _muted, fontSize: 11, height: 1.4),
           ),
         ],
@@ -1007,6 +1180,10 @@ String _minutes(double? value) {
 }
 
 String _percent(double value) => '${value.toStringAsFixed(1)}%';
+String _optionalPercent(double? value) =>
+    value == null ? 'Not available' : _percent(value);
+String _optionalScore(double? value) =>
+    value == null ? 'Not scored' : value.toStringAsFixed(2);
 String _currency(double value) => '₱${value.toStringAsFixed(2)}';
 String _compactCurrency(double value) => value >= 1000
     ? '₱${(value / 1000).toStringAsFixed(1)}k'

@@ -1,6 +1,8 @@
 -- Phase 4: derived, Admin-only Staff Performance Monitoring V1.
 -- Deploy after the live schema and Phase 2C discount approvals. This script
 -- creates reporting functions/indexes only; it does not persist employee scores.
+-- Historical active hours remain unavailable: the live staff_session_logs
+-- source currently records blocked attempts, not reliable normal work sessions.
 
 create or replace function private.order_complexity_v1(
   p_items jsonb,
@@ -126,10 +128,10 @@ begin
              0.30::numeric as throughput_weight,
              0.20::numeric as efficiency_weight,
              0.10::numeric as reliability_weight
-    ), prepared_orders as (
+    ), period_orders as (
       select
         history.order_id,
-        history.prepared_by_id as employee_id,
+        nullif(trim(history.prepared_by_id), '') as employee_id,
         coalesce(nullif(trim(history.prepared_by_name), ''), 'Former staff member')
           as employee_name,
         private.order_complexity_v1(
@@ -143,7 +145,24 @@ begin
       where history.location_id = v_session.location_id
         and history.prepared_at >= p_period_start
         and history.prepared_at < p_period_end
-        and nullif(trim(history.prepared_by_id), '') is not null
+    ), prepared_orders as (
+      select * from period_orders where employee_id is not null
+    ), period_totals as (
+      select
+        count(*)::integer as total_store_orders,
+        count(*) filter (where employee_id is not null)::integer
+          as total_role_handled_orders,
+        coalesce(sum(complexity_points) filter (
+          where employee_id is not null
+        ), 0)::numeric as total_role_workload_points,
+        count(*) filter (where employee_id is null)::integer
+          as unattributed_order_count,
+        count(duration_minutes) filter (where employee_id is not null)::integer
+          as total_valid_timing_count,
+        count(*) filter (
+          where employee_id is not null and duration_minutes is null
+        )::integer as total_excluded_timing_count
+      from period_orders
     ), employee_candidates as (
       select profile.id::text as employee_id, profile.name as employee_name,
              2 as source_priority
@@ -169,32 +188,36 @@ begin
         (count(prepared.order_id) - count(prepared.duration_minutes))::integer
           as excluded_timing_count,
         coalesce(sum(prepared.complexity_points), 0)::numeric as workload_points,
-        round(avg(prepared.duration_minutes), 2) as average_minutes,
-        round((percentile_cont(0.5) within group
-          (order by prepared.duration_minutes))::numeric, 2) as median_minutes,
-        round(min(prepared.duration_minutes), 2) as fastest_minutes,
+        coalesce(sum(prepared.duration_minutes), 0)::numeric
+          as total_service_minutes,
+        coalesce(sum(prepared.complexity_points) filter (
+          where prepared.duration_minutes is not null
+        ), 0)::numeric as timed_workload_points,
+        avg(prepared.duration_minutes)::numeric as average_minutes,
+        (percentile_cont(0.5) within group
+          (order by prepared.duration_minutes))::numeric as median_minutes,
+        min(prepared.duration_minutes)::numeric as fastest_minutes,
         count(*) filter (
           where prepared.duration_minutes < constants.delay_minutes
         )::integer as on_time_count,
         count(*) filter (
           where prepared.duration_minutes >= constants.delay_minutes
         )::integer as delayed_count,
-        case when count(prepared.duration_minutes) = 0 then 0 else round(
+        case when count(prepared.duration_minutes) = 0 then 0 else
           100.0 * count(*) filter (
             where prepared.duration_minutes < constants.delay_minutes
-          ) / count(prepared.duration_minutes), 2
-        ) end::numeric as on_time_rate,
-        case when count(prepared.duration_minutes) = 0 then 0 else round(
+          ) / count(prepared.duration_minutes)
+        end::numeric as on_time_rate,
+        case when count(prepared.duration_minutes) = 0 then 0 else
           100.0 * count(*) filter (
             where prepared.duration_minutes >= constants.delay_minutes
-          ) / count(prepared.duration_minutes), 2
-        ) end::numeric as delay_rate,
+          ) / count(prepared.duration_minutes)
+        end::numeric as delay_rate,
         case when coalesce(sum(prepared.duration_minutes), 0) <= 0 then null
-             else round(
-               sum(prepared.complexity_points) filter (
+             else
+               (sum(prepared.complexity_points) filter (
                  where prepared.duration_minutes is not null
-               ) / sum(prepared.duration_minutes), 4
-             ) end as efficiency
+               )) / sum(prepared.duration_minutes) end as efficiency
       from employees employee
       cross join constants
       left join prepared_orders prepared
@@ -221,26 +244,32 @@ begin
     ), scored as (
       select aggregates.*,
         coalesce(eligible.peer_count, 0) as peer_count,
-        case when aggregates.valid_timing_count < constants.minimum_sample then null
-        else round(
-          constants.on_time_weight * aggregates.on_time_rate
-          + constants.throughput_weight * case
-              when eligible.peer_count = 1 or eligible.workload_spread = 1 then 50
-              else eligible.throughput_peer end
-          + constants.efficiency_weight * case
-              when eligible.peer_count = 1 or eligible.efficiency_spread = 1 then 50
-              else eligible.efficiency_peer end
-          + constants.reliability_weight * (100 - aggregates.delay_rate),
-          2
-        ) end as score
+         case when aggregates.valid_timing_count < constants.minimum_sample then null
+              when eligible.peer_count = 1 or eligible.workload_spread = 1
+                then 50::numeric
+              else eligible.throughput_peer end as adjusted_throughput,
+         case when aggregates.valid_timing_count < constants.minimum_sample then null
+              when eligible.peer_count = 1 or eligible.efficiency_spread = 1
+                then 50::numeric
+              else eligible.efficiency_peer end as adjusted_efficiency
       from aggregates
       cross join constants
       left join eligible using (employee_id)
-    ), enriched as (
+    ), final_scores as (
       select scored.*,
+        case when scored.valid_timing_count < constants.minimum_sample then null
+        else
+          constants.on_time_weight * scored.on_time_rate
+          + constants.throughput_weight * scored.adjusted_throughput
+          + constants.efficiency_weight * scored.adjusted_efficiency
+          + constants.reliability_weight * (100 - scored.delay_rate)
+        end as score
+      from scored cross join constants
+    ), enriched as (
+      select final_scores.*,
         exists (
           select 1 from public.staff_presence presence
-          where presence.user_id = scored.employee_id
+          where presence.user_id = final_scores.employee_id
             and presence.location_id = v_session.location_id::text
             and lower(presence.user_role) = 'helper'
             and presence.is_online = true
@@ -250,13 +279,20 @@ begin
          from public.orders active_order
          where active_order.location_id = v_session.location_id
            and lower(active_order.status) = 'pending'
-           and active_order.assigned_helper_id = scored.employee_id
+            and active_order.assigned_helper_id = final_scores.employee_id
         ) as current_workload
-      from scored
+      from final_scores
     )
     select jsonb_build_object(
       'role', 'helper',
+      'total_store_orders', totals.total_store_orders,
+      'total_role_handled_orders', totals.total_role_handled_orders,
+      'total_role_workload_points', totals.total_role_workload_points,
+      'unattributed_order_count', totals.unattributed_order_count,
+      'total_valid_timing_count', totals.total_valid_timing_count,
+      'total_excluded_timing_count', totals.total_excluded_timing_count,
       'active_hours_available', false,
+      'total_role_active_hours', null,
       'location_complexity_coverage',
         'Current product map locations when the product reference still resolves',
       'records', coalesce(jsonb_agg(jsonb_build_object(
@@ -264,17 +300,29 @@ begin
         'employee_name', employee_name,
         'is_active', is_active,
         'completed_count', completed_count,
+        'order_share', case when totals.total_store_orders = 0 then 0
+          else 100.0 * completed_count / totals.total_store_orders end,
         'valid_timing_count', valid_timing_count,
         'excluded_timing_count', excluded_timing_count,
-        'workload_points', round(workload_points, 2),
+        'workload_points', workload_points,
+        'workload_share', case when totals.total_role_workload_points = 0 then 0
+          else 100.0 * workload_points / totals.total_role_workload_points end,
+        'on_time_count', on_time_count,
+        'total_service_minutes', total_service_minutes,
+        'timed_workload_points', timed_workload_points,
         'average_minutes', average_minutes,
         'median_minutes', median_minutes,
         'fastest_minutes', fastest_minutes,
         'on_time_rate', on_time_rate,
         'delayed_count', delayed_count,
         'delay_rate', delay_rate,
-        'reliability', round(100 - delay_rate, 2),
+        'reliability', 100 - delay_rate,
         'efficiency', efficiency,
+        'adjusted_throughput', adjusted_throughput,
+        'adjusted_efficiency', adjusted_efficiency,
+        'active_hours', null,
+        'active_time_share', null,
+        'contribution_index', null,
         'current_workload', current_workload,
         'sales_handled', 0,
         'discounted_transactions', 0,
@@ -285,9 +333,14 @@ begin
         'discount_approvals_pending', 0,
         'score', score,
         'peer_count', peer_count
-      ) order by score desc nulls last, employee_name), '[]'::jsonb)
+      ) order by score desc nulls last, employee_name)
+        filter (where employee_id is not null), '[]'::jsonb)
     ) into v_result
-    from enriched;
+    from period_totals totals
+    left join enriched on true
+    group by totals.total_store_orders, totals.total_role_handled_orders,
+      totals.total_role_workload_points, totals.unattributed_order_count,
+      totals.total_valid_timing_count, totals.total_excluded_timing_count;
   else
     with constants as (
       select 15.0::numeric as delay_minutes,
@@ -296,10 +349,10 @@ begin
              0.30::numeric as throughput_weight,
              0.20::numeric as efficiency_weight,
              0.10::numeric as reliability_weight
-    ), completed_orders as (
+    ), period_orders as (
       select
         history.order_id,
-        history.completed_by_id as employee_id,
+        nullif(trim(history.completed_by_id), '') as employee_id,
         coalesce(nullif(trim(history.completed_by_name), ''), 'Former staff member')
           as employee_name,
         history.total_amount,
@@ -315,7 +368,7 @@ begin
             from public.approval_requests approval
             where approval.request_type = 'discount'
               and approval.status = 'approved'
-              and to_jsonb(approval) ->> 'used_order_id' = history.order_id
+               and approval.used_order_id::text = history.order_id
           )
         ) as complexity_points,
         case when history.prepared_at is not null
@@ -326,7 +379,24 @@ begin
       where history.location_id = v_session.location_id
         and history.completed_at >= p_period_start
         and history.completed_at < p_period_end
-        and nullif(trim(history.completed_by_id), '') is not null
+    ), completed_orders as (
+      select * from period_orders where employee_id is not null
+    ), period_totals as (
+      select
+        count(*)::integer as total_store_orders,
+        count(*) filter (where employee_id is not null)::integer
+          as total_role_handled_orders,
+        coalesce(sum(complexity_points) filter (
+          where employee_id is not null
+        ), 0)::numeric as total_role_workload_points,
+        count(*) filter (where employee_id is null)::integer
+          as unattributed_order_count,
+        count(duration_minutes) filter (where employee_id is not null)::integer
+          as total_valid_timing_count,
+        count(*) filter (
+          where employee_id is not null and duration_minutes is null
+        )::integer as total_excluded_timing_count
+      from period_orders
     ), approval_counts as (
       select approval.requested_by_id::text as employee_id,
         count(*)::integer as request_count,
@@ -364,29 +434,36 @@ begin
         (count(completed.order_id) - count(completed.duration_minutes))::integer
           as excluded_timing_count,
         coalesce(sum(completed.complexity_points), 0)::numeric as workload_points,
-        round(avg(completed.duration_minutes), 2) as average_minutes,
-        round((percentile_cont(0.5) within group
-          (order by completed.duration_minutes))::numeric, 2) as median_minutes,
-        round(min(completed.duration_minutes), 2) as fastest_minutes,
+        coalesce(sum(completed.duration_minutes), 0)::numeric
+          as total_service_minutes,
+        coalesce(sum(completed.complexity_points) filter (
+          where completed.duration_minutes is not null
+        ), 0)::numeric as timed_workload_points,
+        avg(completed.duration_minutes)::numeric as average_minutes,
+        (percentile_cont(0.5) within group
+          (order by completed.duration_minutes))::numeric as median_minutes,
+        min(completed.duration_minutes)::numeric as fastest_minutes,
+        count(*) filter (
+          where completed.duration_minutes < constants.delay_minutes
+        )::integer as on_time_count,
         count(*) filter (
           where completed.duration_minutes >= constants.delay_minutes
         )::integer as delayed_count,
-        case when count(completed.duration_minutes) = 0 then 0 else round(
+        case when count(completed.duration_minutes) = 0 then 0 else
           100.0 * count(*) filter (
             where completed.duration_minutes < constants.delay_minutes
-          ) / count(completed.duration_minutes), 2
-        ) end::numeric as on_time_rate,
-        case when count(completed.duration_minutes) = 0 then 0 else round(
+          ) / count(completed.duration_minutes)
+        end::numeric as on_time_rate,
+        case when count(completed.duration_minutes) = 0 then 0 else
           100.0 * count(*) filter (
             where completed.duration_minutes >= constants.delay_minutes
-          ) / count(completed.duration_minutes), 2
-        ) end::numeric as delay_rate,
+          ) / count(completed.duration_minutes)
+        end::numeric as delay_rate,
         case when coalesce(sum(completed.duration_minutes), 0) <= 0 then null
-             else round(
-               sum(completed.complexity_points) filter (
+             else
+               (sum(completed.complexity_points) filter (
                  where completed.duration_minutes is not null
-               ) / sum(completed.duration_minutes), 4
-             ) end as efficiency,
+               )) / sum(completed.duration_minutes) end as efficiency,
         coalesce(sum(completed.total_amount), 0)::numeric as sales_handled,
         count(*) filter (
           where coalesce(completed.discount_amount, 0) > 0
@@ -417,26 +494,32 @@ begin
     ), scored as (
       select aggregates.*,
         coalesce(eligible.peer_count, 0) as peer_count,
-        case when aggregates.valid_timing_count < constants.minimum_sample then null
-        else round(
-          constants.on_time_weight * aggregates.on_time_rate
-          + constants.throughput_weight * case
-              when eligible.peer_count = 1 or eligible.workload_spread = 1 then 50
-              else eligible.throughput_peer end
-          + constants.efficiency_weight * case
-              when eligible.peer_count = 1 or eligible.efficiency_spread = 1 then 50
-              else eligible.efficiency_peer end
-          + constants.reliability_weight * (100 - aggregates.delay_rate),
-          2
-        ) end as score
+         case when aggregates.valid_timing_count < constants.minimum_sample then null
+              when eligible.peer_count = 1 or eligible.workload_spread = 1
+                then 50::numeric
+              else eligible.throughput_peer end as adjusted_throughput,
+         case when aggregates.valid_timing_count < constants.minimum_sample then null
+              when eligible.peer_count = 1 or eligible.efficiency_spread = 1
+                then 50::numeric
+              else eligible.efficiency_peer end as adjusted_efficiency
       from aggregates
       cross join constants
       left join eligible using (employee_id)
-    ), enriched as (
+    ), final_scores as (
       select scored.*,
+        case when scored.valid_timing_count < constants.minimum_sample then null
+        else
+          constants.on_time_weight * scored.on_time_rate
+          + constants.throughput_weight * scored.adjusted_throughput
+          + constants.efficiency_weight * scored.adjusted_efficiency
+          + constants.reliability_weight * (100 - scored.delay_rate)
+        end as score
+      from scored cross join constants
+    ), enriched as (
+      select final_scores.*,
         exists (
           select 1 from public.staff_presence presence
-          where presence.user_id = scored.employee_id
+          where presence.user_id = final_scores.employee_id
             and presence.location_id = v_session.location_id::text
             and lower(presence.user_role) in ('staff', 'cashier')
             and presence.is_online = true
@@ -446,48 +529,79 @@ begin
         coalesce(approval_counts.approved_count, 0) as approvals_approved,
         coalesce(approval_counts.rejected_count, 0) as approvals_rejected,
         coalesce(approval_counts.pending_count, 0) as approvals_pending
-      from scored
+      from final_scores
       left join approval_counts using (employee_id)
     )
     select jsonb_build_object(
       'role', 'cashier',
+      'total_store_orders', totals.total_store_orders,
+      'total_role_handled_orders', totals.total_role_handled_orders,
+      'total_role_workload_points', totals.total_role_workload_points,
+      'unattributed_order_count', totals.unattributed_order_count,
+      'total_valid_timing_count', totals.total_valid_timing_count,
+      'total_excluded_timing_count', totals.total_excluded_timing_count,
       'active_hours_available', false,
+      'total_role_active_hours', null,
       'location_complexity_coverage', 'Not used for Cashier scoring',
       'records', coalesce(jsonb_agg(jsonb_build_object(
         'employee_id', employee_id,
         'employee_name', employee_name,
         'is_active', is_active,
         'completed_count', completed_count,
+        'order_share', case when totals.total_store_orders = 0 then 0
+          else 100.0 * completed_count / totals.total_store_orders end,
         'valid_timing_count', valid_timing_count,
         'excluded_timing_count', excluded_timing_count,
-        'workload_points', round(workload_points, 2),
+        'workload_points', workload_points,
+        'workload_share', case when totals.total_role_workload_points = 0 then 0
+          else 100.0 * workload_points / totals.total_role_workload_points end,
+        'on_time_count', on_time_count,
+        'total_service_minutes', total_service_minutes,
+        'timed_workload_points', timed_workload_points,
         'average_minutes', average_minutes,
         'median_minutes', median_minutes,
         'fastest_minutes', fastest_minutes,
         'on_time_rate', on_time_rate,
         'delayed_count', delayed_count,
         'delay_rate', delay_rate,
-        'reliability', round(100 - delay_rate, 2),
+        'reliability', 100 - delay_rate,
         'efficiency', efficiency,
+        'adjusted_throughput', adjusted_throughput,
+        'adjusted_efficiency', adjusted_efficiency,
+        'active_hours', null,
+        'active_time_share', null,
+        'contribution_index', null,
         'current_workload', 0,
-        'sales_handled', round(sales_handled, 2),
+        'sales_handled', sales_handled,
         'discounted_transactions', discounted_transactions,
         'discount_usage_rate', case when completed_count = 0 then 0
-          else round(100.0 * discounted_transactions / completed_count, 2) end,
+          else 100.0 * discounted_transactions / completed_count end,
         'discount_approval_requests', approval_requests,
         'discount_approvals_approved', approvals_approved,
         'discount_approvals_rejected', approvals_rejected,
         'discount_approvals_pending', approvals_pending,
         'score', score,
         'peer_count', peer_count
-      ) order by score desc nulls last, employee_name), '[]'::jsonb)
+      ) order by score desc nulls last, employee_name)
+        filter (where employee_id is not null), '[]'::jsonb)
     ) into v_result
-    from enriched;
+    from period_totals totals
+    left join enriched on true
+    group by totals.total_store_orders, totals.total_role_handled_orders,
+      totals.total_role_workload_points, totals.unattributed_order_count,
+      totals.total_valid_timing_count, totals.total_excluded_timing_count;
   end if;
 
   return coalesce(v_result, jsonb_build_object(
     'role', v_role,
+    'total_store_orders', 0,
+    'total_role_handled_orders', 0,
+    'total_role_workload_points', 0,
+    'unattributed_order_count', 0,
+    'total_valid_timing_count', 0,
+    'total_excluded_timing_count', 0,
     'active_hours_available', false,
+    'total_role_active_hours', null,
     'records', '[]'::jsonb
   ));
 end;
