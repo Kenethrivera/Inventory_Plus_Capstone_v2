@@ -38,11 +38,17 @@ CREATE INDEX order_history_assigned_helper_idx ON public.order_history USING btr
 
 CREATE INDEX order_history_cancelled_actor_idx ON public.order_history USING btree (location_id, cancelled_by_id);
 
+CREATE INDEX order_history_cashier_period_v1_idx ON public.order_history USING btree (location_id, completed_at, completed_by_id)
+  WHERE ((completed_at IS NOT NULL) AND (completed_by_id IS NOT NULL));
+
 CREATE INDEX order_history_completed_actor_idx ON public.order_history USING btree (location_id, completed_by_id);
 
 CREATE INDEX order_history_created_actor_idx ON public.order_history USING btree (location_id, created_by_id);
 
 CREATE INDEX order_history_event_idx ON public.order_history USING btree (location_id, COALESCE(completed_at, prepared_at, created_at) DESC, order_id DESC);
+
+CREATE INDEX order_history_helper_period_v1_idx ON public.order_history USING btree (location_id, prepared_at, prepared_by_id)
+  WHERE ((prepared_at IS NOT NULL) AND (prepared_by_id IS NOT NULL));
 
 CREATE INDEX order_history_prepared_helper_idx ON public.order_history USING btree (location_id, prepared_by_id);
 

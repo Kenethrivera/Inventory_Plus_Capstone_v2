@@ -52,6 +52,9 @@ CREATE INDEX idx_orders_prepared_by_id ON public.orders USING btree (prepared_by
 CREATE UNIQUE INDEX orders_discount_approval_request_unique ON public.orders USING btree (discount_approval_request_id)
   WHERE (discount_approval_request_id IS NOT NULL);
 
+CREATE INDEX orders_helper_current_workload_v1_idx ON public.orders USING btree (location_id, assigned_helper_id)
+  WHERE ((status = 'pending'::text) AND (assigned_helper_id IS NOT NULL));
+
 CREATE INDEX orders_history_event_idx ON public.orders USING btree (location_id, COALESCE(completed_at, prepared_at, created_at) DESC, id DESC);
 
 CREATE TRIGGER orders_sync_order_history_v1
