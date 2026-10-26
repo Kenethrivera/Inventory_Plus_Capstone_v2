@@ -81,8 +81,13 @@ void main() {
 
         expect(find.text('Workload share'), findsWidgets);
         expect(find.text('What it measures'), findsOneWidget);
-        expect(find.text('Used in final score?'), findsOneWidget);
-        expect(find.textContaining('90.00 / 300.00 × 100'), findsOneWidget);
+        expect(find.text('Why it matters'), findsOneWidget);
+        expect(find.text('Formula'), findsOneWidget);
+        expect(find.text('Your data'), findsOneWidget);
+        expect(find.text('Calculation'), findsOneWidget);
+        expect(find.text('Result'), findsOneWidget);
+        expect(find.text('Does this affect the score?'), findsOneWidget);
+        expect(find.textContaining('90.00 ÷ 300.00 × 100'), findsOneWidget);
       },
     );
 
@@ -95,7 +100,7 @@ void main() {
       await tester.tap(onTime);
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('5 on-time / 5 valid × 100'), findsOneWidget);
+      expect(find.textContaining('5 ÷ 5 × 100'), findsOneWidget);
       expect(find.textContaining('100.00 × 40% = 40.00'), findsOneWidget);
     });
 
@@ -130,9 +135,48 @@ void main() {
       expect(find.textContaining('same selected period'), findsOneWidget);
       expect(find.textContaining('at least 5 valid records'), findsOneWidget);
       expect(
-        find.textContaining('Insufficient-data employees do not participate'),
+        find.textContaining('Employees without enough valid records'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('Sales and discount rows use the shared explanation model', (
+      tester,
+    ) async {
+      final fixture = _cashierFixture();
+      await _pumpDetail(tester, fixture);
+
+      expect(find.text('Sales & discounts'), findsOneWidget);
+      expect(find.text('Approved discount approvals'), findsOneWidget);
+      expect(find.text('Rejected discount approvals'), findsOneWidget);
+      expect(find.text('Pending discount approvals'), findsOneWidget);
+
+      final usage = find.byKey(const Key('metric-row-Discount usage rate'));
+      await tester.ensureVisible(usage);
+      await tester.tap(usage);
+      await tester.pumpAndSettle();
+
+      expect(find.text('What it measures'), findsOneWidget);
+      expect(find.text('Why it matters'), findsOneWidget);
+      expect(find.text('Formula'), findsOneWidget);
+      expect(find.text('Your data'), findsOneWidget);
+      expect(find.text('Calculation'), findsOneWidget);
+      expect(find.text('Result'), findsOneWidget);
+      expect(find.text('Does this affect the score?'), findsOneWidget);
+      expect(find.textContaining('2 ÷ 5 × 100'), findsOneWidget);
+    });
+
+    testWidgets('grade insights describe behavior and next actions', (
+      tester,
+    ) async {
+      final fixture = _fixture();
+      await _pumpDetail(tester, fixture);
+
+      expect(
+        find.text('Consistently completes work within the service target.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('adjusted throughput'), findsNothing);
     });
   });
 
@@ -181,6 +225,11 @@ void main() {
     expect(find.text('Data Confidence'), findsOneWidget);
     expect(find.textContaining('No data issues detected.'), findsOneWidget);
     expect(find.text('Audit details'), findsNothing);
+
+    await tester.tap(find.byTooltip('Explain Data Confidence'));
+    await tester.pumpAndSettle();
+    expect(find.text('Does this affect the score?'), findsOneWidget);
+    expect(find.text('No — informational only'), findsOneWidget);
   });
 
   testWidgets('Data Confidence warns and exposes audit details', (
@@ -231,6 +280,39 @@ _DetailFixture _fixture() {
   return (record: record, snapshot: _snapshot(record, records: [record, peer]));
 }
 
+_DetailFixture _cashierFixture() {
+  final record = _record(
+    id: 'cashier-1',
+    name: 'Jane',
+    score: 91.5,
+    role: StaffPerformanceRole.cashiers,
+    salesHandled: 2500,
+    discountedTransactions: 2,
+    discountUsageRate: 40,
+    discountApprovalRequests: 3,
+    discountApprovalsApproved: 1,
+    discountApprovalsRejected: 1,
+    discountApprovalsPending: 1,
+  );
+  final peer = _record(
+    id: 'cashier-2',
+    name: 'Alex',
+    score: 80,
+    role: StaffPerformanceRole.cashiers,
+    workload: 75,
+    adjustedThroughput: 70,
+    adjustedEfficiency: 65,
+  );
+  return (
+    record: record,
+    snapshot: _snapshot(
+      record,
+      records: [record, peer],
+      role: StaffPerformanceRole.cashiers,
+    ),
+  );
+}
+
 Future<void> _pumpDetail(WidgetTester tester, _DetailFixture fixture) async {
   await tester.binding.setSurfaceSize(const Size(900, 1200));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -259,6 +341,14 @@ StaffPerformanceRecord _record({
   double workload = 90,
   double adjustedThroughput = 85,
   double adjustedEfficiency = 80,
+  StaffPerformanceRole role = StaffPerformanceRole.helpers,
+  double salesHandled = 0,
+  int discountedTransactions = 0,
+  double discountUsageRate = 0,
+  int discountApprovalRequests = 0,
+  int discountApprovalsApproved = 0,
+  int discountApprovalsRejected = 0,
+  int discountApprovalsPending = 0,
 }) {
   return StaffPerformanceRecord.fromJson(<String, dynamic>{
     'employee_id': id,
@@ -284,16 +374,16 @@ StaffPerformanceRecord _record({
     'adjusted_throughput': score == null ? null : adjustedThroughput,
     'adjusted_efficiency': score == null ? null : adjustedEfficiency,
     'current_workload': 3,
-    'sales_handled': 0,
-    'discounted_transactions': 0,
-    'discount_usage_rate': 0,
-    'discount_approval_requests': 0,
-    'discount_approvals_approved': 0,
-    'discount_approvals_rejected': 0,
-    'discount_approvals_pending': 0,
+    'sales_handled': salesHandled,
+    'discounted_transactions': discountedTransactions,
+    'discount_usage_rate': discountUsageRate,
+    'discount_approval_requests': discountApprovalRequests,
+    'discount_approvals_approved': discountApprovalsApproved,
+    'discount_approvals_rejected': discountApprovalsRejected,
+    'discount_approvals_pending': discountApprovalsPending,
     'score': score,
     'peer_count': score == null ? 0 : 2,
-  }, StaffPerformanceRole.helpers);
+  }, role);
 }
 
 StaffPerformanceSnapshot _snapshot(
@@ -301,9 +391,10 @@ StaffPerformanceSnapshot _snapshot(
   List<StaffPerformanceRecord>? records,
   int excluded = 0,
   int unattributed = 0,
+  StaffPerformanceRole role = StaffPerformanceRole.helpers,
 }) {
   return StaffPerformanceSnapshot(
-    role: StaffPerformanceRole.helpers,
+    role: role,
     periodStart: DateTime(2026, 10),
     periodEnd: DateTime(2026, 11),
     records: records ?? [record],

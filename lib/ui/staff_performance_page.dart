@@ -22,7 +22,7 @@ class StaffPerformanceRankedRecord {
   final int? rank;
 }
 
-/// Presentation-only ordering. The backend score and eligibility are unchanged.
+/// Presentation-only ordering. Existing scores and qualification rules are unchanged.
 List<StaffPerformanceRankedRecord> rankStaffPerformanceRecords(
   Iterable<StaffPerformanceRecord> records,
 ) {
@@ -336,21 +336,36 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
 
   Future<void> _showFormula() {
     final helper = _role == StaffPerformanceRole.helpers;
-    return showDialog<void>(
-      context: context,
-      builder: (context) => AppDialog(
-        icon: Icons.calculate_outlined,
-        color: _blue,
-        title: 'How this score is calculated',
-        subtitle: '${_role.label} · Staff Performance V1',
-        maxWidth: 580,
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Done'),
+    final complexity = helper
+        ? 'Helper workload uses a base point, item lines, quantity bands, and additional currently known storage locations.'
+        : 'Cashier workload uses a base point, item lines, quantity bands, GCash, discounts, and approved admin discounts. It does not use storage locations.';
+    return showStaffMetricExplanation(
+      context,
+      StaffMetricExplanation(
+        title: 'How the performance score works',
+        whatItMeasures:
+            'How the report combines four established performance measures into one 0–100 result.',
+        whyItMatters:
+            'A manager can see exactly which parts shape the grade and how much each part contributes.',
+        formula:
+            'Final Score =\n'
+            '(On-Time × 40%)\n'
+            '+ (Adjusted Throughput × 30%)\n'
+            '+ (Adjusted Efficiency × 20%)\n'
+            '+ (Reliability × 10%)',
+        data: [
+          StaffMetricValue('Selected role', _role.label),
+          StaffMetricValue('Selected period', _period.displayLabel),
+          StaffMetricValue(
+            'Minimum valid records',
+            '${StaffPerformanceV1.minimumScoredSample}',
           ),
+          StaffMetricValue('Workload approach', complexity),
         ],
-        child: _FormulaExplanation(helper: helper),
+        result: 'A transparent 0–100 Final Score for each qualifying employee',
+        scoreEffect: 'Yes — this defines the Final Score',
+        scoreEffectExplanation:
+            'The detailed employee view shows the actual values, weighted contributions, and final result.',
       ),
     );
   }
@@ -826,22 +841,38 @@ class StaffPerformanceRankBadge extends StatelessWidget {
 }
 
 @immutable
+class StaffMetricValue {
+  const StaffMetricValue(this.label, this.value);
+
+  final String label;
+  final String value;
+}
+
+@immutable
 class StaffMetricExplanation {
   const StaffMetricExplanation({
     required this.title,
     required this.whatItMeasures,
     required this.whyItMatters,
-    required this.calculation,
+    this.formula,
+    this.howItWorks,
+    required this.data,
+    this.calculation = const <StaffMetricValue>[],
     required this.result,
-    required this.scoreUse,
-  });
+    required this.scoreEffect,
+    required this.scoreEffectExplanation,
+  }) : assert(formula != null || howItWorks != null);
 
   final String title;
   final String whatItMeasures;
   final String whyItMatters;
-  final String calculation;
+  final String? formula;
+  final String? howItWorks;
+  final List<StaffMetricValue> data;
+  final List<StaffMetricValue> calculation;
   final String result;
-  final String scoreUse;
+  final String scoreEffect;
+  final String scoreEffectExplanation;
 }
 
 Future<void> showStaffMetricExplanation(
@@ -873,18 +904,21 @@ Future<void> showStaffMetricExplanation(
             title: 'Why it matters',
             value: explanation.whyItMatters,
           ),
-          _ExplanationBlock(
-            title: 'How it is calculated',
-            value: explanation.calculation,
+          _ExplanationFormula(
+            title: explanation.formula == null ? 'How it works' : 'Formula',
+            value: explanation.formula ?? explanation.howItWorks!,
           ),
-          _ExplanationBlock(
-            title: 'Your result / actual calculation',
-            value: explanation.result,
-          ),
-          _ExplanationBlock(
-            title: 'Used in final score?',
-            value: explanation.scoreUse,
-            last: true,
+          _ExplanationRows(title: 'Your data', rows: explanation.data),
+          if (explanation.calculation.isNotEmpty)
+            _ExplanationRows(
+              title: 'Calculation',
+              rows: explanation.calculation,
+              calculation: true,
+            ),
+          _ExplanationResult(value: explanation.result),
+          _ExplanationScoreEffect(
+            effect: explanation.scoreEffect,
+            explanation: explanation.scoreEffectExplanation,
           ),
         ],
       ),
@@ -893,19 +927,14 @@ Future<void> showStaffMetricExplanation(
 }
 
 class _ExplanationBlock extends StatelessWidget {
-  const _ExplanationBlock({
-    required this.title,
-    required this.value,
-    this.last = false,
-  });
+  const _ExplanationBlock({required this.title, required this.value});
 
   final String title;
   final String value;
-  final bool last;
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.only(bottom: last ? 0 : 14),
+    padding: const EdgeInsets.only(bottom: 14),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -924,6 +953,198 @@ class _ExplanationBlock extends StatelessWidget {
         ),
       ],
     ),
+  );
+}
+
+class _ExplanationFormula extends StatelessWidget {
+  const _ExplanationFormula({required this.title, required this.value});
+
+  final String title;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: _ink,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: _border),
+          ),
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 12,
+              height: 1.45,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ExplanationRows extends StatelessWidget {
+  const _ExplanationRows({
+    required this.title,
+    required this.rows,
+    this.calculation = false,
+  });
+
+  final String title;
+  final List<StaffMetricValue> rows;
+  final bool calculation;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: _ink,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: calculation ? const Color(0xFFF1F5F9) : Colors.white,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: _border),
+          ),
+          child: Column(
+            children: [
+              for (var index = 0; index < rows.length; index++) ...[
+                if (index > 0) const Divider(height: 10, color: _border),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        rows[index].label,
+                        style: const TextStyle(color: _muted, fontSize: 11),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        rows[index].value,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: _ink,
+                          fontSize: 11,
+                          fontWeight: calculation
+                              ? FontWeight.w900
+                              : FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ExplanationResult extends StatelessWidget {
+  const _ExplanationResult({required this.value});
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 14),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFEFF6FF),
+      borderRadius: BorderRadius.circular(9),
+      border: Border.all(color: const Color(0xFFBFDBFE)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Result',
+          style: TextStyle(
+            color: _blue,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            color: _ink,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ExplanationScoreEffect extends StatelessWidget {
+  const _ExplanationScoreEffect({
+    required this.effect,
+    required this.explanation,
+  });
+
+  final String effect;
+  final String explanation;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Does this affect the score?',
+        style: TextStyle(
+          color: _ink,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      const SizedBox(height: 5),
+      Text(
+        effect,
+        style: const TextStyle(
+          color: _blue,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      const SizedBox(height: 3),
+      Text(
+        explanation,
+        style: const TextStyle(color: _muted, fontSize: 11, height: 1.4),
+      ),
+    ],
   );
 }
 
@@ -949,21 +1170,26 @@ class StaffPerformanceDetailContent extends StatelessWidget {
   String get _roleName => _helper ? 'Helper' : 'Cashier';
 
   String get _workloadFormula => _helper
-      ? '1 base point + 1 per distinct item line + quantity burden per line '
-            '(<=1 = 0, >1-5 = 0.25, >5-10 = 0.50, >10-20 = 0.75, '
-            '>20 = 1.00) + 0.50 per additional currently resolvable '
-            'storage location.'
-      : '1 base point + 1 per distinct item line + quantity burden per line '
-            '(<=1 = 0, >1-5 = 0.25, >5-10 = 0.50, >10-20 = 0.75, '
-            '>20 = 1.00). Cashiers do not receive storage-location burden. '
-            'Add 0.50 for GCash, 0.50 for a discounted transaction, and '
-            '1.00 for an approved admin discount.';
+      ? '1 base point\n'
+            '+ 1 × distinct item lines\n'
+            '+ quantity burden for each line\n'
+            '  ≤1 = 0  |  >1–5 = 0.25  |  >5–10 = 0.50\n'
+            '  >10–20 = 0.75  |  >20 = 1.00\n'
+            '+ 0.50 × additional currently known storage locations'
+      : '1 base point\n'
+            '+ 1 × distinct item lines\n'
+            '+ quantity burden for each line\n'
+            '  ≤1 = 0  |  >1–5 = 0.25  |  >5–10 = 0.50\n'
+            '  >10–20 = 0.75  |  >20 = 1.00\n'
+            '+ 0.50 for GCash\n'
+            '+ 0.50 for a discounted transaction\n'
+            '+ 1.00 for an approved admin discount';
 
   String _peerWorkloads() {
     final peers = snapshot.records.where(
       (peer) => peer.validTimingCount >= StaffPerformanceV1.minimumScoredSample,
     );
-    if (peers.isEmpty) return 'No eligible peer workload values.';
+    if (peers.isEmpty) return 'No coworkers reached the minimum sample.';
     return peers
         .map(
           (peer) =>
@@ -976,7 +1202,7 @@ class StaffPerformanceDetailContent extends StatelessWidget {
     final peers = snapshot.records.where(
       (peer) => peer.validTimingCount >= StaffPerformanceV1.minimumScoredSample,
     );
-    if (peers.isEmpty) return 'No eligible peer efficiency values.';
+    if (peers.isEmpty) return 'No coworkers reached the minimum sample.';
     return peers
         .map(
           (peer) =>
@@ -987,54 +1213,103 @@ class StaffPerformanceDetailContent extends StatelessWidget {
 
   StaffMetricExplanation _handledExplanation() => StaffMetricExplanation(
     title: _helper ? 'Orders handled' : 'Completed checkouts',
-    whatItMeasures:
-        'The number of selected-period $_unit attributed to this employee.',
+    whatItMeasures: 'How many store $_unit this employee handled.',
     whyItMatters:
-        'It shows the employee count contribution without changing the score.',
-    calculation:
-        'Count qualifying $_unit attributed to the employee within the selected store and period.',
-    result:
-        '${record.completedCount} employee $_unit / ${snapshot.totalStoreOrders} total store $_unit.',
-    scoreUse: 'No. This is an informational contribution metric.',
+        'This shows the employee’s share of day-to-day activity. Managers can compare the count with overall store demand.',
+    formula: 'Handled count = qualifying $_unit handled by this employee',
+    data: [
+      StaffMetricValue('All store $_unit', '${snapshot.totalStoreOrders}'),
+      StaffMetricValue('Handled by employee', '${record.completedCount}'),
+    ],
+    calculation: [
+      StaffMetricValue('Counted employee $_unit', '${record.completedCount}'),
+    ],
+    result: '${record.completedCount} $_unit handled',
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'The handled count provides context but is not added directly to the score.',
   );
 
   StaffMetricExplanation _orderShareExplanation() => StaffMetricExplanation(
     title: _helper ? 'Order share' : 'Checkout share',
     whatItMeasures:
-        'The employee share of all qualifying store $_unit in the period.',
+        'How much of the store’s $_unit were handled by this employee.',
     whyItMatters:
-        'It makes the handled count comparable with the full store volume.',
-    calculation:
-        '${record.completedCount} / ${snapshot.totalStoreOrders} × 100.',
+        'This puts the employee count in context. It helps a manager see contribution relative to total store volume.',
+    formula: 'Employee $_unit ÷ all store $_unit × 100',
+    data: [
+      StaffMetricValue('Employee $_unit', '${record.completedCount}'),
+      StaffMetricValue('All store $_unit', '${snapshot.totalStoreOrders}'),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Share',
+        '${record.completedCount} ÷ ${snapshot.totalStoreOrders} × 100',
+      ),
+    ],
     result: _percent(record.orderShare),
-    scoreUse: 'No. Order/Checkout Share is not directly added to Final Score.',
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'Order and checkout share describe contribution but are not score components.',
   );
 
   StaffMetricExplanation _workloadExplanation() => StaffMetricExplanation(
     title: 'Workload',
     whatItMeasures:
-        'The complexity-weighted amount of work attributed to this employee.',
+        'How much work the employee handled after allowing for task complexity.',
     whyItMatters:
-        'Two employees can handle the same number of $_unit with different complexity.',
-    calculation: _workloadFormula,
-    result:
-        '${record.workloadPoints.toStringAsFixed(2)} employee points / '
-        '${snapshot.totalRoleWorkloadPoints.toStringAsFixed(2)} total $_roleName points.',
-    scoreUse:
-        'Not directly. The returned workload feeds Adjusted Throughput, which has a 30% score weight.',
+        'Equal order counts can represent very different effort. Workload points help managers compare that difference fairly.',
+    formula: _workloadFormula,
+    data: [
+      StaffMetricValue('Employee $_unit', '${record.completedCount}'),
+      StaffMetricValue(
+        'Employee workload',
+        '${record.workloadPoints.toStringAsFixed(2)} pts',
+      ),
+      StaffMetricValue(
+        'All $_roleName workload',
+        '${snapshot.totalRoleWorkloadPoints.toStringAsFixed(2)} pts',
+      ),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Complexity rules applied',
+        '${record.workloadPoints.toStringAsFixed(2)} pts',
+      ),
+    ],
+    result: '${record.workloadPoints.toStringAsFixed(2)} workload points',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'Workload points feed the 30% Adjusted Throughput component. Workload from records with usable service times also feeds the 20% Adjusted Efficiency component.',
   );
 
   StaffMetricExplanation _workloadShareExplanation() => StaffMetricExplanation(
     title: 'Workload share',
     whatItMeasures:
-        'The employee share of all attributed $_roleName workload points.',
+        'How much of the role’s total complexity was handled by this employee.',
     whyItMatters:
-        'It compares complexity contribution rather than order count alone.',
-    calculation:
-        '${record.workloadPoints.toStringAsFixed(2)} / '
-        '${snapshot.totalRoleWorkloadPoints.toStringAsFixed(2)} × 100.',
+        'This shows contribution by difficulty, not just by number of orders or checkouts.',
+    formula: 'Employee workload ÷ all $_roleName workload × 100',
+    data: [
+      StaffMetricValue(
+        'Employee workload',
+        '${record.workloadPoints.toStringAsFixed(2)} pts',
+      ),
+      StaffMetricValue(
+        'All $_roleName workload',
+        '${snapshot.totalRoleWorkloadPoints.toStringAsFixed(2)} pts',
+      ),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Share',
+        '${record.workloadPoints.toStringAsFixed(2)} ÷ ${snapshot.totalRoleWorkloadPoints.toStringAsFixed(2)} × 100',
+      ),
+    ],
     result: _percent(record.workloadShare),
-    scoreUse: 'No. Workload Share is informational and is not directly added.',
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'Workload Share is shown for management context and is not added to Final Score.',
   );
 
   StaffMetricExplanation _activeHoursExplanation() => StaffMetricExplanation(
@@ -1042,203 +1317,572 @@ class StaffPerformanceDetailContent extends StatelessWidget {
         ? 'Active-hour contribution'
         : 'Active-hour data unavailable',
     whatItMeasures:
-        'Active Time Share would compare employee active hours with total role active hours. Contribution Index would compare Workload Share with Active Time Share.',
+        'Whether the employee’s share of work matched their share of recorded working time.',
     whyItMatters:
-        'It can show whether workload contribution matched the employee share of working time when reliable historical sessions exist.',
+        'This can add useful staffing context, but only when complete historical work sessions are available.',
+    formula: snapshot.activeHoursAvailable
+        ? 'Active Time Share = employee active hours ÷ all $_roleName active hours × 100\n'
+              'Contribution Index = Workload Share ÷ Active Time Share'
+        : null,
+    howItWorks: snapshot.activeHoursAvailable
+        ? null
+        : 'Complete historical login and logout sessions are required. Because those sessions are not recorded reliably, Active Time Share and Contribution Index are not shown.',
+    data: [
+      StaffMetricValue(
+        'Employee active hours',
+        record.activeHours?.toStringAsFixed(2) ?? 'Unavailable',
+      ),
+      StaffMetricValue(
+        'All $_roleName active hours',
+        snapshot.totalRoleActiveHours?.toStringAsFixed(2) ?? 'Unavailable',
+      ),
+      StaffMetricValue('Workload share', _percent(record.workloadShare)),
+    ],
     calculation:
-        'Active Time Share = employee active hours / total role active hours × 100. Contribution Index = Workload Share / Active Time Share.',
+        snapshot.activeHoursAvailable &&
+            record.activeHours != null &&
+            snapshot.totalRoleActiveHours != null
+        ? [
+            StaffMetricValue(
+              'Active Time Share',
+              '${record.activeHours!.toStringAsFixed(2)} ÷ ${snapshot.totalRoleActiveHours!.toStringAsFixed(2)} × 100',
+            ),
+            StaffMetricValue(
+              'Contribution Index',
+              '${record.workloadShare.toStringAsFixed(2)} ÷ ${record.activeTimeShare?.toStringAsFixed(2) ?? 'Unavailable'}',
+            ),
+          ]
+        : const <StaffMetricValue>[],
     result: snapshot.activeHoursAvailable
-        ? 'Active hours: ${record.activeHours?.toStringAsFixed(2) ?? 'N/A'} / '
-              '${snapshot.totalRoleActiveHours?.toStringAsFixed(2) ?? 'N/A'}; '
-              'Active Time Share: ${_optionalPercent(record.activeTimeShare)}; '
-              'Contribution Index: ${record.contributionIndex?.toStringAsFixed(2) ?? 'N/A'}.'
-        : 'Normal historical login/logout sessions are not reliably recorded, so Active Time Share and Contribution Index remain unavailable.',
-    scoreUse: 'No. Contribution Index is excluded from the final score.',
+        ? 'Contribution Index: ${record.contributionIndex?.toStringAsFixed(2) ?? 'Unavailable'}'
+        : 'Unavailable because complete historical login and logout sessions are not recorded reliably.',
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'Active-time measures and Contribution Index are excluded from Final Score.',
   );
 
   StaffMetricExplanation _validSampleExplanation() => StaffMetricExplanation(
     title: 'Valid timing sample',
     whatItMeasures:
-        'Attributed $_unit with complete, logically ordered timing timestamps.',
+        'How many handled $_unit have complete and believable service times.',
     whyItMatters:
-        'Timing rates and speed metrics use only trustworthy duration records.',
-    calculation:
-        'Count records where the required start and finish timestamps exist and finish is not before start.',
-    result:
-        '${record.validTimingCount} valid records. At least ${StaffPerformanceV1.minimumScoredSample} are required for a score.',
-    scoreUse: 'Yes, as the eligibility basis. It has no separate weight.',
+        'A larger trustworthy sample gives managers more confidence in speed and timeliness results.',
+    formula:
+        'Valid sample = handled records with a complete start and finish time',
+    data: [
+      StaffMetricValue('Handled $_unit', '${record.completedCount}'),
+      StaffMetricValue(
+        'Excluded timing records',
+        '${record.excludedTimingCount}',
+      ),
+      StaffMetricValue(
+        'Minimum needed for a score',
+        '${StaffPerformanceV1.minimumScoredSample}',
+      ),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Usable timing records',
+        '${record.completedCount} - ${record.excludedTimingCount}',
+      ),
+    ],
+    result: '${record.validTimingCount} valid timing records',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'At least ${StaffPerformanceV1.minimumScoredSample} valid records are required before a Final Score is shown.',
   );
 
   StaffMetricExplanation _excludedExplanation() => StaffMetricExplanation(
     title: 'Excluded timing records',
     whatItMeasures:
-        'Employee-attributed records with missing or logically invalid timing.',
+        'How many handled $_unit could not provide a trustworthy service time.',
     whyItMatters:
-        'Invalid durations are excluded instead of being treated as zero-duration work.',
-    calculation:
-        'Attributed records minus records with a valid chronological duration.',
-    result: '${record.excludedTimingCount} employee timing records excluded.',
-    scoreUse: 'No. Excluded records do not enter timing calculations.',
+        'Managers should know when timing results use a reduced sample. Incomplete or reversed times are excluded instead of treated as instant work.',
+    formula: 'Excluded records = handled records - valid timing records',
+    data: [
+      StaffMetricValue('Handled $_unit', '${record.completedCount}'),
+      StaffMetricValue('Valid timing records', '${record.validTimingCount}'),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Excluded',
+        '${record.completedCount} - ${record.validTimingCount}',
+      ),
+    ],
+    result: '${record.excludedTimingCount} records excluded',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'Excluded records do not enter timing measures and can affect whether the minimum sample is reached.',
   );
 
   StaffMetricExplanation _totalMinutesExplanation() => StaffMetricExplanation(
     title: 'Total service minutes',
-    whatItMeasures:
-        'The sum of valid ${_helper ? 'assignment-to-preparation' : 'ready-to-paid'} durations.',
+    whatItMeasures: 'The combined service time for all valid employee $_unit.',
     whyItMatters:
-        'It is the time denominator for average duration and efficiency.',
-    calculation: 'Add every valid duration in the employee timing sample.',
-    result:
-        '${record.totalServiceMinutes.toStringAsFixed(2)} minutes across ${record.validTimingCount} valid records.',
-    scoreUse: 'Not directly. It feeds Adjusted Efficiency.',
+        'This shows the total time represented by the report and supplies the time used for efficiency.',
+    formula: 'Total service minutes = sum of all valid service durations',
+    data: [
+      StaffMetricValue('Valid timing records', '${record.validTimingCount}'),
+      StaffMetricValue(
+        'Recorded service time',
+        '${record.totalServiceMinutes.toStringAsFixed(2)} min',
+      ),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Sum of valid durations',
+        '${record.totalServiceMinutes.toStringAsFixed(2)} min',
+      ),
+    ],
+    result: '${record.totalServiceMinutes.toStringAsFixed(2)} minutes',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'These minutes are used to work out efficiency, which feeds the 20% Adjusted Efficiency component.',
   );
 
   StaffMetricExplanation _averageExplanation() => StaffMetricExplanation(
     title: _helper ? 'Average prep' : 'Average ready to paid',
-    whatItMeasures: 'Mean service duration for valid timing records.',
-    whyItMatters: 'It summarizes typical elapsed time across the sample.',
-    calculation:
-        '${record.totalServiceMinutes.toStringAsFixed(2)} total valid minutes / ${record.validTimingCount} valid records.',
+    whatItMeasures: 'The average service time for each valid $_unit record.',
+    whyItMatters:
+        'This gives managers a simple view of typical pace across the selected period.',
+    formula: 'Average time = total service minutes ÷ valid timing records',
+    data: [
+      StaffMetricValue(
+        'Total service minutes',
+        record.totalServiceMinutes.toStringAsFixed(2),
+      ),
+      StaffMetricValue('Valid timing records', '${record.validTimingCount}'),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Average',
+        '${record.totalServiceMinutes.toStringAsFixed(2)} ÷ ${record.validTimingCount}',
+      ),
+    ],
     result: _minutes(record.averageMinutes),
-    scoreUse:
-        'No direct weight. The underlying time contributes to efficiency.',
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'Average time is shown for context. Final Score uses the established timeliness and efficiency measures instead.',
   );
 
   StaffMetricExplanation _medianExplanation() => StaffMetricExplanation(
-    title: 'Median service time',
-    whatItMeasures: 'The middle valid duration after durations are sorted.',
-    whyItMatters: 'It is less affected by unusually long or short records.',
-    calculation:
-        'Sort all ${record.validTimingCount} valid durations and take the middle value.',
+    title: _helper ? 'Median prep' : 'Median ready to paid',
+    whatItMeasures:
+        'The middle service time after valid times are put in order.',
+    whyItMatters:
+        'This shows a typical middle result without one unusually long or short record dominating the view.',
+    howItWorks:
+        'Arrange all valid service times from shortest to longest and select the middle value.',
+    data: [
+      StaffMetricValue('Valid timing records', '${record.validTimingCount}'),
+      StaffMetricValue('Middle service time', _minutes(record.medianMinutes)),
+    ],
     result: _minutes(record.medianMinutes),
-    scoreUse: 'No. It is a descriptive speed metric.',
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'Median time helps managers interpret pace but is not a score component.',
   );
 
   StaffMetricExplanation _fastestExplanation() => StaffMetricExplanation(
-    title: 'Fastest service time',
-    whatItMeasures: 'The shortest valid duration in the selected period.',
-    whyItMatters: 'It shows the observed lower bound, not typical performance.',
-    calculation: 'Minimum of all valid employee durations.',
+    title: _helper ? 'Fastest prep' : 'Fastest ready to paid',
+    whatItMeasures: 'The shortest trustworthy service time in the period.',
+    whyItMatters:
+        'This shows the best observed time, but it should not be treated as the employee’s normal pace.',
+    formula: 'Fastest time = shortest valid service duration',
+    data: [
+      StaffMetricValue('Valid timing records', '${record.validTimingCount}'),
+    ],
+    calculation: [
+      StaffMetricValue('Shortest duration', _minutes(record.fastestMinutes)),
+    ],
     result: _minutes(record.fastestMinutes),
-    scoreUse: 'No. It is a descriptive speed metric.',
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'The fastest single result is not added to Final Score.',
   );
 
   StaffMetricExplanation _onTimeExplanation() => StaffMetricExplanation(
     title: 'On-time rate',
     whatItMeasures:
-        'The percentage of valid $_unit completed under $_delayThreshold minutes.',
-    whyItMatters: 'It is the primary timeliness component of Final Score.',
-    calculation:
-        '${record.onTimeCount} on-time / ${record.validTimingCount} valid × 100. Under $_delayThreshold min is on-time; $_delayThreshold min or more is delayed.',
+        'How often this employee finished valid $_unit within the service target.',
+    whyItMatters:
+        'This tells a manager whether customers and coworkers can usually expect work to finish on schedule.',
+    formula: 'On-time rate = on-time records ÷ valid timing records × 100',
+    data: [
+      StaffMetricValue('On-time records', '${record.onTimeCount}'),
+      StaffMetricValue('Valid timing records', '${record.validTimingCount}'),
+      StaffMetricValue('Service target', 'Under $_delayThreshold min'),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'On-time rate',
+        '${record.onTimeCount} ÷ ${record.validTimingCount} × 100',
+      ),
+      StaffMetricValue(
+        'Weighted contribution',
+        '${record.onTimeRate.toStringAsFixed(2)} × 40% = ${record.onTimeScoreContribution.toStringAsFixed(2)}',
+      ),
+    ],
     result: _percent(record.onTimeRate),
-    scoreUse:
-        'Yes — 40%. ${record.onTimeRate.toStringAsFixed(2)} × 40% = ${record.onTimeScoreContribution.toStringAsFixed(2)}.',
+    scoreEffect: 'Yes — 40%',
+    scoreEffectExplanation:
+        'Timeliness supplies ${record.onTimeScoreContribution.toStringAsFixed(2)} points to Final Score.',
   );
 
   StaffMetricExplanation _onTimeCountExplanation() => StaffMetricExplanation(
     title: 'On-time records',
     whatItMeasures:
-        'Valid $_unit completed in less than $_delayThreshold minutes.',
-    whyItMatters: 'It is the numerator of the On-Time Rate.',
-    calculation:
-        'Count valid durations below the $_delayThreshold-minute threshold.',
-    result:
-        '${record.onTimeCount} of ${record.validTimingCount} valid records.',
-    scoreUse: 'Indirectly. It determines the 40% On-Time component.',
+        'How many valid $_unit finished before the delay threshold.',
+    whyItMatters:
+        'This is the count behind On-Time Rate and shows the size of the employee’s timely work sample.',
+    formula: 'On-time records = valid durations under $_delayThreshold minutes',
+    data: [
+      StaffMetricValue('Valid timing records', '${record.validTimingCount}'),
+      StaffMetricValue('Service target', 'Under $_delayThreshold min'),
+    ],
+    calculation: [
+      StaffMetricValue('Count below target', '${record.onTimeCount}'),
+    ],
+    result: '${record.onTimeCount} on-time records',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'This count is used to work out the 40% On-Time Rate component.',
   );
 
   StaffMetricExplanation _delayedExplanation() => StaffMetricExplanation(
     title: _helper ? 'Delayed orders' : 'Delayed checkouts',
-    whatItMeasures: 'Valid $_unit taking $_delayThreshold minutes or longer.',
-    whyItMatters: 'It identifies records outside the V1 on-time threshold.',
-    calculation:
-        'Count valid durations greater than or equal to $_delayThreshold minutes.',
-    result:
-        '${record.delayedCount} delayed of ${record.validTimingCount} valid.',
-    scoreUse: 'Indirectly. It determines Delay Rate and Reliability.',
+    whatItMeasures:
+        'How many valid $_unit reached or exceeded the delay threshold.',
+    whyItMatters:
+        'This helps a manager spot whether late work is occasional or recurring.',
+    formula:
+        'Delayed records = valid durations at least $_delayThreshold minutes',
+    data: [
+      StaffMetricValue('Valid timing records', '${record.validTimingCount}'),
+      StaffMetricValue('Delay threshold', '$_delayThreshold min or more'),
+    ],
+    calculation: [
+      StaffMetricValue('Count at or above threshold', '${record.delayedCount}'),
+    ],
+    result: '${record.delayedCount} delayed $_unit',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'Delayed records determine Delay Rate and the 10% Reliability component.',
   );
 
   StaffMetricExplanation _delayRateExplanation() => StaffMetricExplanation(
     title: 'Delay rate',
-    whatItMeasures: 'The percentage of valid records classified as delayed.',
-    whyItMatters: 'It makes delay counts comparable across sample sizes.',
-    calculation:
-        '${record.delayedCount} delayed / ${record.validTimingCount} valid × 100.',
+    whatItMeasures: 'How often valid work was delayed.',
+    whyItMatters:
+        'A percentage lets managers compare delay patterns even when employees handled different amounts of work.',
+    formula: 'Delay rate = delayed records ÷ valid timing records × 100',
+    data: [
+      StaffMetricValue('Delayed records', '${record.delayedCount}'),
+      StaffMetricValue('Valid timing records', '${record.validTimingCount}'),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Delay rate',
+        '${record.delayedCount} ÷ ${record.validTimingCount} × 100',
+      ),
+    ],
     result: _percent(record.delayRate),
-    scoreUse: 'Indirectly. Reliability is 100 minus Delay Rate.',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'Reliability is calculated from Delay Rate and contributes 10% to Final Score.',
   );
 
   StaffMetricExplanation _reliabilityExplanation() => StaffMetricExplanation(
     title: 'Reliability',
-    whatItMeasures: 'Consistency in avoiding delayed valid records.',
+    whatItMeasures: 'How consistently this employee avoided delays.',
     whyItMatters:
-        'It rewards repeatable timeliness across the selected period.',
-    calculation: '100 - ${record.delayRate.toStringAsFixed(2)}% delay rate.',
+        'Managers need dependable service, not only occasional fast results.',
+    formula: 'Reliability = 100 - delay rate',
+    data: [
+      StaffMetricValue('Delay rate', _percent(record.delayRate)),
+      StaffMetricValue('Delayed records', '${record.delayedCount}'),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Reliability',
+        '100 - ${record.delayRate.toStringAsFixed(2)}',
+      ),
+      StaffMetricValue(
+        'Weighted contribution',
+        '${record.reliability.toStringAsFixed(2)} × 10% = ${record.reliabilityScoreContribution.toStringAsFixed(2)}',
+      ),
+    ],
     result: _percent(record.reliability),
-    scoreUse:
-        'Yes — 10%. ${record.reliability.toStringAsFixed(2)} × 10% = ${record.reliabilityScoreContribution.toStringAsFixed(2)}.',
+    scoreEffect: 'Yes — 10%',
+    scoreEffectExplanation:
+        'Reliability supplies ${record.reliabilityScoreContribution.toStringAsFixed(2)} points to Final Score.',
   );
 
   StaffMetricExplanation _efficiencyExplanation() => StaffMetricExplanation(
     title: 'Complexity-adjusted efficiency',
-    whatItMeasures: 'Valid workload complexity completed per service minute.',
+    whatItMeasures:
+        'How many valid workload points were handled per service minute.',
     whyItMatters:
-        'It relates completed complexity to elapsed time instead of using speed alone.',
-    calculation:
-        '${record.timedWorkloadPoints.toStringAsFixed(2)} valid workload points / ${record.totalServiceMinutes.toStringAsFixed(2)} valid service minutes.',
+        'This helps a manager judge pace while still allowing for more difficult work.',
+    formula: 'Efficiency = valid workload points ÷ total valid service minutes',
+    data: [
+      StaffMetricValue(
+        'Valid workload',
+        '${record.timedWorkloadPoints.toStringAsFixed(2)} pts',
+      ),
+      StaffMetricValue(
+        'Valid service time',
+        '${record.totalServiceMinutes.toStringAsFixed(2)} min',
+      ),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Points per minute',
+        '${record.timedWorkloadPoints.toStringAsFixed(2)} ÷ ${record.totalServiceMinutes.toStringAsFixed(2)}',
+      ),
+    ],
     result: record.efficiency == null
-        ? 'Not available.'
-        : '${record.efficiency!.toStringAsFixed(3)} points per minute.',
-    scoreUse:
-        'Not directly. This raw value is peer-normalized into Adjusted Efficiency.',
+        ? 'Unavailable'
+        : '${record.efficiency!.toStringAsFixed(3)} points per minute',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'This value is compared with coworkers who reached the minimum sample to prepare the 20% Adjusted Efficiency component.',
   );
 
   StaffMetricExplanation
   _efficiencyBasisExplanation() => StaffMetricExplanation(
     title: 'Efficiency basis',
-    whatItMeasures:
-        'The exact numerator and denominator used for raw efficiency.',
-    whyItMatters: 'It makes the efficiency result manually auditable.',
-    calculation: 'Valid complexity points / total valid service minutes.',
-    result:
-        '${record.timedWorkloadPoints.toStringAsFixed(2)} pts / ${record.totalServiceMinutes.toStringAsFixed(2)} min.',
-    scoreUse: 'Indirectly. It feeds the 20% Adjusted Efficiency component.',
+    whatItMeasures: 'The work and time inputs behind the efficiency result.',
+    whyItMatters:
+        'Showing both inputs lets a manager verify what the efficiency figure represents.',
+    formula: 'Valid workload points ÷ total valid service minutes',
+    data: [
+      StaffMetricValue(
+        'Valid workload',
+        '${record.timedWorkloadPoints.toStringAsFixed(2)} pts',
+      ),
+      StaffMetricValue(
+        'Valid service time',
+        '${record.totalServiceMinutes.toStringAsFixed(2)} min',
+      ),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Efficiency basis',
+        '${record.timedWorkloadPoints.toStringAsFixed(2)} ÷ ${record.totalServiceMinutes.toStringAsFixed(2)}',
+      ),
+    ],
+    result: record.efficiency == null
+        ? 'Efficiency unavailable'
+        : '${record.efficiency!.toStringAsFixed(3)} points per minute',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'These inputs feed the 20% Adjusted Efficiency component.',
   );
 
   StaffMetricExplanation
   _adjustedThroughputExplanation() => StaffMetricExplanation(
     title: 'Adjusted throughput',
     whatItMeasures:
-        'The backend-returned 0-100 peer-normalized workload result.',
+        'How the employee’s complexity-weighted amount of work compares with coworkers who have enough valid records.',
     whyItMatters:
-        'It compares complexity-adjusted amount of work with eligible employees in the same role, store, and period.',
-    calculation:
-        'The Phase 4 report peer-normalizes employee workload among eligible same-role employees. This UI displays the returned value without recomputing it.',
-    result:
-        'Employee workload: ${record.workloadPoints.toStringAsFixed(2)} pts. '
-        'Eligible cohort values: ${_peerWorkloads()} '
-        'Returned normalized value: ${_optionalScore(record.adjustedThroughput)}.',
-    scoreUse: record.adjustedThroughput == null
-        ? 'Yes — 30%, once the minimum sample is met.'
-        : 'Yes — 30%. ${record.adjustedThroughput!.toStringAsFixed(2)} × 30% = ${record.throughputScoreContribution!.toStringAsFixed(2)}.',
+        'This helps a manager compare contribution fairly within the same job, store, and period.',
+    howItWorks:
+        'The employee’s workload is compared only with coworkers in the same role who reached the minimum timing sample. The report’s existing 0-100 comparison result is shown without changing it.',
+    data: [
+      StaffMetricValue(
+        'Employee workload',
+        '${record.workloadPoints.toStringAsFixed(2)} pts',
+      ),
+      StaffMetricValue('Coworkers in comparison', '${record.peerCount}'),
+      StaffMetricValue('Coworker workload values', _peerWorkloads()),
+    ],
+    calculation: record.adjustedThroughput == null
+        ? const <StaffMetricValue>[]
+        : [
+            StaffMetricValue(
+              'Comparison result',
+              '${record.adjustedThroughput!.toStringAsFixed(2)} / 100',
+            ),
+            StaffMetricValue(
+              'Weighted contribution',
+              '${record.adjustedThroughput!.toStringAsFixed(2)} × 30% = ${record.throughputScoreContribution!.toStringAsFixed(2)}',
+            ),
+          ],
+    result: record.adjustedThroughput == null
+        ? 'Unavailable until the minimum sample is reached'
+        : '${record.adjustedThroughput!.toStringAsFixed(2)} / 100',
+    scoreEffect: 'Yes — 30%',
+    scoreEffectExplanation: record.adjustedThroughput == null
+        ? 'This component becomes available after the minimum timing sample is reached.'
+        : 'Adjusted Throughput supplies ${record.throughputScoreContribution!.toStringAsFixed(2)} points to Final Score.',
   );
 
   StaffMetricExplanation
   _adjustedEfficiencyExplanation() => StaffMetricExplanation(
     title: 'Adjusted efficiency',
     whatItMeasures:
-        'The backend-returned 0-100 peer-normalized efficiency result.',
+        'How the employee’s complexity handled per minute compares with coworkers who have enough valid records.',
     whyItMatters:
-        'It compares complexity handled relative to time with eligible employees in the same role, store, and period.',
-    calculation:
-        'The Phase 4 report peer-normalizes raw efficiency among eligible same-role employees. This UI displays the returned value without recomputing it.',
-    result:
-        'Employee raw efficiency: ${record.efficiency?.toStringAsFixed(3) ?? 'N/A'} pts/min. '
-        'Eligible cohort values: ${_peerEfficiencies()} '
-        'Returned normalized value: ${_optionalScore(record.adjustedEfficiency)}.',
-    scoreUse: record.adjustedEfficiency == null
-        ? 'Yes — 20%, once the minimum sample is met.'
-        : 'Yes — 20%. ${record.adjustedEfficiency!.toStringAsFixed(2)} × 20% = ${record.efficiencyScoreContribution!.toStringAsFixed(2)}.',
+        'This helps a manager compare productive pace while allowing for task difficulty.',
+    howItWorks:
+        'Efficiency is compared only with coworkers in the same role who reached the minimum timing sample. The report’s existing 0-100 comparison result is shown without changing it.',
+    data: [
+      StaffMetricValue(
+        'Employee efficiency',
+        '${record.efficiency?.toStringAsFixed(3) ?? 'Unavailable'} pts/min',
+      ),
+      StaffMetricValue('Coworkers in comparison', '${record.peerCount}'),
+      StaffMetricValue('Coworker efficiency values', _peerEfficiencies()),
+    ],
+    calculation: record.adjustedEfficiency == null
+        ? const <StaffMetricValue>[]
+        : [
+            StaffMetricValue(
+              'Comparison result',
+              '${record.adjustedEfficiency!.toStringAsFixed(2)} / 100',
+            ),
+            StaffMetricValue(
+              'Weighted contribution',
+              '${record.adjustedEfficiency!.toStringAsFixed(2)} × 20% = ${record.efficiencyScoreContribution!.toStringAsFixed(2)}',
+            ),
+          ],
+    result: record.adjustedEfficiency == null
+        ? 'Unavailable until the minimum sample is reached'
+        : '${record.adjustedEfficiency!.toStringAsFixed(2)} / 100',
+    scoreEffect: 'Yes — 20%',
+    scoreEffectExplanation: record.adjustedEfficiency == null
+        ? 'This component becomes available after the minimum timing sample is reached.'
+        : 'Adjusted Efficiency supplies ${record.efficiencyScoreContribution!.toStringAsFixed(2)} points to Final Score.',
+  );
+
+  StaffMetricExplanation _salesHandledExplanation() => StaffMetricExplanation(
+    title: 'Sales handled',
+    whatItMeasures:
+        'The value of completed sales processed by this Cashier in the selected period.',
+    whyItMatters:
+        'This gives a manager financial context for the checkout activity handled by the employee.',
+    formula: 'Sales handled = sum of completed checkout amounts',
+    data: [
+      StaffMetricValue('Completed checkouts', '${record.completedCount}'),
+      StaffMetricValue('Completed sales value', _currency(record.salesHandled)),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Sum of completed sales',
+        _currency(record.salesHandled),
+      ),
+    ],
+    result: _currency(record.salesHandled),
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'Sales value provides business context and is not added to Final Score.',
+  );
+
+  StaffMetricExplanation
+  _discountedTransactionsExplanation() => StaffMetricExplanation(
+    title: 'Discounted transactions',
+    whatItMeasures:
+        'How many completed checkouts handled by this Cashier included a discount.',
+    whyItMatters:
+        'Discounted checkouts can involve extra verification and help managers understand the mix of checkout work.',
+    formula: 'Discounted transactions = completed checkouts with a discount',
+    data: [
+      StaffMetricValue('Completed checkouts', '${record.completedCount}'),
+      StaffMetricValue(
+        'Checkouts with a discount',
+        '${record.discountedTransactions}',
+      ),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Counted discounted checkouts',
+        '${record.discountedTransactions}',
+      ),
+    ],
+    result: '${record.discountedTransactions} discounted transactions',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'A discounted transaction adds to checkout workload. That workload feeds Adjusted Throughput and Adjusted Efficiency.',
+  );
+
+  StaffMetricExplanation _discountUsageExplanation() => StaffMetricExplanation(
+    title: 'Discount usage rate',
+    whatItMeasures:
+        'The percentage of this Cashier’s completed checkouts that included a discount.',
+    whyItMatters:
+        'This helps a manager understand how often discount handling appeared in the employee’s checkout work.',
+    formula:
+        'Discount usage rate = discounted transactions ÷ completed checkouts × 100',
+    data: [
+      StaffMetricValue(
+        'Discounted transactions',
+        '${record.discountedTransactions}',
+      ),
+      StaffMetricValue('Completed checkouts', '${record.completedCount}'),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Discount usage rate',
+        '${record.discountedTransactions} ÷ ${record.completedCount} × 100',
+      ),
+    ],
+    result: _percent(record.discountUsageRate),
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'The percentage itself is not added to Final Score. Individual discounted checkouts can add workload complexity.',
+  );
+
+  StaffMetricExplanation
+  _approvalRequestsExplanation() => StaffMetricExplanation(
+    title: 'Discount approval requests',
+    whatItMeasures:
+        'How many discount requests were connected with this Cashier’s checkout work.',
+    whyItMatters:
+        'This helps a manager see how much discount-review activity accompanied the employee’s transactions.',
+    formula: 'Approval requests = approved + rejected + pending requests',
+    data: [
+      StaffMetricValue('Approved', '${record.discountApprovalsApproved}'),
+      StaffMetricValue('Rejected', '${record.discountApprovalsRejected}'),
+      StaffMetricValue('Pending', '${record.discountApprovalsPending}'),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Total requests',
+        '${record.discountApprovalsApproved} + ${record.discountApprovalsRejected} + ${record.discountApprovalsPending}',
+      ),
+    ],
+    result: '${record.discountApprovalRequests} approval requests',
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'The request count is an audit measure and is not added directly to Final Score.',
+  );
+
+  StaffMetricExplanation _approvalStatusExplanation({
+    required String status,
+    required int count,
+  }) => StaffMetricExplanation(
+    title: '$status discount approvals',
+    whatItMeasures:
+        'How many discount requests in this Cashier’s work currently have a ${status.toLowerCase()} outcome.',
+    whyItMatters:
+        'This helps a manager understand the outcome of discount-review activity without treating it as an employee grade.',
+    formula: '$status count = requests with a ${status.toLowerCase()} outcome',
+    data: [
+      StaffMetricValue(
+        'All approval requests',
+        '${record.discountApprovalRequests}',
+      ),
+      StaffMetricValue('$status requests', '$count'),
+    ],
+    calculation: [StaffMetricValue('Counted $status requests', '$count')],
+    result: '$count ${status.toLowerCase()} requests',
+    scoreEffect: status == 'Approved'
+        ? 'Yes — indirectly'
+        : 'No — informational only',
+    scoreEffectExplanation: status == 'Approved'
+        ? 'An approved admin discount can add to checkout workload. That workload feeds the adjusted score components.'
+        : 'This status count is shown for oversight and is not added to Final Score.',
   );
 
   @override
@@ -1417,24 +2061,49 @@ class StaffPerformanceDetailContent extends StatelessWidget {
           _DetailSection(
             title: 'Sales & discounts',
             rows: [
-              _DetailValue('Sales handled', _currency(record.salesHandled)),
+              _DetailValue(
+                'Sales handled',
+                _currency(record.salesHandled),
+                explanation: _salesHandledExplanation(),
+              ),
               _DetailValue(
                 'Discounted transactions',
                 '${record.discountedTransactions}',
+                explanation: _discountedTransactionsExplanation(),
               ),
               _DetailValue(
                 'Discount usage rate',
                 _percent(record.discountUsageRate),
+                explanation: _discountUsageExplanation(),
               ),
               _DetailValue(
                 'Discount approval requests',
                 '${record.discountApprovalRequests}',
+                explanation: _approvalRequestsExplanation(),
               ),
               _DetailValue(
-                'Approved / Rejected / Pending',
-                '${record.discountApprovalsApproved} / '
-                    '${record.discountApprovalsRejected} / '
-                    '${record.discountApprovalsPending}',
+                'Approved discount approvals',
+                '${record.discountApprovalsApproved}',
+                explanation: _approvalStatusExplanation(
+                  status: 'Approved',
+                  count: record.discountApprovalsApproved,
+                ),
+              ),
+              _DetailValue(
+                'Rejected discount approvals',
+                '${record.discountApprovalsRejected}',
+                explanation: _approvalStatusExplanation(
+                  status: 'Rejected',
+                  count: record.discountApprovalsRejected,
+                ),
+              ),
+              _DetailValue(
+                'Pending discount approvals',
+                '${record.discountApprovalsPending}',
+                explanation: _approvalStatusExplanation(
+                  status: 'Pending',
+                  count: record.discountApprovalsPending,
+                ),
               ),
             ],
           ),
@@ -1482,37 +2151,37 @@ class _PerformanceInsights extends StatelessWidget {
 
     if (record.score != null) {
       if (record.onTimeRate >= 85) {
-        strengths.add('Timeliness: ${_percent(record.onTimeRate)} on-time.');
+        strengths.add('Consistently completes work within the service target.');
       } else if (record.onTimeRate < 70) {
         needsAttention.add(
-          'Timeliness: ${_percent(record.onTimeRate)} on-time.',
+          'Review where service time is being lost and agree on a timeliness improvement plan.',
         );
       }
       if (record.reliability >= 90 && record.delayedCount <= 1) {
         strengths.add(
-          'Reliability: ${record.delayedCount} delayed record${record.delayedCount == 1 ? '' : 's'}.',
+          'Rarely allows assigned work to cross the delay threshold.',
         );
       } else if (record.reliability < 70) {
         needsAttention.add(
-          'Reliability: ${_percent(record.reliability)} with ${record.delayedCount} delays.',
+          'Check recurring delay causes and remove avoidable blockers.',
         );
       }
       if ((record.adjustedThroughput ?? 0) >= 75) {
         strengths.add(
-          'Workload contribution: ${record.adjustedThroughput!.toStringAsFixed(1)}/100 adjusted throughput.',
+          'Handles a strong amount of complexity compared with coworkers who have enough valid records.',
         );
       } else if ((record.adjustedThroughput ?? 100) < 40) {
         needsAttention.add(
-          'Workload contribution: ${record.adjustedThroughput!.toStringAsFixed(1)}/100 adjusted throughput.',
+          'Review assignment mix and available capacity to improve workload contribution.',
         );
       }
       if ((record.adjustedEfficiency ?? 0) >= 75) {
         strengths.add(
-          'Productivity: ${record.adjustedEfficiency!.toStringAsFixed(1)}/100 adjusted efficiency.',
+          'Processes complex work efficiently compared with coworkers who have enough valid records.',
         );
       } else if ((record.adjustedEfficiency ?? 100) < 40) {
         needsAttention.add(
-          'Productivity: ${record.adjustedEfficiency!.toStringAsFixed(1)}/100 adjusted efficiency.',
+          'Coach on the work steps that slow down complex orders or checkouts.',
         );
       }
     }
@@ -1520,8 +2189,8 @@ class _PerformanceInsights extends StatelessWidget {
     if (strengths.isEmpty) {
       strengths.add(
         record.score == null
-            ? 'A scored summary requires ${StaffPerformanceV1.minimumScoredSample} valid records; current sample: ${record.validTimingCount}.'
-            : 'No metric crossed the high-result display threshold this period.',
+            ? 'More completed work is needed before a dependable performance summary can be shown.'
+            : 'Performance was balanced; no single area stood out as a clear strength this period.',
       );
     }
 
@@ -1613,14 +2282,19 @@ class StaffPerformanceLiveWorkloadCard extends StatelessWidget {
   StaffMetricExplanation get _explanation => StaffMetricExplanation(
     title: 'Live Workload',
     whatItMeasures:
-        'Pending orders currently assigned to this Helper right now.',
+        'How many pending orders are assigned to this Helper right now.',
     whyItMatters:
-        'It supports operational workload awareness while viewing historical performance.',
-    calculation:
-        'Count live orders whose status is pending and whose assigned Helper is this employee.',
-    result: '$count pending orders currently assigned.',
-    scoreUse:
-        'No. This live operational metric is separate from historical performance and does not affect the historical score.',
+        'This helps a manager see current capacity while reviewing past performance. It must be read separately from the selected historical period.',
+    formula: 'Live workload = pending orders currently assigned to this Helper',
+    data: [
+      StaffMetricValue('Current assigned pending orders', '$count'),
+      StaffMetricValue('Historical period on screen', periodLabel),
+    ],
+    calculation: [StaffMetricValue('Live pending count', '$count')],
+    result: '$count pending orders currently assigned',
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'Live workload is an operational snapshot and does not affect the historical score.',
   );
 
   @override
@@ -1715,16 +2389,45 @@ class _StaffPerformanceDataConfidenceState
     extends State<StaffPerformanceDataConfidence> {
   bool _expanded = false;
 
-  int get _issueCount {
-    final timingIssues =
-        widget.snapshot.totalExcludedTimingCount >=
-            widget.record.excludedTimingCount
-        ? widget.snapshot.totalExcludedTimingCount
-        : widget.record.excludedTimingCount;
-    return timingIssues + widget.snapshot.unattributedOrderCount;
-  }
+  int get _timingIssueCount =>
+      widget.snapshot.totalExcludedTimingCount >=
+          widget.record.excludedTimingCount
+      ? widget.snapshot.totalExcludedTimingCount
+      : widget.record.excludedTimingCount;
+
+  int get _issueCount =>
+      _timingIssueCount + widget.snapshot.unattributedOrderCount;
 
   bool get _healthy => _issueCount == 0;
+
+  StaffMetricExplanation get _summaryExplanation => StaffMetricExplanation(
+    title: 'Data Confidence',
+    whatItMeasures:
+        'Whether the report used a complete, clearly assigned timing sample.',
+    whyItMatters:
+        'This tells a manager how much trust to place in the displayed measures. It is an audit check, not an employee grade.',
+    formula:
+        'Records needing attention = timing issues + records without a role assignment',
+    data: [
+      StaffMetricValue('Timing issues counted', '$_timingIssueCount'),
+      StaffMetricValue(
+        'Records without role assignment',
+        '${widget.snapshot.unattributedOrderCount}',
+      ),
+    ],
+    calculation: [
+      StaffMetricValue(
+        'Records needing attention',
+        '$_timingIssueCount + ${widget.snapshot.unattributedOrderCount}',
+      ),
+    ],
+    result: _healthy
+        ? 'No data issues detected'
+        : '$_issueCount records need attention',
+    scoreEffect: 'No — informational only',
+    scoreEffectExplanation:
+        'Data Confidence describes report completeness and is never included in performance scoring.',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1772,8 +2475,8 @@ class _StaffPerformanceDataConfidenceState
                         const SizedBox(height: 4),
                         Text(
                           _healthy
-                              ? 'No data issues detected.\nAll eligible records were used in this performance report.'
-                              : '$_issueCount records need attention.\nSome calculations use a reduced or partially attributed sample.',
+                              ? 'No data issues detected.\nAll eligible records were used in this performance report. Eligible means the records had usable times and a clear role assignment.'
+                              : '$_issueCount records need attention.\nSome calculations use a reduced or partially attributed sample — fewer usable records, or records without a clear role assignment.',
                           style: const TextStyle(
                             color: _muted,
                             fontSize: 11,
@@ -1795,6 +2498,21 @@ class _StaffPerformanceDataConfidenceState
                   const SizedBox(width: 8),
                   Column(
                     children: [
+                      IconButton(
+                        tooltip: 'Explain Data Confidence',
+                        onPressed: () => showStaffMetricExplanation(
+                          context,
+                          _summaryExplanation,
+                        ),
+                        icon: const Icon(Icons.info_outline, size: 17),
+                        color: color,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        padding: EdgeInsets.zero,
+                      ),
                       Text(
                         _expanded ? 'Hide details' : 'View details',
                         style: TextStyle(
@@ -1827,15 +2545,32 @@ class _StaffPerformanceDataConfidenceState
                     explanation: StaffMetricExplanation(
                       title: 'Employee timing records excluded',
                       whatItMeasures:
-                          'Employee-attributed records with missing or logically invalid timing.',
+                          'How many of this employee’s records could not provide a trustworthy service time.',
                       whyItMatters:
-                          'These records are excluded rather than counted as zero-duration work.',
-                      calculation:
-                          'Attributed records minus valid chronological timing records.',
+                          'Managers should know when employee timing measures use a reduced sample. Invalid times are excluded instead of treated as instant work.',
+                      formula:
+                          'Employee timing issues = handled records - valid timing records',
+                      data: [
+                        StaffMetricValue(
+                          'Handled records',
+                          '${widget.record.completedCount}',
+                        ),
+                        StaffMetricValue(
+                          'Valid timing records',
+                          '${widget.record.validTimingCount}',
+                        ),
+                      ],
+                      calculation: [
+                        StaffMetricValue(
+                          'Excluded',
+                          '${widget.record.completedCount} - ${widget.record.validTimingCount}',
+                        ),
+                      ],
                       result:
-                          '${widget.record.excludedTimingCount} employee records excluded.',
-                      scoreUse:
-                          'No. Excluded records do not enter timing calculations or scoring.',
+                          '${widget.record.excludedTimingCount} employee records excluded',
+                      scoreEffect: 'No — informational only',
+                      scoreEffectExplanation:
+                          'This audit count is not added to the score. The unusable records are excluded before timing measures are calculated.',
                     ),
                   ),
                   _DetailValue(
@@ -1844,15 +2579,32 @@ class _StaffPerformanceDataConfidenceState
                     explanation: StaffMetricExplanation(
                       title: 'Records without role attribution',
                       whatItMeasures:
-                          'Qualifying period records that cannot be assigned to a ${helper ? 'Helper' : 'Cashier'}.',
+                          'How many period records could not be linked to a ${helper ? 'Helper' : 'Cashier'}.',
                       whyItMatters:
-                          'Employee shares may total below 100% when records are legacy, solo-picked, or unattributed.',
-                      calculation:
-                          'Total qualifying store records minus role-attributed records.',
+                          'This explains why employee shares may total below 100% and prevents unassigned work from being credited to the wrong person.',
+                      formula:
+                          'Unassigned records = all qualifying records - role-handled records',
+                      data: [
+                        StaffMetricValue(
+                          'All qualifying records',
+                          '${widget.snapshot.totalStoreOrders}',
+                        ),
+                        StaffMetricValue(
+                          'Role-handled records',
+                          '${widget.snapshot.totalRoleHandledOrders}',
+                        ),
+                      ],
+                      calculation: [
+                        StaffMetricValue(
+                          'Without role assignment',
+                          '${widget.snapshot.totalStoreOrders} - ${widget.snapshot.totalRoleHandledOrders}',
+                        ),
+                      ],
                       result:
-                          '${widget.snapshot.unattributedOrderCount} period records without role attribution.',
-                      scoreUse:
-                          'No. Unattributed records are not assigned to an employee score.',
+                          '${widget.snapshot.unattributedOrderCount} period records without role assignment',
+                      scoreEffect: 'No — informational only',
+                      scoreEffectExplanation:
+                          'These records are not assigned to any employee score.',
                     ),
                   ),
                   _DetailValue(
@@ -1861,15 +2613,32 @@ class _StaffPerformanceDataConfidenceState
                     explanation: StaffMetricExplanation(
                       title: 'Period timing records excluded',
                       whatItMeasures:
-                          'All role-attributed period records with incomplete or reverse timestamps.',
+                          'How many role-handled records in the period had unusable service times.',
                       whyItMatters:
-                          'It shows whether period timing metrics use a reduced sample.',
-                      calculation:
-                          'Count attributed period records without a valid chronological duration.',
+                          'This shows whether the store-level timing picture is based on a reduced sample.',
+                      formula:
+                          'Period timing issues = role-handled records - valid period timing records',
+                      data: [
+                        StaffMetricValue(
+                          'Role-handled records',
+                          '${widget.snapshot.totalRoleHandledOrders}',
+                        ),
+                        StaffMetricValue(
+                          'Valid period timing records',
+                          '${widget.snapshot.totalValidTimingCount}',
+                        ),
+                      ],
+                      calculation: [
+                        StaffMetricValue(
+                          'Excluded period records',
+                          '${widget.snapshot.totalRoleHandledOrders} - ${widget.snapshot.totalValidTimingCount}',
+                        ),
+                      ],
                       result:
-                          '${widget.snapshot.totalExcludedTimingCount} period timing records excluded.',
-                      scoreUse:
-                          'No. Invalid durations are excluded, never converted to zero.',
+                          '${widget.snapshot.totalExcludedTimingCount} period timing records excluded',
+                      scoreEffect: 'No — informational only',
+                      scoreEffectExplanation:
+                          'This period audit count is not added to any employee score. Unusable records are excluded rather than converted to zero-duration work.',
                     ),
                   ),
                   if (helper)
@@ -1879,14 +2648,21 @@ class _StaffPerformanceDataConfidenceState
                       explanation: StaffMetricExplanation(
                         title: 'Location-complexity coverage',
                         whatItMeasures:
-                            'Whether current product references can supply storage-location information.',
+                            'Whether Helper workload can include available storage-location detail.',
                         whyItMatters:
-                            'Helper complexity can include additional currently resolvable storage locations.',
-                        calculation:
-                            'Uses the existing Phase 4 product-location fallback and coverage behavior.',
+                            'Storage locations can make preparation more involved. This note tells managers how much location context was available.',
+                        howItWorks:
+                            'When a product’s current storage location is available, additional distinct locations contribute to Helper workload. Missing historical location detail uses the existing fallback.',
+                        data: [
+                          StaffMetricValue(
+                            'Coverage note',
+                            widget.snapshot.locationComplexityCoverage,
+                          ),
+                        ],
                         result: widget.snapshot.locationComplexityCoverage,
-                        scoreUse:
-                            'Indirectly, only through the existing Helper workload complexity calculation.',
+                        scoreEffect: 'No — informational only',
+                        scoreEffectExplanation:
+                            'The coverage note is not a score component. Available location detail still follows the established Helper workload rules.',
                       ),
                     ),
                 ],
@@ -1932,8 +2708,8 @@ class _ScoreBanner extends StatelessWidget {
                   record.score == null
                       ? 'At least ${StaffPerformanceV1.minimumScoredSample} valid records are required.'
                       : record.peerCount == 1
-                      ? 'Single eligible peer: peer-normalized components use a neutral value.'
-                      : 'Compared only with the same role, location, and period.',
+                      ? 'Only one employee qualified for comparison; the established neutral comparison value is used.'
+                      : 'Compared only with coworkers in the same role, store, and period.',
                   style: const TextStyle(color: _muted, fontSize: 11),
                 ),
               ],
@@ -1976,14 +2752,51 @@ class _ScoreBreakdown extends StatelessWidget {
     whatItMeasures:
         'The weighted 0-100 final performance score for the selected period.',
     whyItMatters:
-        'It combines timeliness, complexity-adjusted peer contribution, productivity, and reliability in the established V1 weights.',
-    calculation:
-        'Final Score = (On-Time × 40%) + (Adjusted Throughput × 30%) + '
-        '(Adjusted Efficiency × 20%) + (Reliability × 10%). '
-        'On-Time represents timeliness. Adjusted Throughput represents '
-        'complexity-adjusted work relative to peers. Adjusted Efficiency '
-        'represents complexity handled relative to time and peers. Reliability '
-        'represents consistency in avoiding delays.',
+        'It gives a manager one transparent summary of timeliness, workload contribution, productive pace, and consistency.',
+    formula:
+        'Final Score =\n'
+        '(On-Time × 40%)\n'
+        '+ (Adjusted Throughput × 30%)\n'
+        '+ (Adjusted Efficiency × 20%)\n'
+        '+ (Reliability × 10%)',
+    data: [
+      StaffMetricValue(
+        'On-Time',
+        '${record.onTimeRate.toStringAsFixed(2)} / 100',
+      ),
+      StaffMetricValue(
+        'Adjusted Throughput',
+        record.adjustedThroughput?.toStringAsFixed(2) ?? 'Unavailable',
+      ),
+      StaffMetricValue(
+        'Adjusted Efficiency',
+        record.adjustedEfficiency?.toStringAsFixed(2) ?? 'Unavailable',
+      ),
+      StaffMetricValue(
+        'Reliability',
+        '${record.reliability.toStringAsFixed(2)} / 100',
+      ),
+    ],
+    calculation: record.score == null
+        ? const <StaffMetricValue>[]
+        : [
+            StaffMetricValue(
+              'On-Time',
+              '${record.onTimeRate.toStringAsFixed(2)} × 40% = ${record.onTimeScoreContribution.toStringAsFixed(2)}',
+            ),
+            StaffMetricValue(
+              'Adjusted Throughput',
+              '${record.adjustedThroughput!.toStringAsFixed(2)} × 30% = ${record.throughputScoreContribution!.toStringAsFixed(2)}',
+            ),
+            StaffMetricValue(
+              'Adjusted Efficiency',
+              '${record.adjustedEfficiency!.toStringAsFixed(2)} × 20% = ${record.efficiencyScoreContribution!.toStringAsFixed(2)}',
+            ),
+            StaffMetricValue(
+              'Reliability',
+              '${record.reliability.toStringAsFixed(2)} × 10% = ${record.reliabilityScoreContribution.toStringAsFixed(2)}',
+            ),
+          ],
     result: record.score == null
         ? 'Insufficient data: ${record.validTimingCount} / '
               '${StaffPerformanceV1.minimumScoredSample} valid records.'
@@ -1992,33 +2805,47 @@ class _ScoreBreakdown extends StatelessWidget {
               '${record.adjustedEfficiency!.toStringAsFixed(2)} × 20% + '
               '${record.reliability.toStringAsFixed(2)} × 10% = '
               '${record.score!.toStringAsFixed(2)}.',
-    scoreUse: 'Yes. This is the final composite score.',
+    scoreEffect: 'Yes — this is the Final Score',
+    scoreEffectExplanation:
+        'The four weighted contributions are added once to produce the displayed score and band.',
   );
 
   StaffMetricExplanation get _peerExplanation => StaffMetricExplanation(
     title: 'Peer cohort',
-    whatItMeasures: 'Employees eligible for peer-normalized comparison.',
+    whatItMeasures:
+        'The coworkers used to compare workload contribution and productive pace.',
     whyItMatters:
-        'Adjusted Throughput and Adjusted Efficiency compare like-for-like employees.',
-    calculation:
-        'Same role, same location, same selected period ($periodLabel), with at least '
-        '${StaffPerformanceV1.minimumScoredSample} valid records. Helpers are compared '
-        'with Helpers and Cashiers with Cashiers. Insufficient-data employees do not '
-        'participate in score normalization.',
+        'A fair comparison uses people doing the same job in the same place and time period.',
+    howItWorks:
+        'The comparison includes the same role, the same store, and the same selected period. Each employee must have at least ${StaffPerformanceV1.minimumScoredSample} valid records. Helpers are compared with Helpers, and Cashiers with Cashiers. Employees without enough valid records are left out of this comparison.',
+    data: [
+      StaffMetricValue('Selected period', periodLabel),
+      StaffMetricValue(
+        'Minimum valid records',
+        '${StaffPerformanceV1.minimumScoredSample}',
+      ),
+      StaffMetricValue('Coworkers in comparison', '${record.peerCount}'),
+    ],
     result: record.peerCount == 1
-        ? '1 eligible employee. The existing Phase 4 result uses its neutral one-person cohort behavior.'
-        : '${record.peerCount} eligible employees in this cohort.',
-    scoreUse:
-        'No direct weight. It defines the comparison group for the 30% throughput and 20% efficiency components.',
+        ? '1 employee qualified; the established neutral comparison value is used.'
+        : '${record.peerCount} employees qualified for comparison.',
+    scoreEffect: 'Yes — indirectly',
+    scoreEffectExplanation:
+        'This group determines the comparison used for the 30% Adjusted Throughput and 20% Adjusted Efficiency components.',
   );
 
   StaffMetricExplanation get _finalScoreExplanation => StaffMetricExplanation(
     title: 'Final Score',
     whatItMeasures: 'The sum of the four weighted score contributions.',
-    whyItMatters: 'It determines the displayed performance band.',
+    whyItMatters:
+        'This is the employee’s overall result for the selected period and determines the displayed performance band.',
+    formula: _scoreExplanation.formula,
+    data: _scoreExplanation.data,
     calculation: _scoreExplanation.calculation,
     result: _scoreExplanation.result,
-    scoreUse: 'Yes. This is the final result, not an additional component.',
+    scoreEffect: 'Yes — this is the Final Score',
+    scoreEffectExplanation:
+        'It is the result of the four weighted components, not an additional fifth component.',
   );
 
   @override
@@ -2036,7 +2863,7 @@ class _ScoreBreakdown extends StatelessWidget {
           ),
           _DetailValue(
             'Peer cohort',
-            '${record.peerCount} eligible employees',
+            '${record.peerCount} employees qualified for comparison',
             explanation: _peerExplanation,
           ),
         ],
@@ -2079,8 +2906,8 @@ class _ScoreBreakdown extends StatelessWidget {
         _DetailValue(
           'Peer cohort',
           record.peerCount == 1
-              ? '1 eligible employee — neutral 50 used for peer components'
-              : '${record.peerCount} eligible same-role employees',
+              ? '1 employee — established neutral comparison used'
+              : '${record.peerCount} same-role employees in comparison',
           explanation: _peerExplanation,
         ),
       ],
@@ -2226,61 +3053,6 @@ class _DetailSection extends StatelessWidget {
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class _FormulaExplanation extends StatelessWidget {
-  const _FormulaExplanation({required this.helper});
-  final bool helper;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'How this score is calculated',
-            style: TextStyle(
-              color: _ink,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '40% On-Time · 30% Complexity-Adjusted Throughput · '
-            '20% Complexity-Adjusted Efficiency · 10% Reliability',
-            style: TextStyle(color: _ink, fontSize: 12, height: 1.45),
-          ),
-          const SizedBox(height: 7),
-          Text(
-            helper
-                ? 'Complexity: 1 base point + 1 per distinct item line + '
-                      'quantity burden per line (0 / 0.25 / 0.50 / 0.75 / 1.00) '
-                      '+ 0.50 per additional currently resolvable storage location.'
-                : 'Complexity: 1 base point + 1 per distinct item line + '
-                      'quantity burden per line (0 / 0.25 / 0.50 / 0.75 / 1.00) '
-                      '+ 0.50 for GCash + 0.50 for a discount + 1.00 for an '
-                      'approved discount workflow.',
-            style: const TextStyle(color: _muted, fontSize: 11, height: 1.4),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Throughput and efficiency are peer-normalized within the same role, location, and period. '
-            'Contribution Index is informational and is not part of the final score. '
-            'Active-hour data remains unavailable because normal historical login/logout sessions are not reliably recorded.',
-            style: const TextStyle(color: _muted, fontSize: 11, height: 1.4),
-          ),
         ],
       ),
     );
