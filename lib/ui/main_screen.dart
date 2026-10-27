@@ -291,7 +291,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _isDetailView = false;
       _selectedItemId = null;
     });
-    unawaited(_updateStaffPresenceModule());
+    _updateStaffPresenceModule();
   }
 
   void _selectMainIndex(
@@ -317,7 +317,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     } else {
       pushMainSectionPath(path);
     }
-    if (changed) unawaited(_updateStaffPresenceModule());
+    if (changed) _updateStaffPresenceModule();
   }
 
   @override
@@ -1311,8 +1311,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _updateStaffPresenceModule() async {
-    await _staffPresenceService?.updateModule(_currentModuleName());
+  void _updateStaffPresenceModule() {
+    _staffPresenceService?.updateModule(_currentModuleName());
   }
 
   void _handleSelectItem(InventoryItem item) {

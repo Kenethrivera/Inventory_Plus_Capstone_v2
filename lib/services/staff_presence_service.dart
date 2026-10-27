@@ -114,8 +114,11 @@ class StaffPresenceService extends ChangeNotifier {
     }
   }
 
-  Future<void> updateModule(String currentModule) async {
-    await heartbeat(currentModule: currentModule);
+  /// Updates the module included in the next scheduled heartbeat without
+  /// turning retained-tab navigation into an extra presence write/read cycle.
+  void updateModule(String currentModule) {
+    if (_disposed) return;
+    _currentModule = currentModule;
   }
 
   Future<void> stop({String logoutReason = 'manual_logout'}) async {
