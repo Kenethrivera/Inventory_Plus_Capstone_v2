@@ -1469,11 +1469,13 @@ class InventoryController {
     if (details.contains('payment_reference_already_used')) {
       throw const AppUserFacingException(
         'This payment reference has already been used.',
+        code: AppUserFacingErrorCode.duplicatePaymentReference,
       );
     }
     if (details.contains('order_already_completed')) {
       throw const AppUserFacingException(
         'This order has already been completed.',
+        code: AppUserFacingErrorCode.orderAlreadyCompleted,
       );
     }
     if (details.contains('order_cannot_be_cancelled')) {

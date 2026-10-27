@@ -29,6 +29,22 @@ const double _kSnapFull = 0.75;
 const double _kBaseChromeHeight = 320.0;
 const Color _primaryBlue = Color(0xFF2563EB); // Centralized theme color
 
+class _CompletedPayment {
+  const _CompletedPayment({
+    required this.paymentMode,
+    required this.cashReceived,
+    required this.change,
+    required this.reference,
+    required this.times,
+  });
+
+  final String paymentMode;
+  final double cashReceived;
+  final double change;
+  final String? reference;
+  final ({DateTime createdAt, DateTime completedAt}) times;
+}
+
 class PosCartPage extends StatefulWidget {
   final InventoryController controller;
   final StaffPresenceService? presenceService;
@@ -391,7 +407,8 @@ class _PosCartPageState extends State<PosCartPage>
       orderQty += item.quantity;
     }
 
-    final paymentData = await _showPaymentDialog(
+    final payment = await _showPaymentDialog(
+      order: order,
       subtotal: orderSubtotal,
       discountAmt: order.discountAmount,
       totalDue: order.totalAmount,
@@ -399,28 +416,8 @@ class _PosCartPageState extends State<PosCartPage>
       totalQty: orderQty,
     );
 
-    if (paymentData == null || paymentData['confirmed'] != true) return;
-
-    ({DateTime createdAt, DateTime completedAt})? times;
-    try {
-      times = await widget.controller.completeOrder(
-        order,
-        paymentMode: paymentData['paymentMode'],
-        cashGiven: paymentData['cashReceived'],
-        changeAmount: paymentData['change'],
-        paymentReference: paymentData['reference'],
-      );
-    } catch (e, stackTrace) {
-      AppLogger.error('Order completion failed', error: e, stackTrace: stackTrace);
-      if (mounted) {
-        AppToast.error(
-          context,
-          AppErrorMapper.message(e, fallback: AppErrorCategory.dataSave),
-        );
-      }
-      return;
-    }
-    if (times == null) return;
+    if (payment == null) return;
+    final times = payment.times;
 
     final notificationController = NotificationProvider.maybeOf(context);
     final locationId = widget.controller.activeLocationId;
@@ -447,10 +444,10 @@ class _PosCartPageState extends State<PosCartPage>
     if (mounted) {
       _showReceiptDialog(
         order,
-        paymentMode: paymentData['paymentMode'],
-        paymentReference: paymentData['reference'],
-        cashReceived: paymentData['cashReceived'],
-        change: paymentData['change'],
+        paymentMode: payment.paymentMode,
+        paymentReference: payment.reference,
+        cashReceived: payment.cashReceived,
+        change: payment.change,
         orderedAt: times.createdAt,
         completedAt: times.completedAt,
       );
@@ -1046,24 +1043,30 @@ class _PosCartPageState extends State<PosCartPage>
     );
   }
 
-  Future<Map<String, dynamic>?> _showPaymentDialog({
+  Future<_CompletedPayment?> _showPaymentDialog({
+    required CustomerOrder order,
     required double subtotal,
     required double discountAmt,
     required double totalDue,
     required int itemsCount,
     required double totalQty,
-  }) {
+  }) async {
     String paymentMode = 'Cash';
     final cashCtrl = TextEditingController();
     double cashReceived = 0.0;
     final refCtrl = TextEditingController();
+    final refFocusNode = FocusNode();
     String? referenceError;
+    String? paymentError;
+    bool isSubmitting = false;
+    bool orderAlreadyCompleted = false;
 
-    return showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
+    try {
+      return await showDialog<_CompletedPayment>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
           double change = cashReceived - totalDue;
           if (change < 0) change = 0;
 
@@ -1080,7 +1083,13 @@ class _PosCartPageState extends State<PosCartPage>
             bool isSelected = paymentMode == title;
             return Expanded(
               child: GestureDetector(
-                onTap: () => setDialogState(() => paymentMode = title),
+                onTap: isSubmitting || orderAlreadyCompleted
+                    ? null
+                    : () => setDialogState(() {
+                        paymentMode = title;
+                        referenceError = null;
+                        paymentError = null;
+                      }),
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
@@ -1115,6 +1124,101 @@ class _PosCartPageState extends State<PosCartPage>
                 ),
               ),
             );
+          }
+
+          Future<void> submitPayment() async {
+            String? reference;
+            if (paymentMode == 'GCash') {
+              try {
+                reference = normalizeGcashReference(refCtrl.text);
+              } on FormatException catch (error) {
+                setDialogState(() => referenceError = error.message);
+                refFocusNode.requestFocus();
+                return;
+              }
+            }
+
+            final submittedCash = paymentMode == 'Cash'
+                ? cashReceived
+                : totalDue;
+            final submittedChange = paymentMode == 'Cash'
+                ? cashReceived - totalDue
+                : 0.0;
+            setDialogState(() {
+              isSubmitting = true;
+              referenceError = null;
+              paymentError = null;
+            });
+
+            try {
+              final times = await widget.controller.completeOrder(
+                order,
+                paymentMode: paymentMode,
+                cashGiven: submittedCash,
+                changeAmount: submittedChange,
+                paymentReference: reference,
+              );
+              if (!dialogContext.mounted) return;
+              if (times == null) {
+                setDialogState(() {
+                  isSubmitting = false;
+                  paymentError = 'Payment is already being processed.';
+                });
+                return;
+              }
+
+              Navigator.pop(
+                dialogContext,
+                _CompletedPayment(
+                  paymentMode: paymentMode,
+                  cashReceived: submittedCash,
+                  change: submittedChange,
+                  reference: reference,
+                  times: times,
+                ),
+              );
+            } catch (error, stackTrace) {
+              AppLogger.error(
+                'Order completion failed',
+                error: error,
+                stackTrace: stackTrace,
+              );
+              if (!dialogContext.mounted) return;
+
+              final code = error is AppUserFacingException
+                  ? error.code
+                  : null;
+              if (code == AppUserFacingErrorCode.duplicatePaymentReference) {
+                setDialogState(() {
+                  isSubmitting = false;
+                  referenceError =
+                      'This GCash reference has already been used. Enter a unique reference number.';
+                });
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (dialogContext.mounted && refFocusNode.canRequestFocus) {
+                    refFocusNode.requestFocus();
+                  }
+                });
+                return;
+              }
+
+              if (code == AppUserFacingErrorCode.orderAlreadyCompleted) {
+                setDialogState(() {
+                  isSubmitting = false;
+                  orderAlreadyCompleted = true;
+                  paymentError = 'This order has already been completed.';
+                });
+                return;
+              }
+
+              setDialogState(() {
+                isSubmitting = false;
+                paymentError = AppErrorMapper.message(
+                  error,
+                  fallback: AppErrorCategory.dataSave,
+                );
+              });
+            }
           }
 
           String qtyStr = totalQty.truncateToDouble() == totalQty
@@ -1530,13 +1634,19 @@ class _PosCartPageState extends State<PosCartPage>
                               const SizedBox(height: 8),
                               TextField(
                                 controller: refCtrl,
+                                focusNode: refFocusNode,
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly,
                                   LengthLimitingTextInputFormatter(13),
                                 ],
-                                onChanged: (val) {
-                                  setDialogState(() => referenceError = null);
+                                onChanged: (_) {
+                                  setDialogState(() {
+                                    referenceError = null;
+                                    if (!orderAlreadyCompleted) {
+                                      paymentError = null;
+                                    }
+                                  });
                                 },
                                 decoration: InputDecoration(
                                   hintText: 'GCash Reference Number',
@@ -1583,6 +1693,30 @@ class _PosCartPageState extends State<PosCartPage>
                         ),
                       ],
 
+                      if (paymentError != null) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Text(
+                            paymentError!,
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+
                       const SizedBox(height: 24),
                       Row(
                         children: [
@@ -1625,7 +1759,9 @@ class _PosCartPageState extends State<PosCartPage>
                         children: [
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: () => Navigator.pop(context, null),
+                              onPressed: isSubmitting
+                                  ? null
+                                  : () => Navigator.pop(dialogContext, null),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.black87,
                                 side: BorderSide(color: Colors.grey.shade300),
@@ -1643,37 +1779,12 @@ class _PosCartPageState extends State<PosCartPage>
                           Expanded(
                             child: ElevatedButton(
                               // --- NEW: Disable button dynamically if rules are broken ---
-                              onPressed: paymentMode == 'Cash' && hasError
+                              onPressed:
+                                  isSubmitting ||
+                                      orderAlreadyCompleted ||
+                                      (paymentMode == 'Cash' && hasError)
                                   ? null
-                                  : () {
-                                      String? reference;
-                                      if (paymentMode == 'GCash') {
-                                        try {
-                                          reference = normalizeGcashReference(
-                                            refCtrl.text,
-                                          );
-                                        } on FormatException catch (error) {
-                                          setDialogState(
-                                            () =>
-                                                referenceError = error.message,
-                                          );
-                                          return;
-                                        }
-                                      }
-                                      Navigator.pop(context, {
-                                        'confirmed': true,
-                                        'paymentMode': paymentMode,
-                                        'cashReceived': paymentMode == 'Cash'
-                                            ? cashReceived
-                                            : totalDue,
-                                        'change': paymentMode == 'Cash'
-                                            ? (cashReceived - totalDue)
-                                            : 0.0,
-                                        'reference': paymentMode == 'GCash'
-                                            ? reference
-                                            : null,
-                                      });
-                                    },
+                                  : submitPayment,
                               // -----------------------------------------------------------
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
@@ -1686,13 +1797,22 @@ class _PosCartPageState extends State<PosCartPage>
                                 ),
                                 elevation: 0,
                               ),
-                              child: const Text(
-                                "Confirm",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                              child: isSubmitting
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text(
+                                      "Confirm",
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                             ),
                           ),
                         ],
@@ -1703,9 +1823,14 @@ class _PosCartPageState extends State<PosCartPage>
               ),
             ),
           );
-        },
-      ),
-    );
+          },
+        ),
+      );
+    } finally {
+      cashCtrl.dispose();
+      refCtrl.dispose();
+      refFocusNode.dispose();
+    }
   }
 
   String _fmtReceiptDate(DateTime d) {

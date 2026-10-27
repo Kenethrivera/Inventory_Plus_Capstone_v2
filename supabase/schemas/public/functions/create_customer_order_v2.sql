@@ -166,7 +166,6 @@ begin
     where product.id = v_item.product_id
       and product.location_id = v_profile.location_id
     returning product.product_quantity into v_new_quantity;
-
     if not found then raise exception 'checkout_inventory_changed'; end if;
 
     insert into public.transaction_history (

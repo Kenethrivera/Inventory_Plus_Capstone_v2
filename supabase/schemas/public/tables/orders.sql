@@ -50,14 +50,15 @@ CREATE INDEX idx_orders_created_by_id ON public.orders USING btree (created_by_i
 
 CREATE INDEX idx_orders_prepared_by_id ON public.orders USING btree (prepared_by_id);
 
-CREATE UNIQUE INDEX orders_discount_approval_request_unique ON public.orders USING btree (discount_approval_request_id)
-  WHERE (discount_approval_request_id IS NOT NULL);
-
 CREATE UNIQUE INDEX orders_checkout_operation_unique ON public.orders USING btree (checkout_operation_id)
   WHERE (checkout_operation_id IS NOT NULL);
 
-CREATE UNIQUE INDEX orders_completed_gcash_reference_unique ON public.orders USING btree (location_id, lower(btrim(payment_reference)))
-  WHERE ((status = 'completed'::text) AND (lower(btrim(payment_mode)) = 'gcash'::text) AND (payment_reference IS NOT NULL) AND (btrim(payment_reference) <> ''::text));
+CREATE UNIQUE INDEX orders_completed_gcash_reference_unique ON public.orders USING btree (location_id, lower(TRIM(BOTH FROM payment_reference)))
+  WHERE ((status = 'completed'::text) AND (lower(TRIM(BOTH FROM payment_mode)) = 'gcash'::text) AND (payment_reference IS
+    NOT NULL) AND (TRIM(BOTH FROM payment_reference) <> ''::text));
+
+CREATE UNIQUE INDEX orders_discount_approval_request_unique ON public.orders USING btree (discount_approval_request_id)
+  WHERE (discount_approval_request_id IS NOT NULL);
 
 CREATE INDEX orders_helper_current_workload_v1_idx ON public.orders USING btree (location_id, assigned_helper_id)
   WHERE ((status = 'pending'::text) AND (assigned_helper_id IS NOT NULL));

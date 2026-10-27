@@ -61,7 +61,6 @@ begin
     where product.id = v_item.product_id
       and product.location_id = v_profile.location_id
     returning product.product_quantity into v_new_quantity;
-
     if not found then raise exception 'inventory_changed'; end if;
 
     insert into public.transaction_history (
@@ -86,7 +85,12 @@ begin
 end;
 $function$;
 
-GRANT EXECUTE ON FUNCTION public.cancel_customer_order_v1(text, uuid)
-  TO anon, service_role, postgres;
-REVOKE ALL ON FUNCTION public.cancel_customer_order_v1(text, uuid)
-  FROM PUBLIC, authenticated;
+GRANT EXECUTE ON FUNCTION "public"."cancel_customer_order_v1"(text, uuid) TO "anon";
+
+GRANT EXECUTE ON FUNCTION "public"."cancel_customer_order_v1"(text, uuid) TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."cancel_customer_order_v1"(text, uuid) FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."cancel_customer_order_v1"(text, uuid) TO "postgres";
+
+REVOKE ALL ON FUNCTION "public"."cancel_customer_order_v1"(text, uuid) FROM PUBLIC, "authenticated";

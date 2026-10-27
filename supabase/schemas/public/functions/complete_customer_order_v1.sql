@@ -90,9 +90,12 @@ begin
 end;
 $function$;
 
-GRANT EXECUTE ON FUNCTION public.complete_customer_order_v1(
-  text, uuid, text, double precision, double precision, text
-) TO anon, service_role, postgres;
-REVOKE ALL ON FUNCTION public.complete_customer_order_v1(
-  text, uuid, text, double precision, double precision, text
-) FROM PUBLIC, authenticated;
+GRANT EXECUTE ON FUNCTION "public"."complete_customer_order_v1"(text, uuid, text, double precision, double precision, text) TO "anon";
+
+GRANT EXECUTE ON FUNCTION "public"."complete_customer_order_v1"(text, uuid, text, double precision, double precision, text) TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."complete_customer_order_v1"(text, uuid, text, double precision, double precision, text) FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."complete_customer_order_v1"(text, uuid, text, double precision, double precision, text) TO "postgres";
+
+REVOKE ALL ON FUNCTION "public"."complete_customer_order_v1"(text, uuid, text, double precision, double precision, text) FROM PUBLIC, "authenticated";

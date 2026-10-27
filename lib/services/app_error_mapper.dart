@@ -16,10 +16,13 @@ enum AppErrorCategory {
   unknown,
 }
 
+enum AppUserFacingErrorCode { duplicatePaymentReference, orderAlreadyCompleted }
+
 class AppUserFacingException implements Exception {
-  const AppUserFacingException(this.message);
+  const AppUserFacingException(this.message, {this.code});
 
   final String message;
+  final AppUserFacingErrorCode? code;
 
   @override
   String toString() => message;

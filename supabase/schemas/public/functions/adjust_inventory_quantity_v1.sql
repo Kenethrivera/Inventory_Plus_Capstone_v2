@@ -5,7 +5,7 @@ CREATE OR REPLACE FUNCTION public.adjust_inventory_quantity_v1 (
   p_expected_quantity numeric,
   p_new_quantity      numeric,
   p_transaction_type  text,
-  p_note              text DEFAULT NULL::text
+  p_note              text    DEFAULT NULL::text
 )
   RETURNS jsonb
   LANGUAGE plpgsql
@@ -102,9 +102,12 @@ begin
 end;
 $function$;
 
-GRANT EXECUTE ON FUNCTION public.adjust_inventory_quantity_v1(
-  text, text, uuid, numeric, numeric, text, text
-) TO anon, service_role, postgres;
-REVOKE ALL ON FUNCTION public.adjust_inventory_quantity_v1(
-  text, text, uuid, numeric, numeric, text, text
-) FROM PUBLIC, authenticated;
+GRANT EXECUTE ON FUNCTION "public"."adjust_inventory_quantity_v1"(text, text, uuid, numeric, numeric, text, text) TO "anon";
+
+GRANT EXECUTE ON FUNCTION "public"."adjust_inventory_quantity_v1"(text, text, uuid, numeric, numeric, text, text) TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."adjust_inventory_quantity_v1"(text, text, uuid, numeric, numeric, text, text) FROM "postgres";
+
+GRANT EXECUTE ON FUNCTION "public"."adjust_inventory_quantity_v1"(text, text, uuid, numeric, numeric, text, text) TO "postgres";
+
+REVOKE ALL ON FUNCTION "public"."adjust_inventory_quantity_v1"(text, text, uuid, numeric, numeric, text, text) FROM PUBLIC, "authenticated";

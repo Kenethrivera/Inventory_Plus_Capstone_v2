@@ -17,15 +17,15 @@ CREATE TABLE "public"."transaction_history" (
   CONSTRAINT "transaction_history_user_id_fkey" FOREIGN KEY (user_id) REFERENCES public.profiles(id)
 );
 
-CREATE INDEX transaction_history_location_created_idx ON public.transaction_history USING btree (location_id, created_at DESC, id DESC);
+CREATE UNIQUE INDEX transaction_history_inventory_adjustment_operation_unique ON public.transaction_history USING btree (operation_id)
+  WHERE ((operation_scope = 'inventory_adjustment'::text) AND (operation_id IS NOT NULL));
 
-CREATE INDEX transaction_history_restock_actor_idx ON public.transaction_history USING btree (location_id, ((user_id)::text), transaction_type, created_at DESC, id DESC);
+CREATE INDEX transaction_history_location_created_idx ON public.transaction_history USING btree (location_id, created_at DESC, id DESC);
 
 CREATE UNIQUE INDEX transaction_history_operation_unique ON public.transaction_history USING btree (location_id, operation_id, product_id, transaction_type)
   WHERE (operation_id IS NOT NULL);
 
-CREATE UNIQUE INDEX transaction_history_inventory_adjustment_operation_unique ON public.transaction_history USING btree (operation_id)
-  WHERE ((operation_scope = 'inventory_adjustment'::text) AND (operation_id IS NOT NULL));
+CREATE INDEX transaction_history_restock_actor_idx ON public.transaction_history USING btree (location_id, ((user_id)::text), transaction_type, created_at DESC, id DESC);
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."transaction_history" TO "anon", "authenticated";
 
