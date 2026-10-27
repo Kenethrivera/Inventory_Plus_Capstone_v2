@@ -49,11 +49,17 @@ class _ProfileInfoPageState extends State<ProfileInfoPage> {
     _emailController = TextEditingController(text: widget.currentEmail ?? "");
     _locationController = TextEditingController(); 
     _phoneController = TextEditingController();
+    final cachedProfile = widget.controller.currentUserProfileSnapshot;
+    if (cachedProfile != null && cachedProfile.id == widget.userId) {
+      _applyProfileSnapshot(cachedProfile);
+      _isFetching = false;
+    }
     _profileSubscription = widget.controller.currentUserProfileSnapshots.listen(
       _handleProfileSnapshot,
     );
-    // Fetch latest data from database immediately on load
-    _loadLatestDataFromDatabase();
+    if (cachedProfile == null) {
+      unawaited(_loadLatestDataFromDatabase());
+    }
   }
 
   Future<void> _loadLatestDataFromDatabase() async {

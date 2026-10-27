@@ -47,6 +47,8 @@ class NotificationController extends ChangeNotifier {
 
   bool get hasUnread => unreadCount > 0;
 
+  bool get hasLoadedSnapshot => _hasLoadedSnapshot;
+
   Future<void> loadNotifications() async {
     return _refreshNotifications(showLoading: true);
   }

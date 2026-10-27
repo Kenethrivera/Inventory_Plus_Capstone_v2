@@ -10,11 +10,13 @@ import '../services/app_logger.dart';
 
 class ForecastingPage extends StatefulWidget {
   final InventoryController controller;
+  final AIInsightsService aiService;
   final bool isActive;
 
   const ForecastingPage({
     super.key,
     required this.controller,
+    required this.aiService,
     required this.isActive,
   });
 
@@ -42,8 +44,6 @@ class _ForecastingPageState extends State<ForecastingPage> {
   Future<void>? _forecastRequestInFlight;
   StreamSubscription<List<InventoryItem>>? _inventorySubscription;
   List<InventoryItem> _inventoryItems = const <InventoryItem>[];
-
-  final AIInsightsService _aiService = AIInsightsService();
 
   @override
   void initState() {
@@ -106,7 +106,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
     unawaited(_fetchForecast());
   }
 
-  Future<void> _fetchForecast() {
+  Future<void> _fetchForecast({bool forceRefresh = false}) {
     if (!mounted || !widget.isActive) return Future<void>.value();
 
     _forecastGeneration++;
@@ -118,7 +118,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
 
     setState(() => _isFetchingForecast = true);
     late final Future<void> request;
-    request = _runForecastRequests().whenComplete(() {
+    request = _runForecastRequests(forceRefresh: forceRefresh).whenComplete(() {
       if (identical(_forecastRequestInFlight, request)) {
         _forecastRequestInFlight = null;
         if (mounted) setState(() => _isFetchingForecast = false);
@@ -128,7 +128,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
     return request;
   }
 
-  Future<void> _runForecastRequests() async {
+  Future<void> _runForecastRequests({required bool forceRefresh}) async {
     do {
       _forecastRefreshQueued = false;
       final generation = _forecastGeneration;
@@ -146,7 +146,12 @@ class _ForecastingPageState extends State<ForecastingPage> {
           .toList(growable: false);
 
       try {
-        final result = await _aiService.getDemandForecast(filter, salesData);
+        final result = await widget.aiService.getDemandForecast(
+          filter,
+          salesData,
+          cacheScope: scope,
+          forceRefresh: forceRefresh,
+        );
         if (!_canPublishForecast(generation, revision, scope, filter)) {
           continue;
         }
@@ -186,7 +191,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
         filter == _forecastingFilter;
   }
 
-  Future<void> _fetchAIRecommendations() {
+  Future<void> _fetchAIRecommendations({bool forceRefresh = false}) {
     if (!mounted || !widget.isActive) return Future<void>.value();
 
     _recommendationGeneration++;
@@ -198,17 +203,18 @@ class _ForecastingPageState extends State<ForecastingPage> {
 
     setState(() => _isLoadingAI = true);
     late final Future<void> request;
-    request = _runRecommendationRequests().whenComplete(() {
-      if (identical(_recommendationRequestInFlight, request)) {
-        _recommendationRequestInFlight = null;
-        if (mounted) setState(() => _isLoadingAI = false);
-      }
-    });
+    request = _runRecommendationRequests(forceRefresh: forceRefresh)
+        .whenComplete(() {
+          if (identical(_recommendationRequestInFlight, request)) {
+            _recommendationRequestInFlight = null;
+            if (mounted) setState(() => _isLoadingAI = false);
+          }
+        });
     _recommendationRequestInFlight = request;
     return request;
   }
 
-  Future<void> _runRecommendationRequests() async {
+  Future<void> _runRecommendationRequests({required bool forceRefresh}) async {
     do {
       _recommendationRefreshQueued = false;
       final generation = _recommendationGeneration;
@@ -236,9 +242,11 @@ class _ForecastingPageState extends State<ForecastingPage> {
       }
 
       try {
-        final result = await _aiService.getRestockRecommendations(
+        final result = await widget.aiService.getRestockRecommendations(
           criticalItems,
           deadItems,
+          cacheScope: scope,
+          forceRefresh: forceRefresh,
         );
         if (!_canPublishRecommendation(generation, revision, scope)) {
           continue;
@@ -403,7 +411,6 @@ class _ForecastingPageState extends State<ForecastingPage> {
                       ),
                       onPressed: () {
                         setState(() => _isBulletedFormat = !_isBulletedFormat);
-                        _fetchForecast();
                       },
                     ),
                   ),
@@ -422,7 +429,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
                           ? 'Inventory changed. Refresh forecast.'
                           : 'Refresh forecast',
                       padding: EdgeInsets.zero,
-                      onPressed: _isFetchingForecast ? null : _fetchForecast,
+                      onPressed: _isFetchingForecast
+                          ? null
+                          : () => _fetchForecast(forceRefresh: true),
                       icon: Icon(
                         LucideIcons.refreshCw,
                         color: _forecastInsightStale
@@ -595,7 +604,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
                   color: _aiRecommendationStale ? Colors.amber : Colors.orange,
                   size: 20,
                 ),
-                onPressed: _isLoadingAI ? null : _fetchAIRecommendations,
+                onPressed: _isLoadingAI
+                    ? null
+                    : () => _fetchAIRecommendations(forceRefresh: true),
               ),
             ],
           ),

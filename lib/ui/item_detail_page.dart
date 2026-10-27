@@ -492,13 +492,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     );
   }
 
-  Future<void> _loadHistory() async {
+  Future<void> _loadHistory({bool force = false}) async {
     if (!mounted) return;
     final String productId = _currentItem.id;
     setState(() => _isLoadingHistory = true);
     try {
       final history = await widget.controller.loadProductTransactionHistory(
         productId,
+        force: force,
       );
       if (mounted && _currentItem.id == productId) {
         setState(() {
@@ -891,7 +892,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
           _newImageUrl = null;
           _selectedImage = null;
         });
-        await _loadHistory();
+        await _loadHistory(force: true);
         _toast('Item updated successfully');
       }
     } catch (e, stackTrace) {

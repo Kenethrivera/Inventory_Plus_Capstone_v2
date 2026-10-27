@@ -13,6 +13,7 @@ import '../services/app_logger.dart';
 
 class DashboardPage extends StatefulWidget {
   final InventoryController controller;
+  final AIInsightsService aiService;
   final VoidCallback onViewTransactions;
   final VoidCallback onOpenQueue;
   final VoidCallback onViewActivity;
@@ -22,6 +23,7 @@ class DashboardPage extends StatefulWidget {
   const DashboardPage({
     super.key,
     required this.controller,
+    required this.aiService,
     required this.onViewTransactions,
     required this.onOpenQueue,
     required this.onViewActivity,
@@ -74,7 +76,6 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _forecastRefreshQueued = false;
   Future<void>? _recommendationRequestInFlight;
   Future<void>? _forecastRequestInFlight;
-  final AIInsightsService _aiService = AIInsightsService();
 
   @override
   void initState() {
@@ -253,7 +254,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   // ─── AI LOGIC ────────────────────────────────────────────────────────────
-  Future<void> _fetchForecast() {
+  Future<void> _fetchForecast({bool forceRefresh = false}) {
     if (!mounted || !widget.isActive) return Future<void>.value();
     _forecastGeneration++;
     final inFlight = _forecastRequestInFlight;
@@ -263,7 +264,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
     setState(() => _isFetchingForecast = true);
     late final Future<void> request;
-    request = _runForecastRequests().whenComplete(() {
+    request = _runForecastRequests(forceRefresh: forceRefresh).whenComplete(() {
       if (identical(_forecastRequestInFlight, request)) {
         _forecastRequestInFlight = null;
         if (mounted) setState(() => _isFetchingForecast = false);
@@ -273,7 +274,7 @@ class _DashboardPageState extends State<DashboardPage> {
     return request;
   }
 
-  Future<void> _runForecastRequests() async {
+  Future<void> _runForecastRequests({required bool forceRefresh}) async {
     do {
       _forecastRefreshQueued = false;
       final generation = _forecastGeneration;
@@ -288,7 +289,12 @@ class _DashboardPageState extends State<DashboardPage> {
               })
           .toList(growable: false);
       try {
-        final result = await _aiService.getDemandForecast(filter, salesData);
+        final result = await widget.aiService.getDemandForecast(
+          filter,
+          salesData,
+          cacheScope: scope,
+          forceRefresh: forceRefresh,
+        );
         if (!_canPublishForecast(generation, revision, scope, filter)) continue;
         setState(() {
           _forecastInsightText = result;
@@ -302,9 +308,9 @@ class _DashboardPageState extends State<DashboardPage> {
         );
         if (_canPublishForecast(generation, revision, scope, filter)) {
           setState(
-            () => _forecastInsightText = AppErrorMapper.message(
+            () => _forecastInsightText = _safeAiFailure(
               error,
-              fallback: AppErrorCategory.server,
+              'Unable to generate the forecast right now. Please try again.',
             ),
           );
         }
@@ -326,7 +332,7 @@ class _DashboardPageState extends State<DashboardPage> {
         filter == _forecastingFilter;
   }
 
-  Future<void> _fetchAIRecommendations() {
+  Future<void> _fetchAIRecommendations({bool forceRefresh = false}) {
     if (!mounted || !widget.isActive) return Future<void>.value();
     _recommendationGeneration++;
     final inFlight = _recommendationRequestInFlight;
@@ -336,7 +342,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
     setState(() => _isLoadingAI = true);
     late final Future<void> request;
-    request = _runRecommendationRequests().whenComplete(() {
+    request = _runRecommendationRequests(forceRefresh: forceRefresh).whenComplete(() {
       if (identical(_recommendationRequestInFlight, request)) {
         _recommendationRequestInFlight = null;
         if (mounted) setState(() => _isLoadingAI = false);
@@ -346,7 +352,7 @@ class _DashboardPageState extends State<DashboardPage> {
     return request;
   }
 
-  Future<void> _runRecommendationRequests() async {
+  Future<void> _runRecommendationRequests({required bool forceRefresh}) async {
     do {
       _recommendationRefreshQueued = false;
       final generation = _recommendationGeneration;
@@ -373,9 +379,11 @@ class _DashboardPageState extends State<DashboardPage> {
       }
 
       try {
-        final result = await _aiService.getRestockRecommendations(
+        final result = await widget.aiService.getRestockRecommendations(
           criticalItems,
           deadItems,
+          cacheScope: scope,
+          forceRefresh: forceRefresh,
         );
         if (!_canPublishRecommendation(generation, revision, scope)) continue;
         setState(() {
@@ -390,9 +398,9 @@ class _DashboardPageState extends State<DashboardPage> {
         );
         if (_canPublishRecommendation(generation, revision, scope)) {
           setState(
-            () => _aiRecommendation = AppErrorMapper.message(
+            () => _aiRecommendation = _safeAiFailure(
               error,
-              fallback: AppErrorCategory.server,
+              'Unable to generate the restocking plan right now. Please try again.',
             ),
           );
         }
@@ -406,6 +414,14 @@ class _DashboardPageState extends State<DashboardPage> {
         generation == _recommendationGeneration &&
         revision == _inventoryRevision &&
         scope == _sessionScope;
+  }
+
+  String _safeAiFailure(Object error, String contextualMessage) {
+    return switch (AppErrorMapper.categoryFor(error)) {
+      AppErrorCategory.network => AppErrorMapper.network,
+      AppErrorCategory.timeout => AppErrorMapper.timeout,
+      _ => contextualMessage,
+    };
   }
 
   // --- LOCAL DATA AGGREGATION ---
@@ -829,7 +845,9 @@ class _DashboardPageState extends State<DashboardPage> {
                     tooltip: _forecastInsightStale
                         ? 'Inventory changed. Refresh forecast.'
                         : 'Refresh forecast',
-                    onPressed: _isFetchingForecast ? null : _fetchForecast,
+                    onPressed: _isFetchingForecast
+                        ? null
+                        : () => _fetchForecast(forceRefresh: true),
                     icon: Icon(
                       LucideIcons.refreshCw,
                       size: 17,
@@ -1009,7 +1027,9 @@ class _DashboardPageState extends State<DashboardPage> {
                 tooltip: _aiRecommendationStale
                     ? 'Inventory changed. Refresh recommendations.'
                     : 'Refresh recommendations',
-                onPressed: _isLoadingAI ? null : _fetchAIRecommendations,
+                onPressed: _isLoadingAI
+                    ? null
+                    : () => _fetchAIRecommendations(forceRefresh: true),
                 icon: Icon(
                   LucideIcons.refreshCw,
                   color: _aiRecommendationStale

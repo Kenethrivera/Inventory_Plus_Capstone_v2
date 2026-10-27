@@ -651,7 +651,8 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     }
 
     try {
-      final settings = await widget.storeAccessService.refreshSettings();
+      final settings = widget.storeAccessService.currentSettings ??
+          await widget.storeAccessService.refreshSettings();
 
       if (!mounted) return;
       if (_storeAccessBaseline == null) _applyStoreAccessToForm(settings);

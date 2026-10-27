@@ -13,6 +13,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/inventory.dart';
+import '../data/ai_insights_service.dart';
 import '../logic/inventory_controller.dart';
 import '../logic/helper_assignment.dart';
 import '../logic/staff_management.dart';
@@ -65,6 +66,7 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
+  final AIInsightsService _aiInsightsService = AIInsightsService();
   int? _currentIndex;
   bool _isDetailView = false;
   String? _selectedItemId;
@@ -2326,6 +2328,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           pages.add(
             DashboardPage(
               controller: widget.controller,
+              aiService: _aiInsightsService,
               isActive: _currentIndex == dashboardIndex,
               onViewTransactions: () {
                 _selectMainIndex(
@@ -2351,6 +2354,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           pages.add(
             ForecastingPage(
               controller: widget.controller,
+              aiService: _aiInsightsService,
               isActive: _currentIndex == forecastingIndex,
             ),
           );
@@ -2422,7 +2426,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         if (isAdmin) {
           pages.add(ApprovalCenterPage(controller: widget.controller));
-          pages.add(StaffPerformancePage(controller: widget.controller));
+          pages.add(
+            StaffPerformancePage(
+              controller: widget.controller,
+              isActive: _currentIndex == performanceIndex,
+            ),
+          );
         }
 
         if (isHelper || isCashier) {

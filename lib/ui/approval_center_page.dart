@@ -34,6 +34,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   bool _loading = true;
   bool _summaryLoading = true;
   bool _summaryInFlight = false;
+  InventoryApprovalPage? _lastAcceptedSnapshot;
   String? _error;
 
   @override
@@ -58,7 +59,6 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       },
     );
     unawaited(_load());
-    unawaited(_loadSummary());
   }
 
   @override
@@ -71,6 +71,8 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     if (!mounted || value.key.status != _status || value.key.page != _page) {
       return;
     }
+    if (identical(_lastAcceptedSnapshot, value)) return;
+    _lastAcceptedSnapshot = value;
     setState(() {
       _snapshot = value;
       _summary[value.key.status] = value.totalCount;
@@ -573,7 +575,6 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       if (mounted) {
         setState(() => _reviewing.remove(request.id));
         await _load(force: true);
-        unawaited(_loadSummary());
       }
     }
   }

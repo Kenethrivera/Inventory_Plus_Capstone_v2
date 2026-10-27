@@ -55,9 +55,14 @@ List<StaffPerformanceRankedRecord> rankStaffPerformanceRecords(
 }
 
 class StaffPerformancePage extends StatefulWidget {
-  const StaffPerformancePage({super.key, required this.controller});
+  const StaffPerformancePage({
+    super.key,
+    required this.controller,
+    required this.isActive,
+  });
 
   final InventoryController controller;
+  final bool isActive;
 
   @override
   State<StaffPerformancePage> createState() => _StaffPerformancePageState();
@@ -70,6 +75,7 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
   Object? _error;
   bool _loading = true;
   int _loadGeneration = 0;
+  bool _staleWhileInactive = false;
   StreamSubscription<void>? _invalidationSubscription;
   StreamSubscription<dynamic>? _orderSubscription;
 
@@ -77,13 +83,31 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
   void initState() {
     super.initState();
     _invalidationSubscription = widget.controller.staffPerformanceInvalidations
-        .listen((_) => unawaited(_load(forceRefresh: true)));
+        .listen((_) {
+          if (!widget.isActive) {
+            _staleWhileInactive = true;
+            return;
+          }
+          unawaited(_load(forceRefresh: true));
+        });
     _orderSubscription = widget.controller.orderSnapshots.listen((_) {
-      if (mounted && _role == StaffPerformanceRole.helpers) {
+      if (mounted && widget.isActive && _role == StaffPerformanceRole.helpers) {
         setState(() {});
       }
     });
-    unawaited(_load());
+    if (widget.isActive) unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(covariant StaffPerformancePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isActive && widget.isActive) {
+      final forceRefresh = _staleWhileInactive;
+      _staleWhileInactive = false;
+      if (forceRefresh || _snapshot == null) {
+        unawaited(_load(forceRefresh: forceRefresh));
+      }
+    }
   }
 
   @override
@@ -94,6 +118,10 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
   }
 
   Future<void> _load({bool forceRefresh = false}) async {
+    if (!widget.isActive) {
+      if (forceRefresh) _staleWhileInactive = true;
+      return;
+    }
     final generation = ++_loadGeneration;
     if (mounted) {
       setState(() {

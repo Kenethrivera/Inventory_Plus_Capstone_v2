@@ -55,7 +55,9 @@ class _NotificationPageState extends State<NotificationPage> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      widget.controller.refresh();
+      if (!widget.controller.hasLoadedSnapshot) {
+        widget.controller.loadNotifications();
+      }
     });
   }
 

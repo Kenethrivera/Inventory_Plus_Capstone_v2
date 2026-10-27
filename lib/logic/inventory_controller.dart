@@ -162,6 +162,14 @@ class InventoryController {
 
   final Map<String, _SerializedHistoryQuery> _historyQueries =
       <String, _SerializedHistoryQuery>{};
+  static const int _productHistoryCacheLimit = 24;
+  final Map<String, List<Map<String, dynamic>>> _productHistoryCache =
+      <String, List<Map<String, dynamic>>>{};
+  final Map<String, int> _productHistoryCacheGenerations = <String, int>{};
+  final Map<String, Future<List<Map<String, dynamic>>>>
+  _productHistoryRequests = <String, Future<List<Map<String, dynamic>>>>{};
+  final Map<String, int> _productHistoryRequestGenerations = <String, int>{};
+  int _productHistoryGeneration = 0;
   final HistoryPageCache<Map<String, dynamic>> _historyPageCache =
       HistoryPageCache<Map<String, dynamic>>();
   final Map<HistoryPageKey, Future<HistoryPageResult<Map<String, dynamic>>>>
@@ -1644,6 +1652,16 @@ class InventoryController {
   Stream<CurrentUserProfileSnapshot?> get currentUserProfileSnapshots =>
       _currentUserProfileController.stream;
 
+  CurrentUserProfileSnapshot? get currentUserProfileSnapshot {
+    final snapshot = _currentProfileSnapshot;
+    if (snapshot == null ||
+        snapshot.id != currentUserId ||
+        snapshot.locationId != activeLocationId) {
+      return null;
+    }
+    return snapshot;
+  }
+
   Future<CurrentUserProfileSnapshot?> refreshCurrentUserProfile() async {
     await _refreshCurrentProfile();
     return _currentProfileSnapshot;
@@ -2043,8 +2061,9 @@ class InventoryController {
   }
 
   Future<List<Map<String, dynamic>>> loadProductTransactionHistory(
-    String productId,
-  ) {
+    String productId, {
+    bool force = false,
+  }) {
     final String? locationId = activeLocationId;
     if (locationId == null || locationId.isEmpty) {
       return Future<List<Map<String, dynamic>>>.value(
@@ -2052,25 +2071,68 @@ class InventoryController {
       );
     }
 
-    return _runSerializedHistoryQuery(
-      'product:$locationId:$productId',
-      () async {
-        final response = await supabase
-            .from('transaction_history')
-            .select('*, profiles(name, role)')
-            .eq('location_id', locationId)
-            .eq('product_id', productId)
-            .order('created_at', ascending: false);
+    final key = '$locationId:$productId';
+    final generation = _productHistoryGeneration;
+    final cached = _productHistoryCache[key];
+    if (!force &&
+        cached != null &&
+        _productHistoryCacheGenerations[key] == generation) {
+      return Future<List<Map<String, dynamic>>>.value(cached);
+    }
 
-        if (activeLocationId != locationId) {
-          throw StateError('Transaction history location changed.');
-        }
+    final inFlight = _productHistoryRequests[key];
+    if (inFlight != null &&
+        _productHistoryRequestGenerations[key] == generation) {
+      return inFlight;
+    }
 
-        return List<Map<String, dynamic>>.unmodifiable(
-          List<Map<String, dynamic>>.from(response),
-        );
-      },
-    );
+    late final Future<List<Map<String, dynamic>>> request;
+    request =
+        () async {
+          final response = await supabase
+              .from('transaction_history')
+              .select('*, profiles(name, role)')
+              .eq('location_id', locationId)
+              .eq('product_id', productId)
+              .order('created_at', ascending: false);
+
+          if (activeLocationId != locationId) {
+            throw StateError('Transaction history location changed.');
+          }
+          if (_productHistoryGeneration != generation) {
+            return loadProductTransactionHistory(productId);
+          }
+
+          final result = List<Map<String, dynamic>>.unmodifiable(
+            List<Map<String, dynamic>>.from(response),
+          );
+          if (_productHistoryGeneration == generation &&
+              activeLocationId == locationId) {
+            _productHistoryCache.remove(key);
+            _productHistoryCache[key] = result;
+            _productHistoryCacheGenerations[key] = generation;
+            while (_productHistoryCache.length > _productHistoryCacheLimit) {
+              final oldestKey = _productHistoryCache.keys.first;
+              _productHistoryCache.remove(oldestKey);
+              _productHistoryCacheGenerations.remove(oldestKey);
+            }
+          }
+          return result;
+        }().whenComplete(() {
+          if (identical(_productHistoryRequests[key], request)) {
+            _productHistoryRequests.remove(key);
+            _productHistoryRequestGenerations.remove(key);
+          }
+        });
+    _productHistoryRequests[key] = request;
+    _productHistoryRequestGenerations[key] = generation;
+    return request;
+  }
+
+  void _invalidateProductTransactionHistory() {
+    _productHistoryGeneration++;
+    _productHistoryCache.clear();
+    _productHistoryCacheGenerations.clear();
   }
 
   Future<List<Map<String, dynamic>>> fetchTransactionHistory(
@@ -2457,6 +2519,7 @@ class InventoryController {
 
   void _clearPaginatedHistoryState() {
     _historyCacheGeneration++;
+    _invalidateProductTransactionHistory();
     _historyPageCache.clear();
     _historyPageRequests.clear();
     _historyDetailRequests.clear();
@@ -2876,6 +2939,7 @@ class InventoryController {
     _inventoryChangesSubscription ??= realtimeSync.inventoryChanges.listen(
       (_) {
         _inventoryAwaitingRealtimeInitial = false;
+        _invalidateProductTransactionHistory();
         unawaited(_refreshInventoryFromDatabase());
         _invalidateApprovalPages(
           refreshVisible: isAdmin && _activeApprovalPageKey != null,
@@ -2892,6 +2956,7 @@ class InventoryController {
           (_) {
             final locationId = activeLocationId;
             if (locationId != null) {
+              _invalidateProductTransactionHistory();
               _invalidatePaginatedHistory(
                 HistoryInvalidationKind.transactions,
                 locationId,
