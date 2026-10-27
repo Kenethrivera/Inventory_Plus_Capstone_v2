@@ -162,9 +162,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
         );
         if (_canPublishForecast(generation, revision, scope, filter)) {
           setState(
-            () => _forecastInsightText = AppErrorMapper.message(
+            () => _forecastInsightText = _safeAiFailure(
               error,
-              fallback: AppErrorCategory.server,
+              'Unable to generate the forecast right now. Please try again.',
             ),
           );
         }
@@ -255,9 +255,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
         );
         if (_canPublishRecommendation(generation, revision, scope)) {
           setState(
-            () => _aiRecommendation = AppErrorMapper.message(
+            () => _aiRecommendation = _safeAiFailure(
               error,
-              fallback: AppErrorCategory.server,
+              'Unable to generate the restocking plan right now. Please try again.',
             ),
           );
         }
@@ -271,6 +271,14 @@ class _ForecastingPageState extends State<ForecastingPage> {
         generation == _recommendationGeneration &&
         revision == _inventoryRevision &&
         scope == _sessionScope;
+  }
+
+  String _safeAiFailure(Object error, String contextualMessage) {
+    return switch (AppErrorMapper.categoryFor(error)) {
+      AppErrorCategory.network => AppErrorMapper.network,
+      AppErrorCategory.timeout => AppErrorMapper.timeout,
+      _ => contextualMessage,
+    };
   }
 
   @override

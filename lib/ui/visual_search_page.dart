@@ -17,6 +17,7 @@ import '../../logic/gemini_service.dart';
 import 'package:flutter/services.dart';
 import 'package:inventory_plus/services/app_error_mapper.dart';
 import 'package:inventory_plus/services/app_logger.dart';
+import 'package:inventory_plus/ui/widgets/app_error_dialog.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const Color _lightBlue = Color(0xFF3B82F6);
@@ -149,6 +150,13 @@ class _VisualSearchPageState extends State<VisualSearchPage>
       _cameras = await availableCameras();
       if (_cameras != null && _cameras!.isNotEmpty) {
         await _setCamera(_selectedCameraIndex);
+      } else {
+        final error = StateError('No camera devices are available.');
+        AppLogger.error('Camera discovery returned no devices', error: error);
+        await _showCameraErrorDialog(
+          error,
+          onRetry: () => unawaited(_initCamera()),
+        );
       }
     } catch (e, stackTrace) {
       AppLogger.error(
@@ -156,11 +164,9 @@ class _VisualSearchPageState extends State<VisualSearchPage>
         error: e,
         stackTrace: stackTrace,
       );
-      _showScanResultModal(
-        detectedName: "Camera Error",
-        isHardware: false,
-        errorMessage: _cameraErrorMessage(e),
-        similarItems: [],
+      await _showCameraErrorDialog(
+        e,
+        onRetry: () => unawaited(_initCamera()),
       );
     }
   }
@@ -187,11 +193,9 @@ class _VisualSearchPageState extends State<VisualSearchPage>
         error: e,
         stackTrace: stackTrace,
       );
-      _showScanResultModal(
-        detectedName: "Camera Error",
-        isHardware: false,
-        errorMessage: _cameraErrorMessage(e),
-        similarItems: [],
+      await _showCameraErrorDialog(
+        e,
+        onRetry: () => unawaited(_setCamera(index)),
       );
     }
   }
@@ -204,6 +208,48 @@ class _VisualSearchPageState extends State<VisualSearchPage>
     return category == AppErrorCategory.cameraPermission
         ? AppErrorMapper.scannerCameraPermission
         : AppErrorMapper.cameraUnavailable;
+  }
+
+  Future<void> _showCameraErrorDialog(
+    Object error, {
+    required VoidCallback onRetry,
+  }) {
+    if (!mounted) return Future<void>.value();
+    final category = AppErrorMapper.categoryFor(
+      error,
+      fallback: AppErrorCategory.cameraUnavailable,
+    );
+    final permissionDenied = category == AppErrorCategory.cameraPermission;
+    return showDialog<void>(
+      context: context,
+      builder: (_) => AppErrorDialog(
+        title: permissionDenied
+            ? 'Camera Access Required'
+            : 'Camera Unavailable',
+        message: _cameraErrorMessage(error),
+        onRetry: onRetry,
+      ),
+    );
+  }
+
+  Future<void> _showScannerErrorDialog({Object? error}) {
+    if (!mounted) return Future<void>.value();
+    final category = error == null
+        ? AppErrorCategory.unknown
+        : AppErrorMapper.categoryFor(error);
+    final message = switch (category) {
+      AppErrorCategory.network => AppErrorMapper.network,
+      AppErrorCategory.timeout => AppErrorMapper.timeout,
+      _ => 'The item could not be scanned right now. Please try again.',
+    };
+    return showDialog<void>(
+      context: context,
+      builder: (_) => AppErrorDialog(
+        title: 'Unable to Scan',
+        message: message,
+        onRetry: () => unawaited(_captureAndAnalyze()),
+      ),
+    );
   }
 Future<void> _toggleFlash() async {
     if (_cameraController == null || !_cameraController!.value.isInitialized)
@@ -788,13 +834,7 @@ Future<void> _toggleFlash() async {
     Uint8List? capturedBytes,
   ) async {
     if (result == null) {
-      await _showScanResultModal(
-        detectedName: "Scan Error",
-        isHardware: false,
-        errorMessage: AppErrorMapper.server,
-        similarItems: [],
-        capturedBytes: capturedBytes,
-      );
+      await _showScannerErrorDialog();
       return;
     }
 
@@ -944,7 +984,7 @@ Future<void> _toggleFlash() async {
     await Future.delayed(const Duration(milliseconds: 100));
 
     Map<String, dynamic>? result;
-    String? errorText;
+    Object? scanError;
     Uint8List? capturedImageBytes;
 
     try {
@@ -978,10 +1018,7 @@ Future<void> _toggleFlash() async {
         logger: logger,
       );
     } catch (e, stackTrace) {
-      errorText = AppErrorMapper.message(
-        e,
-        fallback: AppErrorCategory.server,
-      );
+      scanError = e;
       AppLogger.error(
         'Object scan failed',
         error: e,
@@ -998,14 +1035,8 @@ Future<void> _toggleFlash() async {
     }
 
     if (!mounted) return;
-    if (errorText != null) {
-      await _showScanResultModal(
-        detectedName: "Connection Error",
-        isHardware: false,
-        errorMessage: errorText,
-        similarItems: [],
-        capturedBytes: capturedImageBytes,
-      );
+    if (scanError != null) {
+      await _showScannerErrorDialog(error: scanError);
     } else {
       await _routeScanResult(result, capturedImageBytes);
     }

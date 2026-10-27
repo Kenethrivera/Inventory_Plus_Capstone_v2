@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../services/app_logger.dart';
 
 class AIInsightsService {
   // Read the GEMINI_API_KEY from your .env file
@@ -10,9 +10,6 @@ class AIInsightsService {
 
   // 1. TOP RIGHT CARD: Immediate Restocking Recommendations
   Future<String> getRestockRecommendations(String criticalItems, String deadItems) async {
-    debugPrint(
-      'Key loaded: ${apiKey.isEmpty ? "EMPTY" : "ends with ${apiKey.substring(apiKey.length - 4)}"}',
-    );
     try {
       final model = GenerativeModel(
         model: 'gemini-3.6-flash', 
@@ -38,10 +35,14 @@ Follow these strict rules:
 """;
 
       final response = await model.generateContent([Content.text(prompt)]);
-      return response.text ?? 'No recommendations available.';
-    } catch (e) {
-      debugPrint('Gemini error: $e');
-      return 'Error: $e';
+      return _requireContent(response.text);
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'AI restocking request failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      rethrow;
     }
   }
 
@@ -67,10 +68,26 @@ Keep it direct, professional, and actionable.
 ''';
 
       final response = await model.generateContent([Content.text(prompt)]);
-      return response.text ?? 'No forecast available for this period.';
-    } catch (e) {
-      debugPrint('Gemini error: $e');
-      return 'Error: $e';
+      return _requireContent(response.text);
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'AI forecast request failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      rethrow;
     }
+  }
+
+  String _requireContent(String? content) {
+    final value = content?.trim() ?? '';
+    if (value.isEmpty ||
+        RegExp(
+          r'^(error|exception|api error)\s*:',
+          caseSensitive: false,
+        ).hasMatch(value)) {
+      throw const FormatException('AI provider returned an invalid response.');
+    }
+    return value;
   }
 }

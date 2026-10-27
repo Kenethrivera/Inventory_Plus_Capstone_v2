@@ -157,10 +157,15 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
           }
 
           if (snapshot.hasError) {
+            AppLogger.error(
+              'Order queue monitor stream failed',
+              error: snapshot.error,
+              stackTrace: snapshot.stackTrace,
+            );
             return Center(
-              child: Text(
-                'Error: ${snapshot.error}',
-                style: const TextStyle(fontFamily: _fontFam),
+              child: const Text(
+                AppErrorMapper.dataLoad,
+                style: TextStyle(fontFamily: _fontFam),
               ),
             );
           }

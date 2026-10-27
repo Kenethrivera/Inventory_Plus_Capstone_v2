@@ -7,6 +7,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../logic/helper_assignment.dart';
 import '../logic/inventory_controller.dart';
 import '../data/inventory.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'store_map.dart';
@@ -167,7 +169,12 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
           }
 
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            AppLogger.error(
+              'Helper order queue stream failed',
+              error: snapshot.error,
+              stackTrace: snapshot.stackTrace,
+            );
+            return const Center(child: Text(AppErrorMapper.dataLoad));
           }
 
           if (snapshot.hasData) {

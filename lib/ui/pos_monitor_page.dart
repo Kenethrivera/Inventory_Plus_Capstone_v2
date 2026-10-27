@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const Color _darkText = Color(0xFF0F172A);
@@ -161,10 +163,15 @@ class _PosMonitorPageState extends State<PosMonitorPage> {
           }
 
           if (snapshot.hasError) {
+            AppLogger.error(
+              'POS monitor stream failed',
+              error: snapshot.error,
+              stackTrace: snapshot.stackTrace,
+            );
             return Center(
-              child: Text(
-                'Error: ${snapshot.error}',
-                style: const TextStyle(fontFamily: _fontFam),
+              child: const Text(
+                AppErrorMapper.dataLoad,
+                style: TextStyle(fontFamily: _fontFam),
               ),
             );
           }
