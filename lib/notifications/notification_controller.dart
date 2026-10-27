@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 import '../services/realtime/realtime_sync_service.dart';
 import 'models/app_notification.dart';
@@ -29,6 +31,15 @@ class NotificationController extends ChangeNotifier {
   bool get isLoading => _isLoading;
 
   String? get errorMessage => _errorMessage;
+
+  void _recordError(
+    Object error, {
+    required String operation,
+    AppErrorCategory fallback = AppErrorCategory.dataSave,
+  }) {
+    AppLogger.error(operation, error: error);
+    _errorMessage = AppErrorMapper.message(error, fallback: fallback);
+  }
 
   int get unreadCount {
     return _notifications.where((notification) => !notification.isRead).length;
@@ -97,7 +108,11 @@ class NotificationController extends ChangeNotifier {
         notifyListeners();
       } catch (e) {
         if (_disposed) return;
-        _errorMessage = 'Failed to load notifications: $e';
+        _recordError(
+          e,
+          operation: 'Notification load failed',
+          fallback: AppErrorCategory.dataLoad,
+        );
         notifyListeners();
       }
     } while (_refreshQueued && !_disposed);
@@ -112,7 +127,7 @@ class NotificationController extends ChangeNotifier {
       await _service.createNotification(notification);
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to create notification: $e';
+      _recordError(e, operation: 'Notification creation failed');
       notifyListeners();
     }
   }
@@ -136,7 +151,7 @@ class NotificationController extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      _errorMessage = 'Failed to mark notification as read: $e';
+      _recordError(e, operation: 'Notification read update failed');
       notifyListeners();
     }
   }
@@ -159,7 +174,7 @@ class NotificationController extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       if (_disposed) return;
-      _errorMessage = 'Failed to mark notifications as read: $e';
+      _recordError(e, operation: 'Notification read updates failed');
       notifyListeners();
     }
   }
@@ -179,7 +194,7 @@ class NotificationController extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Failed to mark all notifications as read: $e';
+      _recordError(e, operation: 'Mark all notifications read failed');
       notifyListeners();
     }
   }
@@ -196,7 +211,7 @@ class NotificationController extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Failed to delete notification: $e';
+      _recordError(e, operation: 'Notification deletion failed');
       notifyListeners();
     }
   }
@@ -224,7 +239,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to create new order notification: $e';
+      _recordError(e, operation: 'New order notification failed');
       notifyListeners();
     }
   }
@@ -249,7 +264,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to create transaction notification: $e';
+      _recordError(e, operation: 'Transaction notification failed');
       notifyListeners();
     }
   }
@@ -262,7 +277,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to resolve new order notification: $e';
+      _recordError(e, operation: 'New order notification resolution failed');
       notifyListeners();
     }
   }
@@ -285,7 +300,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to create prepared order notification: $e';
+      _recordError(e, operation: 'Prepared order notification failed');
       notifyListeners();
     }
   }
@@ -300,7 +315,10 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to resolve prepared order notification: $e';
+      _recordError(
+        e,
+        operation: 'Prepared order notification resolution failed',
+      );
       notifyListeners();
     }
   }
@@ -329,7 +347,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to create low stock notification: $e';
+      _recordError(e, operation: 'Low stock notification failed');
       notifyListeners();
     }
   }
@@ -358,7 +376,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to create critical stock notification: $e';
+      _recordError(e, operation: 'Critical stock notification failed');
       notifyListeners();
     }
   }
@@ -385,7 +403,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to create dead stock notification: $e';
+      _recordError(e, operation: 'Dead stock notification failed');
       notifyListeners();
     }
   }
@@ -398,7 +416,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to resolve stock notifications: $e';
+      _recordError(e, operation: 'Stock notification resolution failed');
       notifyListeners();
     }
   }
@@ -421,7 +439,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to create stock alert notification: $e';
+      _recordError(e, operation: 'Stock alert notification failed');
       notifyListeners();
     }
   }
@@ -434,7 +452,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to resolve stock alert notification: $e';
+      _recordError(e, operation: 'Stock alert notification resolution failed');
       notifyListeners();
     }
   }
@@ -467,7 +485,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to create export reminder notification: $e';
+      _recordError(e, operation: 'Export reminder notification failed');
       notifyListeners();
     }
   }
@@ -494,7 +512,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to create assigned order notification: $e';
+      _recordError(e, operation: 'Assigned order notification failed');
       notifyListeners();
     }
   }
@@ -525,7 +543,7 @@ class NotificationController extends ChangeNotifier {
 
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Could not create restock notification: $e';
+      _recordError(e, operation: 'Restock notification failed');
       notifyListeners();
       rethrow;
     }
@@ -539,7 +557,7 @@ class NotificationController extends ChangeNotifier {
       await _service.notifyInventoryApproval(request);
       await loadNotifications();
     } catch (e) {
-      _errorMessage = 'Could not update approval notification: $e';
+      _recordError(e, operation: 'Approval notification update failed');
       notifyListeners();
       rethrow;
     }
@@ -553,7 +571,7 @@ class NotificationController extends ChangeNotifier {
       await _service.resolveOrderWorkflowNotification(orderId: orderId);
       await _refreshNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to resolve order notification: $e';
+      _recordError(e, operation: 'Order notification resolution failed');
       notifyListeners();
     }
   }
@@ -572,7 +590,7 @@ class NotificationController extends ChangeNotifier {
       );
       await _refreshNotifications();
     } catch (e) {
-      _errorMessage = 'Failed to resolve export reminder: $e';
+      _recordError(e, operation: 'Export reminder resolution failed');
       notifyListeners();
     }
   }
@@ -606,7 +624,7 @@ class NotificationController extends ChangeNotifier {
       await _refreshNotifications();
     } catch (e) {
       if (_disposed) return;
-      _errorMessage = 'Failed to update store access notification: $e';
+      _recordError(e, operation: 'Store access notification update failed');
       notifyListeners();
     }
   }
@@ -624,7 +642,7 @@ class NotificationController extends ChangeNotifier {
       await _refreshNotifications();
     } catch (e) {
       if (_disposed) return;
-      _errorMessage = 'Failed to resolve store access notification: $e';
+      _recordError(e, operation: 'Store access notification resolution failed');
       notifyListeners();
     }
   }

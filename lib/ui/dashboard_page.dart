@@ -8,6 +8,8 @@ import '../data/inventory.dart';
 import '../data/ai_insights_service.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 class DashboardPage extends StatefulWidget {
   final InventoryController controller;
@@ -228,8 +230,11 @@ class _DashboardPageState extends State<DashboardPage> {
         _isLoadingTxs = false;
         if (widget.isActive) setState(() {});
       } catch (error, stackTrace) {
-        debugPrint('[Dashboard] Failed to refresh transaction data: $error');
-        debugPrintStack(stackTrace: stackTrace);
+        AppLogger.error(
+          '[Dashboard] Failed to refresh transaction data',
+          error: error,
+          stackTrace: stackTrace,
+        );
         if (mounted && scope == _sessionScope) {
           _isLoadingTxs = false;
           _transactionHistoryDirty = true;
@@ -289,9 +294,19 @@ class _DashboardPageState extends State<DashboardPage> {
           _forecastInsightText = result;
           _forecastInsightStale = false;
         });
-      } catch (error) {
+      } catch (error, stackTrace) {
+        AppLogger.error(
+          'Dashboard forecast request failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
         if (_canPublishForecast(generation, revision, scope, filter)) {
-          setState(() => _forecastInsightText = 'Network error: $error');
+          setState(
+            () => _forecastInsightText = AppErrorMapper.message(
+              error,
+              fallback: AppErrorCategory.server,
+            ),
+          );
         }
       }
     } while (_forecastRefreshQueued && mounted && widget.isActive);
@@ -367,9 +382,19 @@ class _DashboardPageState extends State<DashboardPage> {
           _aiRecommendation = result.replaceAll(RegExp(r'\*+'), '').trim();
           _aiRecommendationStale = false;
         });
-      } catch (error) {
+      } catch (error, stackTrace) {
+        AppLogger.error(
+          'Dashboard recommendation request failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
         if (_canPublishRecommendation(generation, revision, scope)) {
-          setState(() => _aiRecommendation = 'Network error: $error');
+          setState(
+            () => _aiRecommendation = AppErrorMapper.message(
+              error,
+              fallback: AppErrorCategory.server,
+            ),
+          );
         }
       }
     } while (_recommendationRefreshQueued && mounted && widget.isActive);
@@ -1329,9 +1354,22 @@ class _DashboardPageState extends State<DashboardPage> {
                   'Admins review Restock requests in Pending Approvals.',
                 );
               }
-            } catch (e) {
+            } catch (e, stackTrace) {
+              AppLogger.error(
+                'Restock request failed',
+                error: e,
+                stackTrace: stackTrace,
+              );
               if (dialogContext.mounted) setDialogState(() => saving = false);
-              if (mounted) AppToast.error(context, 'Restock failed: $e');
+              if (mounted) {
+                AppToast.error(
+                  context,
+                  AppErrorMapper.message(
+                    e,
+                    fallback: AppErrorCategory.dataSave,
+                  ),
+                );
+              }
             }
           }
 

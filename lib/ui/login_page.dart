@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'dart:async';
 import 'dart:math';
 import '../login/auth_service.dart';
 import '../logic/inventory_controller.dart';
@@ -8,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import '../services/store_access_service.dart';
 import '../services/staff_presence_service.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 import 'package:flutter/services.dart';
 
 class LoginPage extends StatefulWidget {
@@ -28,6 +31,7 @@ class _LoginPageState extends State<LoginPage> {
 
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+  String? _loginError;
 
   @override
   void initState() {
@@ -35,6 +39,8 @@ class _LoginPageState extends State<LoginPage> {
     // Add listeners to trigger rebuilds for the focus/unfocus fill color changes
     _usernameFocusNode.addListener(() => setState(() {}));
     _passwordFocusNode.addListener(() => setState(() {}));
+    _usernameController.addListener(_clearLoginError);
+    _passwordController.addListener(_clearLoginError);
   }
 
   @override
@@ -47,6 +53,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _handleLogin() async {
+    if (_loginError != null) setState(() => _loginError = null);
     if (!_formKey.currentState!.validate()) return;
 
     final username = _usernameController.text.trim();
@@ -59,7 +66,7 @@ class _LoginPageState extends State<LoginPage> {
       final userProfile = await _authService.login(username, password);
 
       if (userProfile == null) {
-        _showError("Invalid username or password");
+        _showLoginError(AppErrorMapper.invalidCredentials);
         return;
       }
 
@@ -78,7 +85,7 @@ class _LoginPageState extends State<LoginPage> {
         if (sessionToken != null && sessionToken.isNotEmpty) {
           await _authService.logout(sessionToken);
         }
-        _showError("Account Error: No store assigned to this user.");
+        _showLoginError(AppErrorMapper.permission);
         return;
       }
 
@@ -105,7 +112,7 @@ class _LoginPageState extends State<LoginPage> {
 
         await _authService.logout(sessionToken);
 
-        _showError(reason);
+        _showLoginError(reason);
         return;
       }
 
@@ -132,28 +139,33 @@ class _LoginPageState extends State<LoginPage> {
           arguments: const AuthenticatedMainRoute(),
         );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       final sessionToken = issuedSessionToken;
       if (sessionToken != null && sessionToken.isNotEmpty) {
         try {
           await _authService.logout(sessionToken);
-        } catch (logoutError) {
-          debugPrint(
-            'Failed to revoke the partially issued login session: '
-            '$logoutError',
+        } catch (logoutError, logoutStackTrace) {
+          AppLogger.error(
+            'Failed to revoke the partially issued login session',
+            error: logoutError,
+            stackTrace: logoutStackTrace,
           );
         }
       }
-      _showError("An unexpected error occurred during login.");
-      debugPrint("Login Page Error: $e");
+      _showLoginError(AppErrorMapper.loginUnavailable);
+      AppLogger.error('Login failed', error: e, stackTrace: stackTrace);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showError(String message) {
+  void _showLoginError(String message) {
     if (!mounted) return;
-    AppToast.error(context, message);
+    setState(() => _loginError = message);
+  }
+
+  void _clearLoginError() {
+    if (mounted && _loginError != null) setState(() => _loginError = null);
   }
 
   void _showForgotPasswordModal() {
@@ -255,6 +267,48 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                     const SizedBox(height: 40),
+
+                    if (_loginError != null) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          border: Border.all(color: const Color(0xFFFECACA)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.only(top: 1),
+                              child: Icon(
+                                LucideIcons.circleAlert,
+                                color: Color(0xFFDC2626),
+                                size: 17,
+                              ),
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Text(
+                                _loginError!,
+                                style: const TextStyle(
+                                  color: Color(0xFF991B1B),
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: 'Outfit',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
 
                     const Text("Username",
                         style: TextStyle(
@@ -852,7 +906,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
   final _stepTitles = ["Reset password", "Enter OTP", "New password"];
   final _stepSubtitles = [
     "Enter your admin username to receive an OTP.",
-    "Enter the 6-digit code sent to your email.",
+    "If this account is eligible for password recovery, further instructions will be provided.",
     "Pick a strong password to keep your account secure.",
   ];
   final _stepIcons = [
@@ -996,32 +1050,29 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
     try {
       if (_step == 0) {
         final isAdmin = await _authService.isAdminUser(input);
-        if (!isAdmin) {
-          if (mounted) {
-            final navContext = Navigator.of(context).context;
-            Navigator.pop(context);
-            _showContactAdminDialog(navContext);
-          }
-          return;
-        }
-
         final email = await _authService.getEmailFromUsername(input);
-        if (email == null) throw "Username not found.";
-
-        final otp = (100000 + Random().nextInt(900000)).toString();
-        await _authService.sendEmailJsOtp(email, otp);
+        final eligibleEmail = isAdmin ? email : null;
+        final otp = eligibleEmail == null
+            ? null
+            : (100000 + Random().nextInt(900000)).toString();
 
         setState(() {
-          _email = email;
+          _email = eligibleEmail;
           _generatedOtp = otp;
           _step = 1;
           _controller.clear();
         });
+        if (eligibleEmail != null && otp != null) {
+          unawaited(_sendRecoveryOtp(eligibleEmail, otp));
+        }
         WidgetsBinding.instance.addPostFrameCallback((_) {
   if (mounted) _focusNode1.requestFocus();
 });
       } else if (_step == 1) {
-        if (input != _generatedOtp) throw "Invalid OTP. Please try again.";
+        if (input != _generatedOtp) {
+          AppToast.error(context, 'Invalid verification code. Please try again.');
+          return;
+        }
         setState(() {
           _step = 2;
           _controller.clear();
@@ -1034,9 +1085,16 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
         final confirm = _confirmPasswordController.text;
 
         if (!_allMet) {
-          throw "Password does not meet all security requirements.";
+          AppToast.error(
+            context,
+            'Password does not meet all security requirements.',
+          );
+          return;
         }
-        if (password != confirm) throw "Passwords do not match.";
+        if (password != confirm) {
+          AppToast.error(context, 'Passwords do not match.');
+          return;
+        }
 
         await _authService.resetPasswordForUser(_email!, password);
 
@@ -1046,12 +1104,32 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
           AppToast.showOn(overlay, 'Password updated successfully!');
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Password reset failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
-        AppToast.error(context, e.toString().replaceFirst('Exception: ', ''));
+        AppToast.error(
+          context,
+          AppErrorMapper.message(e, fallback: AppErrorCategory.server),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _sendRecoveryOtp(String email, String otp) async {
+    try {
+      await _authService.sendEmailJsOtp(email, otp);
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Password recovery instructions could not be sent',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -1265,7 +1343,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
                 Icon(Icons.info_outline,
                     color: Colors.grey.shade500, size: 14),
                 const SizedBox(width: 6),
-                Text("Code sent to ${_maskEmail(_email)}",
+                Text("Enter the verification code if you received one.",
                     style: TextStyle(
                         color: Colors.grey.shade500,
                         fontSize: 12,

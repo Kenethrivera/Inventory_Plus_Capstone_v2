@@ -14,6 +14,8 @@ import 'reports/report_period_dialog.dart';
 import '../notifications/notification_provider.dart';
 import 'widgets/history_period_controls.dart';
 import 'widgets/history_pagination_footer.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 String _fmtQty(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
@@ -1508,10 +1510,15 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
       // Only the CURRENT period counts toward the export reminder.
       if (range.isCurrent) await _markExported(range.type);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Sales PDF generation failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (context.mounted) {
         Navigator.pop(context);
-        AppToast.error(context, 'Error generating PDF: $e');
+        AppToast.error(context, AppErrorMapper.unknown);
       }
     }
   }

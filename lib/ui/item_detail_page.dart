@@ -12,6 +12,8 @@ import 'package:flutter/services.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import 'package:inventory_plus/ui/widgets/app_dialog.dart';
 import 'package:inventory_plus/ui/widgets/approval_proof_picker.dart';
+import 'package:inventory_plus/services/app_error_mapper.dart';
+import 'package:inventory_plus/services/app_logger.dart';
 import 'store_map.dart'; // Adjust the path if necessary depending on your folder structure
 
 const Color _primaryBlue = Color(0xFF2563EB);
@@ -221,14 +223,25 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 'Restock request submitted. Inventory remains unchanged '
                 'until Admin approval.',
               );
-            } catch (e) {
+            } catch (e, stackTrace) {
+              AppLogger.error(
+                'Restock approval request failed',
+                error: e,
+                stackTrace: stackTrace,
+              );
               if (dialogContext.mounted) {
                 setDialogState(() {
                   saving = false;
                   uploadingProof = false;
                 });
               }
-              _toast('Could not submit request: $e', isError: true);
+              _toast(
+                AppErrorMapper.message(
+                  e,
+                  fallback: AppErrorCategory.dataSave,
+                ),
+                isError: true,
+              );
             }
           }
 
@@ -655,8 +668,16 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         _newImageUrl = file.path;
       });
       _toast("Photo added");
-    } catch (e) {
-      _toast("Couldn't load the image: $e", isError: true);
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Item image selection failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      _toast(
+        AppErrorMapper.message(e, fallback: AppErrorCategory.upload),
+        isError: true,
+      );
     }
   }
 
@@ -873,9 +894,13 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         await _loadHistory();
         _toast('Item updated successfully');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error('Update item failed', error: e, stackTrace: stackTrace);
       if (mounted) {
-        _toast('Error updating item: $e', isError: true);
+        _toast(
+          AppErrorMapper.message(e, fallback: AppErrorCategory.dataSave),
+          isError: true,
+        );
       }
     } finally {
       if (mounted) {
@@ -1790,10 +1815,11 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       widget.onStatusChanged?.call();
       widget.onBack();
       AppToast.showOn(overlay, '"$name" restored');
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error('Restore item failed', error: e, stackTrace: stackTrace);
       AppToast.showOn(
         overlay,
-        e.toString().replaceFirst('Exception: ', ''),
+        AppErrorMapper.message(e, fallback: AppErrorCategory.dataSave),
         isError: true,
       );
     }
@@ -1888,9 +1914,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       _isClosing = true;
       await widget.onDelete(_currentItem.id);
       AppToast.showOn(overlay, '"$name" deleted');
-    } catch (e) {
+    } catch (e, stackTrace) {
       _isClosing = false;
-      AppToast.showOn(overlay, 'Could not delete "$name": $e', isError: true);
+      AppLogger.error('Delete item failed', error: e, stackTrace: stackTrace);
+      AppToast.showOn(
+        overlay,
+        AppErrorMapper.message(e, fallback: AppErrorCategory.dataSave),
+        isError: true,
+      );
     }
   }
 
@@ -1971,7 +2002,12 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 'Write-off request submitted. Inventory remains unchanged '
                 'until Admin approval.',
               );
-            } catch (e) {
+            } catch (e, stackTrace) {
+              AppLogger.error(
+                'Write-off approval request failed',
+                error: e,
+                stackTrace: stackTrace,
+              );
               if (dialogContext.mounted) {
                 setDialogState(() {
                   saving = false;
@@ -1979,7 +2015,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 });
               }
               _toast(
-                e.toString().replaceFirst('Exception: ', ''),
+                AppErrorMapper.message(
+                  e,
+                  fallback: AppErrorCategory.dataSave,
+                ),
                 isError: true,
               );
             }

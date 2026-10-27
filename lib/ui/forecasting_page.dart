@@ -5,6 +5,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
 import '../data/ai_insights_service.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 class ForecastingPage extends StatefulWidget {
   final InventoryController controller;
@@ -152,9 +154,19 @@ class _ForecastingPageState extends State<ForecastingPage> {
           _forecastInsightText = result;
           _forecastInsightStale = false;
         });
-      } catch (error) {
+      } catch (error, stackTrace) {
+        AppLogger.error(
+          'Forecast request failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
         if (_canPublishForecast(generation, revision, scope, filter)) {
-          setState(() => _forecastInsightText = 'Network error: $error');
+          setState(
+            () => _forecastInsightText = AppErrorMapper.message(
+              error,
+              fallback: AppErrorCategory.server,
+            ),
+          );
         }
       }
     } while (_forecastRefreshQueued && mounted && widget.isActive);
@@ -235,9 +247,19 @@ class _ForecastingPageState extends State<ForecastingPage> {
           _aiRecommendation = result.replaceAll(RegExp(r'\*+'), '').trim();
           _aiRecommendationStale = false;
         });
-      } catch (error) {
+      } catch (error, stackTrace) {
+        AppLogger.error(
+          'Restock recommendation request failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
         if (_canPublishRecommendation(generation, revision, scope)) {
-          setState(() => _aiRecommendation = 'Network error: $error');
+          setState(
+            () => _aiRecommendation = AppErrorMapper.message(
+              error,
+              fallback: AppErrorCategory.server,
+            ),
+          );
         }
       }
     } while (_recommendationRefreshQueued && mounted && widget.isActive);

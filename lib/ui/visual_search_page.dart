@@ -15,6 +15,8 @@ import '../../logic/tflite_service.dart';
 import '../../logic/scan_logger.dart';
 import '../../logic/gemini_service.dart';
 import 'package:flutter/services.dart';
+import 'package:inventory_plus/services/app_error_mapper.dart';
+import 'package:inventory_plus/services/app_logger.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const Color _lightBlue = Color(0xFF3B82F6);
@@ -148,11 +150,16 @@ class _VisualSearchPageState extends State<VisualSearchPage>
       if (_cameras != null && _cameras!.isNotEmpty) {
         await _setCamera(_selectedCameraIndex);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Camera discovery failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       _showScanResultModal(
         detectedName: "Camera Error",
         isHardware: false,
-        errorMessage: "Failed to initialize camera: $e",
+        errorMessage: _cameraErrorMessage(e),
         similarItems: [],
       );
     }
@@ -174,14 +181,29 @@ class _VisualSearchPageState extends State<VisualSearchPage>
       if (mounted) {
         setState(() => _isCameraInitialized = true);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Camera initialization failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       _showScanResultModal(
         detectedName: "Camera Error",
         isHardware: false,
-        errorMessage: "Error initializing camera stream: $e",
+        errorMessage: _cameraErrorMessage(e),
         similarItems: [],
       );
     }
+  }
+
+  String _cameraErrorMessage(Object error) {
+    final category = AppErrorMapper.categoryFor(
+      error,
+      fallback: AppErrorCategory.cameraUnavailable,
+    );
+    return category == AppErrorCategory.cameraPermission
+        ? AppErrorMapper.scannerCameraPermission
+        : AppErrorMapper.cameraUnavailable;
   }
 Future<void> _toggleFlash() async {
     if (_cameraController == null || !_cameraController!.value.isInitialized)
@@ -194,8 +216,12 @@ Future<void> _toggleFlash() async {
         await _cameraController!.setFlashMode(FlashMode.torch);
         setState(() => _isFlashOn = true);
       }
-    } catch (e) {
-      debugPrint("Failed to toggle flash: $e");
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Failed to toggle camera flash',
+        error: e,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -386,7 +412,7 @@ Future<void> _toggleFlash() async {
       _liveYoloTimer?.cancel();
       _liveFallbackTimer?.cancel();
       setState(() {
-        _liveError = 'Could not obtain a usable camera frame for Gemini.';
+        _liveError = AppErrorMapper.cameraUnavailable;
         _liveStatusText = 'Camera capture failed';
       });
       return;
@@ -396,9 +422,9 @@ Future<void> _toggleFlash() async {
       _liveYoloTimer?.cancel();
       _liveFallbackTimer?.cancel();
       setState(() {
-        _liveError = 'Gemini cooling down to protect the free-tier quota. '
-            'YOLO had no confident result; you can scan again or wait.';
-        _liveStatusText = 'Gemini cooldown active';
+        _liveError =
+            'The recognition service is temporarily busy. Please try again shortly.';
+        _liveStatusText = 'Recognition service busy';
       });
       return;
     }
@@ -423,7 +449,10 @@ Future<void> _toggleFlash() async {
     }
     final last = _lastGeminiFallbackAt;
     if (last != null && DateTime.now().difference(last) < _geminiLiveCooldown) {
-      setState(() => _liveError = 'Gemini cooldown: try again in a few seconds.');
+      setState(
+        () => _liveError =
+            'The recognition service is temporarily busy. Please try again shortly.',
+      );
       return;
     }
     await _runLiveGeminiFallback(
@@ -571,12 +600,16 @@ Future<void> _toggleFlash() async {
       // Gemini is evaluated in finally, only AFTER this inference releases
       // the single-inference guard. No fallback races a running YOLO call.
     } catch (e, st) {
-      debugPrint('[LIVE] YOLO / camera failed after ${watch.elapsedMilliseconds}ms: $e\n$st');
+      AppLogger.error(
+        '[LIVE] YOLO/camera failed after ${watch.elapsedMilliseconds}ms',
+        error: e,
+        stackTrace: st,
+      );
       if (mounted && _isLiveMode && generation == _liveGeneration &&
           !_isGeminiFallbackRunning) {
         _yoloSamples++; // A failed attempt also counts toward the limit.
         setState(() {
-          _liveError = 'YOLO camera/model error: $e';
+          _liveError = AppErrorMapper.message(e);
           _liveStatusText = 'Scanning...';
         });
       }
@@ -618,8 +651,8 @@ Future<void> _toggleFlash() async {
       final cloud = response.data;
       if (cloud == null) {
         setState(() {
-          _liveError = response.error ?? 'Gemini returned no result.';
-          _liveStatusText = 'Gemini unavailable — ${response.error ?? 'No result'}';
+          _liveError = AppErrorMapper.server;
+          _liveStatusText = 'Recognition service unavailable';
         });
         return;
       }
@@ -643,11 +676,18 @@ Future<void> _toggleFlash() async {
         _liveStatusText = 'Item found';
       });
     } catch (e, st) {
-      debugPrint('[LIVE] Gemini crashed: $e\n$st');
+      AppLogger.error(
+        '[LIVE] Recognition request failed',
+        error: e,
+        stackTrace: st,
+      );
       if (mounted && _isLiveMode && generation == _liveGeneration) {
         setState(() {
-          _liveError = 'Gemini error: $e';
-          _liveStatusText = 'Gemini request failed';
+          _liveError = AppErrorMapper.message(
+            e,
+            fallback: AppErrorCategory.server,
+          );
+          _liveStatusText = 'Recognition request failed';
         });
       }
     } finally {
@@ -751,7 +791,7 @@ Future<void> _toggleFlash() async {
       await _showScanResultModal(
         detectedName: "Scan Error",
         isHardware: false,
-        errorMessage: "Failed to parse image result from Gemini.",
+        errorMessage: AppErrorMapper.server,
         similarItems: [],
         capturedBytes: capturedBytes,
       );
@@ -937,9 +977,17 @@ Future<void> _toggleFlash() async {
         histogram: backgroundResult['histogram'] as List<double>,
         logger: logger,
       );
-    } catch (e) {
-      errorText = e.toString();
-      logger.log('ERROR -> $e');
+    } catch (e, stackTrace) {
+      errorText = AppErrorMapper.message(
+        e,
+        fallback: AppErrorCategory.server,
+      );
+      AppLogger.error(
+        'Object scan failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      logger.log('ERROR -> scan failed');
       logger.log('END (source: error)');
     } finally {
       if (!_isLiveMode) {

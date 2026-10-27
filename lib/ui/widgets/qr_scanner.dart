@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import '../../services/app_error_mapper.dart';
+import '../../services/app_logger.dart';
 
 class QRScanner extends StatefulWidget {
   final Function(String) onScan;
@@ -18,7 +20,8 @@ class QRScanner extends StatefulWidget {
 class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
-  bool _hasScanned = false; 
+  bool _hasScanned = false;
+  MobileScannerErrorCode? _lastLoggedError;
 
   @override
   void initState() {
@@ -59,6 +62,51 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
           if (widget.isScanning)
             MobileScanner(
               fit: BoxFit.cover,
+              errorBuilder: (context, error, child) {
+                if (_lastLoggedError != error.errorCode) {
+                  _lastLoggedError = error.errorCode;
+                  AppLogger.error('Scanner camera failed', error: error);
+                }
+                final permissionDenied =
+                    error.errorCode == MobileScannerErrorCode.permissionDenied;
+                return ColoredBox(
+                  color: const Color(0xFF0F172A),
+                  child: Center(
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 360),
+                      margin: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.no_photography_outlined,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            permissionDenied
+                                ? AppErrorMapper.scannerCameraPermission
+                                : AppErrorMapper.cameraUnavailable,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
               onDetect: (capture) {
                 if (_hasScanned) return;
                 

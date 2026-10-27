@@ -11,11 +11,13 @@ import 'login/auth_service.dart';
 import 'navigation/main_section.dart';
 import 'services/main_section_url.dart';
 import 'services/realtime/realtime_sync_service.dart';
+import 'services/app_logger.dart';
 import 'ui/widgets/startup_restoration_surface.dart';
 
 Future<void> main() async {
   final startupStopwatch = Stopwatch()..start();
   WidgetsFlutterBinding.ensureInitialized();
+  AppLogger.configure();
   final initialRequestedPath = readMainSectionPath();
 
   if (kDebugMode) debugPrint('[Startup] Flutter entry');

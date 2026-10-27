@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import '../data/inventory.dart';
 import '../services/realtime/realtime_sync_service.dart';
+import '../services/app_logger.dart';
 import 'helper_assignment.dart';
 import 'history_pagination.dart';
 import 'inventory_approval.dart';
@@ -348,7 +349,7 @@ class InventoryController {
         for (final e in levels.entries) e.key: e.value.reduce(math.max),
       };
     } catch (e) {
-      print("Error loading stock baselines: $e");
+      AppLogger.error('Error loading stock baselines', error: e);
     }
   }
 

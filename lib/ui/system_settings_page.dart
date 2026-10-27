@@ -11,6 +11,8 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart'
     show debugPrint, debugPrintStack, kIsWeb;
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const String _fontFam = 'Hellix';
@@ -375,8 +377,18 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       } else {
         if (mounted) AppToast.error(context, "Failed to generate image link.");
       }
-    } catch (e) {
-      if (mounted) AppToast.error(context, "Upload error: $e");
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'GCash QR upload failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        AppToast.error(
+          context,
+          AppErrorMapper.message(e, fallback: AppErrorCategory.upload),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isUploadingQr = false);
     }
@@ -386,10 +398,18 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     try {
       await widget.controller.loadSystemSettings();
       if (!mounted) return;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'System settings load failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         setState(() => _isLoadingSettings = false);
-        _showToast("Error loading settings: $e", isError: true);
+        _showToast(
+          AppErrorMapper.message(e, fallback: AppErrorCategory.dataLoad),
+          isError: true,
+        );
       }
     }
   }
@@ -422,11 +442,19 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         _isSavingDiscountLimit = false;
       });
       _showToast('Cashier discount limit updated');
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Cashier discount limit save failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       setState(() {
         _isSavingDiscountLimit = false;
-        _discountLimitError = error.toString().replaceFirst('Exception: ', '');
+        _discountLimitError = AppErrorMapper.message(
+          error,
+          fallback: AppErrorCategory.dataSave,
+        );
       });
     }
   }
@@ -627,12 +655,20 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
       if (!mounted) return;
       if (_storeAccessBaseline == null) _applyStoreAccessToForm(settings);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Store access settings load failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
 
       setState(() {
         _isLoadingStoreAccess = false;
-        _storeAccessError = 'Error loading store access settings: $e';
+        _storeAccessError = AppErrorMapper.message(
+          e,
+          fallback: AppErrorCategory.dataLoad,
+        );
       });
     }
   }
@@ -700,12 +736,20 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       });
 
       _showToast('Store hours and access settings updated.');
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Store access settings save failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
 
       setState(() {
         _isSavingStoreAccess = false;
-        _storeAccessError = 'Failed to save store access settings: $e';
+        _storeAccessError = AppErrorMapper.message(
+          e,
+          fallback: AppErrorCategory.dataSave,
+        );
       });
     }
   }
@@ -1267,11 +1311,19 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         });
         _showToast("Global thresholds updated successfully");
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Inventory threshold save failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         setState(() {
           _isSavingThresholds = false;
-          _thresholdError = "Failed to save: $e";
+          _thresholdError = AppErrorMapper.message(
+            e,
+            fallback: AppErrorCategory.dataSave,
+          );
         });
       }
     }
@@ -1405,9 +1457,20 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 setState(() => _measurements = _measurementsFromController());
               }
               if (dialogContext.mounted) Navigator.pop(dialogContext);
-            } catch (e) {
+            } catch (e, stackTrace) {
+              AppLogger.error(
+                'Measurement save failed',
+                error: e,
+                stackTrace: stackTrace,
+              );
               setModalState(() => saving = false);
-              _showToast("Failed to save measurement: $e", isError: true);
+              _showToast(
+                AppErrorMapper.message(
+                  e,
+                  fallback: AppErrorCategory.dataSave,
+                ),
+                isError: true,
+              );
             }
           }
 
@@ -1542,9 +1605,20 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 }
                 if (ctx.mounted) Navigator.pop(ctx);
                 _showToast("Measurement deleted");
-              } catch (e) {
+              } catch (e, stackTrace) {
+                AppLogger.error(
+                  'Measurement delete failed',
+                  error: e,
+                  stackTrace: stackTrace,
+                );
                 if (ctx.mounted) Navigator.pop(ctx);
-                _showToast("Failed to delete measurement: $e", isError: true);
+                _showToast(
+                  AppErrorMapper.message(
+                    e,
+                    fallback: AppErrorCategory.dataSave,
+                  ),
+                  isError: true,
+                );
               }
             },
             style: ElevatedButton.styleFrom(
@@ -2095,9 +2169,20 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             setModalState(() => isSaving = false);
                             _showToast("Error updating role", isError: true);
                           }
-                        } catch (e) {
+                        } catch (e, stackTrace) {
+                          AppLogger.error(
+                            'Staff role update failed',
+                            error: e,
+                            stackTrace: stackTrace,
+                          );
                           setModalState(() => isSaving = false);
-                          _showToast("Error updating role: $e", isError: true);
+                          _showToast(
+                            AppErrorMapper.message(
+                              e,
+                              fallback: AppErrorCategory.dataSave,
+                            ),
+                            isError: true,
+                          );
                         }
                       },
                 style: ElevatedButton.styleFrom(
@@ -2195,16 +2280,27 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 );
                 if (ctx.mounted) Navigator.pop(ctx);
                 if (success && mounted) {
-                  _showToast('Password successfully reset to $newPass');
+                  _showToast('Password reset successfully.');
                 } else if (mounted) {
                   _showToast(
                     'Failed to reset password. Please try again.',
                     isError: true,
                   );
                 }
-              } catch (e) {
+              } catch (e, stackTrace) {
+                AppLogger.error(
+                  'Admin password reset failed',
+                  error: e,
+                  stackTrace: stackTrace,
+                );
                 if (ctx.mounted) Navigator.pop(ctx);
-                _showToast("Error resetting password: $e", isError: true);
+                _showToast(
+                  AppErrorMapper.message(
+                    e,
+                    fallback: AppErrorCategory.dataSave,
+                  ),
+                  isError: true,
+                );
               }
             },
             style: ElevatedButton.styleFrom(
@@ -2267,9 +2363,20 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 } else {
                   _showToast("Failed to delete staff account.", isError: true);
                 }
-              } catch (e) {
+              } catch (e, stackTrace) {
+                AppLogger.error(
+                  'Staff deletion failed',
+                  error: e,
+                  stackTrace: stackTrace,
+                );
                 if (ctx.mounted) Navigator.pop(ctx);
-                _showToast("Error deleting staff: $e", isError: true);
+                _showToast(
+                  AppErrorMapper.message(
+                    e,
+                    fallback: AppErrorCategory.dataSave,
+                  ),
+                  isError: true,
+                );
               }
             },
             style: ElevatedButton.styleFrom(

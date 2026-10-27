@@ -10,6 +10,8 @@ import 'dart:math' as math;
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'dart:async';
+import 'package:inventory_plus/services/app_error_mapper.dart';
+import 'package:inventory_plus/services/app_logger.dart';
 
 class AddItemPage extends StatefulWidget {
   final InventoryController controller;
@@ -178,8 +180,18 @@ class _AddItemPageState extends State<AddItemPage> {
         _imageUrl = file.path;
       });
       AppToast.success(context, "Photo added");
-    } catch (e) {
-      if (mounted) AppToast.error(context, "Couldn't load the image: $e");
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Item image selection failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        AppToast.error(
+          context,
+          AppErrorMapper.message(e, fallback: AppErrorCategory.upload),
+        );
+      }
     }
   }
 
@@ -392,8 +404,12 @@ class _AddItemPageState extends State<AddItemPage> {
         widget.onAdd(newItem);
         Navigator.pop(context);
       }
-    } catch (e) {
-      String errorMessage = "Error: $e";
+    } catch (e, stackTrace) {
+      AppLogger.error('Add item failed', error: e, stackTrace: stackTrace);
+      String errorMessage = AppErrorMapper.message(
+        e,
+        fallback: AppErrorCategory.dataSave,
+      );
       if (e is PostgrestException && e.code == '23505') {
         errorMessage =
             "An item with this SKU already exists! Please enter a unique SKU.";
@@ -665,10 +681,18 @@ class _AddItemPageState extends State<AddItemPage> {
             try {
               await widget.controller.addMeasurement(name, symbol);
               if (dialogContext.mounted) Navigator.pop(dialogContext, symbol);
-            } catch (e) {
+            } catch (e, stackTrace) {
+              AppLogger.error(
+                'Measurement creation failed',
+                error: e,
+                stackTrace: stackTrace,
+              );
               setModalState(() {
                 saving = false;
-                symbolError = "Failed to save: $e";
+                symbolError = AppErrorMapper.message(
+                  e,
+                  fallback: AppErrorCategory.dataSave,
+                );
               });
             }
           }

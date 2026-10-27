@@ -4,9 +4,9 @@ import 'package:flutter_dotenv/flutter_dotenv.dart'; // Add this import
 import 'package:http/http.dart' as http;
 
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
+import '../services/app_logger.dart';
 
 class AuthService {
   final _supabase = Supabase.instance.client;
@@ -88,12 +88,18 @@ class AuthService {
       if (response.statusCode == 200) {
         return true;
       } else {
-        debugPrint("EmailJS Failed: ${response.statusCode} - ${response.body}");
-        throw Exception("Failed to send email: ${response.body}");
+        AppLogger.error(
+          'Password reset email request failed with status ${response.statusCode}',
+        );
+        throw Exception('Password reset email request failed.');
       }
-    } catch (e) {
-      debugPrint("EmailJS Error: $e");
-      throw Exception(e.toString());
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Password reset email request failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      throw Exception('Password reset email request failed.');
     }
   }
 
@@ -119,7 +125,7 @@ class AuthService {
         .eq('email', email)
         .maybeSingle();
     if (user == null) {
-      throw Exception('Email not found.');
+      throw Exception('Password reset request could not be completed.');
     }
   }
 

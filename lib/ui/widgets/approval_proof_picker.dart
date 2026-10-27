@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../services/app_error_mapper.dart';
+import '../../services/app_logger.dart';
 
 class ApprovalProofSelection {
   const ApprovalProofSelection({
@@ -83,10 +85,20 @@ class _ApprovalProofPickerState extends State<ApprovalProofPicker> {
       if (!mounted) return;
       setState(() => _selection = selection);
       widget.onChanged(selection);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Approval proof selection failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       setState(() {
-        _error = error.toString().replaceFirst('FormatException: ', '');
+        _error = error is FormatException
+            ? error.message.toString()
+            : AppErrorMapper.message(
+                error,
+                fallback: AppErrorCategory.upload,
+              );
       });
     } finally {
       if (mounted) setState(() => _picking = false);

@@ -20,6 +20,8 @@ import '../navigation/main_section.dart';
 import '../services/debug_clock.dart';
 import '../services/export_period.dart';
 import '../services/export_reminder_service.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 import 'dashboard_page.dart';
 import 'approval_center_page.dart';
 import 'forecasting_page.dart';
@@ -3385,9 +3387,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error('Logout failed', error: e, stackTrace: stackTrace);
       if (mounted) {
-        AppToast.error(context, 'Could not log out: $e');
+        AppToast.error(
+          context,
+          AppErrorMapper.message(e, fallback: AppErrorCategory.server),
+        );
       }
     }
   }
@@ -3404,9 +3410,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Forced-password-change logout failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
-        AppToast.error(context, 'Could not log out: $e');
+        AppToast.error(
+          context,
+          AppErrorMapper.message(e, fallback: AppErrorCategory.server),
+        );
       }
     }
   }

@@ -8,6 +8,8 @@ import '../logic/inventory_controller.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/history_pagination_footer.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 class ApprovalCenterPage extends StatefulWidget {
   const ApprovalCenterPage({super.key, required this.controller});
@@ -39,8 +41,20 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     super.initState();
     _subscription = widget.controller.approvalPageSnapshots.listen(
       _acceptSnapshot,
-      onError: (Object error, StackTrace _) {
-        if (mounted) setState(() => _error = error.toString());
+      onError: (Object error, StackTrace stackTrace) {
+        AppLogger.error(
+          'Approval snapshot stream failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (mounted) {
+          setState(
+            () => _error = AppErrorMapper.message(
+              error,
+              fallback: AppErrorCategory.dataLoad,
+            ),
+          );
+        }
       },
     );
     unawaited(_load());
@@ -104,11 +118,19 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
           force: force,
         ),
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Approval page load failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = error.toString().replaceFirst('Exception: ', '');
+        _error = AppErrorMapper.message(
+          error,
+          fallback: AppErrorCategory.dataLoad,
+        );
       });
     }
   }
@@ -140,13 +162,20 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         return;
       }
       await _showLargeProof(url);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Approval proof load failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _proofUrls.remove(request.id);
       if (mounted) {
         AppToast.error(
           context,
-          'Could not securely load proof: '
-          '${error.toString().replaceFirst('Exception: ', '')}',
+          AppErrorMapper.message(
+            error,
+            fallback: AppErrorCategory.dataLoad,
+          ),
         );
       }
     }
@@ -171,13 +200,20 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     if (request.hasProof) {
       try {
         proofUrl = await _proofUrl(request);
-      } catch (error) {
+      } catch (error, stackTrace) {
+        AppLogger.error(
+          'Approval proof load failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
         _proofUrls.remove(request.id);
         if (mounted) {
           AppToast.error(
             context,
-            'Could not securely load proof: '
-            '${error.toString().replaceFirst('Exception: ', '')}',
+            AppErrorMapper.message(
+              error,
+              fallback: AppErrorCategory.dataLoad,
+            ),
           );
         }
         return;
@@ -518,11 +554,19 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
           'Request ${approve ? 'approved' : 'rejected'}.',
         );
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Approval review failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         AppToast.error(
           context,
-          error.toString().replaceFirst('Exception: ', ''),
+          AppErrorMapper.message(
+            error,
+            fallback: AppErrorCategory.dataSave,
+          ),
         );
       }
     } finally {

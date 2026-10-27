@@ -14,6 +14,8 @@ import 'reports/inventory_report_generator.dart';
 import 'reports/report_range.dart';
 import 'reports/report_period_dialog.dart';
 import '../notifications/notification_provider.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const String _fontFam = 'Hellix';
@@ -56,9 +58,18 @@ class _InventoryPageState extends State<InventoryPage> {
   Future<void> _loadSystemSettings() async {
     try {
       await widget.controller.loadStockThresholdSettings();
-    } catch (e) {
-      if (mounted)
-        _showToast("Could not load stock thresholds: $e", isError: true);
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Stock threshold load failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        _showToast(
+          AppErrorMapper.message(e, fallback: AppErrorCategory.dataLoad),
+          isError: true,
+        );
+      }
     }
     if (mounted) setState(() {});
   }
@@ -579,10 +590,15 @@ class _InventoryPageState extends State<InventoryPage> {
 
       // Only the CURRENT period counts toward the export reminder.
       if (range.isCurrent) await _markExported(range.type);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Inventory PDF generation failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (context.mounted) {
         Navigator.pop(context);
-        _showToast("Error generating PDF: $e", isError: true);
+        _showToast(AppErrorMapper.unknown, isError: true);
       }
     }
   }
@@ -680,10 +696,15 @@ class _InventoryPageState extends State<InventoryPage> {
       );
 
       _showToast("QR labels generated");
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Inventory QR label generation failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (context.mounted) {
         Navigator.pop(context);
-        _showToast("Error generating PDF: $e", isError: true);
+        _showToast(AppErrorMapper.unknown, isError: true);
       }
     }
   }

@@ -1,3 +1,5 @@
+import '../services/app_logger.dart';
+
 class ScanLogger {
   static ScanLogger? current;
 
@@ -14,8 +16,7 @@ class ScanLogger {
     final now = DateTime.now();
     final elapsedMs = _stopwatch.elapsedMilliseconds;
     final timestamp = formatTimestamp(now);
-    // ignore: avoid_print
-    print('[SCAN $timestamp] (+${elapsedMs}ms) $message');
+    AppLogger.debug('[SCAN $timestamp] (+${elapsedMs}ms) $message');
   }
 
   static String formatTimestamp(DateTime dt) {

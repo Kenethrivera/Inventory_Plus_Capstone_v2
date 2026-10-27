@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:inventory_plus/ui/widgets/qr_scanner.dart';
+import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import '../data/inventory.dart'; 
 import '../logic/inventory_controller.dart';
 
@@ -37,12 +38,7 @@ class _ScannerSearchPageState extends State<ScannerSearchPage> {
       widget.onSelectItem(foundItem);
     } catch (_) {
       // If firstWhere throws, no item was found. Show an error and reset.
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Code: $scannedValue not found"),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+      AppToast.error(context, 'No inventory item matches this code.');
       _resetScanner();
       // Add a small delay before re-enabling scanning to prevent rapid-fire errors.
       await Future.delayed(const Duration(seconds: 2));

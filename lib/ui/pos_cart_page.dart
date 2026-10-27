@@ -22,6 +22,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import '../logic/inventory_approval.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 const double _kSnapFull = 0.75;
 const double _kBaseChromeHeight = 320.0;
@@ -346,8 +348,14 @@ class _PosCartPageState extends State<PosCartPage>
               : 'Order assigned to ${assignedHelper.name}.',
         );
       }
-    } catch (e) {
-      if (mounted) AppToast.error(context, "Couldn't process the order: $e");
+    } catch (e, stackTrace) {
+      AppLogger.error('Order submission failed', error: e, stackTrace: stackTrace);
+      if (mounted) {
+        AppToast.error(
+          context,
+          AppErrorMapper.message(e, fallback: AppErrorCategory.dataSave),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isProcessingCart = false);
     }
@@ -402,8 +410,14 @@ class _PosCartPageState extends State<PosCartPage>
         changeAmount: paymentData['change'],
         paymentReference: paymentData['reference'],
       );
-    } catch (e) {
-      if (mounted) AppToast.error(context, "Couldn't complete the order: $e");
+    } catch (e, stackTrace) {
+      AppLogger.error('Order completion failed', error: e, stackTrace: stackTrace);
+      if (mounted) {
+        AppToast.error(
+          context,
+          AppErrorMapper.message(e, fallback: AppErrorCategory.dataSave),
+        );
+      }
       return;
     }
     if (times == null) return;
@@ -553,8 +567,14 @@ class _PosCartPageState extends State<PosCartPage>
         "Order cancelled — items are back in your cart",
       );
       return true;
-    } catch (e) {
-      if (mounted) AppToast.error(context, "Couldn't cancel the order: $e");
+    } catch (e, stackTrace) {
+      AppLogger.error('Order cancellation failed', error: e, stackTrace: stackTrace);
+      if (mounted) {
+        AppToast.error(
+          context,
+          AppErrorMapper.message(e, fallback: AppErrorCategory.dataSave),
+        );
+      }
       return false;
     }
   }
@@ -646,11 +666,19 @@ class _PosCartPageState extends State<PosCartPage>
       if (!mounted) return;
       setState(() => _discountApproval = request);
       AppToast.success(context, 'Discount approval requested.');
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Discount approval request failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         AppToast.error(
           context,
-          error.toString().replaceFirst('Exception: ', ''),
+          AppErrorMapper.message(
+            error,
+            fallback: AppErrorCategory.dataSave,
+          ),
         );
       }
     } finally {

@@ -132,9 +132,9 @@ class GeminiService {
           continue;
         }
         if (response.statusCode != 200) {
-          final excerpt = response.body.length > 300
-              ? response.body.substring(0, 300) : response.body;
-          debugPrint('[LIVE GEMINI] HTTP error body: $excerpt');
+          debugPrint(
+            '[LIVE GEMINI] Request failed with HTTP ${response.statusCode}',
+          );
           final description = switch (response.statusCode) {
             400 => 'Gemini HTTP 400: invalid API request.',
             401 || 403 => 'Gemini HTTP ${response.statusCode}: API key/access denied.',
@@ -176,8 +176,10 @@ class GeminiService {
         debugPrint('[LIVE GEMINI] Invalid JSON: $e');
         return const GeminiLiveResponse(error: 'Gemini returned invalid JSON.');
       } catch (e) {
-        debugPrint('[LIVE GEMINI] Network exception: $e');
-        return GeminiLiveResponse(error: 'Gemini network error: $e');
+        debugPrint(
+          '[LIVE GEMINI] Network exception type: ${e.runtimeType}',
+        );
+        return const GeminiLiveResponse(error: 'Recognition network error.');
       } finally {
         client.close();
       }
@@ -327,14 +329,13 @@ class GeminiService {
         return jsonDecode(text) as Map<String, dynamic>;
       }
 
-      debugPrint('[GEMINI] HTTP ${response.statusCode}: '
-          '${response.body.length > 250 ? response.body.substring(0, 250) : response.body}');
+      debugPrint('[GEMINI] Request failed with HTTP ${response.statusCode}');
       if (response.statusCode == 429) {
         _keyCooldownUntil[index] = DateTime.now().add(_quotaCooldown);
       }
       return null;
     } catch (e) {
-      debugPrint('[GEMINI] request failed: $e');
+      debugPrint('[GEMINI] request failed: ${e.runtimeType}');
       return null;
     }
   }

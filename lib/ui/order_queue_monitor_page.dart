@@ -6,6 +6,8 @@ import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
 import 'widgets/app_toast.dart';
 import 'package:inventory_plus/notifications/notification_provider.dart';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
 const Color _darkText = Color(0xFF0F172A);
@@ -1103,12 +1105,20 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                               pageContext,
                               'Assigned to $helperName',
                             );
-                          } catch (e) {
+                          } catch (e, stackTrace) {
+                            AppLogger.error(
+                              'Helper assignment failed',
+                              error: e,
+                              stackTrace: stackTrace,
+                            );
                             if (!mounted) return;
 
                             AppToast.error(
                               pageContext,
-                              'Could not assign helper: $e',
+                              AppErrorMapper.message(
+                                e,
+                                fallback: AppErrorCategory.dataSave,
+                              ),
                             );
                           }
                         },

@@ -5,6 +5,8 @@ import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/change_password_dialog.dart';
 import 'dart:async';
+import '../services/app_error_mapper.dart';
+import '../services/app_logger.dart';
 
 class ProfileInfoPage extends StatefulWidget {
   final InventoryController controller;
@@ -68,8 +70,12 @@ class _ProfileInfoPageState extends State<ProfileInfoPage> {
           _isFetching = false;
         });
       }
-    } catch (e) {
-      debugPrint("Error fetching latest profile data: $e");
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Profile refresh failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         setState(() {
           _isFetching = false;
@@ -102,7 +108,8 @@ class _ProfileInfoPageState extends State<ProfileInfoPage> {
       final newPhone = _phoneController.text.trim();
 
       if (newName.isEmpty) {
-        throw Exception("Name cannot be empty.");
+        AppToast.error(context, 'Name cannot be empty.');
+        return;
       }
 
       await widget.controller.updateProfile(
@@ -119,20 +126,14 @@ class _ProfileInfoPageState extends State<ProfileInfoPage> {
           _pendingRemoteProfile = null;
           _conflictNotified = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Profile updated successfully!"),
-            backgroundColor: Colors.blue,
-          ),
-        );
+        AppToast.success(context, 'Profile updated successfully!');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error('Profile update failed', error: e, stackTrace: stackTrace);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Error updating profile: $e"),
-            backgroundColor: Colors.redAccent,
-          ),
+        AppToast.error(
+          context,
+          AppErrorMapper.message(e, fallback: AppErrorCategory.dataSave),
         );
       }
     } finally {
