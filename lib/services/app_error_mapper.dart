@@ -16,6 +16,15 @@ enum AppErrorCategory {
   unknown,
 }
 
+class AppUserFacingException implements Exception {
+  const AppUserFacingException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class AppErrorMapper {
   AppErrorMapper._();
 
@@ -45,6 +54,7 @@ class AppErrorMapper {
     Object error, {
     AppErrorCategory fallback = AppErrorCategory.unknown,
   }) {
+    if (error is AppUserFacingException) return error.message;
     return messageFor(categoryFor(error, fallback: fallback));
   }
 

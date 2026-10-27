@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import '../data/inventory.dart';
 import '../services/realtime/realtime_sync_service.dart';
+import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 import 'helper_assignment.dart';
 import 'history_pagination.dart';
@@ -218,6 +219,9 @@ class InventoryController {
   bool _inventoryRefreshQueued = false;
 
   final SupabaseClient supabase = Supabase.instance.client;
+  final Map<String, ({String signature, String operationId})>
+  _pendingQuantityOperations =
+      <String, ({String signature, String operationId})>{};
   int? currentUserNumericId;
   List<InventoryItem> _items = [];
   List<InventoryItem> get allItems => List<InventoryItem>.unmodifiable(_items);
@@ -408,6 +412,7 @@ class InventoryController {
     _clearPaginatedHistoryState();
     _invalidateStaffPerformance();
     if (accountChanged) {
+      _pendingQuantityOperations.clear();
       _clearInventorySnapshot();
       _clearOrdersSnapshot();
       _inventoryAwaitingRealtimeInitial = true;
@@ -438,6 +443,7 @@ class InventoryController {
     if (activeLocationId == locationId) return;
 
     activeLocationId = locationId;
+    _pendingQuantityOperations.clear();
     _invalidateStaffPerformance();
     _clearPaginatedHistoryState();
     _historyInvalidationsController.add(
@@ -850,23 +856,23 @@ class InventoryController {
     }
 
     final newQty = item.quantity - qty;
-    await supabase
-        .from('products')
-        .update({'product_quantity': newQty})
-        .eq('id', id);
-
-    _items[index] = item.copyWith(quantity: newQty);
-    _publishInventorySnapshot();
-
-    await _logTransaction(
+    final result = await _adjustInventoryQuantity(
       productId: id,
-      type: 'write_off',
-      quantityChange: -qty,
+      expectedQuantity: item.quantity,
       newQuantity: newQty,
+      transactionType: 'write_off',
       note: (note == null || note.trim().isEmpty)
           ? reason
           : '$reason: ${note.trim()}',
     );
+    final authoritativeQuantity =
+        (result['new_quantity'] as num?)?.toDouble() ?? newQty;
+
+    final currentIndex = _items.indexWhere((candidate) => candidate.id == id);
+    if (currentIndex != -1) {
+      _items[currentIndex] = item.copyWith(quantity: authoritativeQuantity);
+      _publishInventorySnapshot();
+    }
   }
 
   bool get canRequestInventoryApproval {
@@ -1313,15 +1319,22 @@ class InventoryController {
   Future<void> updateItem(InventoryItem updatedItem) async {
     final index = _items.indexWhere((item) => item.id == updatedItem.id);
     final oldItem = index != -1 ? _items[index] : null;
+    final locationId = activeLocationId;
+    if (oldItem == null || locationId == null) {
+      throw const AppUserFacingException(
+        'Inventory changed while processing this request. Please review and try again.',
+      );
+    }
+    final quantityChange = updatedItem.quantity - oldItem.quantity;
 
-    // 1. Write to the DB first. If this throws, nothing local has changed.
+    // Product details remain a normal save. Quantity and its history entry are
+    // committed together by adjust_inventory_quantity_v1 below.
     await supabase
         .from('products')
         .update({
           'product_name': updatedItem.name,
           'sku': updatedItem.sku,
           'product_price': updatedItem.price,
-          'product_quantity': updatedItem.quantity,
           'description': updatedItem.description,
           'manufacturer': updatedItem.manufacturer,
           'model': updatedItem.model,
@@ -1332,52 +1345,160 @@ class InventoryController {
           'unit': updatedItem.unit,
           'max_quantity': updatedItem.maxQuantity,
         })
-        .eq('id', updatedItem.id);
+        .eq('id', updatedItem.id)
+        .eq('location_id', locationId);
 
-    // 2. Only after success: update local state, log, refresh baselines.
-    if (index != -1 && oldItem != null) {
-      final quantityChange = updatedItem.quantity - oldItem.quantity;
-      _items[index] = updatedItem;
+    String? transactionId;
+    var authoritativeQuantity = oldItem.quantity;
+    if (quantityChange != 0) {
+      final result = await _adjustInventoryQuantity(
+        productId: updatedItem.id,
+        expectedQuantity: oldItem.quantity,
+        newQuantity: updatedItem.quantity,
+        transactionType: quantityChange > 0 ? 'stock_in' : 'checkout',
+      );
+      transactionId = result['transaction_id']?.toString();
+      authoritativeQuantity =
+          (result['new_quantity'] as num?)?.toDouble() ?? updatedItem.quantity;
+    }
+
+    final currentIndex = _items.indexWhere((item) => item.id == updatedItem.id);
+    if (activeLocationId == locationId && currentIndex != -1) {
+      _items[currentIndex] = updatedItem.copyWith(
+        quantity: authoritativeQuantity,
+      );
       _publishInventorySnapshot();
+    }
 
-      if (quantityChange != 0) {
-        final transactionId = await _logTransaction(
-          productId: updatedItem.id,
-          type: quantityChange > 0 ? 'stock_in' : 'checkout',
-          quantityChange: quantityChange,
-          newQuantity: updatedItem.quantity,
-        );
+    if (quantityChange > 0) {
+      await _loadStockBaselines();
 
-        if (quantityChange > 0) {
-          await _loadStockBaselines();
+      final callback = onRestockRecorded;
+      final locationId = activeLocationId;
+      final userId = currentUserId;
 
-          final callback = onRestockRecorded;
-          final locationId = activeLocationId;
-          final userId = currentUserId;
-
-          if (callback != null &&
-              transactionId != null &&
-              locationId != null &&
-              userId != null) {
-            try {
-              await callback(
-                locationId: locationId,
-                transactionId: transactionId,
-                productId: updatedItem.id,
-                productName: updatedItem.name,
-                staffId: userId,
-                staffName: currentUserName ?? 'Unknown User',
-                quantityAdded: quantityChange,
-                newQuantity: updatedItem.quantity,
-              );
-            } catch (e, stackTrace) {
-              debugPrint('RESTOCK NOTIFICATION ERROR: $e');
-              debugPrintStack(stackTrace: stackTrace);
-            }
-          }
+      if (callback != null &&
+          transactionId != null &&
+          locationId != null &&
+          userId != null) {
+        try {
+          await callback(
+            locationId: locationId,
+            transactionId: transactionId,
+            productId: updatedItem.id,
+            productName: updatedItem.name,
+            staffId: userId,
+            staffName: currentUserName ?? 'Unknown User',
+            quantityAdded: quantityChange,
+            newQuantity: authoritativeQuantity,
+          );
+        } catch (e, stackTrace) {
+          debugPrint('RESTOCK NOTIFICATION ERROR: $e');
+          debugPrintStack(stackTrace: stackTrace);
         }
       }
     }
+  }
+
+  Future<Map<String, dynamic>> _adjustInventoryQuantity({
+    required String productId,
+    required double expectedQuantity,
+    required double newQuantity,
+    required String transactionType,
+    String? note,
+  }) async {
+    final signature = <Object?>[
+      activeLocationId,
+      currentUserId,
+      expectedQuantity,
+      newQuantity,
+      transactionType,
+      note,
+    ].join('|');
+    final pending = _pendingQuantityOperations[productId];
+    final operationId = pending?.signature == signature
+        ? pending!.operationId
+        : _newOperationId();
+    _pendingQuantityOperations[productId] = (
+      signature: signature,
+      operationId: operationId,
+    );
+
+    try {
+      final response = await supabase.rpc(
+        'adjust_inventory_quantity_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_operation_id': operationId,
+          'p_product_id': productId,
+          'p_expected_quantity': expectedQuantity,
+          'p_new_quantity': newQuantity,
+          'p_transaction_type': transactionType,
+          'p_note': note,
+        },
+      );
+      _pendingQuantityOperations.remove(productId);
+      return Map<String, dynamic>.from(response as Map);
+    } catch (error, stackTrace) {
+      _throwCriticalOperationError(
+        'Inventory quantity adjustment failed',
+        error,
+        stackTrace,
+      );
+    }
+  }
+
+  String _newOperationId() {
+    final random = math.Random.secure();
+    final entropy = List<String>.generate(
+      4,
+      (_) => random.nextInt(0x100000000).toRadixString(16).padLeft(8, '0'),
+    ).join();
+    return 'inventory-adjustment:'
+        '${DateTime.now().microsecondsSinceEpoch}-$entropy';
+  }
+
+  Never _throwCriticalOperationError(
+    String diagnostic,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    AppLogger.error(diagnostic, error: error, stackTrace: stackTrace);
+    final details = error.toString().toLowerCase();
+
+    if (details.contains('payment_reference_already_used')) {
+      throw const AppUserFacingException(
+        'This payment reference has already been used.',
+      );
+    }
+    if (details.contains('order_already_completed')) {
+      throw const AppUserFacingException(
+        'This order has already been completed.',
+      );
+    }
+    if (details.contains('order_cannot_be_cancelled')) {
+      throw const AppUserFacingException(
+        'This order can no longer be cancelled.',
+      );
+    }
+    if (details.contains('order_not_prepared')) {
+      throw const AppUserFacingException(
+        'This order is not ready for payment.',
+      );
+    }
+    if (details.contains('inventory_operation_conflict')) {
+      throw const AppUserFacingException(
+        'This request could not be safely retried. Please refresh and try again.',
+      );
+    }
+    if (details.contains('inventory_changed') ||
+        details.contains('checkout_inventory_changed')) {
+      throw const AppUserFacingException(
+        'Inventory changed while processing this request. Please review and try again.',
+      );
+    }
+
+    throw error;
   }
 
   Future<bool> _isInOpenOrder(String productId) async {
@@ -2420,6 +2541,7 @@ class InventoryController {
   Future<void> revokeCurrentSession() async {
     final token = _sessionToken;
     _sessionToken = null;
+    _pendingQuantityOperations.clear();
     _clearPaginatedHistoryState();
     if (token == null || token.isEmpty) return;
     try {
@@ -2783,27 +2905,6 @@ class InventoryController {
     final locId = activeLocationId;
     if (locId == null) return null;
 
-    // Reconcile immediately before checkout so a cart that was built before a
-    // remote stock change cannot sell more than the latest canonical snapshot.
-    await _refreshInventoryFromDatabase();
-
-    for (final oi in items) {
-      final int index = _items.indexWhere((i) => i.id == oi.productId);
-      if (index == -1) {
-        throw Exception(
-          'An item in this order is no longer available. '
-          'Remove it from the cart and try again.',
-        );
-      }
-
-      if (oi.quantity > _items[index].quantity) {
-        throw Exception(
-          'There is not enough stock for ${_items[index].name}. '
-          'Update the cart quantity and try again.',
-        );
-      }
-    }
-
     try {
       final initialAssignment = soloHandled
           ? const <String, dynamic>{}
@@ -2812,7 +2913,7 @@ class InventoryController {
               assignedAt: DateTime.now().toUtc(),
             );
       final response = await supabase.rpc(
-        'create_customer_order_v1',
+        'create_customer_order_v2',
         params: <String, dynamic>{
           'p_session_token': _requireSessionToken(),
           'p_items': items.map((i) => i.toJson()).toList(growable: false),
@@ -2835,72 +2936,30 @@ class InventoryController {
           'p_change_amount': changeAmount,
         },
       );
-
-      for (var orderItem in items) {
-        final index = _items.indexWhere((i) => i.id == orderItem.productId);
-
-        if (index != -1) {
-          final currentItem = _items[index];
-
-          final updatedItem = calculateCheckout(
-            currentItem,
-            orderItem.quantity,
-          );
-
-          await updateItem(updatedItem);
-        }
-      }
-
       return CustomerOrder.fromJson(Map<String, dynamic>.from(response as Map));
-    } catch (e) {
-      rethrow;
+    } catch (error, stackTrace) {
+      _throwCriticalOperationError(
+        'Transactional checkout failed',
+        error,
+        stackTrace,
+      );
     }
   }
 
   Future<void> cancelOrder(CustomerOrder order) async {
-    final row = await supabase
-        .from('orders')
-        .select('status')
-        .eq('id', order.id)
-        .single();
-
-    final status = row['status'];
-
-    if (status == 'completed' || status == 'cancelled') {
-      throw Exception('Order is already $status.');
-    }
-
-    await supabase
-        .from('orders')
-        .update({
-          'status': 'cancelled',
-          'cancelled_by_id': currentUserId,
-          'cancelled_by_name': currentUserName ?? 'Unknown User',
-          'cancelled_at': DateTime.now().toUtc().toIso8601String(),
-        })
-        .eq('id', order.id);
-
-    for (final oi in order.items) {
-      final index = _items.indexWhere((i) => i.id == oi.productId);
-      if (index == -1) continue;
-
-      final restored = _items[index].copyWith(
-        quantity: _items[index].quantity + oi.quantity,
+    try {
+      await supabase.rpc(
+        'cancel_customer_order_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_order_id': order.id,
+        },
       );
-
-      await supabase
-          .from('products')
-          .update({'product_quantity': restored.quantity})
-          .eq('id', restored.id);
-
-      _items[index] = restored;
-      _publishInventorySnapshot();
-
-      await _logTransaction(
-        productId: restored.id,
-        type: 'order_cancelled',
-        quantityChange: oi.quantity,
-        newQuantity: restored.quantity,
+    } catch (error, stackTrace) {
+      _throwCriticalOperationError(
+        'Transactional order cancellation failed',
+        error,
+        stackTrace,
       );
     }
   }
@@ -3511,44 +3570,31 @@ class InventoryController {
           paymentMode?.trim().toLowerCase() == 'gcash'
           ? normalizeGcashReference(paymentReference)
           : null;
-      final checkOrder = await supabase
-          .from('orders')
-          .select('status')
-          .eq('id', order.id)
-          .single();
-
-      final s = checkOrder['status'];
-
-      if (s == 'completed') return null;
-      if (s == 'cancelled') throw Exception('This order was cancelled.');
-
-      final completedAt = DateTime.now().toUtc();
-
-      final Map<String, dynamic> updateData = {
-        'status': 'completed',
-        'completed_at': completedAt.toIso8601String(),
-        'completed_by_id': currentUserId,
-        'completed_by_name': currentUserName ?? 'Unknown User',
-      };
-
-      if (paymentMode != null) updateData['payment_mode'] = paymentMode;
-      if (cashGiven != null) updateData['cash_given'] = cashGiven;
-      if (changeAmount != null) updateData['change_amount'] = changeAmount;
-
-      if (normalizedPaymentReference != null) {
-        updateData['payment_reference'] = normalizedPaymentReference;
-      }
-
-      final row = await supabase
-          .from('orders')
-          .update(updateData)
-          .eq('id', order.id)
-          .select('created_at')
-          .single();
+      final response = await supabase.rpc(
+        'complete_customer_order_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_order_id': order.id,
+          'p_payment_mode': paymentMode,
+          'p_cash_given': cashGiven,
+          'p_change_amount': changeAmount,
+          'p_payment_reference': normalizedPaymentReference,
+        },
+      );
+      final result = Map<String, dynamic>.from(response as Map);
+      if (result['reused'] == true) return null;
+      final row = Map<String, dynamic>.from(result['order'] as Map);
+      final completedAt = DateTime.parse(row['completed_at'].toString());
 
       return (
         createdAt: DateTime.parse(row['created_at'].toString()).toLocal(),
         completedAt: completedAt.toLocal(),
+      );
+    } catch (error, stackTrace) {
+      _throwCriticalOperationError(
+        'Transactional payment completion failed',
+        error,
+        stackTrace,
       );
     } finally {
       _processingOrders!.remove(order.id);

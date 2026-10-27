@@ -9,6 +9,9 @@ import 'widgets/operational_monitor_widgets.dart';
 
 const int _cashPageSize = 20;
 const Duration _paymentDelay = Duration(minutes: 15);
+const double _inlineDetailsBreakpoint = 900;
+const double _inlineDetailsPanelWidth = 340;
+const double _inlineDetailsGap = 16;
 
 class PosMonitorPage extends StatefulWidget {
   const PosMonitorPage({
@@ -138,7 +141,6 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
           final allOrders = snapshot.data ?? const <CustomerOrder>[];
           final readyOrders = allOrders.where(_isReady).toList()
             ..sort((a, b) => _readyAt(a).compareTo(_readyAt(b)));
-          _handlePendingAutoOpen(readyOrders);
           _closeStaleSelection(readyOrders);
 
           final totalPages = math.max(
@@ -165,22 +167,35 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      final showDetail = constraints.maxWidth >= 1180;
+                      final useInlineDetails =
+                          constraints.maxWidth >= _inlineDetailsBreakpoint;
+                      final tableWidth = useInlineDetails
+                          ? constraints.maxWidth -
+                                _inlineDetailsPanelWidth -
+                                _inlineDetailsGap
+                          : constraints.maxWidth;
+                      _handlePendingAutoOpen(
+                        readyOrders,
+                        useInlineDetails: useInlineDetails,
+                      );
                       final table = _table(
                         orders: pageOrders,
                         totalItems: readyOrders.length,
                         page: page,
                         totalPages: totalPages,
-                        compact: constraints.maxWidth < 760,
-                        useDialog: !showDetail,
+                        compact: tableWidth < 760,
+                        useDialog: !useInlineDetails,
                       );
-                      if (!showDetail) return table;
+                      if (!useInlineDetails) return table;
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(flex: 7, child: table),
-                          const SizedBox(width: 18),
-                          Expanded(flex: 3, child: _detailPanel(selectedOrder)),
+                          Expanded(child: table),
+                          const SizedBox(width: _inlineDetailsGap),
+                          SizedBox(
+                            width: _inlineDetailsPanelWidth,
+                            child: _detailPanel(selectedOrder),
+                          ),
                         ],
                       );
                     },
@@ -370,35 +385,19 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
                     message:
                         'Prepared orders will appear here when they are ready for checkout.',
                   )
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      final width = math.max(900.0, constraints.maxWidth);
-                      return SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: SizedBox(
-                          width: width,
-                          height: constraints.maxHeight,
-                          child: Column(
-                            children: [
-                              _tableHeader(),
-                              Expanded(
-                                child: ListView.separated(
-                                  itemCount: orders.length,
-                                  separatorBuilder: (_, _) => const Divider(
-                                    height: 1,
-                                    color: monitorLineColor,
-                                  ),
-                                  itemBuilder: (context, index) => _tableRow(
-                                    orders[index],
-                                    useDialog: useDialog,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                : Column(
+                    children: [
+                      _tableHeader(),
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: orders.length,
+                          separatorBuilder: (_, _) =>
+                              const Divider(height: 1, color: monitorLineColor),
+                          itemBuilder: (context, index) =>
+                              _tableRow(orders[index], useDialog: useDialog),
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
           ),
           const Divider(height: 1, color: monitorLineColor),
@@ -420,16 +419,21 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
     return Container(
       height: 42,
       color: const Color(0xFFF8FAFC),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: const Row(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
         children: [
-          MonitorTableCell(width: 130, text: 'ORDER', header: true),
-          MonitorTableCell(width: 170, text: 'READY SINCE', header: true),
-          MonitorTableCell(width: 150, text: 'CASHIER', header: true),
-          MonitorTableCell(width: 75, text: 'ITEMS', header: true),
-          MonitorTableCell(width: 115, text: 'AMOUNT', header: true),
-          MonitorTableCell(width: 120, text: 'PAYMENT', header: true),
-          MonitorTableCell(width: 105, text: 'WAIT', header: true),
+          _tableCell(flex: 10, text: 'ORDER', header: true),
+          _tableCell(flex: 15, text: 'READY SINCE', header: true, maxLines: 2),
+          _tableCell(flex: 13, text: 'CASHIER', header: true),
+          _tableCell(
+            flex: 6,
+            text: 'ITEMS',
+            header: true,
+            align: TextAlign.center,
+          ),
+          _tableCell(flex: 10, text: 'AMOUNT', header: true),
+          _tableCell(flex: 11, text: 'PAYMENT', header: true),
+          _tableCell(flex: 8, text: 'WAIT', header: true),
         ],
       ),
     );
@@ -446,31 +450,86 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
         onTap: () => _selectOrder(order, useDialog: useDialog),
         child: Container(
           height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Row(
             children: [
-              MonitorTableCell(
-                width: 130,
+              _tableCell(
+                flex: 10,
                 text: '#${_shortId(order.id)}',
                 strong: true,
               ),
-              MonitorTableCell(width: 170, text: _dateTime(_readyAt(order))),
-              const MonitorTableCell(width: 150, text: '—'),
-              MonitorTableCell(width: 75, text: '${order.items.length}'),
-              MonitorTableCell(width: 115, text: _money(order.totalAmount)),
-              SizedBox(
-                width: 120,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: MonitorStatusPill(
-                    label: delayed ? 'Delayed' : 'Waiting',
-                    color: delayed ? Colors.red : monitorPrimaryBlue,
-                  ),
-                ),
+              _tableCell(
+                flex: 15,
+                text: _dateTime(_readyAt(order)),
+                maxLines: 2,
               ),
-              MonitorTableCell(width: 105, text: _elapsed(_paymentWait(order))),
+              _tableCell(flex: 13, text: '—', maxLines: 2),
+              _tableCell(
+                flex: 6,
+                text: '${order.items.length}',
+                align: TextAlign.center,
+              ),
+              _tableCell(
+                flex: 10,
+                text: _money(order.totalAmount),
+                strong: true,
+              ),
+              _statusCell(
+                flex: 11,
+                label: delayed ? 'Delayed' : 'Waiting',
+                color: delayed ? Colors.red : monitorPrimaryBlue,
+              ),
+              _tableCell(flex: 8, text: _elapsed(_paymentWait(order))),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tableCell({
+    required int flex,
+    required String text,
+    bool header = false,
+    bool strong = false,
+    int maxLines = 1,
+    TextAlign align = TextAlign.left,
+    Color? color,
+  }) {
+    return Expanded(
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Text(
+          text,
+          textAlign: align,
+          maxLines: maxLines,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color ?? (header ? monitorMutedText : monitorDarkText),
+            fontSize: header ? 9 : 11,
+            height: 1.15,
+            fontWeight: header || strong ? FontWeight.w900 : FontWeight.w600,
+            fontFamily: monitorFontFamily,
+            letterSpacing: header ? 0.2 : 0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _statusCell({
+    required int flex,
+    required String label,
+    required Color color,
+  }) {
+    return Expanded(
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: MonitorStatusPill(label: label, color: color),
         ),
       ),
     );
@@ -525,11 +584,12 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
                 label: delayed ? 'Delayed' : 'Ready',
                 color: delayed ? Colors.red : monitorPrimaryBlue,
               ),
-              if (dialog)
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
-                ),
+              IconButton(
+                onPressed: dialog
+                    ? () => Navigator.of(context).pop()
+                    : () => setState(() => _selectedOrderId = null),
+                icon: const Icon(Icons.close),
+              ),
             ],
           ),
         ),
@@ -652,11 +712,12 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
   void _selectOrder(CustomerOrder order, {required bool useDialog}) {
     setState(() => _selectedOrderId = order.id);
     widget.onOrderOpened?.call();
-    if (useDialog) _showDetailsDialog(order.id);
+    if (useDialog) unawaited(_showDetailsDialog(order));
   }
 
-  void _showDetailsDialog(String orderId) {
-    showDialog<void>(
+  Future<void> _showDetailsDialog(CustomerOrder initialOrder) async {
+    final orderId = initialOrder.id;
+    await showDialog<void>(
       context: context,
       builder: (dialogContext) => Dialog(
         backgroundColor: Colors.white,
@@ -665,7 +726,10 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
           width: 520,
           height: 640,
           child: StreamBuilder<List<CustomerOrder>>(
-            stream: widget.controller.streamOrders(),
+            stream: widget.controller.orderSnapshots,
+            initialData: widget.controller.currentOrders.isEmpty
+                ? <CustomerOrder>[initialOrder]
+                : widget.controller.currentOrders,
             builder: (context, snapshot) {
               CustomerOrder? current;
               for (final order in snapshot.data ?? const <CustomerOrder>[]) {
@@ -689,6 +753,9 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
         ),
       ),
     );
+    if (mounted && _selectedOrderId == orderId) {
+      setState(() => _selectedOrderId = null);
+    }
   }
 
   CustomerOrder? _selected(List<CustomerOrder> orders) {
@@ -710,14 +777,27 @@ class _CashMonitorPageState extends State<PosMonitorPage> {
     });
   }
 
-  void _handlePendingAutoOpen(List<CustomerOrder> orders) {
+  void _handlePendingAutoOpen(
+    List<CustomerOrder> orders, {
+    required bool useInlineDetails,
+  }) {
     final target = _pendingAutoOpenId;
-    if (target == null || !orders.any((order) => order.id == target)) return;
+    if (target == null) return;
+    CustomerOrder? targetOrder;
+    for (final order in orders) {
+      if (order.id == target) {
+        targetOrder = order;
+        break;
+      }
+    }
+    if (targetOrder == null) return;
     _pendingAutoOpenId = null;
+    final order = targetOrder;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() => _selectedOrderId = target);
       widget.onOrderOpened?.call();
+      if (!useInlineDetails) unawaited(_showDetailsDialog(order));
     });
   }
 

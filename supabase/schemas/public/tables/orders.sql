@@ -34,6 +34,7 @@ CREATE TABLE "public"."orders" (
   "assigned_by_admin_name"       text,
   "payment_reference"            text,
   "discount_approval_request_id" uuid,
+  "checkout_operation_id"        text,
   CONSTRAINT "orders_location_id_fkey" FOREIGN KEY (location_id) REFERENCES public.locations(id) ON DELETE CASCADE,
   CONSTRAINT "orders_pkey" PRIMARY KEY (id),
   CONSTRAINT "orders_status_check" CHECK ((status = ANY (ARRAY['pending'::text, 'prepared'::text, 'completed'::text, 'solo_picking'::text, 'cancelled'::text]))),
@@ -51,6 +52,12 @@ CREATE INDEX idx_orders_prepared_by_id ON public.orders USING btree (prepared_by
 
 CREATE UNIQUE INDEX orders_discount_approval_request_unique ON public.orders USING btree (discount_approval_request_id)
   WHERE (discount_approval_request_id IS NOT NULL);
+
+CREATE UNIQUE INDEX orders_checkout_operation_unique ON public.orders USING btree (checkout_operation_id)
+  WHERE (checkout_operation_id IS NOT NULL);
+
+CREATE UNIQUE INDEX orders_completed_gcash_reference_unique ON public.orders USING btree (location_id, lower(btrim(payment_reference)))
+  WHERE ((status = 'completed'::text) AND (lower(btrim(payment_mode)) = 'gcash'::text) AND (payment_reference IS NOT NULL) AND (btrim(payment_reference) <> ''::text));
 
 CREATE INDEX orders_helper_current_workload_v1_idx ON public.orders USING btree (location_id, assigned_helper_id)
   WHERE ((status = 'pending'::text) AND (assigned_helper_id IS NOT NULL));

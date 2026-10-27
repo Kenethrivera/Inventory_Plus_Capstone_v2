@@ -9,6 +9,9 @@ import 'widgets/operational_monitor_widgets.dart';
 
 const int _queuePageSize = 20;
 const Duration _preparationDelay = Duration(minutes: 30);
+const double _inlineDetailsBreakpoint = 900;
+const double _inlineDetailsPanelWidth = 340;
+const double _inlineDetailsGap = 16;
 
 class OrderQueueMonitorPage extends StatefulWidget {
   const OrderQueueMonitorPage({
@@ -161,7 +164,6 @@ class _OperationalQueueMonitorPageState extends State<OrderQueueMonitorPage> {
               }
               return a.createdAt.compareTo(b.createdAt);
             });
-          _handlePendingAutoOpen(activeOrders);
           _closeStaleSelection(activeOrders);
 
           final totalPages = math.max(
@@ -188,22 +190,35 @@ class _OperationalQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      final showDetail = constraints.maxWidth >= 1180;
+                      final useInlineDetails =
+                          constraints.maxWidth >= _inlineDetailsBreakpoint;
+                      final tableWidth = useInlineDetails
+                          ? constraints.maxWidth -
+                                _inlineDetailsPanelWidth -
+                                _inlineDetailsGap
+                          : constraints.maxWidth;
+                      _handlePendingAutoOpen(
+                        activeOrders,
+                        useInlineDetails: useInlineDetails,
+                      );
                       final table = _table(
                         orders: pageOrders,
                         totalItems: activeOrders.length,
                         page: page,
                         totalPages: totalPages,
-                        compact: constraints.maxWidth < 760,
-                        useDialog: !showDetail,
+                        compact: tableWidth < 760,
+                        useDialog: !useInlineDetails,
                       );
-                      if (!showDetail) return table;
+                      if (!useInlineDetails) return table;
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(flex: 7, child: table),
-                          const SizedBox(width: 18),
-                          Expanded(flex: 3, child: _detailPanel(selectedOrder)),
+                          Expanded(child: table),
+                          const SizedBox(width: _inlineDetailsGap),
+                          SizedBox(
+                            width: _inlineDetailsPanelWidth,
+                            child: _detailPanel(selectedOrder),
+                          ),
                         ],
                       );
                     },
@@ -388,35 +403,19 @@ class _OperationalQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                     message:
                         'New unassigned or in-preparation orders will appear here.',
                   )
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      final width = math.max(920.0, constraints.maxWidth);
-                      return SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: SizedBox(
-                          width: width,
-                          height: constraints.maxHeight,
-                          child: Column(
-                            children: [
-                              _tableHeader(),
-                              Expanded(
-                                child: ListView.separated(
-                                  itemCount: orders.length,
-                                  separatorBuilder: (_, _) => const Divider(
-                                    height: 1,
-                                    color: monitorLineColor,
-                                  ),
-                                  itemBuilder: (context, index) => _tableRow(
-                                    orders[index],
-                                    useDialog: useDialog,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                : Column(
+                    children: [
+                      _tableHeader(),
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: orders.length,
+                          separatorBuilder: (_, _) =>
+                              const Divider(height: 1, color: monitorLineColor),
+                          itemBuilder: (context, index) =>
+                              _tableRow(orders[index], useDialog: useDialog),
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
           ),
           const Divider(height: 1, color: monitorLineColor),
@@ -438,16 +437,21 @@ class _OperationalQueueMonitorPageState extends State<OrderQueueMonitorPage> {
     return Container(
       height: 42,
       color: const Color(0xFFF8FAFC),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: const Row(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
         children: [
-          MonitorTableCell(width: 130, text: 'ORDER', header: true),
-          MonitorTableCell(width: 145, text: 'QUEUE STATUS', header: true),
-          MonitorTableCell(width: 175, text: 'HELPER', header: true),
-          MonitorTableCell(width: 80, text: 'ITEMS', header: true),
-          MonitorTableCell(width: 110, text: 'WAITING', header: true),
-          MonitorTableCell(width: 160, text: 'ASSIGNED', header: true),
-          MonitorTableCell(width: 110, text: 'PRIORITY', header: true),
+          _tableCell(flex: 10, text: 'ORDER', header: true),
+          _tableCell(flex: 12, text: 'QUEUE STATUS', header: true, maxLines: 2),
+          _tableCell(flex: 14, text: 'HELPER', header: true),
+          _tableCell(
+            flex: 7,
+            text: 'ITEMS',
+            header: true,
+            align: TextAlign.center,
+          ),
+          _tableCell(flex: 10, text: 'WAITING', header: true),
+          _tableCell(flex: 17, text: 'ASSIGNED', header: true),
+          _tableCell(flex: 10, text: 'PRIORITY', header: true),
         ],
       ),
     );
@@ -463,45 +467,91 @@ class _OperationalQueueMonitorPageState extends State<OrderQueueMonitorPage> {
         onTap: () => _selectOrder(order, useDialog: useDialog),
         child: Container(
           height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Row(
             children: [
-              MonitorTableCell(
-                width: 130,
+              _tableCell(
+                flex: 10,
                 text: '#${_shortId(order.id)}',
                 strong: true,
               ),
-              SizedBox(
-                width: 145,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: MonitorStatusPill(
-                    label: _status(order),
-                    color: _statusColor(order),
-                  ),
-                ),
+              _statusCell(
+                flex: 12,
+                label: _status(order),
+                color: _statusColor(order),
               ),
-              MonitorTableCell(
-                width: 175,
+              _tableCell(
+                flex: 14,
                 text: _person(order.assignedHelperName),
+                maxLines: 2,
               ),
-              MonitorTableCell(width: 80, text: '${order.items.length}'),
-              MonitorTableCell(width: 110, text: _elapsed(_queueAge(order))),
-              MonitorTableCell(width: 160, text: _dateTime(order.assignedAt)),
-              SizedBox(
-                width: 110,
-                child: Text(
-                  _isDelayed(order) ? 'Delayed' : 'Normal',
-                  style: TextStyle(
-                    color: _isDelayed(order) ? Colors.red : monitorMutedText,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                    fontFamily: monitorFontFamily,
-                  ),
-                ),
+              _tableCell(
+                flex: 7,
+                text: '${order.items.length}',
+                align: TextAlign.center,
+              ),
+              _tableCell(flex: 10, text: _elapsed(_queueAge(order))),
+              _tableCell(
+                flex: 17,
+                text: _dateTime(order.assignedAt),
+                maxLines: 2,
+              ),
+              _tableCell(
+                flex: 10,
+                text: _isDelayed(order) ? 'Delayed' : 'Normal',
+                strong: true,
+                color: _isDelayed(order) ? Colors.red : monitorMutedText,
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tableCell({
+    required int flex,
+    required String text,
+    bool header = false,
+    bool strong = false,
+    int maxLines = 1,
+    TextAlign align = TextAlign.left,
+    Color? color,
+  }) {
+    return Expanded(
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Text(
+          text,
+          textAlign: align,
+          maxLines: maxLines,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color ?? (header ? monitorMutedText : monitorDarkText),
+            fontSize: header ? 9 : 11,
+            height: 1.15,
+            fontWeight: header || strong ? FontWeight.w900 : FontWeight.w600,
+            fontFamily: monitorFontFamily,
+            letterSpacing: header ? 0.2 : 0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _statusCell({
+    required int flex,
+    required String label,
+    required Color color,
+  }) {
+    return Expanded(
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: MonitorStatusPill(label: label, color: color),
         ),
       ),
     );
@@ -555,11 +605,12 @@ class _OperationalQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                 label: _status(order),
                 color: _statusColor(order),
               ),
-              if (dialog)
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
-                ),
+              IconButton(
+                onPressed: dialog
+                    ? () => Navigator.of(context).pop()
+                    : () => setState(() => _selectedOrderId = null),
+                icon: const Icon(Icons.close),
+              ),
             ],
           ),
         ),
@@ -680,11 +731,12 @@ class _OperationalQueueMonitorPageState extends State<OrderQueueMonitorPage> {
   void _selectOrder(CustomerOrder order, {required bool useDialog}) {
     setState(() => _selectedOrderId = order.id);
     widget.onOrderOpened?.call();
-    if (useDialog) _showDetailsDialog(order.id);
+    if (useDialog) unawaited(_showDetailsDialog(order));
   }
 
-  void _showDetailsDialog(String orderId) {
-    showDialog<void>(
+  Future<void> _showDetailsDialog(CustomerOrder initialOrder) async {
+    final orderId = initialOrder.id;
+    await showDialog<void>(
       context: context,
       builder: (dialogContext) => Dialog(
         backgroundColor: Colors.white,
@@ -693,7 +745,10 @@ class _OperationalQueueMonitorPageState extends State<OrderQueueMonitorPage> {
           width: 520,
           height: 640,
           child: StreamBuilder<List<CustomerOrder>>(
-            stream: widget.controller.streamOrders(),
+            stream: widget.controller.orderSnapshots,
+            initialData: widget.controller.currentOrders.isEmpty
+                ? <CustomerOrder>[initialOrder]
+                : widget.controller.currentOrders,
             builder: (context, snapshot) {
               CustomerOrder? current;
               for (final order in snapshot.data ?? const <CustomerOrder>[]) {
@@ -717,6 +772,9 @@ class _OperationalQueueMonitorPageState extends State<OrderQueueMonitorPage> {
         ),
       ),
     );
+    if (mounted && _selectedOrderId == orderId) {
+      setState(() => _selectedOrderId = null);
+    }
   }
 
   CustomerOrder? _selected(List<CustomerOrder> orders) {
@@ -738,15 +796,27 @@ class _OperationalQueueMonitorPageState extends State<OrderQueueMonitorPage> {
     });
   }
 
-  void _handlePendingAutoOpen(List<CustomerOrder> orders) {
+  void _handlePendingAutoOpen(
+    List<CustomerOrder> orders, {
+    required bool useInlineDetails,
+  }) {
     final target = _pendingAutoOpenId;
     if (target == null) return;
-    if (!orders.any((order) => order.id == target)) return;
+    CustomerOrder? targetOrder;
+    for (final order in orders) {
+      if (order.id == target) {
+        targetOrder = order;
+        break;
+      }
+    }
+    if (targetOrder == null) return;
     _pendingAutoOpenId = null;
+    final order = targetOrder;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() => _selectedOrderId = target);
       widget.onOrderOpened?.call();
+      if (!useInlineDetails) unawaited(_showDetailsDialog(order));
     });
   }
 
