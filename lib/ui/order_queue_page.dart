@@ -645,7 +645,7 @@ class _OrderCard extends StatelessWidget {
   }
 }
 
-class OrderChecklistPage extends StatelessWidget {
+class OrderChecklistPage extends StatefulWidget {
   final CustomerOrder order;
   final InventoryController controller;
   final Set<String> pickedItems;
@@ -663,27 +663,65 @@ class OrderChecklistPage extends StatelessWidget {
     required this.onFinish,
   });
 
+  @override
+  State<OrderChecklistPage> createState() => _OrderChecklistPageState();
+}
+
+class _OrderChecklistPageState extends State<OrderChecklistPage> {
+  bool _isSubmittingPreparation = false;
+
+  CustomerOrder get order => widget.order;
+  InventoryController get controller => widget.controller;
+  Set<String> get pickedItems => widget.pickedItems;
+  Function(String productId, bool isPicked) get onToggleItem =>
+      widget.onToggleItem;
+  VoidCallback get onBack => widget.onBack;
+  VoidCallback get onFinish => widget.onFinish;
+
   Future<void> _markPrepared(BuildContext context) async {
-    await controller.updateOrderStatus(order.id, 'prepared');
+    if (_isSubmittingPreparation) return;
+    setState(() => _isSubmittingPreparation = true);
 
-    final notificationController = NotificationProvider.maybeOf(context);
-    final locationId = controller.activeLocationId;
-    final preparedByName = controller.currentUserName ?? 'Unknown User';
-    final preparedAt = DateTime.now();
-
-    if (notificationController != null && locationId != null) {
-      await notificationController.notifyOrderPrepared(
-        locationId: locationId,
-        orderId: order.id,
-        preparedByName: preparedByName,
-        preparedAt: preparedAt,
+    try {
+      await controller.updateOrderStatus(
+        order.id,
+        'prepared',
+        expectedStatus: 'pending',
       );
-    }
 
-    if (context.mounted) {
-      final shortId = order.id.toString().substring(0, 8).toUpperCase();
-      AppToast.success(context, 'Cashier notified for #ORD-$shortId');
-      onFinish();
+      final notificationController = NotificationProvider.maybeOf(context);
+      final locationId = controller.activeLocationId;
+      final preparedByName = controller.currentUserName ?? 'Unknown User';
+      final preparedAt = DateTime.now();
+
+      if (notificationController != null && locationId != null) {
+        await notificationController.notifyOrderPrepared(
+          locationId: locationId,
+          orderId: order.id,
+          preparedByName: preparedByName,
+          preparedAt: preparedAt,
+        );
+      }
+
+      if (context.mounted) {
+        final shortId = order.id.toString().substring(0, 8).toUpperCase();
+        AppToast.success(context, 'Cashier notified for #ORD-$shortId');
+        onFinish();
+      }
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Order preparation failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (context.mounted) {
+        AppToast.error(
+          context,
+          AppErrorMapper.message(error, fallback: AppErrorCategory.dataSave),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmittingPreparation = false);
     }
   }
 
@@ -996,7 +1034,9 @@ class OrderChecklistPage extends StatelessWidget {
               width: double.infinity,
               height: 56,
               child: ElevatedButton(
-                onPressed: isAllPicked ? () => _markPrepared(context) : null,
+                onPressed: isAllPicked && !_isSubmittingPreparation
+                    ? () => _markPrepared(context)
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _primaryBlue,
                   disabledBackgroundColor: Colors.blue.shade200,
@@ -1006,7 +1046,9 @@ class OrderChecklistPage extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  isAllPicked
+                  _isSubmittingPreparation
+                      ? 'Saving preparation...'
+                      : isAllPicked
                       ? 'Notify Cashier (Prepared)'
                       : 'Pick all items first ($pickedCount/$totalCount)',
                   style: const TextStyle(

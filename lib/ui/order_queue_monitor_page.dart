@@ -976,10 +976,12 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
       return;
     }
 
+    bool assigning = false;
     showDialog(
       context: context,
       builder: (dialogContext) {
-        return Dialog(
+        return StatefulBuilder(
+          builder: (context, setDialogState) => Dialog(
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
@@ -1050,7 +1052,11 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                       final isCurrent = currentHelperId?.toString() == helperId;
 
                       return InkWell(
-                        onTap: () async {
+                        onTap: assigning
+                            ? null
+                            : () async {
+                          if (assigning) return;
+                          setDialogState(() => assigning = true);
                           try {
                             final currentHelperId = _displayAssignedHelperId(
                               order,
@@ -1076,7 +1082,7 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                             await widget.controller.assignOrderToHelper(
                               orderId: order.id,
                               helperId: helperId,
-                              helperName: helperName,
+                              expectedHelperId: currentHelperId?.toString(),
                             );
 
                             if (notificationController == null) {
@@ -1125,6 +1131,9 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
                                 fallback: AppErrorCategory.dataSave,
                               ),
                             );
+                            if (dialogContext.mounted) {
+                              setDialogState(() => assigning = false);
+                            }
                           }
                         },
                         borderRadius: BorderRadius.circular(14),
@@ -1191,6 +1200,7 @@ class _OrderQueueMonitorPageState extends State<OrderQueueMonitorPage> {
               ],
             ),
           ),
+        ),
         );
       },
     );

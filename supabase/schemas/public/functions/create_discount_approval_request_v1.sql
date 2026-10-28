@@ -69,7 +69,28 @@ begin
     v_snapshot.discount_amount, v_snapshot.effective_percentage,
     v_snapshot.subtotal_amount, v_snapshot.normalized_items,
     v_snapshot.cart_fingerprint, trim(p_checkout_token)
-  ) returning * into v_request;
+  )
+  on conflict (location_id, requested_by_id, checkout_token, cart_fingerprint)
+    where request_type = 'discount'
+      and status in ('pending', 'approved')
+      and used_at is null
+  do nothing
+  returning * into v_request;
+
+  if not found then
+    select request.* into v_request
+    from public.approval_requests request
+    where request.location_id = v_profile.location_id
+      and request.requested_by_id = v_profile.profile_id
+      and request.request_type = 'discount'
+      and request.checkout_token = trim(p_checkout_token)
+      and request.cart_fingerprint = v_snapshot.cart_fingerprint
+      and request.status in ('pending', 'approved')
+      and request.used_at is null
+    order by request.requested_at desc
+    limit 1;
+  end if;
+  if not found then raise exception 'discount_approval_conflict'; end if;
 
   perform private.upsert_inventory_approval_notification_v1(v_request);
   return private.approval_request_json_v1(v_request);

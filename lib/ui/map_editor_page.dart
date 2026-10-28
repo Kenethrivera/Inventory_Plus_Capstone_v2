@@ -26,6 +26,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
   MapMode _mode = MapMode.view; // Default to Preview
   String? _selectedItemId;
   List<MapElement> _draftLayout = <MapElement>[];
+  List<MapElement> _baselineLayout = <MapElement>[];
   String _baselineSignature = '';
   String? _draftLocationId;
   String? _draftUserId;
@@ -70,6 +71,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
       final List<MapElement> canonical = widget.controller.currentMapLayout;
       setState(() {
         _draftLayout = widget.controller.cloneMapLayout(canonical);
+        _baselineLayout = widget.controller.cloneMapLayout(canonical);
         _baselineSignature = widget.controller.mapLayoutSignature(canonical);
         _draftLocationId = widget.controller.activeLocationId;
         _draftUserId = widget.controller.currentUserId;
@@ -126,6 +128,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
     setState(() {
       _draftLayout = widget.controller.cloneMapLayout(canonical);
+      _baselineLayout = widget.controller.cloneMapLayout(canonical);
       _baselineSignature = canonicalSignature;
       _remoteChangePending = false;
       _remoteChangeToastShown = false;
@@ -138,6 +141,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
         canonical ?? widget.controller.currentMapLayout;
     setState(() {
       _draftLayout = widget.controller.cloneMapLayout(current);
+      _baselineLayout = widget.controller.cloneMapLayout(current);
       _baselineSignature = widget.controller.mapLayoutSignature(current);
       _draftLocationId = widget.controller.activeLocationId;
       _draftUserId = widget.controller.currentUserId;
@@ -164,6 +168,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
       final MapLayoutSaveResult result = await widget.controller
           .saveMapLayoutIfUnchanged(
             draft: clear ? <MapElement>[] : _draftLayout,
+            baseline: _baselineLayout,
             baselineSignature: _baselineSignature,
             expectedLocationId: _draftLocationId ?? '',
             expectedUserId: _draftUserId ?? '',
@@ -179,6 +184,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
       setState(() {
         _draftLayout = widget.controller.cloneMapLayout(result.layout);
+        _baselineLayout = widget.controller.cloneMapLayout(result.layout);
         _baselineSignature = result.signature;
         _draftLocationId = widget.controller.activeLocationId;
         _draftUserId = widget.controller.currentUserId;
@@ -215,8 +221,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
             title: 'Newer Map Layout Found',
             subtitle: 'Your draft was not overwritten',
             child: const Text(
-              'Another user saved the map after you began editing. Keep '
-              'editing your current draft, or reload the newest saved layout. '
+              'The store map was changed by another user. Refresh and review '
+              'the latest version. You can keep editing your current draft, '
+              'or reload the newest saved layout. '
               'Reloading will discard your local changes.',
               style: TextStyle(fontFamily: _fontFam, fontSize: 13),
             ),

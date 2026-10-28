@@ -33,6 +33,7 @@ CREATE TABLE "public"."approval_requests" (
   "used_at"                       timestamp with time zone,
   "used_order_id"                 uuid,
   "cart_items"                    jsonb,
+  "submission_operation_id"       text,
   CONSTRAINT "approval_request_discount_fields_check"
     CHECK (((request_type <> 'discount'::text) OR ((discount_mode = ANY (ARRAY['percentage'::text, 'amount'::text])) AND (discount_value IS
     NOT NULL) AND (discount_value >= (0)::numeric) AND (discount_amount IS NOT NULL) AND (discount_amount >= (0)::numeric) AND (discount_effective_percentage IS
@@ -60,6 +61,17 @@ ALTER TABLE "public"."approval_requests"
 CREATE INDEX approval_requests_location_status_requested_idx ON public.approval_requests USING btree (location_id, status, requested_at DESC, id DESC);
 
 CREATE INDEX approval_requests_requester_requested_idx ON public.approval_requests USING btree (location_id, requested_by_id, requested_at DESC);
+
+CREATE UNIQUE INDEX approval_requests_discount_active_unique
+  ON public.approval_requests USING btree
+  (location_id, requested_by_id, checkout_token, cart_fingerprint)
+  WHERE ((request_type = 'discount'::text)
+    AND (status = ANY (ARRAY['pending'::text, 'approved'::text]))
+    AND (used_at IS NULL));
+
+CREATE UNIQUE INDEX approval_requests_submission_operation_unique
+  ON public.approval_requests USING btree (submission_operation_id)
+  WHERE (submission_operation_id IS NOT NULL);
 
 CREATE TRIGGER approval_request_signal_realtime_v1
   AFTER INSERT OR DELETE OR UPDATE ON public.approval_requests

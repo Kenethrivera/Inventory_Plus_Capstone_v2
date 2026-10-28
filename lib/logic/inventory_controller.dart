@@ -740,10 +740,13 @@ class InventoryController {
     }
   }
 
-  Future<void> addItem(InventoryItem newItem) async {
+  Future<InventoryItem> addItem(
+    InventoryItem newItem, {
+    required String operationId,
+  }) async {
     final locId = activeLocationId;
     if (locId == null) {
-      return;
+      throw StateError('Cannot add a product without an active location.');
     }
 
     final skuTaken = _disabledItems.any(
@@ -757,41 +760,48 @@ class InventoryController {
     }
 
     try {
-      final response = await supabase
-          .from('products')
-          .insert({
-            'sku': newItem.sku,
-            'product_name': newItem.name,
-            'category': newItem.category,
-            'product_price': newItem.price,
-            'product_quantity': newItem.quantity,
-            'description': newItem.description,
-            'image_url': newItem.imageUrl,
-            'location_id': locId,
-            'manufacturer': newItem.manufacturer,
-            'model': newItem.model,
-            'product_size': newItem.productSize,
-            'shelf_level': newItem.shelfLevel,
-            'bin_number': newItem.binNumber,
-            'unit': newItem.unit,
-            'max_quantity': newItem.maxQuantity,
-          })
-          .select()
-          .single();
+      final response = await supabase.rpc(
+        'create_product_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_operation_id': operationId,
+          'p_sku': newItem.sku,
+          'p_product_name': newItem.name,
+          'p_category': newItem.category,
+          'p_product_price': newItem.price,
+          'p_product_quantity': newItem.quantity,
+          'p_description': newItem.description,
+          'p_image_url': newItem.imageUrl,
+          'p_manufacturer': newItem.manufacturer,
+          'p_model': newItem.model,
+          'p_product_size': newItem.productSize,
+          'p_shelf_level': newItem.shelfLevel,
+          'p_bin_number': newItem.binNumber,
+          'p_unit': newItem.unit,
+          'p_max_quantity': newItem.maxQuantity,
+        },
+      );
 
-      final savedItem = InventoryItem.fromSupabase(response);
-      _items.add(savedItem);
+      final savedItem = InventoryItem.fromSupabase(
+        Map<String, dynamic>.from(response as Map),
+      );
+      final existingIndex = _items.indexWhere(
+        (item) => item.id == savedItem.id,
+      );
+      if (existingIndex == -1) {
+        _items.add(savedItem);
+      } else {
+        _items[existingIndex] = savedItem;
+      }
       _baselineByProduct[savedItem.id] = savedItem.quantity;
       _publishInventorySnapshot();
-
-      await _logTransaction(
-        productId: savedItem.id,
-        type: 'add',
-        quantityChange: savedItem.quantity,
-        newQuantity: savedItem.quantity,
+      return savedItem;
+    } catch (error, stackTrace) {
+      _throwCriticalOperationError(
+        'Transactional product creation failed',
+        error,
+        stackTrace,
       );
-    } catch (e) {
-      rethrow;
     }
   }
 
@@ -988,6 +998,7 @@ class InventoryController {
   }
 
   Future<InventoryApprovalRequest> submitInventoryApprovalRequest({
+    required String operationId,
     required InventoryApprovalType type,
     required String productId,
     required double quantity,
@@ -1020,20 +1031,30 @@ class InventoryController {
         proofMimeType.trim().isEmpty) {
       throw ArgumentError('Photo evidence is required.');
     }
-    final response = await supabase.rpc(
-      'create_inventory_approval_request_v1',
-      params: <String, dynamic>{
-        'p_session_token': _requireSessionToken(),
-        'p_request_type': type.databaseValue,
-        'p_product_id': productId,
-        'p_quantity': quantity,
-        'p_reason': reason?.trim(),
-        'p_note': note?.trim(),
-        'p_proof_storage_path': proofStoragePath.trim(),
-        'p_proof_file_name': proofFileName.trim(),
-        'p_proof_mime_type': proofMimeType.trim().toLowerCase(),
-      },
-    );
+    late final dynamic response;
+    try {
+      response = await supabase.rpc(
+        'create_inventory_approval_request_v2',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_operation_id': operationId,
+          'p_request_type': type.databaseValue,
+          'p_product_id': productId,
+          'p_quantity': quantity,
+          'p_reason': reason?.trim(),
+          'p_note': note?.trim(),
+          'p_proof_storage_path': proofStoragePath.trim(),
+          'p_proof_file_name': proofFileName.trim(),
+          'p_proof_mime_type': proofMimeType.trim().toLowerCase(),
+        },
+      );
+    } catch (error, stackTrace) {
+      _throwCriticalOperationError(
+        'Inventory approval submission failed',
+        error,
+        stackTrace,
+      );
+    }
     final request = InventoryApprovalRequest.fromJson(
       Map<String, dynamic>.from(response as Map),
     );
@@ -1418,7 +1439,7 @@ class InventoryController {
     final pending = _pendingQuantityOperations[productId];
     final operationId = pending?.signature == signature
         ? pending!.operationId
-        : _newOperationId();
+        : newOperationId('inventory-adjustment');
     _pendingQuantityOperations[productId] = (
       signature: signature,
       operationId: operationId,
@@ -1448,13 +1469,13 @@ class InventoryController {
     }
   }
 
-  String _newOperationId() {
+  String newOperationId(String scope) {
     final random = math.Random.secure();
     final entropy = List<String>.generate(
       4,
       (_) => random.nextInt(0x100000000).toRadixString(16).padLeft(8, '0'),
     ).join();
-    return 'inventory-adjustment:'
+    return '$scope:'
         '${DateTime.now().microsecondsSinceEpoch}-$entropy';
   }
 
@@ -1486,6 +1507,31 @@ class InventoryController {
     if (details.contains('order_not_prepared')) {
       throw const AppUserFacingException(
         'This order is not ready for payment.',
+      );
+    }
+    if (details.contains('order_preparation_conflict')) {
+      throw const AppUserFacingException(
+        'This order was updated by another user. Refresh and try again.',
+      );
+    }
+    if (details.contains('order_assignment_conflict')) {
+      throw const AppUserFacingException(
+        "This order's assignment has already changed.",
+      );
+    }
+    if (details.contains('approval_submission_conflict')) {
+      throw const AppUserFacingException(
+        'This request has already been submitted.',
+      );
+    }
+    if (details.contains('product_submission_conflict')) {
+      throw const AppUserFacingException(
+        'This product submission conflicts with an earlier request. Please refresh and try again.',
+      );
+    }
+    if (details.contains('product_sku_already_exists')) {
+      throw const AppUserFacingException(
+        'An item with this SKU already exists.',
       );
     }
     if (details.contains('inventory_operation_conflict')) {
@@ -3395,15 +3441,32 @@ class InventoryController {
     return null;
   }
 
-  Future<void> updateOrderStatus(String orderId, String newStatus) async {
+  Future<void> updateOrderStatus(
+    String orderId,
+    String newStatus, {
+    String? expectedStatus,
+  }) async {
     try {
-      final Map<String, dynamic> updateData = {'status': newStatus};
-
       if (newStatus == 'prepared') {
-        updateData['prepared_by_id'] = currentUserId;
-        updateData['prepared_by_name'] = currentUserName ?? 'Unknown User';
-        updateData['prepared_at'] = DateTime.now().toUtc().toIso8601String();
+        final authoritativeExpectedStatus =
+            expectedStatus ?? orderById(orderId)?.status;
+        if (authoritativeExpectedStatus == null) {
+          throw const AppUserFacingException(
+            'This order was updated by another user. Refresh and try again.',
+          );
+        }
+        await supabase.rpc(
+          'prepare_customer_order_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_order_id': orderId,
+            'p_expected_status': authoritativeExpectedStatus,
+          },
+        );
+        return;
       }
+
+      final Map<String, dynamic> updateData = {'status': newStatus};
 
       await supabase
           .from('orders')
@@ -3411,8 +3474,12 @@ class InventoryController {
           .eq('id', orderId)
           .neq('status', 'cancelled')
           .neq('status', 'completed');
-    } catch (e) {
-      rethrow;
+    } catch (error, stackTrace) {
+      _throwCriticalOperationError(
+        'Order status transition failed',
+        error,
+        stackTrace,
+      );
     }
   }
 
@@ -3536,20 +3603,25 @@ class InventoryController {
   Future<void> assignOrderToHelper({
     required String orderId,
     required String helperId,
-    required String helperName,
+    required String? expectedHelperId,
   }) async {
-    await supabase
-        .from('orders')
-        .update({
-          'assigned_helper_id': helperId,
-          'assigned_helper_name': helperName,
-          'assigned_at': DateTime.now().toUtc().toIso8601String(),
-          'assigned_by_admin_id': currentUserId,
-          'assigned_by_admin_name': currentUserName ?? 'Unknown Admin',
-        })
-        .eq('id', orderId)
-        .neq('status', 'cancelled')
-        .neq('status', 'completed');
+    try {
+      await supabase.rpc(
+        'assign_order_helper_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_order_id': orderId,
+          'p_helper_id': helperId,
+          'p_expected_helper_id': expectedHelperId,
+        },
+      );
+    } catch (error, stackTrace) {
+      _throwCriticalOperationError(
+        'Manual Helper assignment failed',
+        error,
+        stackTrace,
+      );
+    }
   }
 
   Set<String>? _processingOrders;
@@ -3786,6 +3858,7 @@ class InventoryController {
 
   Future<MapLayoutSaveResult> saveMapLayoutIfUnchanged({
     required List<MapElement> draft,
+    required List<MapElement> baseline,
     required String baselineSignature,
     required String expectedLocationId,
     required String expectedUserId,
@@ -3796,6 +3869,7 @@ class InventoryController {
 
     final Future<MapLayoutSaveResult> save = _performMapLayoutSave(
       draft: _cloneMapLayout(draft),
+      baseline: _cloneMapLayout(baseline),
       baselineSignature: baselineSignature,
       expectedLocationId: expectedLocationId,
       expectedUserId: expectedUserId,
@@ -3815,6 +3889,7 @@ class InventoryController {
 
   Future<MapLayoutSaveResult> _performMapLayoutSave({
     required List<MapElement> draft,
+    required List<MapElement> baseline,
     required String baselineSignature,
     required String expectedLocationId,
     required String expectedUserId,
@@ -3831,47 +3906,43 @@ class InventoryController {
       throw StateError('The map draft belongs to a different user session.');
     }
 
-    final Future<void>? refreshInFlight = _mapLayoutLoadInFlight;
-    if (refreshInFlight != null) await refreshInFlight;
-
-    final List<MapElement> latest = await _readMapLayout(locId);
-    if (activeLocationId != locId || currentUserId != expectedUserId) {
-      throw StateError('The active session changed during the map save.');
-    }
-
-    final String latestSignature = mapLayoutSignature(latest);
-    if (latestSignature != baselineSignature) {
-      _acceptCanonicalMapLayout(locId, latest);
-      return MapLayoutSaveResult(
-        status: MapLayoutSaveStatus.conflict,
-        layout: currentMapLayout,
-        signature: latestSignature,
-      );
+    if (mapLayoutSignature(baseline) != baselineSignature) {
+      throw StateError('The map baseline is inconsistent with this draft.');
     }
 
     final dynamic persistedValue = clear
         ? null
         : draft.map((MapElement element) => element.toJson()).toList();
-    final List<dynamic> response = await supabase
-        .from('locations')
-        .update(<String, dynamic>{'layout_data': persistedValue})
-        .eq('id', locId)
-        .select('layout_data');
-
-    if (response.isEmpty) {
-      throw StateError(
-        "Location '$locId' does not exist or cannot be updated.",
-      );
-    }
+    final dynamic expectedValue = baseline
+        .map((MapElement element) => element.toJson())
+        .toList();
+    final response = Map<String, dynamic>.from(
+      await supabase.rpc(
+            'save_store_map_v1',
+            params: <String, dynamic>{
+              'p_session_token': _requireSessionToken(),
+              'p_expected_layout': expectedValue,
+              'p_new_layout': persistedValue,
+            },
+          )
+          as Map,
+    );
     if (activeLocationId != locId || currentUserId != expectedUserId) {
       throw StateError('The active session changed during the map save.');
     }
 
-    final dynamic returnedValue = (response.first as Map)['layout_data'];
+    final dynamic returnedValue = response['layout_data'];
     final List<MapElement> saved = returnedValue == null
         ? <MapElement>[]
         : _decodeMapLayoutValue(returnedValue);
     _acceptCanonicalMapLayout(locId, saved);
+    if (response['status'] == 'conflict') {
+      return MapLayoutSaveResult(
+        status: MapLayoutSaveStatus.conflict,
+        layout: currentMapLayout,
+        signature: mapLayoutSignature(saved),
+      );
+    }
     return MapLayoutSaveResult(
       status: MapLayoutSaveStatus.saved,
       layout: currentMapLayout,

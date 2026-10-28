@@ -71,6 +71,8 @@ class _PosCartPageState extends State<PosCartPage>
   final Map<String, double> _cart = {};
   bool? _isGridView;
   bool _isProcessingCart = false;
+  final Set<String> _preparingOrderIds = <String>{};
+  final Set<String> _cancellingOrderIds = <String>{};
 
   double _discountValue = 0.0;
   bool _isDiscountPercentage = true;
@@ -455,6 +457,8 @@ class _PosCartPageState extends State<PosCartPage>
   }
 
   Future<void> _runSoloCheckout(CustomerOrder order) async {
+    if (!_preparingOrderIds.add(order.id)) return;
+    try {
     final result = await showOrderChecklistModal(
       context: context,
       order: order,
@@ -466,7 +470,11 @@ class _PosCartPageState extends State<PosCartPage>
 
     switch (result) {
       case ChecklistResult.finished:
-        await widget.controller.updateOrderStatus(order.id, 'prepared');
+        await widget.controller.updateOrderStatus(
+          order.id,
+          'prepared',
+          expectedStatus: 'solo_picking',
+        );
         var paid = false;
         await _completeOrderFlow(order, onCompleted: () => paid = true);
         if (!paid && mounted) {
@@ -484,12 +492,29 @@ class _PosCartPageState extends State<PosCartPage>
       case ChecklistResult.cancelled:
         break;
     }
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Solo preparation failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        AppToast.error(
+          context,
+          AppErrorMapper.message(error, fallback: AppErrorCategory.dataSave),
+        );
+      }
+    } finally {
+      _preparingOrderIds.remove(order.id);
+    }
   }
 
   Future<bool> _cancelOrderAndRestoreCart(
     CustomerOrder order, {
     bool fromQueue = false,
   }) async {
+    if (!_cancellingOrderIds.add(order.id)) return false;
+    try {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AppDialog(
@@ -573,6 +598,9 @@ class _PosCartPageState extends State<PosCartPage>
         );
       }
       return false;
+    }
+    } finally {
+      _cancellingOrderIds.remove(order.id);
     }
   }
 

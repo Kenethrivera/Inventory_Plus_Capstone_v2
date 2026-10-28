@@ -19,6 +19,7 @@ CREATE TABLE "public"."products" (
   "max_quantity"     numeric                  DEFAULT 100.0,
   "is_active"        boolean                  NOT NULL DEFAULT true,
   "map_element_id"   text,
+  "create_operation_id" text,
   CONSTRAINT "products_location_id_fkey" FOREIGN KEY (location_id) REFERENCES public.locations(id),
   CONSTRAINT "products_pkey" PRIMARY KEY (id),
   CONSTRAINT "products_product_price_check" CHECK ((product_price >= (0)::numeric)),
@@ -30,6 +31,10 @@ CREATE POLICY "Allow public read products" ON "public"."products"
   FOR SELECT
   TO PUBLIC
   USING (true);
+
+CREATE UNIQUE INDEX products_create_operation_unique
+  ON public.products USING btree (create_operation_id)
+  WHERE (create_operation_id IS NOT NULL);
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."products" TO "anon", "authenticated";
 

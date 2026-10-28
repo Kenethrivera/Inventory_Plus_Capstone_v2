@@ -164,6 +164,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     bool touched = false;
     String? error;
     ApprovalProofSelection? proof;
+    final operationId = widget.controller.newOperationId(
+      'inventory-approval',
+    );
 
     String? validate(String text) {
       final t = text.trim();
@@ -210,6 +213,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 setDialogState(() => uploadingProof = false);
               }
               await widget.controller.submitInventoryApprovalRequest(
+                operationId: operationId,
                 type: InventoryApprovalType.restock,
                 productId: _currentItem.id,
                 quantity: qty,
@@ -1938,6 +1942,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     bool touched = false;
     String? error;
     ApprovalProofSelection? proof;
+    final operationId = widget.controller.newOperationId(
+      'inventory-approval',
+    );
 
     String? validate(String text) {
       final t = text.trim();
@@ -1988,6 +1995,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 setDialogState(() => uploadingProof = false);
               }
               await widget.controller.submitInventoryApprovalRequest(
+                operationId: operationId,
                 type: InventoryApprovalType.writeOff,
                 productId: _currentItem.id,
                 quantity: qty,
