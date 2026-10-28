@@ -64,53 +64,17 @@ begin
       then null else to_jsonb(p_request.requested_by_id) end
   );
 
-  select notification.id into v_notification_id
-  from public.notifications notification
-  where notification.location_id = p_request.location_id::text
-    and notification.is_resolved = false
-    and notification.type = 'system'
-    and notification.payload ->> 'category' = 'inventoryApproval'
-    and notification.payload ->> 'approvalRequestId' = p_request.id::text
-  order by notification.created_at, notification.id
-  limit 1
-  for update;
-
-  if v_notification_id is null then
-    insert into public.notifications (
-      location_id, target_roles, title, body, type, priority, payload,
-      created_at, is_resolved, resolved_at
-    ) values (
-      p_request.location_id::text, v_target_roles, v_title, v_body, 'system',
-      v_priority, v_payload, now(), false, null
-    ) returning id into v_notification_id;
-  else
-    update public.notifications
-    set target_roles = v_target_roles,
-        title = v_title,
-        body = v_body,
-        priority = v_priority,
-        payload = v_payload,
-        is_resolved = false,
-        resolved_at = null
-    where id = v_notification_id;
-
-    update public.notification_reads
-    set is_read = false,
-        read_at = null,
-        is_deleted = false,
-        deleted_at = null
-    where notification_id = v_notification_id;
-  end if;
-
-  update public.notifications notification
-  set is_resolved = true,
-      resolved_at = now()
-  where notification.location_id = p_request.location_id::text
-    and notification.id <> v_notification_id
-    and notification.is_resolved = false
-    and notification.type = 'system'
-    and notification.payload ->> 'category' = 'inventoryApproval'
-    and notification.payload ->> 'approvalRequestId' = p_request.id::text;
+  v_notification_id := private.upsert_notification_lifecycle_v1(
+    p_request.location_id::text,
+    'inventory-approval:' || p_request.id::text,
+    v_target_roles,
+    v_title,
+    v_body,
+    'system',
+    v_priority,
+    v_payload,
+    now()
+  );
 end;
 $function$;
 

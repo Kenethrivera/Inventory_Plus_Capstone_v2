@@ -38,9 +38,6 @@ begin
     raise exception 'Only JPG, PNG, WebP, or GIF proof images are allowed';
   end if;
 
-  delete from private.approval_evidence_uploads
-  where expires_at <= now();
-
   insert into private.approval_evidence_uploads (
     id, location_id, requested_by_id, storage_path, file_name, mime_type
   ) values (

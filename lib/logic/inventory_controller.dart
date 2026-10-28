@@ -231,6 +231,8 @@ class InventoryController {
   String? currentUserName;
   String? currentUserId;
   String? _sessionToken;
+
+  String get currentSessionToken => _requireSessionToken();
   String? loggedInUserEmail;
   bool get isAdmin => currentUserRole?.toLowerCase() == 'admin';
   double globalLowStockPct = 20.0;
@@ -295,10 +297,206 @@ class InventoryController {
       gcashQrUrl = newUrl;
       _paymentSettingsLoaded = true;
       _publishRuntimeSettings();
-    } catch (e) {
-      debugPrint("Error updating GCash QR: $e");
-      throw Exception("Failed to save QR URL to database.");
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'GCash QR settings update failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw const AppUserFacingException(
+        'Unable to complete the upload. Please try again.',
+      );
     }
+  }
+
+  String gcashQrAssetFingerprint(Uint8List bytes) {
+    return sha256.convert(bytes).toString();
+  }
+
+  Future<String> replaceGcashQrAsset(
+    Uint8List bytes, {
+    required String operationId,
+  }) async {
+    final locationId = activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      throw StateError('Payment settings require an active location.');
+    }
+    if (bytes.isEmpty) throw ArgumentError('A QR image is required.');
+    final normalizedOperationId = operationId.trim();
+    if (normalizedOperationId.length < 16) {
+      throw ArgumentError('A QR upload identity is required.');
+    }
+    final objectKey = sha256
+        .convert(utf8.encode(normalizedOperationId))
+        .toString();
+    final path = 'public/$locationId/gcash/$objectKey';
+    final newUrl = supabase.storage.from('store_assets').getPublicUrl(path);
+    String previousUrl = '';
+    var uploaded = false;
+
+    try {
+      final contentType = _imageContentType(bytes);
+      if (contentType == null) {
+        throw const AppUserFacingException(
+          'Unable to complete the upload. Please try again.',
+        );
+      }
+      previousUrl = await _fetchPersistedGcashQrUrl(locationId);
+      await supabase.storage
+          .from('store_assets')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(
+              upsert: true,
+              contentType: contentType,
+              cacheControl: '0',
+            ),
+          );
+      uploaded = true;
+      if (activeLocationId != locationId) {
+        throw StateError('The active location changed during the QR upload.');
+      }
+
+      try {
+        await updateGcashQrUrl(newUrl);
+      } catch (_) {
+        // A lost response may hide a committed settings update. Reconcile the
+        // canonical reference before deciding whether the staged object is an
+        // orphan or the active QR.
+        final persistedUrl = await _tryFetchPersistedGcashQrUrl(locationId);
+        if (persistedUrl != newUrl) rethrow;
+        gcashQrUrl = newUrl;
+        _paymentSettingsLoaded = true;
+        _publishRuntimeSettings();
+      }
+
+      if (previousUrl.isNotEmpty && previousUrl != newUrl) {
+        await _removeManagedGcashObjectIfUnreferenced(
+          locationId: locationId,
+          candidateUrl: previousUrl,
+        );
+      }
+      return newUrl;
+    } catch (error, stackTrace) {
+      if (uploaded) {
+        await _removeManagedGcashObjectIfUnreferenced(
+          locationId: locationId,
+          candidateUrl: newUrl,
+          knownPath: path,
+        );
+      }
+      AppLogger.error(
+        'GCash QR replacement failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw const AppUserFacingException(
+        'Unable to complete the upload. Please try again.',
+      );
+    }
+  }
+
+  Future<String> _fetchPersistedGcashQrUrl(String locationId) async {
+    final response = await supabase
+        .from('store_settings')
+        .select('gcash_qr_url')
+        .eq('location_id', locationId)
+        .maybeSingle();
+    return response?['gcash_qr_url']?.toString() ?? '';
+  }
+
+  Future<String?> _tryFetchPersistedGcashQrUrl(String locationId) async {
+    try {
+      return await _fetchPersistedGcashQrUrl(locationId);
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'GCash QR reference verification failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
+  Future<void> _removeManagedGcashObjectIfUnreferenced({
+    required String locationId,
+    required String candidateUrl,
+    String? knownPath,
+  }) async {
+    final candidatePath =
+        knownPath ??
+        _managedGcashObjectPath(candidateUrl, locationId: locationId);
+    if (candidatePath == null) return;
+
+    final currentUrl = await _tryFetchPersistedGcashQrUrl(locationId);
+    if (currentUrl == null || currentUrl == candidateUrl) return;
+    final currentPath = _managedGcashObjectPath(
+      currentUrl,
+      locationId: locationId,
+    );
+    if (currentPath == candidatePath) return;
+
+    try {
+      await supabase.storage.from('store_assets').remove([candidatePath]);
+    } catch (error, stackTrace) {
+      // Cleanup is best effort. Keeping an unreferenced object is safer than
+      // turning a cleanup failure into a false save failure.
+      AppLogger.error(
+        'GCash QR cleanup failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  String? _managedGcashObjectPath(
+    String publicUrl, {
+    required String locationId,
+  }) {
+    final uri = Uri.tryParse(publicUrl);
+    if (uri == null) return null;
+    final segments = uri.pathSegments;
+    for (var index = 0; index + 2 < segments.length; index++) {
+      if (segments[index] != 'object' ||
+          segments[index + 1] != 'public' ||
+          segments[index + 2] != 'store_assets') {
+        continue;
+      }
+      final path = segments.skip(index + 3).join('/');
+      final locationPrefix = 'public/$locationId/gcash/';
+      return path.startsWith(locationPrefix) ? path : null;
+    }
+    return null;
+  }
+
+  String? _imageContentType(Uint8List bytes) {
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xff &&
+        bytes[1] == 0xd8 &&
+        bytes[2] == 0xff) {
+      return 'image/jpeg';
+    }
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4e &&
+        bytes[3] == 0x47) {
+      return 'image/png';
+    }
+    if (bytes.length >= 6) {
+      final header = ascii.decode(bytes.take(6).toList(), allowInvalid: true);
+      if (header == 'GIF87a' || header == 'GIF89a') return 'image/gif';
+    }
+    if (bytes.length >= 12) {
+      final riff = ascii.decode(bytes.take(4).toList(), allowInvalid: true);
+      final webp = ascii.decode(
+        bytes.skip(8).take(4).toList(),
+        allowInvalid: true,
+      );
+      if (riff == 'RIFF' && webp == 'WEBP') return 'image/webp';
+    }
+    return null;
   }
 
   Future<void> updateCashierAutoApprovedDiscountLimit(double value) async {
@@ -840,14 +1038,57 @@ class InventoryController {
     return saved['id']?.toString();
   }
 
-  Future<String?> uploadProductImage(File imageFile, String fileName) async {
+  Future<String> uploadProductImage(
+    File imageFile,
+    String fileName, {
+    required String uploadKey,
+  }) async {
     try {
-      final path = 'public/${DateTime.now().millisecondsSinceEpoch}_$fileName';
-      await supabase.storage.from('product_images').upload(path, imageFile);
+      final path = _productImagePath(uploadKey, fileName);
+      await supabase.storage
+          .from('product_images')
+          .upload(
+            path,
+            imageFile,
+            fileOptions: const FileOptions(upsert: true, cacheControl: '0'),
+          );
       return supabase.storage.from('product_images').getPublicUrl(path);
-    } catch (e) {
-      return null;
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Product image upload failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw const AppUserFacingException(
+        'Unable to complete the upload. Please try again.',
+      );
     }
+  }
+
+  String _productImagePath(String uploadKey, String fileName) {
+    final locationId = activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      throw StateError('Product image upload requires an active location.');
+    }
+    final normalizedKey = uploadKey.trim();
+    if (normalizedKey.isEmpty) {
+      throw ArgumentError('A product upload identity is required.');
+    }
+    final rawExtension = fileName.contains('.')
+        ? fileName.split('.').last.toLowerCase()
+        : 'jpg';
+    final extension =
+        const <String>{
+          'jpg',
+          'jpeg',
+          'png',
+          'webp',
+          'gif',
+        }.contains(rawExtension)
+        ? rawExtension
+        : 'jpg';
+    final digest = sha256.convert(utf8.encode(normalizedKey)).toString();
+    return 'public/$locationId/$digest.$extension';
   }
 
   Future<void> writeOffStock(
@@ -1064,6 +1305,7 @@ class InventoryController {
   }
 
   Future<String> uploadApprovalEvidence({
+    required String operationId,
     required Uint8List bytes,
     required String fileName,
     required String mimeType,
@@ -1091,6 +1333,7 @@ class InventoryController {
         'action': 'upload',
         'fileName': fileName,
         'mimeType': normalizedMimeType,
+        'operationId': operationId,
       },
       files: <http.MultipartFile>[
         http.MultipartFile.fromBytes('file', bytes, filename: fileName),
@@ -1322,18 +1565,30 @@ class InventoryController {
     _discountApprovalController.add(null);
   }
 
-  Future<String?> uploadImageBytes(
+  Future<String> uploadImageBytes(
     Uint8List imageBytes,
-    String fileName,
-  ) async {
+    String fileName, {
+    required String uploadKey,
+  }) async {
     try {
-      final path = 'public/${DateTime.now().millisecondsSinceEpoch}_$fileName';
+      final path = _productImagePath(uploadKey, fileName);
       await supabase.storage
           .from('product_images')
-          .uploadBinary(path, imageBytes);
+          .uploadBinary(
+            path,
+            imageBytes,
+            fileOptions: const FileOptions(upsert: true, cacheControl: '0'),
+          );
       return supabase.storage.from('product_images').getPublicUrl(path);
-    } catch (e) {
-      return null;
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Product image upload failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw const AppUserFacingException(
+        'Unable to complete the upload. Please try again.',
+      );
     }
   }
 

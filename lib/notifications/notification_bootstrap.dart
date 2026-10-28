@@ -13,6 +13,7 @@ class NotificationBootstrap {
     required String userId,
     required String userRole,
     required String recipientId,
+    required String sessionToken,
     required RealtimeSyncService realtimeSync,
   }) {
     final repository = SupabaseNotificationRepository(
@@ -21,6 +22,7 @@ class NotificationBootstrap {
       userId: userId,
       userRole: userRole,
       recipientId: recipientId,
+      sessionToken: sessionToken,
     );
 
     final service = NotificationService(repository);

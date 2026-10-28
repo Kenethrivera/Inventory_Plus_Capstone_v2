@@ -8,9 +8,7 @@ import '../services/store_access_service.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
-import 'package:flutter/foundation.dart'
-    show debugPrint, debugPrintStack, kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, debugPrintStack;
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 
@@ -87,6 +85,8 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
   //QR Uploader
   bool _isUploadingQr = false;
+  String? _pendingGcashQrOperationId;
+  String? _pendingGcashQrFingerprint;
 
   @override
   void initState() {
@@ -334,43 +334,30 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   }
 
   Future<void> _uploadGcashQr() async {
-    final picker = ImagePicker();
-    final XFile? file = await picker.pickImage(source: ImageSource.gallery);
-
-    if (file == null) return;
-
+    if (_isUploadingQr) return;
     setState(() => _isUploadingQr = true);
 
     try {
-      String? uploadedUrl;
-      final String fileName =
-          'gcash_qr_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final path = 'public/$fileName';
+      final picker = ImagePicker();
+      final XFile? file = await picker.pickImage(source: ImageSource.gallery);
+      if (file == null) return;
 
-      // --- NEW: Upload explicitly to the 'store_assets' bucket ---
-      if (kIsWeb) {
-        final bytes = await file.readAsBytes();
-        await widget.controller.supabase.storage
-            .from(
-              'store_assets',
-            ) // Change to 'store_asset' if you didn't add the 's'
-            .uploadBinary(path, bytes);
-      } else {
-        await widget.controller.supabase.storage
-            .from(
-              'store_assets',
-            ) // Change to 'store_asset' if you didn't add the 's'
-            .upload(path, File(file.path));
-      }
-
-      // Fetch the public URL from the bucket
-      uploadedUrl = widget.controller.supabase.storage
-          .from('store_assets')
-          .getPublicUrl(path);
-      // -----------------------------------------------------------
+      final bytes = await file.readAsBytes();
+      final fingerprint = widget.controller.gcashQrAssetFingerprint(bytes);
+      final operationId = _pendingGcashQrFingerprint == fingerprint &&
+              _pendingGcashQrOperationId != null
+          ? _pendingGcashQrOperationId!
+          : widget.controller.newOperationId('gcash-qr');
+      _pendingGcashQrFingerprint = fingerprint;
+      _pendingGcashQrOperationId = operationId;
+      final uploadedUrl = await widget.controller.replaceGcashQrAsset(
+        bytes,
+        operationId: operationId,
+      );
 
       if (uploadedUrl.isNotEmpty) {
-        await widget.controller.updateGcashQrUrl(uploadedUrl);
+        _pendingGcashQrFingerprint = null;
+        _pendingGcashQrOperationId = null;
         if (mounted) {
           AppToast.success(context, "GCash QR Code updated successfully!");
         }

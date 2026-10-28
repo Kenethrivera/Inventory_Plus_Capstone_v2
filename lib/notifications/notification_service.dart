@@ -55,9 +55,17 @@ class NotificationService {
   }
 
   Future<void> _saveLifecycleAware(AppNotification notification) async {
+    final identity = _logicalIdentity(notification);
+    if (identity != null) {
+      await _repository.upsertLifecycleNotification(
+        notification,
+        lifecycleKey: identity,
+      );
+      return;
+    }
+
     final existingNotifications = await _repository
         .fetchActiveLifecycleNotifications();
-    final identity = _logicalIdentity(notification);
 
     final matches = existingNotifications
         .where((existing) {
@@ -479,6 +487,52 @@ class NotificationService {
           break;
       }
     }
+  }
+
+  Future<void> reconcileStockNotification({
+    required String locationId,
+    required String itemId,
+    required String itemName,
+    required String quantity,
+    required String unit,
+    required String status,
+    required String triggeredByName,
+    required DateTime triggeredAt,
+  }) async {
+    final AppNotification? notification = switch (status) {
+      'low' => NotificationFactory.lowStock(
+        locationId: locationId,
+        itemId: itemId,
+        itemName: itemName,
+        quantity: quantity,
+        unit: unit,
+        triggeredByName: triggeredByName,
+        triggeredAt: triggeredAt,
+      ),
+      'critical' => NotificationFactory.criticalStock(
+        locationId: locationId,
+        itemId: itemId,
+        itemName: itemName,
+        quantity: quantity,
+        unit: unit,
+        triggeredByName: triggeredByName,
+        triggeredAt: triggeredAt,
+      ),
+      'dead' => NotificationFactory.deadStock(
+        locationId: locationId,
+        itemId: itemId,
+        itemName: itemName,
+        unit: unit,
+        triggeredByName: triggeredByName,
+        triggeredAt: triggeredAt,
+      ),
+      _ => null,
+    };
+    await _repository.transitionStockNotification(
+      itemId: itemId,
+      status: status,
+      notification: notification,
+    );
   }
 
   Future<void> resolveStockAlertNotifications() {

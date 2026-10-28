@@ -187,6 +187,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         // Order assignment payloads use profiles.id, which is the same ID
         // stored as currentUserId by the custom login flow.
         recipientId: userId,
+        sessionToken: widget.controller.currentSessionToken,
         realtimeSync: widget.realtimeSync,
       );
 
@@ -1409,79 +1410,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       final previousStates = await notificationController
           .fetchStockNotificationStates();
 
-      // Older builds created multi-item aggregate rows that cannot represent
-      // one product lifecycle. Resolve them before publishing per-item state.
-      await notificationController.resolveStockAlertNotifications();
-
-      final statesToSave = <Map<String, dynamic>>[];
-      final now = DateTime.now().toUtc().toIso8601String();
-
       for (final item in items) {
         final stockStatus = widget.controller.stockStatusFor(item);
         final currentStatus = _stockStatusKey(stockStatus);
-        final previousStatus = previousStates[item.id];
-
-        statesToSave.add({
-          'location_id': locationId,
-          'item_id': item.id,
-          'last_status': currentStatus,
-          'updated_at': now,
-        });
-
-        // First scan only records the state. It should not flood notifications.
-        if (previousStatus == null) continue;
-
-        // Healthy items need no lifecycle work. For an ongoing alert, an
-        // idempotent transition updates quantity/content on the same row.
-        if (previousStatus == currentStatus && currentStatus == 'ok') continue;
-
-        if (currentStatus == 'ok') {
-          await notificationController.resolveAllStockNotifications(
-            itemId: item.id,
-          );
-          continue;
-        }
-
-        final triggeredByName =
-            widget.controller.currentUserName ?? 'Unknown User';
-        final triggeredAt = DateTime.now();
-
-        switch (stockStatus) {
-          case StockStatus.low:
-            await notificationController.notifyLowStock(
-              locationId: locationId,
-              itemId: item.id,
-              itemName: item.name,
-              quantity: _formatQty(item.quantity),
-              unit: item.unit,
-              triggeredByName: triggeredByName,
-              triggeredAt: triggeredAt,
-            );
-            break;
-          case StockStatus.critical:
-            await notificationController.notifyCriticalStock(
-              locationId: locationId,
-              itemId: item.id,
-              itemName: item.name,
-              quantity: _formatQty(item.quantity),
-              unit: item.unit,
-              triggeredByName: triggeredByName,
-              triggeredAt: triggeredAt,
-            );
-            break;
-          case StockStatus.out:
-            await notificationController.notifyDeadStock(
-              locationId: locationId,
-              itemId: item.id,
-              itemName: item.name,
-              unit: item.unit,
-              triggeredByName: triggeredByName,
-              triggeredAt: triggeredAt,
-            );
-            break;
-          case StockStatus.ok:
-            break;
-        }
+        await notificationController.reconcileStockNotification(
+          locationId: locationId,
+          itemId: item.id,
+          itemName: item.name,
+          quantity: _formatQty(item.quantity),
+          unit: item.unit,
+          status: currentStatus,
+          triggeredByName: widget.controller.currentUserName ?? 'Unknown User',
+          triggeredAt: DateTime.now(),
+        );
       }
 
       final currentItemIds = items.map((item) => item.id).toSet();
@@ -1492,8 +1433,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           itemId: missingItemId,
         );
       }
-
-      await notificationController.upsertStockNotificationStates(statesToSave);
     } finally {
       _isCheckingStockAlerts = false;
     }

@@ -69,6 +69,7 @@ begin
     and upload.file_name = v_proof_name
     and upload.mime_type = v_proof_mime
     and upload.expires_at > now()
+    and upload.cleanup_claimed_at is null
   for update;
   if not found then raise exception 'Valid uploaded photo evidence is required'; end if;
   if not exists (

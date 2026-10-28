@@ -375,12 +375,14 @@ class _AddItemPageState extends State<AddItemPage> {
           uploadedUrl = await widget.controller.uploadImageBytes(
             bytes,
             fileName,
+            uploadKey: _submissionOperationId,
           );
         } else {
           final File imageFile = File(_imageUrl!);
           uploadedUrl = await widget.controller.uploadProductImage(
             imageFile,
             fileName,
+            uploadKey: _submissionOperationId,
           );
         }
         if (uploadedUrl != null) finalImageUrl = uploadedUrl;

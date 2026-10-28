@@ -10,10 +10,15 @@ CREATE TABLE "public"."notifications" (
   "created_at"   timestamp with time zone NOT NULL DEFAULT now(),
   "is_resolved"  boolean                  NOT NULL DEFAULT false,
   "resolved_at"  timestamp with time zone,
+  "lifecycle_key" text,
   CONSTRAINT "notifications_pkey" PRIMARY KEY (id)
 );
 
 CREATE INDEX idx_notifications_resolved ON public.notifications USING btree (is_resolved);
+
+CREATE UNIQUE INDEX notifications_active_lifecycle_unique
+  ON public.notifications USING btree (location_id, lifecycle_key)
+  WHERE ((lifecycle_key IS NOT NULL) AND (is_resolved = false));
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."notifications" TO "anon", "authenticated";
 

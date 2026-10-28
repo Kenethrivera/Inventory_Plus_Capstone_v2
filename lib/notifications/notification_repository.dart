@@ -11,6 +11,11 @@ abstract class NotificationRepository {
 
   Future<void> createNotification(AppNotification notification);
 
+  Future<void> upsertLifecycleNotification(
+    AppNotification notification, {
+    required String lifecycleKey,
+  });
+
   Future<void> updateNotification(AppNotification notification);
 
   Future<void> markAsRead(String notificationId);
@@ -36,6 +41,12 @@ abstract class NotificationRepository {
   Future<Map<String, String>> fetchStockNotificationStates();
 
   Future<void> upsertStockNotificationStates(List<Map<String, dynamic>> states);
+
+  Future<void> transitionStockNotification({
+    required String itemId,
+    required String status,
+    AppNotification? notification,
+  });
 }
 
 class SupabaseNotificationRepository implements NotificationRepository {
@@ -45,6 +56,7 @@ class SupabaseNotificationRepository implements NotificationRepository {
   final String userId;
   final String userRole;
   final String recipientId;
+  final String sessionToken;
 
   SupabaseNotificationRepository({
     required SupabaseClient supabase,
@@ -52,6 +64,7 @@ class SupabaseNotificationRepository implements NotificationRepository {
     required this.userId,
     required this.userRole,
     required this.recipientId,
+    required this.sessionToken,
   }) : _supabase = supabase;
 
   @override
@@ -125,6 +138,27 @@ class SupabaseNotificationRepository implements NotificationRepository {
   @override
   Future<void> createNotification(AppNotification notification) async {
     await _supabase.from('notifications').insert(notification.toInsertJson());
+  }
+
+  @override
+  Future<void> upsertLifecycleNotification(
+    AppNotification notification, {
+    required String lifecycleKey,
+  }) async {
+    await _supabase.rpc(
+      'upsert_notification_lifecycle_v1',
+      params: <String, dynamic>{
+        'p_session_token': sessionToken,
+        'p_lifecycle_key': lifecycleKey,
+        'p_target_roles': notification.targetRoles,
+        'p_title': notification.title,
+        'p_body': notification.body,
+        'p_type': notification.type.name,
+        'p_priority': notification.priority.name,
+        'p_payload': notification.payload,
+        'p_created_at': notification.createdAt.toUtc().toIso8601String(),
+      },
+    );
   }
 
   @override
@@ -287,5 +321,26 @@ class SupabaseNotificationRepository implements NotificationRepository {
     await _supabase
         .from('stock_notification_states')
         .upsert(states, onConflict: 'location_id,item_id');
+  }
+
+  @override
+  Future<void> transitionStockNotification({
+    required String itemId,
+    required String status,
+    AppNotification? notification,
+  }) async {
+    await _supabase.rpc(
+      'transition_stock_notification_v1',
+      params: <String, dynamic>{
+        'p_session_token': sessionToken,
+        'p_item_id': itemId,
+        'p_status': status,
+        'p_title': notification?.title,
+        'p_body': notification?.body,
+        'p_type': notification?.type.name,
+        'p_priority': notification?.priority.name,
+        'p_payload': notification?.payload,
+      },
+    );
   }
 }

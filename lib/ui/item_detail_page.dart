@@ -205,6 +205,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               final qty = double.parse(qtyCtrl.text.trim());
               final selectedProof = proof!;
               final proofPath = await widget.controller.uploadApprovalEvidence(
+                operationId: operationId,
                 bytes: selectedProof.bytes,
                 fileName: selectedProof.fileName,
                 mimeType: selectedProof.mimeType,
@@ -858,12 +859,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             uploadedUrl = await widget.controller.uploadImageBytes(
               bytes,
               fileName,
+              uploadKey: 'product:${_currentItem.id}:current',
             );
           } else if (_newImageUrl != null) {
             final File imageFile = File(_newImageUrl!);
             uploadedUrl = await widget.controller.uploadProductImage(
               imageFile,
               fileName,
+              uploadKey: 'product:${_currentItem.id}:current',
             );
           }
           if (uploadedUrl != null) finalImageUrl = uploadedUrl;
@@ -1987,6 +1990,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               final qty = double.parse(qtyCtrl.text.trim());
               final selectedProof = proof!;
               final proofPath = await widget.controller.uploadApprovalEvidence(
+                operationId: operationId,
                 bytes: selectedProof.bytes,
                 fileName: selectedProof.fileName,
                 mimeType: selectedProof.mimeType,

@@ -7,9 +7,12 @@ CREATE TABLE "private"."approval_evidence_uploads" (
   "mime_type"       text                     NOT NULL,
   "created_at"      timestamp with time zone NOT NULL DEFAULT now(),
   "expires_at"      timestamp with time zone NOT NULL DEFAULT (now() + '00:15:00'::interval),
+  "operation_id"    text,
+  "cleanup_claimed_at" timestamp with time zone,
   CONSTRAINT "approval_evidence_uploads_mime_type_check" CHECK ((mime_type = ANY (ARRAY['image/jpeg'::text, 'image/png'::text, 'image/webp'::text, 'image/gif'::text]))),
   CONSTRAINT "approval_evidence_uploads_pkey" PRIMARY KEY (id),
   CONSTRAINT "approval_evidence_uploads_storage_path_key" UNIQUE (storage_path),
+  CONSTRAINT "approval_evidence_uploads_operation_key" UNIQUE (location_id, requested_by_id, operation_id),
   CONSTRAINT "approval_evidence_uploads_location_id_fkey" FOREIGN KEY (location_id) REFERENCES public.locations(id),
   CONSTRAINT "approval_evidence_uploads_requested_by_id_fkey" FOREIGN KEY (requested_by_id) REFERENCES public.profiles(id)
 );

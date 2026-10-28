@@ -446,6 +446,33 @@ class NotificationController extends ChangeNotifier {
     }
   }
 
+  Future<void> reconcileStockNotification({
+    required String locationId,
+    required String itemId,
+    required String itemName,
+    required String quantity,
+    required String unit,
+    required String status,
+    required String triggeredByName,
+    required DateTime triggeredAt,
+  }) async {
+    try {
+      await _service.reconcileStockNotification(
+        locationId: locationId,
+        itemId: itemId,
+        itemName: itemName,
+        quantity: quantity,
+        unit: unit,
+        status: status,
+        triggeredByName: triggeredByName,
+        triggeredAt: triggeredAt,
+      );
+    } catch (error) {
+      _recordError(error, operation: 'Stock notification transition failed');
+      rethrow;
+    }
+  }
+
   Future<void> resolveStockAlertNotifications() async {
     try {
       _errorMessage = null;
