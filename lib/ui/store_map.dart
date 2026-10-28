@@ -907,31 +907,41 @@ class StoreMapState extends State<StoreMap>
     const double minSizeWall = 15.0;
     const double minSizeObject = 40.0;
 
-    final double minWidth = el.type == ElementType.wall
+    final double minLength = el.type == ElementType.wall
         ? minSizeWall
         : minSizeObject;
 
-    final double newWidth = (el.size.width + amount).clamp(
-      minWidth,
+    // Rotating a wall swaps width and height (its rotation stays at zero).
+    // Always resize along the wall's LONG axis so its 15-unit thickness never
+    // grows when a vertical wall is extended from either endpoint.
+    final bool verticalWall = el.type == ElementType.wall &&
+        el.size.height > el.size.width;
+    final double oldLength = verticalWall ? el.size.height : el.size.width;
+    final double newLength = (oldLength + amount).clamp(
+      minLength,
       double.infinity,
     );
 
-    final double actualChange = newWidth - el.size.width;
+    final double actualChange = newLength - oldLength;
 
     // Nothing to change
     if (actualChange == 0) return;
 
-    final Size newSize = Size(newWidth, el.size.height);
+    final Size newSize = verticalWall
+        ? Size(el.size.width, newLength)
+        : Size(newLength, el.size.height);
 
-    // If expanding/shrinking on the left, shift the X position in the opposite direction.
-    // If on the right, the top-left X position stays the same.
+    // Left = first endpoint (left when horizontal, top when vertical).
+    // Right = last endpoint (right when horizontal, bottom when vertical).
     final Offset newPosition = isLeft
-        ? Offset(el.position.dx - actualChange, el.position.dy)
+        ? (verticalWall
+            ? Offset(el.position.dx, el.position.dy - actualChange)
+            : Offset(el.position.dx - actualChange, el.position.dy))
         : el.position;
 
     // Check collision before applying the resize.
     if (_hasCollision(el, newPosition, newSize, el.rotation)) {
-      AppToast.error(context, "Cannot change width. It would overlap another element.");
+      AppToast.error(context, "Cannot resize. It would overlap another element.");
       return;
     }
 

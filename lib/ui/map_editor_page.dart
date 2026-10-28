@@ -389,7 +389,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
       );
     }
 
-    final bool desktopLayout = MediaQuery.sizeOf(context).width >= 900;
+    final double screenWidth = MediaQuery.sizeOf(context).width;
+    final bool desktopLayout = screenWidth >= 900;
+    final bool tabsFitInHeader = screenWidth >= 1200;
 
     return PopScope(
       canPop: _allowRoutePop || !_hasDirtyDraft,
@@ -403,36 +405,26 @@ class _MapEditorPageState extends State<MapEditorPage> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        title: Padding(
-          padding: const EdgeInsets.only(left: 8.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                "Store Layout Designer",
-                style: TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: _fontFam,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                "$_assignedCount of $_totalCount items assigned",
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 13,
-                  fontWeight: FontWeight.normal,
-                  fontFamily: _fontFam,
-                ),
-              ),
-            ],
-          ),
-        ),
+        toolbarHeight: 94,
+        titleSpacing: 24,
+        title: tabsFitInHeader
+            ? Row(
+                children: [
+                  SizedBox(width: 310, child: _buildHeaderSummary()),
+                  Expanded(
+                    child: Center(
+                      child: SizedBox(
+                        width: 535,
+                        child: _buildModeTabs(inHeader: true),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : _buildHeaderSummary(),
         actions: [
           Container(
-            margin: const EdgeInsets.symmetric(vertical: 10),
+            margin: const EdgeInsets.symmetric(vertical: 20),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(8),
@@ -498,7 +490,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
           ),
           const SizedBox(width: 12),
           Container(
-            margin: const EdgeInsets.only(top: 10, bottom: 10, right: 24),
+            margin: const EdgeInsets.only(top: 20, bottom: 20, right: 24),
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primaryBlue,
@@ -568,7 +560,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
       ),
         body: Column(
           children: [
-          Container(color: Colors.white, child: _buildModeTabs()),
+          if (!tabsFitInHeader) _buildModeTabs(),
           if (_remoteChangePending) _buildRemoteChangeBanner(),
           Expanded(
             child: Row(
@@ -898,16 +890,69 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   // ─── TOP TABS ──────────────────────────────────────────────────────────────
 
-  Widget _buildModeTabs() {
+  Widget _buildHeaderSummary() {
+    final double progress = _totalCount == 0
+        ? 0.0
+        : (_assignedCount / _totalCount).clamp(0.0, 1.0).toDouble();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Store Layout Designer',
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: Color(0xFF0F172A),
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            fontFamily: _fontFam,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '$_assignedCount of $_totalCount items assigned',
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 13,
+                fontWeight: FontWeight.normal,
+                fontFamily: _fontFam,
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 100,
+              height: 4,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  backgroundColor: const Color(0xFFE2E8F0),
+                  valueColor: const AlwaysStoppedAnimation<Color>(_primaryBlue),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModeTabs({bool inHeader = false}) {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      padding: inHeader
+          ? EdgeInsets.zero
+          : const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
         child: Row(
           children: [
