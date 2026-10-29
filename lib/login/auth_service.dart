@@ -8,6 +8,10 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import '../services/app_logger.dart';
 
+class LoginRateLimitedException implements Exception {
+  const LoginRateLimitedException();
+}
+
 class AuthService {
   final _supabase = Supabase.instance.client;
 
@@ -21,6 +25,9 @@ class AuthService {
       'profile_login_v1',
       params: {'p_username': username, 'p_password': password},
     );
+    if (response is Map && response['status'] == 'rate_limited') {
+      throw const LoginRateLimitedException();
+    }
     return _profileFromSessionPayload(response);
   }
 

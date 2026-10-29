@@ -157,6 +157,16 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
           _lastValidationResult = _CurrentPasswordState.incorrect;
           _lastVerificationErrorValue = null;
         });
+      case CurrentPasswordVerificationResult.rateLimited:
+        setState(() {
+          _currentPasswordState = _CurrentPasswordState.empty;
+          _lastValidatedCurrentPassword = null;
+          _lastValidationResult = null;
+        });
+        _showVerificationErrorOnce(
+          value,
+          'Too many incorrect password attempts. Please try again later.',
+        );
       case CurrentPasswordVerificationResult.notAuthenticated:
         setState(() => _currentPasswordState = _CurrentPasswordState.empty);
         _showVerificationErrorOnce(

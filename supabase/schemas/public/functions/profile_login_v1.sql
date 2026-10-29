@@ -9,9 +9,27 @@ CREATE OR REPLACE FUNCTION public.profile_login_v1 (
   AS $function$
 declare
   v_profile record;
+  v_normalized_username text := trim(coalesce(p_username, ''));
+  v_subject_key_hash bytea;
+  v_rate_limited boolean;
   v_session_token text;
   v_expires_at timestamptz;
 begin
+  -- Username matching remains intentionally case-sensitive. Trimming here
+  -- matches the existing login semantics while preventing whitespace variants
+  -- from receiving independent limiter buckets.
+  v_subject_key_hash := extensions.digest(
+    convert_to('login:' || v_normalized_username, 'UTF8'),
+    'sha256'
+  );
+
+  if private.auth_rate_limit_is_blocked_v1(
+    'login',
+    v_subject_key_hash
+  ) then
+    return jsonb_build_object('status', 'rate_limited');
+  end if;
+
   select
     profile.id,
     profile.location_id,
@@ -23,13 +41,27 @@ begin
     profile.must_change_password
   into v_profile
   from public.profiles profile
-  where profile.username = trim(coalesce(p_username, ''))
+  where profile.username = v_normalized_username
     and profile.password = encode(extensions.digest(
       convert_to(coalesce(p_password, ''), 'UTF8'), 'sha256'), 'hex')
     and profile.location_id is not null
   limit 1;
 
-  if not found then return null; end if;
+  if not found then
+    v_rate_limited := private.record_auth_rate_limit_failure_v1(
+      'login',
+      v_subject_key_hash,
+      5,
+      interval '10 minutes',
+      interval '15 minutes'
+    );
+    if v_rate_limited then
+      return jsonb_build_object('status', 'rate_limited');
+    end if;
+    return null;
+  end if;
+
+  perform private.reset_auth_rate_limit_v1('login', v_subject_key_hash);
 
   select issued.session_token, issued.expires_at
     into v_session_token, v_expires_at

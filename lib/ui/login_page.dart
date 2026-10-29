@@ -140,6 +140,9 @@ class _LoginPageState extends State<LoginPage> {
           arguments: const AuthenticatedMainRoute(),
         );
       }
+    } on LoginRateLimitedException {
+      _showLoginError(AppErrorMapper.loginRateLimited);
+      AppLogger.debug('Login temporarily limited after repeated failures');
     } catch (e, stackTrace) {
       final sessionToken = issuedSessionToken;
       if (sessionToken != null && sessionToken.isNotEmpty) {

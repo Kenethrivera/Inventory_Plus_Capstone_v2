@@ -32,6 +32,8 @@ class AppErrorMapper {
   AppErrorMapper._();
 
   static const invalidCredentials = 'Invalid username or password.';
+  static const loginRateLimited =
+      'Too many sign-in attempts. Please try again later.';
   static const loginUnavailable =
       'Unable to sign in right now. Please try again.';
   static const authentication =

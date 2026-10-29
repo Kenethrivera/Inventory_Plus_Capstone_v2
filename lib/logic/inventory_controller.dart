@@ -37,6 +37,7 @@ enum ChangePasswordResult {
 enum CurrentPasswordVerificationResult {
   correct,
   incorrect,
+  rateLimited,
   notAuthenticated,
   unexpectedFailure,
 }
@@ -2451,6 +2452,9 @@ class InventoryController {
           'p_password': currentPassword,
         },
       );
+      if (response == null) {
+        return CurrentPasswordVerificationResult.rateLimited;
+      }
       return response == true
           ? CurrentPasswordVerificationResult.correct
           : CurrentPasswordVerificationResult.incorrect;
