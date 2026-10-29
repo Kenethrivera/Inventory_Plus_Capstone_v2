@@ -12,6 +12,7 @@ declare
   v_normalized_username text := trim(coalesce(p_username, ''));
   v_subject_key_hash bytea;
   v_rate_limited boolean;
+  v_retry_after_seconds integer;
   v_session_token text;
   v_expires_at timestamptz;
 begin
@@ -23,11 +24,16 @@ begin
     'sha256'
   );
 
-  if private.auth_rate_limit_is_blocked_v1(
+  v_retry_after_seconds := private.auth_rate_limit_retry_after_seconds_v1(
     'login',
     v_subject_key_hash
-  ) then
-    return jsonb_build_object('status', 'rate_limited');
+  );
+  if v_retry_after_seconds > 0 then
+    return jsonb_build_object(
+      'status', 'rate_limited',
+      'rate_limited', true,
+      'retry_after_seconds', v_retry_after_seconds
+    );
   end if;
 
   select
@@ -53,10 +59,18 @@ begin
       v_subject_key_hash,
       5,
       interval '10 minutes',
-      interval '15 minutes'
+      interval '5 minutes'
     );
     if v_rate_limited then
-      return jsonb_build_object('status', 'rate_limited');
+      v_retry_after_seconds := private.auth_rate_limit_retry_after_seconds_v1(
+        'login',
+        v_subject_key_hash
+      );
+      return jsonb_build_object(
+        'status', 'rate_limited',
+        'rate_limited', true,
+        'retry_after_seconds', greatest(v_retry_after_seconds, 1)
+      );
     end if;
     return null;
   end if;

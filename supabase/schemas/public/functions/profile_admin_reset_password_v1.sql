@@ -12,6 +12,8 @@ declare
   v_admin_role text;
   v_admin_location uuid;
   v_target_role text;
+  v_target_username text;
+  v_login_subject_key_hash bytea;
 begin
   select session_profile.role, session_profile.location_id
     into v_admin_role, v_admin_location
@@ -21,8 +23,8 @@ begin
     return false;
   end if;
 
-  select lower(profile.role)
-    into v_target_role
+  select lower(profile.role), profile.username
+    into v_target_role, v_target_username
   from public.profiles profile
   where profile.id = p_target_profile_id
     and profile.location_id = v_admin_location
@@ -46,7 +48,23 @@ begin
       end
   where id = p_target_profile_id;
 
-  return found;
+  if not found then
+    return false;
+  end if;
+
+  -- The password update and limiter reset share this transaction. Derive the
+  -- key from the trusted target profile, never from client-supplied limiter
+  -- metadata. Username matching remains case-sensitive and trim-normalized.
+  v_login_subject_key_hash := extensions.digest(
+    convert_to('login:' || trim(v_target_username), 'UTF8'),
+    'sha256'
+  );
+  perform private.reset_auth_rate_limit_v1(
+    'login',
+    v_login_subject_key_hash
+  );
+
+  return true;
 end;
 $function$;
 

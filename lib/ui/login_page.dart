@@ -32,6 +32,13 @@ class _LoginPageState extends State<LoginPage> {
   bool _isPasswordVisible = false;
   bool _isLoading = false;
   String? _loginError;
+  Timer? _loginLimitTimer;
+  int _loginRetryAfterSeconds = 0;
+  String? _limitedNormalizedUsername;
+
+  bool get _isLoginLimited =>
+      _loginRetryAfterSeconds > 0 &&
+      _limitedNormalizedUsername == _usernameController.text.trim();
 
   @override
   void initState() {
@@ -39,12 +46,13 @@ class _LoginPageState extends State<LoginPage> {
     // Add listeners to trigger rebuilds for the focus/unfocus fill color changes
     _usernameFocusNode.addListener(() => setState(() {}));
     _passwordFocusNode.addListener(() => setState(() {}));
-    _usernameController.addListener(_clearLoginError);
-    _passwordController.addListener(_clearLoginError);
+    _usernameController.addListener(_handleUsernameChanged);
+    _passwordController.addListener(_handlePasswordChanged);
   }
 
   @override
   void dispose() {
+    _loginLimitTimer?.cancel();
     _usernameController.dispose();
     _passwordController.dispose();
     _usernameFocusNode.dispose();
@@ -53,7 +61,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _handleLogin() async {
-    if (_isLoading) return;
+    if (_isLoading || _isLoginLimited) return;
     if (_loginError != null) setState(() => _loginError = null);
     if (!_formKey.currentState!.validate()) return;
 
@@ -140,8 +148,8 @@ class _LoginPageState extends State<LoginPage> {
           arguments: const AuthenticatedMainRoute(),
         );
       }
-    } on LoginRateLimitedException {
-      _showLoginError(AppErrorMapper.loginRateLimited);
+    } on LoginRateLimitedException catch (error) {
+      _startLoginLimitCountdown(username, error.retryAfterSeconds);
       AppLogger.debug('Login temporarily limited after repeated failures');
     } catch (e, stackTrace) {
       final sessionToken = issuedSessionToken;
@@ -170,6 +178,69 @@ class _LoginPageState extends State<LoginPage> {
 
   void _clearLoginError() {
     if (mounted && _loginError != null) setState(() => _loginError = null);
+  }
+
+  void _handleUsernameChanged() {
+    final limitedUsername = _limitedNormalizedUsername;
+    if (limitedUsername != null &&
+        _usernameController.text.trim() != limitedUsername) {
+      _clearLoginLimitCountdown();
+      return;
+    }
+    if (!_isLoginLimited) _clearLoginError();
+  }
+
+  void _handlePasswordChanged() {
+    if (!_isLoginLimited) _clearLoginError();
+  }
+
+  String _loginLimitMessage(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remainingSeconds = (seconds % 60).toString().padLeft(2, '0');
+    return 'Too many sign-in attempts. Try again in '
+        '$minutes:$remainingSeconds.';
+  }
+
+  void _startLoginLimitCountdown(String normalizedUsername, int seconds) {
+    if (!mounted || _usernameController.text.trim() != normalizedUsername) {
+      return;
+    }
+    _loginLimitTimer?.cancel();
+    setState(() {
+      _limitedNormalizedUsername = normalizedUsername;
+      _loginRetryAfterSeconds = seconds;
+      _loginError = _loginLimitMessage(seconds);
+    });
+    _loginLimitTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_usernameController.text.trim() != _limitedNormalizedUsername) {
+        _clearLoginLimitCountdown();
+        return;
+      }
+      final next = _loginRetryAfterSeconds - 1;
+      if (next <= 0) {
+        _clearLoginLimitCountdown();
+        return;
+      }
+      setState(() {
+        _loginRetryAfterSeconds = next;
+        _loginError = _loginLimitMessage(next);
+      });
+    });
+  }
+
+  void _clearLoginLimitCountdown() {
+    _loginLimitTimer?.cancel();
+    _loginLimitTimer = null;
+    if (!mounted) return;
+    setState(() {
+      _limitedNormalizedUsername = null;
+      _loginRetryAfterSeconds = 0;
+      _loginError = null;
+    });
   }
 
   void _showForgotPasswordModal() {
@@ -346,7 +417,9 @@ class _LoginPageState extends State<LoginPage> {
                       icon: LucideIcons.lock,
                       isPassword: true,
                       focusNode: _passwordFocusNode,
-                      onSubmitted: (_) => _handleLogin(),
+                      onSubmitted: _isLoginLimited
+                          ? null
+                          : (_) => _handleLogin(),
                       suffix: IconButton(
                         icon: Icon(
                           _isPasswordVisible ? LucideIcons.eyeOff : LucideIcons.eye,
@@ -385,7 +458,9 @@ class _LoginPageState extends State<LoginPage> {
                       width: double.infinity,
                       height: 52,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleLogin,
+                        onPressed: _isLoading || _isLoginLimited
+                            ? null
+                            : _handleLogin,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF2563EB), // Solid blue
                           foregroundColor: Colors.white,
