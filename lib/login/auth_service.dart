@@ -11,7 +11,7 @@ import '../services/app_logger.dart';
 class LoginRateLimitedException implements Exception {
   const LoginRateLimitedException({required this.retryAfterSeconds});
 
-  final int retryAfterSeconds;
+  final int? retryAfterSeconds;
 }
 
 class AuthService {
@@ -35,7 +35,9 @@ class AuthService {
           ? rawRetryAfter.ceil()
           : int.tryParse(rawRetryAfter?.toString() ?? '');
       throw LoginRateLimitedException(
-        retryAfterSeconds: (parsedRetryAfter ?? 300).clamp(1, 300).toInt(),
+        retryAfterSeconds: parsedRetryAfter != null && parsedRetryAfter > 0
+            ? parsedRetryAfter
+            : null,
       );
     }
     return _profileFromSessionPayload(response);

@@ -10,6 +10,7 @@ CREATE OR REPLACE FUNCTION private.auth_rate_limit_retry_after_seconds_v1 (
 declare
   v_now timestamptz := clock_timestamp();
   v_blocked_until timestamptz;
+  v_retry_after_seconds integer;
 begin
   if p_action_type not in ('login', 'current_password')
       or p_subject_key_hash is null
@@ -34,7 +35,12 @@ begin
     return 0;
   end if;
 
-  if v_blocked_until <= v_now then
+  v_retry_after_seconds := greatest(
+    0,
+    ceil(extract(epoch from (v_blocked_until - v_now)))::integer
+  );
+
+  if v_retry_after_seconds = 0 then
     update private.auth_rate_limits limiter
     set window_started_at = v_now,
         attempt_count = 0,
@@ -44,10 +50,7 @@ begin
     return 0;
   end if;
 
-  return greatest(
-    1,
-    ceil(extract(epoch from (v_blocked_until - v_now)))::integer
-  );
+  return v_retry_after_seconds;
 end;
 $function$;
 

@@ -149,7 +149,12 @@ class _LoginPageState extends State<LoginPage> {
         );
       }
     } on LoginRateLimitedException catch (error) {
-      _startLoginLimitCountdown(username, error.retryAfterSeconds);
+      final retryAfterSeconds = error.retryAfterSeconds;
+      if (retryAfterSeconds == null) {
+        _showLoginError(AppErrorMapper.loginRateLimited);
+      } else {
+        _startLoginLimitCountdown(username, retryAfterSeconds);
+      }
       AppLogger.debug('Login temporarily limited after repeated failures');
     } catch (e, stackTrace) {
       final sessionToken = issuedSessionToken;
