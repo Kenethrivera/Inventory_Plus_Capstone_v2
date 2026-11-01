@@ -431,8 +431,16 @@ class _MapEditorPageState extends State<MapEditorPage> {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: Colors.red.shade200),
             ),
-            child: IconButton(
-              icon: Icon(LucideIcons.trash2, color: Colors.red.shade500, size: 18),
+            child: TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red.shade600,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                textStyle: const TextStyle(
+                  fontFamily: _fontFam,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              child: const Text('Clear Layout'),
               onPressed: () {
                 showDialog(
                   context: context,
