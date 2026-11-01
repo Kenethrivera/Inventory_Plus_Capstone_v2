@@ -184,20 +184,80 @@ Widget _box<T>({
   required List<DropdownMenuItem<T>> items,
   required ValueChanged<T?> onChanged,
 }) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF8FAFC),
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: Colors.grey.shade300),
-    ),
-    child: DropdownButtonHideUnderline(
-      child: DropdownButton<T>(
-        value: value,
-        isExpanded: true,
-        icon: const Icon(LucideIcons.chevronDown, size: 18),
-        items: items,
-        onChanged: onChanged,
+  return Builder(
+    builder: (context) => Theme(
+      data: Theme.of(context).copyWith(
+        canvasColor: Colors.white,
+        focusColor: const Color(0xFFEFF6FF),
+        hoverColor: const Color(0xFFEFF6FF),
+        highlightColor: const Color(0xFFDBEAFE),
+        splashColor: const Color(0xFFDBEAFE),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<T>(
+            value: value,
+            isExpanded: true,
+            dropdownColor: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            menuMaxHeight: 340,
+            itemHeight: 48,
+            elevation: 4,
+            icon: const Icon(
+              LucideIcons.chevronDown,
+              size: 18,
+              color: Color(0xFF64748B),
+            ),
+            selectedItemBuilder: (context) => items
+                .map(
+                  (item) => Align(
+                    alignment: Alignment.centerLeft,
+                    child: DefaultTextStyle.merge(
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      child: item.child,
+                    ),
+                  ),
+                )
+                .toList(),
+            items: items
+                .map(
+                  (item) => DropdownMenuItem<T>(
+                    value: item.value,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: DefaultTextStyle.merge(
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: item.value == value
+                                  ? const Color(0xFF2563EB)
+                                  : const Color(0xFF172033),
+                            ),
+                            child: item.child,
+                          ),
+                        ),
+                        if (item.value == value)
+                          const Icon(
+                            Icons.check_rounded,
+                            size: 18,
+                            color: Color(0xFF2563EB),
+                          ),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: onChanged,
+          ),
+        ),
       ),
     ),
   );
