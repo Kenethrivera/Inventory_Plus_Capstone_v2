@@ -13,6 +13,11 @@ import 'dart:async';
 import 'package:inventory_plus/services/app_error_mapper.dart';
 import 'package:inventory_plus/services/app_logger.dart';
 
+const Color _blue = Color(0xFF2563EB);
+const Color _ink = Color(0xFF172033);
+const Color _slate = Color(0xFF64748B);
+const Color _border = Color(0xFFE6EBF2);
+
 class AddItemPage extends StatefulWidget {
   final InventoryController controller;
   final Function(InventoryItem) onAdd;
@@ -96,7 +101,7 @@ class _AddItemPageState extends State<AddItemPage> {
       context: context,
       builder: (dialogContext) => AppDialog(
         icon: LucideIcons.imagePlus,
-        color: Colors.orange,
+        color: _blue,
         title: "Product Photo",
         subtitle: "Choose how to add an image",
         child: Column(
@@ -204,7 +209,7 @@ class _AddItemPageState extends State<AddItemPage> {
     required String title,
     required String description,
     required VoidCallback onTap,
-    Color color = Colors.orange,
+    Color color = _blue,
   }) {
     return Material(
       color: Colors.transparent,
@@ -238,9 +243,7 @@ class _AddItemPageState extends State<AddItemPage> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: color == Colors.orange
-                            ? const Color(0xFF0F172A)
-                            : color,
+                        color: color == _blue ? const Color(0xFF0F172A) : color,
                       ),
                     ),
                     Text(
@@ -283,7 +286,7 @@ class _AddItemPageState extends State<AddItemPage> {
       context: context,
       builder: (dialogContext) => AppDialog(
         icon: LucideIcons.link,
-        color: Colors.orange,
+        color: _blue,
         title: "Image URL",
         subtitle: "Use an image hosted online",
         child: TextField(
@@ -333,7 +336,7 @@ class _AddItemPageState extends State<AddItemPage> {
               AppToast.success(context, "Image URL added");
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
+              backgroundColor: _blue,
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -435,20 +438,26 @@ class _AddItemPageState extends State<AddItemPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: Colors.white,
+        foregroundColor: _ink,
         elevation: 0,
+        shape: const Border(bottom: BorderSide(color: _border)),
         title: const Text(
           "Add New Product",
-          style: TextStyle(color: Colors.white, fontSize: 18),
+          style: TextStyle(
+            color: _ink,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         leading: IconButton(
-          icon: const Icon(LucideIcons.chevronLeft, color: Colors.white),
+          icon: const Icon(LucideIcons.chevronLeft, color: _blue),
           onPressed: () => Navigator.pop(context),
         ),
         centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.orange))
+          ? const Center(child: CircularProgressIndicator(color: _blue))
           : SingleChildScrollView(
               child: Column(
                 children: [
@@ -590,13 +599,13 @@ class _AddItemPageState extends State<AddItemPage> {
         value: _addNewValue,
         child: Row(
           children: [
-            Icon(LucideIcons.plus, size: 16, color: Colors.orange),
+            Icon(LucideIcons.plus, size: 16, color: _blue),
             SizedBox(width: 8),
             Text(
               'Add new unit...',
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.orange,
+                color: _blue,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -619,11 +628,7 @@ class _AddItemPageState extends State<AddItemPage> {
           color: Colors.grey.shade600,
           fontStyle: FontStyle.italic,
         ),
-        prefixIcon: const Icon(
-          LucideIcons.scale,
-          size: 18,
-          color: Colors.orange,
-        ),
+        prefixIcon: const Icon(LucideIcons.scale, size: 18, color: _blue),
         filled: true,
         fillColor: Colors.white,
         contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
@@ -637,7 +642,7 @@ class _AddItemPageState extends State<AddItemPage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.orange, width: 2),
+          borderSide: const BorderSide(color: _blue, width: 2),
         ),
       ),
       items: items,
@@ -709,7 +714,7 @@ class _AddItemPageState extends State<AddItemPage> {
 
           return AppDialog(
             icon: LucideIcons.scale,
-            color: Colors.orange,
+            color: _blue,
             title: "Add New Unit",
             subtitle: "Saved to your measurement units",
             child: Column(
@@ -754,7 +759,7 @@ class _AddItemPageState extends State<AddItemPage> {
               ElevatedButton(
                 onPressed: saving ? null : save,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
+                  backgroundColor: _blue,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -802,12 +807,12 @@ class _AddItemPageState extends State<AddItemPage> {
             title,
             style: const TextStyle(
               fontWeight: FontWeight.bold,
-              color: Colors.blueGrey,
+              color: _slate,
               fontSize: 13,
             ),
           ),
           const Expanded(
-            child: Divider(indent: 10, color: Colors.orange, thickness: 0.5),
+            child: Divider(indent: 10, color: _blue, thickness: 0.5),
           ),
         ],
       ),
@@ -820,7 +825,7 @@ class _AddItemPageState extends State<AddItemPage> {
       child: Container(
         width: double.infinity,
         height: 180,
-        color: const Color(0xFF1E293B),
+        color: const Color(0xFFF1F5F9),
         child: _imageUrl != null
             ? ((kIsWeb || _imageUrl!.startsWith('http'))
                   ? Image.network(_imageUrl!, fit: BoxFit.cover)
@@ -828,18 +833,11 @@ class _AddItemPageState extends State<AddItemPage> {
             : Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    LucideIcons.imagePlus,
-                    color: Colors.white.withOpacity(0.3),
-                    size: 40,
-                  ),
+                  Icon(LucideIcons.imagePlus, color: _blue, size: 40),
                   const SizedBox(height: 8),
                   Text(
                     "Tap to Add Product Photo",
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
-                      fontSize: 12,
-                    ),
+                    style: const TextStyle(color: _slate, fontSize: 12),
                   ),
                 ],
               ),
@@ -854,7 +852,7 @@ class _AddItemPageState extends State<AddItemPage> {
       child: ElevatedButton(
         onPressed: _isLoading ? null : _submitData,
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.orange,
+          backgroundColor: _blue,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -901,7 +899,7 @@ class _AddItemPageState extends State<AddItemPage> {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-        prefixIcon: Icon(icon, size: 18, color: Colors.orange),
+        prefixIcon: Icon(icon, size: 18, color: _blue),
         filled: true,
         fillColor: Colors.white,
         contentPadding: const EdgeInsets.symmetric(
@@ -918,7 +916,7 @@ class _AddItemPageState extends State<AddItemPage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.orange, width: 2),
+          borderSide: const BorderSide(color: _blue, width: 2),
         ),
         errorStyle: const TextStyle(color: Colors.redAccent),
       ),

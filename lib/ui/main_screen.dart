@@ -3066,9 +3066,42 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     return Padding(
       padding: const EdgeInsets.only(left: 2),
-      child: InkWell(
-        onTap: _showProfileDialog,
-        borderRadius: BorderRadius.circular(999),
+      child: PopupMenuButton<String>(
+        tooltip: 'Account menu',
+        color: Colors.white,
+        position: PopupMenuPosition.under,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        onSelected: (action) {
+          if (action == 'profile') {
+            _showProfileDialog();
+          } else if (action == 'logout') {
+            unawaited(_handleLogout());
+          }
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem<String>(
+            value: 'profile',
+            child: Row(
+              children: [
+                Icon(LucideIcons.user, size: 18, color: _primaryBlue),
+                SizedBox(width: 12),
+                Text('Profile'),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'logout',
+            child: Row(
+              children: [
+                Icon(LucideIcons.logOut, size: 18, color: Color(0xFFDC2626)),
+                SizedBox(width: 12),
+                Text('Log out'),
+              ],
+            ),
+          ),
+        ],
         child: CircleAvatar(
           radius: 17,
           backgroundColor: _primaryBlue.withOpacity(0.12),

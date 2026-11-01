@@ -35,6 +35,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   String _historySection = 'Orders';
   HistoryPeriodSelection _periodSelection = HistoryPeriodSelection.current();
   final TextEditingController _searchController = TextEditingController();
+  final GlobalKey _mobileRecordsKey = GlobalKey();
   late Future<HistoryPageResult<Map<String, dynamic>>> _historyFuture;
   StreamSubscription<HistoryInvalidation>? _historySubscription;
   Timer? _searchDebounce;
@@ -214,6 +215,16 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
       }
       _historyFuture = _loadCurrentPageResult();
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final recordsContext = _mobileRecordsKey.currentContext;
+      if (mounted && recordsContext != null) {
+        Scrollable.ensureVisible(
+          recordsContext,
+          duration: const Duration(milliseconds: 250),
+          alignment: 0.05,
+        );
+      }
+    });
   }
 
   void _updatePeriodSelection(HistoryPeriodSelection selection) {
@@ -387,12 +398,54 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
 
           return LayoutBuilder(
             builder: (context, constraints) {
+              final isMobile = constraints.maxWidth < 700;
               final workspaceWidth = constraints.maxWidth > 1160
                   ? 1160.0
                   : constraints.maxWidth;
               final horizontalPadding = constraints.maxWidth < 700
                   ? 14.0
                   : 24.0;
+              if (isMobile) {
+                return Center(
+                  child: SizedBox(
+                    width: workspaceWidth,
+                    height: constraints.maxHeight,
+                    child: SingleChildScrollView(
+                      key: const PageStorageKey('staff-history-mobile'),
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        16,
+                        horizontalPadding,
+                        14,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildHeader(recordCount),
+                          const SizedBox(height: 12),
+                          _buildStats(
+                            total: recordCount,
+                            active: activeCount,
+                            completed: completedCount,
+                            cancelled: cancelledCount,
+                          ),
+                          const SizedBox(height: 10),
+                          _buildControls(),
+                          const SizedBox(height: 10),
+                          _buildMobilePagedContent(
+                            result: result,
+                            loading: loading,
+                            error: snapshot.error,
+                            orders: displayedOrders,
+                            restocks: rows,
+                            totalItems: result?.totalCount ?? _knownTotalCount,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }
               return Center(
                 child: SizedBox(
                   width: workspaceWidth,
@@ -436,6 +489,81 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
             },
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildMobilePagedContent({
+    required HistoryPageResult<Map<String, dynamic>>? result,
+    required bool loading,
+    required Object? error,
+    required List<CustomerOrder> orders,
+    required List<Map<String, dynamic>> restocks,
+    required int totalItems,
+  }) {
+    final Widget content;
+    if (loading && result == null) {
+      content = const SizedBox(height: 220, child: HistoryLoadingRows());
+    } else if (error != null && result == null) {
+      content = _HistoryState(
+        icon: Icons.error_outline,
+        title: 'Could not load your history',
+        message: 'Check your connection and try again.',
+        actionLabel: 'Retry',
+        onAction: () => _refreshCurrent(forceRefresh: true),
+      );
+    } else if (_currentDomain == HistoryDomain.cashierRestocks) {
+      content = restocks.isEmpty
+          ? _buildRestockEmptyState()
+          : _buildRestockCards(restocks, embedded: true);
+    } else {
+      content = orders.isEmpty
+          ? _buildOrderEmptyState()
+          : _buildOrderCards(orders, embedded: true);
+    }
+
+    return Container(
+      key: _mobileRecordsKey,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (loading && result != null)
+            const LinearProgressIndicator(
+              minHeight: 2,
+              color: Color(0xFF60A5FA),
+              backgroundColor: Color(0xFFEFF6FF),
+            ),
+          if (error != null && result != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  const Expanded(child: Text('Could not refresh history.')),
+                  TextButton(
+                    onPressed: () => _refreshCurrent(forceRefresh: true),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: content,
+          ),
+          HistoryPaginationFooter(
+            currentPage: _currentPage,
+            totalItems: totalItems,
+            pageSize: historyPageSize,
+            loading: loading,
+            onPageSelected: _selectPage,
+          ),
+        ],
       ),
     );
   }
@@ -560,8 +688,9 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth < 520
-            ? 1
+        final compact = constraints.maxWidth < 520;
+        final columns = compact
+            ? (_isHelper ? 3 : 2)
             : constraints.maxWidth < 820
             ? 2
             : metrics.length;
@@ -574,7 +703,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
               .map(
                 (metric) => SizedBox(
                   width: width,
-                  child: _CompactMetric(metric: metric),
+                  child: _CompactMetric(metric: metric, compact: compact),
                 ),
               )
               .toList(growable: false),
@@ -848,8 +977,13 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     );
   }
 
-  Widget _buildOrderCards(List<CustomerOrder> orders) {
+  Widget _buildOrderCards(
+    List<CustomerOrder> orders, {
+    bool embedded = false,
+  }) {
     return ListView.separated(
+      shrinkWrap: embedded,
+      physics: embedded ? const NeverScrollableScrollPhysics() : null,
       itemCount: orders.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
@@ -1098,8 +1232,13 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     );
   }
 
-  Widget _buildRestockCards(List<Map<String, dynamic>> restocks) {
+  Widget _buildRestockCards(
+    List<Map<String, dynamic>> restocks, {
+    bool embedded = false,
+  }) {
     return ListView.separated(
+      shrinkWrap: embedded,
+      physics: embedded ? const NeverScrollableScrollPhysics() : null,
       itemCount: restocks.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
@@ -1220,20 +1359,48 @@ class _StaffMetric {
 
 class _CompactMetric extends StatelessWidget {
   final _StaffMetric metric;
+  final bool compact;
 
-  const _CompactMetric({required this.metric});
+  const _CompactMetric({required this.metric, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 58,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      height: compact ? 76 : 58,
+      padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: _border),
       ),
-      child: Row(
+      child: compact
+          ? Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  metric.value,
+                  style: const TextStyle(
+                    color: _darkText,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    fontFamily: _fontFam,
+                  ),
+                ),
+                Text(
+                  metric.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _mutedText,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: _fontFam,
+                  ),
+                ),
+              ],
+            )
+          : Row(
         children: [
           Container(
             width: 30,

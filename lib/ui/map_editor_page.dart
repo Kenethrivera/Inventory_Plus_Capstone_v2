@@ -24,6 +24,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
   final GlobalKey<StoreMapState> _storeMapKey = GlobalKey<StoreMapState>();
   MapElement? _manageSelected;
   MapMode _mode = MapMode.view; // Default to Preview
+  MapViewStyle _viewStyle = MapViewStyle.threeD;
   String? _selectedItemId;
   List<MapElement> _draftLayout = <MapElement>[];
   List<MapElement> _baselineLayout = <MapElement>[];
@@ -621,6 +622,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                               },
                               controller: widget.controller,
                               mode: _mode,
+                              viewStyle: _viewStyle,
                               showMobileToolbar: !desktopLayout,
                               selectedItemId: _selectedItemId,
                               onSelectionAssigned: () {
@@ -635,6 +637,11 @@ class _MapEditorPageState extends State<MapEditorPage> {
                         if (_mode == MapMode.view) _buildPreviewOverlays(),
                         if (_mode == MapMode.selection && _selectedItemId != null)
                           _buildAssignOverlayBanner(),
+                        Positioned(
+                          top: 16,
+                          right: 16,
+                          child: _buildViewStyleToggle(),
+                        ),
                       ],
                     ),
                   ),
@@ -1209,6 +1216,70 @@ class _MapEditorPageState extends State<MapEditorPage> {
   }
 
   // ─── OVERLAYS ──────────────────────────────────────────────────────────────
+
+  Widget _buildViewStyleToggle() => Container(
+    padding: const EdgeInsets.all(4),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFFDBEAFE)),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.08),
+          blurRadius: 12,
+          offset: const Offset(0, 3),
+        ),
+      ],
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _viewStyleButton(MapViewStyle.twoD, '2D', LucideIcons.map),
+        const SizedBox(width: 4),
+        _viewStyleButton(MapViewStyle.threeD, '3D', LucideIcons.box),
+      ],
+    ),
+  );
+
+  Widget _viewStyleButton(MapViewStyle style, String label, IconData icon) {
+    final selected = _viewStyle == style;
+    return Tooltip(
+      message: style == MapViewStyle.twoD
+          ? 'Flat 2D floor plan'
+          : 'Isometric 3D view',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            if (_viewStyle != style) setState(() => _viewStyle = style);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? _primaryBlue : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16,
+                    color: selected ? Colors.white : const Color(0xFF475569)),
+                const SizedBox(width: 7),
+                Text(label, style: TextStyle(
+                  fontSize: 13,
+                  fontFamily: _fontFam,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : const Color(0xFF475569),
+                )),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildPreviewOverlays() {
     return Stack(

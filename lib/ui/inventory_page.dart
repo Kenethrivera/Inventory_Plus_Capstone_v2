@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
 import 'add_item_page.dart';
-import 'package:inventory_plus/ui/widgets/item_card.dart';
+import 'inventory_redesign.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -17,15 +16,10 @@ import '../notifications/notification_provider.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 
-const Color _primaryBlue = Color(0xFF2563EB);
-const String _fontFam = 'Hellix';
-
-String _fmtQty(double v) =>
-    v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
-
 class InventoryPage extends StatefulWidget {
   final InventoryController controller;
   final Function(InventoryItem) onSelectItem;
+  final Future<void> Function(InventoryItem)? onUpdateItem;
   final bool exportDue;
   final VoidCallback? onExported;
   final Future<void> Function()? onInventoryChanged;
@@ -34,6 +28,7 @@ class InventoryPage extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onSelectItem,
+    this.onUpdateItem,
     this.exportDue = false,
     this.onExported,
     this.onInventoryChanged,
@@ -44,11 +39,6 @@ class InventoryPage extends StatefulWidget {
 }
 
 class _InventoryPageState extends State<InventoryPage> {
-  String _searchQuery = "";
-  String _selectedCategory = "All";
-  bool _showDeadStock = false;
-  final TextEditingController _searchController = TextEditingController();
-
   @override
   void initState() {
     super.initState();
@@ -83,12 +73,6 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<InventoryItem>>(
       stream: widget.controller.streamInventory(),
@@ -98,401 +82,67 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 
   Widget _buildInventoryView(BuildContext context) {
-    // Fetch categories and immediately remove 'Unassigned'
-    final categories = widget.controller
-        .getUniqueCategories()
-        .where((category) => category.toLowerCase() != 'unassigned')
-        .toList();
-
-    final filteredInventory = _showDeadStock
-        ? widget.controller.filterDeadStock(
-            query: _searchQuery,
-            category: _selectedCategory,
-          )
-        : widget.controller.filterInventory(
-            query: _searchQuery,
-            category: _selectedCategory,
-          );
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      widget.onInventoryChanged?.call();
+      if (mounted) widget.onInventoryChanged?.call();
     });
-
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.only(
-              top: 16,
-              bottom: 12,
-              left: 16,
-              right: 16,
-            ),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      "Inventory List",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF111827),
-                        fontFamily: _fontFam,
-                      ),
-                    ),
-                    if (widget.controller.isAdmin)
-                      Row(
-                        children: [
-                          Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () => showReportPeriodDialog(
-                                  context,
-                                  title: 'Generate Inventory Report',
-                                  note: 'Past reports use current unit costs.',
-                                  onGenerate: (range) =>
-                                      _generateAndPrintInventoryReport(
-                                        context,
-                                        range,
-                                      ),
-                                ),
-                                icon: const Icon(
-                                  LucideIcons.download,
-                                  size: 16,
-                                ),
-                                label: const Text(
-                                  "Export Inventory Report",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontFamily: _fontFam,
-                                  ),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.black87,
-                                  side: BorderSide(
-                                    color: widget.exportDue
-                                        ? Colors.red
-                                        : Colors.grey.shade300,
-                                    width: widget.exportDue ? 1.5 : 1,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                              ),
-                              if (widget.exportDue)
-                                Positioned(
-                                  top: -4,
-                                  right: -4,
-                                  child: Container(
-                                    width: 10,
-                                    height: 10,
-                                    decoration: const BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(width: 8),
-                          _buildHeaderButton(
-                            icon: LucideIcons.qrCode,
-                            label: "QR Labels",
-                            onPressed: () => _generateAndPrintQRLabels(context),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              final isDesktop =
-                                  MediaQuery.of(context).size.width >= 600;
-                              if (isDesktop) {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) => Dialog(
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: SizedBox(
-                                      width: 500,
-                                      height: 750,
-                                      child: AddItemPage(
-                                        controller: widget.controller,
-                                        onAdd: (newItem) {
-                                          setState(() {});
-                                          _showToast(
-                                            '"${newItem.name}" added to inventory',
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              } else {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => AddItemPage(
-                                      controller: widget.controller,
-                                      onAdd: (newItem) {
-                                        setState(() {});
-                                        _showToast(
-                                          '"${newItem.name}" added to inventory',
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                );
-                              }
-                            },
-                            icon: const Icon(LucideIcons.plus, size: 14),
-                            label: const Text(
-                              "New Item",
-                              style: TextStyle(fontFamily: _fontFam),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _primaryBlue,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _searchController,
-                  style: const TextStyle(fontFamily: _fontFam),
-                  onChanged: (val) => setState(() => _searchQuery = val),
-                  decoration: InputDecoration(
-                    hintText: "Search inventory...",
-                    hintStyle: const TextStyle(fontFamily: _fontFam),
-                    prefixIcon: const Icon(LucideIcons.search, size: 18),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 36,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: categories.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 8),
-                          itemBuilder: (context, index) {
-                            final category = categories[index];
-                            final isSelected = _selectedCategory == category;
-                            return GestureDetector(
-                              onTap: () =>
-                                  setState(() => _selectedCategory = category),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? const Color(0xFF1E293B)
-                                      : Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(100),
-                                ),
-                                child: Text(
-                                  category,
-                                  style: TextStyle(
-                                    color: isSelected
-                                        ? Colors.white
-                                        : Colors.grey[600],
-                                    fontSize: 12,
-                                    fontFamily: _fontFam,
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        width: 1,
-                        height: 20,
-                        color: Colors.grey.shade300,
-                      ),
-                      const SizedBox(width: 8),
-                      _buildDeadStockPill(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: filteredInventory.isNotEmpty
-                ? ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filteredInventory.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
-                        return _buildListHeader(filteredInventory.length);
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: ItemCard(
-                          item: filteredInventory[index - 1],
-                          controller: widget.controller,
-                          onClick: widget.onSelectItem,
-                        ),
-                      );
-                    },
-                  )
-                : _buildEmptyState(),
-          ),
-        ],
-      ),
+    return InventoryRedesign(
+      controller: widget.controller,
+      onSelectItem: widget.onSelectItem,
+      onUpdateItem: widget.onUpdateItem ?? widget.controller.updateItem,
+      exportDue: widget.exportDue,
+      onExport: () {
+        showReportPeriodDialog(
+          context,
+          title: 'Generate Inventory Report',
+          note: 'Past reports use current unit costs.',
+          onGenerate: (range) => _generateAndPrintInventoryReport(context, range),
+        );
+      },
+      onQrLabels: () {
+        _generateAndPrintQRLabels(context);
+      },
+      onNewItem: () => _openNewItem(context),
     );
   }
 
-  Widget _buildDeadStockPill() {
-    final color = _showDeadStock ? _primaryBlue : Colors.grey.shade600;
-    final deadStockCount = widget.controller
-        .filterDeadStock(query: '', category: 'All')
-        .length;
-    return GestureDetector(
-      onTap: () => setState(() => _showDeadStock = !_showDeadStock),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: _showDeadStock
-              ? _primaryBlue.withOpacity(0.1)
-              : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(100),
-          border: Border.all(
-            color: _showDeadStock ? _primaryBlue : Colors.transparent,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(LucideIcons.packageX, size: 14, color: color),
-            const SizedBox(width: 6),
-            Text(
-              'Dead Stock ($deadStockCount)',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: color,
-                fontFamily: _fontFam,
-              ),
-            ),
-          ],
+  void _openNewItem(BuildContext context) {
+    void onAdd(InventoryItem newItem) {
+      if (mounted) {
+        setState(() {});
+        _showToast('"${newItem.name}" added to inventory');
+      }
+    }
+
+    final page = AddItemPage(
+      controller: widget.controller,
+      onAdd: onAdd,
+    );
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close new item form',
+      barrierColor: const Color(0x990F172A),
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (dialogContext, _, __) => Align(
+        alignment: Alignment.centerRight,
+        child: SizedBox(
+          width: MediaQuery.of(dialogContext).size.width < 500
+              ? MediaQuery.of(dialogContext).size.width
+              : 480,
+          height: double.infinity,
+          child: Material(color: Colors.white, child: page),
         ),
       ),
-    );
-  }
-
-  Widget _buildListHeader(int count) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            "${_selectedCategory.toUpperCase()} ($count)",
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-              letterSpacing: 1.1,
-              fontFamily: _fontFam,
-            ),
-          ),
-          const Icon(LucideIcons.arrowUpDown, size: 14, color: Colors.grey),
-        ],
+      transitionBuilder: (context, animation, _, child) => SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(1, 0), end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: animation, curve: Curves.easeOutCubic)),
+        child: child,
       ),
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(LucideIcons.package, size: 48, color: Colors.grey[300]),
-          const SizedBox(height: 12),
-          const Text(
-            "No items found",
-            style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- NEW UI HELPER FOR EXPORT BUTTONS ---
-  Widget _buildHeaderButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-  }) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        OutlinedButton.icon(
-          onPressed: onPressed,
-          icon: Icon(icon, size: 14, color: const Color(0xFF0F172A)),
-          label: Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF0F172A),
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              fontFamily: _fontFam,
-            ),
-          ),
-          style: OutlinedButton.styleFrom(
-            side: BorderSide(color: Colors.grey.shade300),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-            backgroundColor: Colors.white,
-          ),
-        ),
-      ],
-    );
-  }
 
   Future<void> _generateAndPrintInventoryReport(
     BuildContext context,
