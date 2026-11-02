@@ -7,8 +7,10 @@ import '../logic/inventory_controller.dart';
 import '../data/ai_insights_service.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
+import '../logic/forecasting_controller.dart';
 
 class ForecastingPage extends StatefulWidget {
+  
   final InventoryController controller;
   final AIInsightsService aiService;
   final bool isActive;
@@ -25,6 +27,8 @@ class ForecastingPage extends StatefulWidget {
 }
 
 class _ForecastingPageState extends State<ForecastingPage> {
+  final ForecastingController _forecastingController = ForecastingController();
+  bool _isSeasonalMode = true;
   String _aiRecommendation = "Tap refresh to generate AI insights.";
   bool _isLoadingAI = false;
 
@@ -104,6 +108,23 @@ class _ForecastingPageState extends State<ForecastingPage> {
     _initialAIStarted = true;
     unawaited(_fetchAIRecommendations());
     unawaited(_fetchForecast());
+    unawaited(_runLiveForecast());
+  }
+
+  Future<void> _runLiveForecast() async {
+  if (widget.controller.allItems.isEmpty) return;
+  final String activeItemId = widget.controller.allItems.first.id;
+
+  setState(() => _forecastingController.isLoading = true);
+
+  await _forecastingController.generateHybridForecast(
+    itemId: activeItemId, 
+    isSeasonal: _isSeasonalMode,
+  );
+
+    if (mounted) {
+      setState(() => _forecastingController.isLoading = false);
+    }
   }
 
   Future<void> _fetchForecast({bool forceRefresh = false}) {
