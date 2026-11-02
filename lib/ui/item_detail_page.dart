@@ -1127,7 +1127,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 controller: widget.controller,
                 mode: MapMode.view,
                 selectedItemId: _currentItem.id, // Auto-opens the specific item's location
-                centerOnSelectedItem: true,
+                fitEntireMap: true,
                 compactZoomControls: true,
               ),
             ),
@@ -1988,7 +1988,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   controller: widget.controller,
                   mode: MapMode.view,
                   selectedItemId: _currentItem.id, // Auto-opens the specific item's location
-                  centerOnSelectedItem: true,
+                  fitEntireMap: true,
                 ),
               ),
             ],

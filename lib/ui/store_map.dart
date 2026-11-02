@@ -12,10 +12,23 @@ enum MapMode { view, manage, selection, pick }
 /// Changes only the map projection; both views use the same saved layout.
 enum MapViewStyle { twoD, threeD }
 
-enum MapSidebarAction { rotate, up, down, left, right, widthLeftMinus, widthLeftPlus, widthRightMinus, widthRightPlus, duplicate, autoAlignWall, delete }
+enum MapSidebarAction {
+  rotate,
+  up,
+  down,
+  left,
+  right,
+  widthLeftMinus,
+  widthLeftPlus,
+  widthRightMinus,
+  widthRightPlus,
+  duplicate,
+  autoAlignWall,
+  delete,
+}
 
 // Updated to the soft light-blue background
-const Color kMapContainerBg = Color.fromARGB(255, 214, 235, 255); 
+const Color kMapContainerBg = Color.fromARGB(255, 214, 235, 255);
 
 // Visual model heights are separate from the saved 2D footprints.
 const double _rack3DHeight = 6.0;
@@ -40,6 +53,7 @@ class StoreMap extends StatefulWidget {
   final VoidCallback? onSelectionAssigned;
   final Function(MapElement)? onElementSelected;
   final ValueChanged<MapElement?>? onManageSelectionChanged;
+  final VoidCallback? onLayoutEdited;
 
   const StoreMap({
     super.key,
@@ -59,6 +73,7 @@ class StoreMap extends StatefulWidget {
     this.onSelectionAssigned,
     this.onElementSelected,
     this.onManageSelectionChanged,
+    this.onLayoutEdited,
   });
 
   @override
@@ -104,7 +119,8 @@ class StoreMapState extends State<StoreMap>
   StreamSubscription<List<InventoryItem>>? _inventorySubscription;
   bool _mapLayoutLoadFailed = false;
 
-  List<MapElement> get _layout => widget.layout ?? widget.controller.storeLayout;
+  List<MapElement> get _layout =>
+      widget.layout ?? widget.controller.storeLayout;
 
   MapElement? get _itemLocationElement {
     if (!widget.centerOnSelectedItem || widget.selectedItemId == null) {
@@ -122,7 +138,7 @@ class StoreMapState extends State<StoreMap>
 
   void _recenterMap({bool preserveScale = false}) {
     if (_currentViewportSize == Size.zero) return;
-    
+
     double scale;
     if (preserveScale && _hasAppliedInitialTransform) {
       // Use the current zoom level
@@ -150,30 +166,80 @@ class StoreMapState extends State<StoreMap>
       }
       final scaleX = _currentViewportSize.width / fitWidth;
       final scaleY = _currentViewportSize.height / fitHeight;
-      scale = math.min(scaleX, scaleY) *
-          (widget.fitEntireMap && widget.viewStyle == MapViewStyle.threeD
-              ? 0.75
-              : 0.9);
+      scale =
+          math.min(scaleX, scaleY) *
+          (widget.viewStyle == MapViewStyle.threeD
+              ? (widget.fitEntireMap ? 0.69 : 0.68)
+              : 0.83);
       scale = scale.clamp(widget.fitEntireMap ? 0.01 : 0.1, 2.5);
     }
 
     double dx = (_currentViewportSize.width - (_currentMapWidth * scale)) / 2;
     double dy = (_currentViewportSize.height - (_currentMapHeight * scale)) / 2;
     final selectedLocation = _itemLocationElement;
-    if (selectedLocation != null) {
-      final localCenter = selectedLocation.position +
-          Offset(selectedLocation.size.width / 2, selectedLocation.size.height / 2) -
+    if (selectedLocation == null &&
+        widget.viewStyle == MapViewStyle.threeD &&
+        _layout.isNotEmpty) {
+      // Center the visible 3D layout, whose raised objects extend above the
+      // floor grid, rather than centering only the grid's layout box.
+      final mapCenter = Offset(_currentMapWidth / 2, _currentMapHeight / 2);
+      final projection = Matrix4.identity()
+        ..rotateX(-0.95)
+        ..rotateZ(0.785);
+      double left = double.infinity;
+      double top = double.infinity;
+      double right = double.negativeInfinity;
+      double bottom = double.negativeInfinity;
+      double tallestObject = 0;
+      for (final element in _layout) {
+        final height = switch (element.type) {
+          ElementType.rack => _rack3DHeight,
+          ElementType.shelf => _shelf3DHeight,
+          ElementType.door => _door3DHeight,
+          ElementType.wall => _wall3DHeight,
+          ElementType.cashier => 3.5,
+        };
+        tallestObject = math.max(tallestObject, height);
+        for (final corner in _getCorners(
+          element.position,
+          element.size,
+          element.rotation,
+        )) {
+          final localCorner = corner - Offset(_currentMapMinX, _currentMapMinY);
+          final projected =
+              mapCenter +
+              MatrixUtils.transformPoint(projection, localCorner - mapCenter);
+          left = math.min(left, projected.dx);
+          top = math.min(top, projected.dy);
+          right = math.max(right, projected.dx);
+          bottom = math.max(bottom, projected.dy);
+        }
+      }
+      // The model painters use 40 pixels per height unit and tilt by 0.95 rad.
+      final raisedHeight = tallestObject * 40 * math.cos(0.95);
+      final visibleCenter = Offset(
+        (left + right) / 2,
+        (top - raisedHeight + bottom) / 2,
+      );
+      dx = _currentViewportSize.width / 2 - visibleCenter.dx * scale;
+      dy = _currentViewportSize.height / 2 - visibleCenter.dy * scale;
+    } else if (selectedLocation != null) {
+      final localCenter =
+          selectedLocation.position +
+          Offset(
+            selectedLocation.size.width / 2,
+            selectedLocation.size.height / 2,
+          ) -
           Offset(_currentMapMinX, _currentMapMinY);
       final mapCenter = Offset(_currentMapWidth / 2, _currentMapHeight / 2);
       final projection = widget.viewStyle == MapViewStyle.twoD
           ? Matrix4.identity()
           : (Matrix4.identity()
-            ..rotateX(-0.95)
-            ..rotateZ(0.785));
-      final projectedCenter = mapCenter + MatrixUtils.transformPoint(
-        projection,
-        localCenter - mapCenter,
-      );
+              ..rotateX(-0.95)
+              ..rotateZ(0.785));
+      final projectedCenter =
+          mapCenter +
+          MatrixUtils.transformPoint(projection, localCenter - mapCenter);
       dx = _currentViewportSize.width / 2 - projectedCenter.dx * scale;
       dy = _currentViewportSize.height / 2 - projectedCenter.dy * scale;
     }
@@ -218,8 +284,10 @@ class StoreMapState extends State<StoreMap>
         if (widget.centerOnSelectedItem || widget.fitEntireMap) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              _recenterMap(preserveScale:
-                  widget.centerOnSelectedItem && _isInitialScaleSet);
+              _recenterMap(
+                preserveScale:
+                    widget.centerOnSelectedItem && _isInitialScaleSet,
+              );
             }
           });
         }
@@ -317,7 +385,7 @@ class StoreMapState extends State<StoreMap>
     MapElement? element;
     try {
       final item = widget.controller.allItems.firstWhere((i) => i.id == itemId);
-      
+
       if (item.locationId != null) {
         element = _layout.firstWhere((e) => e.id == item.locationId);
       }
@@ -332,8 +400,10 @@ class StoreMapState extends State<StoreMap>
   // ==========================================
   void _zoom(double zoomFactor) {
     final double scale = _transformationController.value.getMaxScaleOnAxis();
-    final double newScale =
-        (scale * zoomFactor).clamp(widget.fitEntireMap ? 0.01 : 0.1, 2.5);
+    final double newScale = (scale * zoomFactor).clamp(
+      widget.fitEntireMap ? 0.01 : 0.1,
+      2.5,
+    );
     final double actualFactor = newScale / scale;
 
     // Get screen center to zoom in/out smoothly towards the center
@@ -370,6 +440,73 @@ class StoreMapState extends State<StoreMap>
       return const Size(120, 60); // Standard rack footprint
     }
     return const Size(80, 80); // Fallback
+  }
+
+  Offset? _paletteWorldPosition(Offset globalPosition, Size size) {
+    final box = _mapKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return null;
+    final localPosition = box.globalToLocal(globalPosition);
+    return localPosition +
+        Offset(_currentMapMinX, _currentMapMinY) -
+        Offset(size.width / 2, size.height / 2);
+  }
+
+  void _updatePalettePreview(DragTargetDetails<ElementType> details) {
+    final size = _getDefaultSize(details.data);
+    final position = _paletteWorldPosition(details.offset, size);
+    if (position == null) return;
+    final element = MapElement(
+      id: 'temp',
+      type: details.data,
+      position: position,
+      label: '',
+    )..size = size;
+    final snapped = _snapObjectNearWall(
+      element,
+      position,
+      size,
+      0.0,
+    );
+    setState(() {
+      _dragPreviewPos = snapped;
+      _dragPreviewSize = size;
+      _dragPreviewValid = !_hasCollision(element, snapped, size, 0.0);
+      _dragPreviewRotation = 0.0;
+      _dragPreviewType = details.data;
+    });
+  }
+
+  void _acceptPaletteElement(DragTargetDetails<ElementType> details) {
+    final size = _getDefaultSize(details.data);
+    final position = _paletteWorldPosition(details.offset, size);
+    if (position == null) return;
+    final element = MapElement(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      type: details.data,
+      position: position,
+      label: details.data.name.toUpperCase(),
+    )..size = size;
+    final snapped = _snapObjectNearWall(
+      element,
+      position,
+      size,
+      0.0,
+    );
+    element.position = snapped;
+    if (!_hasCollision(element, snapped, size, 0.0)) {
+      setState(() => _layout.add(element));
+      widget.onLayoutEdited?.call();
+    } else {
+      AppToast.error(
+        context,
+        "Cannot place element here. It overlaps with another.",
+      );
+    }
+    setState(() {
+      _dragPreviewPos = null;
+      _dragPreviewSize = null;
+      _dragPreviewType = null;
+    });
   }
 
   Offset _snapToGrid(Offset position, Size size, ElementType type) {
@@ -671,19 +808,7 @@ class StoreMapState extends State<StoreMap>
               // The Draggable Icon
               Draggable<ElementType>(
                 data: type,
-                feedback: Material(
-                  color: Colors.transparent,
-                  child: Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: color, width: 2),
-                    ),
-                    child: Icon(icon, color: color, size: 28),
-                  ),
-                ),
+                feedback: const SizedBox.shrink(),
                 child: Container(
                   width: 56,
                   height: 56,
@@ -788,7 +913,10 @@ class StoreMapState extends State<StoreMap>
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              constraints: BoxConstraints.tightFor(width: buttonSize, height: buttonSize),
+              constraints: BoxConstraints.tightFor(
+                width: buttonSize,
+                height: buttonSize,
+              ),
               padding: EdgeInsets.zero,
               icon: Icon(Icons.add, color: iconColor, size: iconSize),
               onPressed: () => _zoom(1.2), // Zoom in
@@ -801,7 +929,10 @@ class StoreMapState extends State<StoreMap>
                   : Colors.blueGrey.withOpacity(0.5),
             ),
             IconButton(
-              constraints: BoxConstraints.tightFor(width: buttonSize, height: buttonSize),
+              constraints: BoxConstraints.tightFor(
+                width: buttonSize,
+                height: buttonSize,
+              ),
               padding: EdgeInsets.zero,
               icon: Icon(Icons.remove, color: iconColor, size: iconSize),
               onPressed: () => _zoom(0.8), // Zoom out
@@ -814,10 +945,16 @@ class StoreMapState extends State<StoreMap>
                   : Colors.blueGrey.withOpacity(0.5),
             ),
             IconButton(
-              constraints: BoxConstraints.tightFor(width: buttonSize, height: buttonSize),
+              constraints: BoxConstraints.tightFor(
+                width: buttonSize,
+                height: buttonSize,
+              ),
               padding: EdgeInsets.zero,
-              icon: Icon(LucideIcons.focus, color: iconColor,
-                  size: compact ? 16 : 20),
+              icon: Icon(
+                LucideIcons.focus,
+                color: iconColor,
+                size: compact ? 16 : 20,
+              ),
               onPressed: () {
                 setState(() {
                   _recenterMap(preserveScale: true);
@@ -860,10 +997,7 @@ class StoreMapState extends State<StoreMap>
         color: kMapContainerBg,
         borderRadius: BorderRadius.circular(16),
         // Faint border
-        border: Border.all(
-          color: Colors.black.withOpacity(0.08),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.black.withOpacity(0.08), width: 1),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -915,7 +1049,11 @@ class StoreMapState extends State<StoreMap>
   // Called by the desktop sidebar. Mobile uses the original floating controls.
   void clearManageSelection() {
     if (!mounted) return;
-    setState(() { _activeElementId = null; _isNudging = false; _isAdjustingWidth = false; });
+    setState(() {
+      _activeElementId = null;
+      _isNudging = false;
+      _isAdjustingWidth = false;
+    });
     widget.onManageSelectionChanged?.call(null);
   }
 
@@ -962,6 +1100,7 @@ class StoreMapState extends State<StoreMap>
       _isAdjustingWidth = false;
     });
     widget.onManageSelectionChanged?.call(clone);
+    widget.onLayoutEdited?.call();
   }
 
   void applySidebarAction(MapSidebarAction action) {
@@ -980,40 +1119,74 @@ class StoreMapState extends State<StoreMap>
     }
     if (action == MapSidebarAction.delete) {
       _layout.removeWhere((MapElement element) => element.id == el.id);
-      setState(() { _activeElementId = null; _isAdjustingWidth = false; _isNudging = false; });
+      setState(() {
+        _activeElementId = null;
+        _isAdjustingWidth = false;
+        _isNudging = false;
+      });
       widget.onManageSelectionChanged?.call(null);
+      widget.onLayoutEdited?.call();
       return;
     }
     if (action == MapSidebarAction.rotate) {
       if (el.type == ElementType.wall) {
-        final center = el.position + Offset(el.size.width / 2, el.size.height / 2);
+        final center =
+            el.position + Offset(el.size.width / 2, el.size.height / 2);
         final size = Size(el.size.height, el.size.width);
         final pos = center - Offset(size.width / 2, size.height / 2);
         if (_hasCollision(el, pos, size, 0)) {
-          AppToast.error(context, 'Cannot rotate. Overlaps with another element.');
+          AppToast.error(
+            context,
+            'Cannot rotate. Overlaps with another element.',
+          );
           return;
         }
-        setState(() { el.size = size; el.position = pos; el.rotation = 0; });
+        setState(() {
+          el.size = size;
+          el.position = pos;
+          el.rotation = 0;
+        });
       } else {
         final rotation = el.rotation + math.pi / 2;
         if (_hasCollision(el, el.position, el.size, rotation)) {
-          AppToast.error(context, 'Cannot rotate. Overlaps with another element.');
+          AppToast.error(
+            context,
+            'Cannot rotate. Overlaps with another element.',
+          );
           return;
         }
         setState(() => el.rotation = rotation);
       }
+      widget.onLayoutEdited?.call();
       return;
     }
     switch (action) {
-      case MapSidebarAction.up: _nudgeElement(el, const Offset(0, -40)); break;
-      case MapSidebarAction.down: _nudgeElement(el, const Offset(0, 40)); break;
-      case MapSidebarAction.left: _nudgeElement(el, const Offset(-40, 0)); break;
-      case MapSidebarAction.right: _nudgeElement(el, const Offset(40, 0)); break;
-      case MapSidebarAction.widthLeftMinus: _changeElementWidthDirectional(el, -40, isLeft: true); break;
-      case MapSidebarAction.widthLeftPlus: _changeElementWidthDirectional(el, 40, isLeft: true); break;
-      case MapSidebarAction.widthRightMinus: _changeElementWidthDirectional(el, -40, isLeft: false); break;
-      case MapSidebarAction.widthRightPlus: _changeElementWidthDirectional(el, 40, isLeft: false); break;
-      default: break;
+      case MapSidebarAction.up:
+        _nudgeElement(el, const Offset(0, -40));
+        break;
+      case MapSidebarAction.down:
+        _nudgeElement(el, const Offset(0, 40));
+        break;
+      case MapSidebarAction.left:
+        _nudgeElement(el, const Offset(-40, 0));
+        break;
+      case MapSidebarAction.right:
+        _nudgeElement(el, const Offset(40, 0));
+        break;
+      case MapSidebarAction.widthLeftMinus:
+        _changeElementWidthDirectional(el, -40, isLeft: true);
+        break;
+      case MapSidebarAction.widthLeftPlus:
+        _changeElementWidthDirectional(el, 40, isLeft: true);
+        break;
+      case MapSidebarAction.widthRightMinus:
+        _changeElementWidthDirectional(el, -40, isLeft: false);
+        break;
+      case MapSidebarAction.widthRightPlus:
+        _changeElementWidthDirectional(el, 40, isLeft: false);
+        break;
+      default:
+        break;
     }
   }
 
@@ -1026,7 +1199,8 @@ class StoreMapState extends State<StoreMap>
     final start = horizontal ? wall.position.dx : wall.position.dy;
     final end = start + (horizontal ? wall.size.width : wall.size.height);
     final crossMin = horizontal ? wall.position.dy : wall.position.dx;
-    final crossMax = crossMin + (horizontal ? wall.size.height : wall.size.width);
+    final crossMax =
+        crossMin + (horizontal ? wall.size.height : wall.size.width);
 
     final candidates = <double>[];
     for (final other in _layout) {
@@ -1034,15 +1208,15 @@ class StoreMapState extends State<StoreMap>
       final otherHorizontal = other.size.width >= other.size.height;
       if (otherHorizontal == horizontal) continue;
       final otherStart = horizontal ? other.position.dx : other.position.dy;
-      final otherEnd = otherStart +
-          (horizontal ? other.size.width : other.size.height);
-      final otherCrossMin =
-          horizontal ? other.position.dy : other.position.dx;
-      final otherCrossMax = otherCrossMin +
-          (horizontal ? other.size.height : other.size.width);
+      final otherEnd =
+          otherStart + (horizontal ? other.size.width : other.size.height);
+      final otherCrossMin = horizontal ? other.position.dy : other.position.dx;
+      final otherCrossMax =
+          otherCrossMin + (horizontal ? other.size.height : other.size.width);
       // The perpendicular wall must reach the selected wall's corridor.
       if (otherCrossMax < crossMin - tolerance ||
-          otherCrossMin > crossMax + tolerance) continue;
+          otherCrossMin > crossMax + tolerance)
+        continue;
       candidates.add(otherStart);
       candidates.add(otherEnd);
     }
@@ -1063,8 +1237,8 @@ class StoreMapState extends State<StoreMap>
     final nextStart = snap(start);
     final nextEnd = snap(end);
     if (nextEnd - nextStart < 15) return false;
-    if ((nextStart - start).abs() < 0.01 &&
-        (nextEnd - end).abs() < 0.01) return false;
+    if ((nextStart - start).abs() < 0.01 && (nextEnd - end).abs() < 0.01)
+      return false;
 
     final nextPos = horizontal
         ? Offset(nextStart, wall.position.dy)
@@ -1077,6 +1251,7 @@ class StoreMapState extends State<StoreMap>
       wall.position = nextPos;
       wall.size = nextSize;
     });
+    widget.onLayoutEdited?.call();
     return true;
   }
 
@@ -1084,13 +1259,17 @@ class StoreMapState extends State<StoreMap>
     final Offset newPosition = el.position + delta;
 
     if (_hasCollision(el, newPosition, el.size, el.rotation)) {
-      AppToast.error(context, "Cannot nudge. It would overlap another element.");
+      AppToast.error(
+        context,
+        "Cannot nudge. It would overlap another element.",
+      );
       return;
     }
 
     setState(() {
       el.position = newPosition;
     });
+    widget.onLayoutEdited?.call();
   }
 
   // ==========================================
@@ -1111,8 +1290,8 @@ class StoreMapState extends State<StoreMap>
     // Rotating a wall swaps width and height (its rotation stays at zero).
     // Always resize along the wall's LONG axis so its 15-unit thickness never
     // grows when a vertical wall is extended from either endpoint.
-    final bool verticalWall = el.type == ElementType.wall &&
-        el.size.height > el.size.width;
+    final bool verticalWall =
+        el.type == ElementType.wall && el.size.height > el.size.width;
     final double oldLength = verticalWall ? el.size.height : el.size.width;
     final double newLength = (oldLength + amount).clamp(
       minLength,
@@ -1132,13 +1311,16 @@ class StoreMapState extends State<StoreMap>
     // Right = last endpoint (right when horizontal, bottom when vertical).
     final Offset newPosition = isLeft
         ? (verticalWall
-            ? Offset(el.position.dx, el.position.dy - actualChange)
-            : Offset(el.position.dx - actualChange, el.position.dy))
+              ? Offset(el.position.dx, el.position.dy - actualChange)
+              : Offset(el.position.dx - actualChange, el.position.dy))
         : el.position;
 
     // Check collision before applying the resize.
     if (_hasCollision(el, newPosition, newSize, el.rotation)) {
-      AppToast.error(context, "Cannot resize. It would overlap another element.");
+      AppToast.error(
+        context,
+        "Cannot resize. It would overlap another element.",
+      );
       return;
     }
 
@@ -1146,6 +1328,7 @@ class StoreMapState extends State<StoreMap>
       el.size = newSize;
       el.position = newPosition;
     });
+    widget.onLayoutEdited?.call();
   }
 
   Widget _buildBottomActionBar() {
@@ -1201,29 +1384,51 @@ class StoreMapState extends State<StoreMap>
             setState(() {
               if (activeEl.type == ElementType.wall) {
                 // FIX: Walls must swap physical dimensions to preserve intersection math!
-                final Offset center = activeEl.position + Offset(activeEl.size.width / 2, activeEl.size.height / 2);
-                final Size newSize = Size(activeEl.size.height, activeEl.size.width);
-                final Offset newPos = Offset(center.dx - newSize.width / 2, center.dy - newSize.height / 2);
+                final Offset center =
+                    activeEl.position +
+                    Offset(activeEl.size.width / 2, activeEl.size.height / 2);
+                final Size newSize = Size(
+                  activeEl.size.height,
+                  activeEl.size.width,
+                );
+                final Offset newPos = Offset(
+                  center.dx - newSize.width / 2,
+                  center.dy - newSize.height / 2,
+                );
 
                 if (!_hasCollision(activeEl, newPos, newSize, 0.0)) {
                   activeEl.size = newSize;
                   activeEl.position = newPos;
                   activeEl.rotation = 0.0; // Force matrix rotation to 0
                 } else {
-                  AppToast.error(context, "Cannot rotate. Overlaps with another element.");
+                  AppToast.error(
+                    context,
+                    "Cannot rotate. Overlaps with another element.",
+                  );
                 }
               } else {
                 // Normal 3D rotation for objects
                 final double newRot = activeEl.rotation + (math.pi / 2);
-                if (!_hasCollision(activeEl, activeEl.position, activeEl.size, newRot)) {
+                if (!_hasCollision(
+                  activeEl,
+                  activeEl.position,
+                  activeEl.size,
+                  newRot,
+                )) {
                   activeEl.rotation = newRot;
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Cannot rotate. Overlaps with another element."), backgroundColor: Colors.redAccent),
+                    const SnackBar(
+                      content: Text(
+                        "Cannot rotate. Overlaps with another element.",
+                      ),
+                      backgroundColor: Colors.redAccent,
+                    ),
                   );
                 }
               }
             });
+            widget.onLayoutEdited?.call();
           },
         ),
         const SizedBox(width: 12),
@@ -1270,6 +1475,7 @@ class StoreMapState extends State<StoreMap>
               _isAdjustingWidth = false;
               _isNudging = false;
             });
+            widget.onLayoutEdited?.call();
           },
         ),
       ],
@@ -1535,13 +1741,13 @@ class StoreMapState extends State<StoreMap>
           } else if (horizContinuous && !vertContinuous) {
             // Horizontal wall continues, vertical is the stem -> cut vertical.
             cutVert = true;
-           } else {
-          // Ambiguous (corner or fully crossed intersection).
-          // Always cut the shorter wall so the main, longer wall stays completely solid.
-          final double hLength = horizB[1] - horizB[0];
-          final double vLength = vertB[3] - vertB[2];
-          cutVert = vLength < hLength;
-        }
+          } else {
+            // Ambiguous (corner or fully crossed intersection).
+            // Always cut the shorter wall so the main, longer wall stays completely solid.
+            final double hLength = horizB[1] - horizB[0];
+            final double vLength = vertB[3] - vertB[2];
+            cutVert = vLength < hLength;
+          }
 
           if (cutVert) {
             cuts.putIfAbsent(vertEl.id, () => []).add([horizB[2], horizB[3]]);
@@ -1576,19 +1782,25 @@ class StoreMapState extends State<StoreMap>
               ..sort((x, y) => x[0].compareTo(y[0]));
 
         double cursor = axisStart;
-      int segIndex = 0;
-      for (final cut in sortedCuts) {
-        if (cut[0] > cursor && (cut[0] - cursor) > 1.0) { // FIX: Prevent micro-fragments
-          result.add(_buildWallSegment(wall, cursor, cut[0], isHoriz, segIndex++));
+        int segIndex = 0;
+        for (final cut in sortedCuts) {
+          if (cut[0] > cursor && (cut[0] - cursor) > 1.0) {
+            // FIX: Prevent micro-fragments
+            result.add(
+              _buildWallSegment(wall, cursor, cut[0], isHoriz, segIndex++),
+            );
+          }
+          cursor = math.max(cursor, cut[1]);
         }
-        cursor = math.max(cursor, cut[1]);
+        if (cursor < axisEnd && (axisEnd - cursor) > 1.0) {
+          // FIX: Prevent micro-fragments
+          result.add(
+            _buildWallSegment(wall, cursor, axisEnd, isHoriz, segIndex++),
+          );
+        }
       }
-      if (cursor < axisEnd && (axisEnd - cursor) > 1.0) { // FIX: Prevent micro-fragments
-        result.add(_buildWallSegment(wall, cursor, axisEnd, isHoriz, segIndex++));
-      }
-    }
 
-    return [...result, ...nonWalls];
+      return [...result, ...nonWalls];
     }
 
     List<MapElement> _buildRenderOrder() {
@@ -1699,9 +1911,11 @@ class StoreMapState extends State<StoreMap>
     Widget map = LayoutBuilder(
       builder: (context, constraints) {
         final nextViewport = Size(constraints.maxWidth, constraints.maxHeight);
-        final viewportChanged = _currentViewportSize != Size.zero &&
+        final viewportChanged =
+            _currentViewportSize != Size.zero &&
             _currentViewportSize != nextViewport;
-        final mapBoundsChanged = _currentMapWidth != mapWidth ||
+        final mapBoundsChanged =
+            _currentMapWidth != mapWidth ||
             _currentMapHeight != mapHeight ||
             _currentMapMinX != minX ||
             _currentMapMinY != minY;
@@ -1734,110 +1948,26 @@ class StoreMapState extends State<StoreMap>
           });
         }
 
-        return InteractiveViewer(
-          transformationController: _transformationController,
-          constrained: false,
-          scaleEnabled: false,
-          minScale: widget.fitEntireMap ? 0.01 : 0.1,
-          maxScale: 2.5,
-          boundaryMargin: const EdgeInsets.all(double.infinity),
-          child: Builder(
-            builder: (BuildContext dropContext) {
-              return DragTarget<ElementType>(
-                onMove: (details) {
-                  final RenderBox? box =
-                      _mapKey.currentContext?.findRenderObject() as RenderBox?;
-                  if (box == null) return;
-                  final Offset localOffset = box.globalToLocal(details.offset);
-
-                  // NEW: Map visual coordinate back to true world coordinate
-                  final Offset worldOffset = Offset(
-                    localOffset.dx + minX,
-                    localOffset.dy + minY,
-                  );
-
-                  final Size previewSize = _getDefaultSize(details.data);
-                  final tempEl = MapElement(
-                    id: 'temp',
-                    type: details.data,
-                    position: worldOffset,
-                    label: '',
-                  );
-                  tempEl.size = previewSize;
-                  final snappedPos = _snapObjectNearWall(
-                    tempEl,
-                    worldOffset,
-                    previewSize,
-                    0.0,
-                  );
-
-                  setState(() {
-                    _dragPreviewPos = snappedPos;
-                    _dragPreviewSize = previewSize;
-                    _dragPreviewValid = !_hasCollision(
-                      tempEl,
-                      snappedPos,
-                      previewSize,
-                      0.0,
-                    );
-                    _dragPreviewRotation = 0.0;
-                    _dragPreviewType = details.data;
-                  });
-                },
-                onLeave: (_) {
-                  setState(() {
-                    _dragPreviewPos = null;
-                    _dragPreviewSize = null;
-                    _dragPreviewType = null;
-                  });
-                },
-                onAcceptWithDetails: (details) {
-                  final RenderBox? box =
-                      _mapKey.currentContext?.findRenderObject() as RenderBox?;
-                  if (box == null) return;
-                  final Offset localOffset = box.globalToLocal(details.offset);
-
-                  // NEW: Map visual coordinate back to true world coordinate
-                  final Offset worldOffset = Offset(
-                    localOffset.dx + minX,
-                    localOffset.dy + minY,
-                  );
-
-                  final Size finalSize = _getDefaultSize(details.data);
-                  final newEl = MapElement(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    type: details.data,
-                    position: worldOffset,
-                    label: details.data.name.toUpperCase(),
-                  );
-                  newEl.size = finalSize;
-                  final Offset finalPos =
-                      _dragPreviewPos != null && _dragPreviewType == details.data
-                      ? _dragPreviewPos!
-                      : _snapObjectNearWall(
-                          newEl,
-                          worldOffset,
-                          finalSize,
-                          0.0,
-                        );
-                  newEl.position = finalPos;
-
-                  if (!_hasCollision(newEl, finalPos, finalSize, 0.0)) {
-                    setState(() {
-                      _layout.add(newEl);
-                    });
-                  } else {
-                    AppToast.error(context, "Cannot place element here. It overlaps with another.");
-                  }
-
-                  setState(() {
-                    _dragPreviewPos = null;
-                    _dragPreviewSize = null;
-                    _dragPreviewType = null;
-                  });
-                },
-                builder: (context, candidateData, rejectedData) {
-                  return GestureDetector(
+        return DragTarget<ElementType>(
+          onMove: _updatePalettePreview,
+          onLeave: (_) {
+            setState(() {
+              _dragPreviewPos = null;
+              _dragPreviewSize = null;
+              _dragPreviewType = null;
+            });
+          },
+          onAcceptWithDetails: _acceptPaletteElement,
+          builder: (context, candidateData, rejectedData) => InteractiveViewer(
+            transformationController: _transformationController,
+            constrained: false,
+            scaleEnabled: false,
+            minScale: widget.fitEntireMap ? 0.01 : 0.1,
+            maxScale: 2.5,
+            boundaryMargin: const EdgeInsets.all(double.infinity),
+            child: Builder(
+              builder: (BuildContext dropContext) {
+                return GestureDetector(
                     onTap: () {
                       if (widget.mode == MapMode.manage) {
                         setState(() {
@@ -1857,14 +1987,15 @@ class StoreMapState extends State<StoreMap>
                       transform: widget.viewStyle == MapViewStyle.twoD
                           ? Matrix4.identity()
                           : (Matrix4.identity()
-                            ..rotateX(-0.95)
-                            ..rotateZ(0.785)),
+                              ..rotateX(-0.95)
+                              ..rotateZ(0.785)),
                       child: Container(
                         key: _mapKey,
                         width: mapWidth,
                         height: mapHeight,
                         decoration: const BoxDecoration(
-                          color: Colors.transparent, // Completely transparent to show background
+                          color: Colors
+                              .transparent, // Completely transparent to show background
                         ),
                         child: Stack(
                           clipBehavior: Clip.none,
@@ -1906,9 +2037,9 @@ class StoreMapState extends State<StoreMap>
                                             decoration: BoxDecoration(
                                               color: _dragPreviewValid
                                                   ? Colors.greenAccent
-                                                      .withOpacity(0.12)
+                                                        .withOpacity(0.12)
                                                   : Colors.redAccent
-                                                      .withOpacity(0.25),
+                                                        .withOpacity(0.25),
                                               border: Border.all(
                                                 color: _dragPreviewValid
                                                     ? Colors.green
@@ -1933,10 +2064,9 @@ class StoreMapState extends State<StoreMap>
                         ),
                       ),
                     ),
-                  );
-                },
-              );
-            },
+                );
+              },
+            ),
           ),
         );
       },
@@ -1945,7 +2075,9 @@ class StoreMapState extends State<StoreMap>
     Widget mapDisplay = Stack(
       children: [
         map,
-        if (widget.mode == MapMode.manage && widget.showMobileToolbar && _activeElementId != null)
+        if (widget.mode == MapMode.manage &&
+            widget.showMobileToolbar &&
+            _activeElementId != null)
           Positioned(
             bottom: 20,
             left: 0,
@@ -1958,8 +2090,8 @@ class StoreMapState extends State<StoreMap>
         if (widget.mode == MapMode.manage && widget.showMobileToolbar) ...[
           _buildLeftToolbar(),
         ],
-        
-          _buildZoomControls(),
+
+        _buildZoomControls(),
       ],
     );
 
@@ -1988,11 +2120,13 @@ class StoreMapState extends State<StoreMap>
         return Colors.grey;
     }
   }
+
   Widget _buildFlatElement(
     ElementType type,
     Size size, {
     bool selected = false,
     bool highlighted = false,
+    double highlightPulse = 1,
   }) {
     final Color fill;
     final Color edge;
@@ -2036,15 +2170,25 @@ class StoreMapState extends State<StoreMap>
           type == ElementType.wall || type == ElementType.door ? 2 : 5,
         ),
         border: Border.all(
-          color: emphasized ? const Color(0xFF1D4ED8) : edge,
+          color: highlighted
+              ? const Color(0xFFFF9800)
+                  .withValues(alpha: 0.15 + 0.85 * highlightPulse)
+              : (selected ? const Color(0xFF1D4ED8) : edge),
           width: emphasized ? 3 : 1.5,
         ),
         boxShadow: emphasized
-            ? [BoxShadow(
-                color: const Color(0xFF2563EB).withValues(alpha: 0.25),
-                blurRadius: 8,
-                spreadRadius: 2,
-              )]
+            ? [
+                BoxShadow(
+                  color: (highlighted
+                          ? const Color(0xFFFF9800)
+                          : const Color(0xFF2563EB))
+                      .withValues(
+                        alpha: highlighted ? 0.05 + 0.4 * highlightPulse : 0.25,
+                      ),
+                  blurRadius: 8,
+                  spreadRadius: 2,
+                ),
+              ]
             : null,
       ),
       child: name.isNotEmpty && size.width >= 65 && size.height >= 33
@@ -2087,7 +2231,11 @@ class StoreMapState extends State<StoreMap>
     switch (type) {
       case ElementType.rack:
         modelPainter = RackPainter(
-          rack: Rack3D(width: modelWidth, depth: modelDepth, height: _rack3DHeight),
+          rack: Rack3D(
+            width: modelWidth,
+            depth: modelDepth,
+            height: _rack3DHeight,
+          ),
           rotationX: mapRotX,
           rotationY: true3DRotationY,
         );
@@ -2097,7 +2245,11 @@ class StoreMapState extends State<StoreMap>
         break;
       case ElementType.shelf:
         modelPainter = ShelfPainter(
-          shelf: Shelf3D(width: modelWidth, depth: modelDepth, height: _shelf3DHeight),
+          shelf: Shelf3D(
+            width: modelWidth,
+            depth: modelDepth,
+            height: _shelf3DHeight,
+          ),
           rotationX: mapRotX,
           rotationY: true3DRotationY,
         );
@@ -2115,7 +2267,11 @@ class StoreMapState extends State<StoreMap>
         break;
       case ElementType.door:
         modelPainter = DoorPainter(
-          door: Door3D(width: modelWidth, depth: modelDepth, height: _door3DHeight),
+          door: Door3D(
+            width: modelWidth,
+            depth: modelDepth,
+            height: _door3DHeight,
+          ),
           rotationX: mapRotX,
           rotationY: true3DRotationY,
         );
@@ -2124,7 +2280,11 @@ class StoreMapState extends State<StoreMap>
         break;
       case ElementType.wall:
         modelPainter = WallPainter(
-          wall: Wall3D(width: modelWidth, depth: modelDepth, height: _wall3DHeight),
+          wall: Wall3D(
+            width: modelWidth,
+            depth: modelDepth,
+            height: _wall3DHeight,
+          ),
           rotationX: mapRotX,
           rotationY: true3DRotationY,
         );
@@ -2168,9 +2328,9 @@ class StoreMapState extends State<StoreMap>
     final bool isActive =
         sourceId == _activeElementId && widget.mode == MapMode.manage;
     // Also highlight the object whose details are open in Preview mode.
-    final bool isPreviewSelected = widget.mode == MapMode.view &&
-        _selectedPopupElement?.id == sourceId;
-    final bool showObjectGlow = isActive || isPreviewSelected;
+    final bool isPreviewSelected =
+        widget.mode == MapMode.view && _selectedPopupElement?.id == sourceId;
+    final bool showObjectGlow = isActive || isPreviewSelected || isHighlighted;
 
     // `el` may be a synthetic wall segment created by _splitWallsAtJunctions
     // purely for rendering/z-order purposes — it is NOT in storeLayout and
@@ -2215,7 +2375,11 @@ class StoreMapState extends State<StoreMap>
     switch (el.type) {
       case ElementType.rack:
         modelPainter = RackPainter(
-          rack: Rack3D(width: modelWidth, depth: modelDepth, height: _rack3DHeight),
+          rack: Rack3D(
+            width: modelWidth,
+            depth: modelDepth,
+            height: _rack3DHeight,
+          ),
           rotationX: mapRotX,
           rotationY: true3DRotationY,
         );
@@ -2228,7 +2392,11 @@ class StoreMapState extends State<StoreMap>
         break;
       case ElementType.shelf:
         modelPainter = ShelfPainter(
-          shelf: Shelf3D(width: modelWidth, depth: modelDepth, height: _shelf3DHeight),
+          shelf: Shelf3D(
+            width: modelWidth,
+            depth: modelDepth,
+            height: _shelf3DHeight,
+          ),
           rotationX: mapRotX,
           rotationY: true3DRotationY,
         );
@@ -2254,7 +2422,11 @@ class StoreMapState extends State<StoreMap>
         break;
       case ElementType.door:
         modelPainter = DoorPainter(
-          door: Door3D(width: modelWidth, depth: modelDepth, height: _door3DHeight),
+          door: Door3D(
+            width: modelWidth,
+            depth: modelDepth,
+            height: _door3DHeight,
+          ),
           rotationX: mapRotX,
           rotationY: true3DRotationY,
         );
@@ -2268,7 +2440,11 @@ class StoreMapState extends State<StoreMap>
         break;
       case ElementType.wall:
         modelPainter = WallPainter(
-          wall: Wall3D(width: modelWidth, depth: modelDepth, height: _wall3DHeight),
+          wall: Wall3D(
+            width: modelWidth,
+            depth: modelDepth,
+            height: _wall3DHeight,
+          ),
           rotationX: mapRotX,
           rotationY: true3DRotationY,
         );
@@ -2294,104 +2470,130 @@ class StoreMapState extends State<StoreMap>
         : 0.0;
 
     Widget shelf = widget.viewStyle == MapViewStyle.twoD
-        ? _buildFlatElement(
-            el.type,
-            el.size,
-            selected: showObjectGlow,
-            highlighted: isHighlighted,
-          )
+        ? (isHighlighted
+            ? AnimatedBuilder(
+                animation: _animController,
+                builder: (context, child) => _buildFlatElement(
+                  el.type,
+                  el.size,
+                  highlighted: true,
+                  highlightPulse: _animController.value,
+                ),
+              )
+            : _buildFlatElement(
+                el.type,
+                el.size,
+                selected: showObjectGlow,
+              ))
         : Container(
-      width: el.size.width,
-      height: el.size.height,
-      decoration: BoxDecoration(
-        color: modelPainter == null
-            ? baseColor.withOpacity(0.3)
-            : Colors.transparent,
-        border: !useFootprintOutline && isActive
-            ? Border.all(color: Colors.blue.shade600, width: 3)
-            : (isHighlighted
-                  ? Border.all(color: Colors.blue.shade400, width: 2)
-                  : null),
-      ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          if (modelPainter != null)
-            Positioned.fill(
-              child: Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..rotateZ(-el.rotation)
-                  ..rotateZ(-math.pi / 4)
-                  ..rotateX(0.17),
-                child: Transform.translate(
-                  offset: Offset(
-                    (-baseY * 12 - 33) + nudgeX,
-                    (baseY * 12 - 35) + nudgeY,
-                  ),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      if (showObjectGlow)
-                        // The glow is made from the SAME 3D painter, so it
-                        // follows the rendered object instead of its floor tile.
-                        // No continuous animation or expensive blur filter.
-                        ColorFiltered(
-                          colorFilter: const ColorFilter.mode(
-                            Color(0xBBFF9800), BlendMode.srcIn),
-                          child: Transform.scale(
-                            scale: 1.045,
-                            child: CustomPaint(
+            width: el.size.width,
+            height: el.size.height,
+            decoration: BoxDecoration(
+              color: modelPainter == null
+                  ? baseColor.withOpacity(0.3)
+                  : Colors.transparent,
+              border: !useFootprintOutline && isActive
+                  ? Border.all(color: Colors.blue.shade600, width: 3)
+                  : null,
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                if (modelPainter != null)
+                  Positioned.fill(
+                    child: Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.identity()
+                        ..rotateZ(-el.rotation)
+                        ..rotateZ(-math.pi / 4)
+                        ..rotateX(0.17),
+                      child: Transform.translate(
+                        offset: Offset(
+                          (-baseY * 12 - 33) + nudgeX,
+                          (baseY * 12 - 35) + nudgeY,
+                        ),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            if (showObjectGlow && !isHighlighted)
+                              // The glow is made from the SAME 3D painter, so it
+                              // follows the rendered object instead of its floor tile.
+                              ColorFiltered(
+                                colorFilter: const ColorFilter.mode(
+                                  Color(0xBBFF9800),
+                                  BlendMode.srcIn,
+                                ),
+                                child: Transform.scale(
+                                  scale: 1.045,
+                                  child: CustomPaint(
+                                    painter: modelPainter,
+                                    size: Size(el.size.width, el.size.height),
+                                  ),
+                                ),
+                              ),
+                            CustomPaint(
                               painter: modelPainter,
+                              size: Size(el.size.width, el.size.height),
+                            ),
+                            if (isHighlighted)
+                              AnimatedBuilder(
+                                animation: _animController,
+                                builder: (context, child) => CustomPaint(
+                                  painter: _ObjectSilhouettePainter(
+                                    width: modelWidth,
+                                    height: modelHeight,
+                                    depth: modelDepth,
+                                    rotationX: mapRotX,
+                                    rotationY: true3DRotationY,
+                                    pulse: _animController.value,
+                                  ),
+                                  size: Size(el.size.width, el.size.height),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (useFootprintOutline && isActive)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Transform(
+                        alignment: Alignment.center,
+                        transform: Matrix4.identity()
+                          ..rotateZ(-el.rotation)
+                          ..rotateZ(-math.pi / 4)
+                          ..rotateX(0.95),
+                        child: Transform.translate(
+                          offset: Offset(
+                            0,
+                            (-el.size.height * 0.5) + (baseY * 12),
+                          ),
+                          child: Transform.scale(
+                            scale: 0.30,
+                            child: CustomPaint(
+                              painter: FootprintOutlinePainter(
+                                width: modelWidth,
+                                depth: modelDepth,
+                                rotationX: mapRotX,
+                                rotationY: true3DRotationY,
+                                groundY: baseY,
+                                height: modelHeight,
+                                scale: footprintScale,
+                                cameraDistance: footprintCameraDistance,
+                                color: Colors.yellowAccent,
+                                strokeWidth: 3,
+                              ),
                               size: Size(el.size.width, el.size.height),
                             ),
                           ),
                         ),
-                      CustomPaint(
-                        painter: modelPainter,
-                        size: Size(el.size.width, el.size.height),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          if (useFootprintOutline && isActive)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()
-                    ..rotateZ(-el.rotation)
-                    ..rotateZ(-math.pi / 4)
-                    ..rotateX(0.95),
-                  child: Transform.translate(
-                    offset: Offset(0, (-el.size.height * 0.5) + (baseY * 12)),
-                    child: Transform.scale(
-                      scale: 0.30,
-                      child: CustomPaint(
-                        painter: FootprintOutlinePainter(
-                          width: modelWidth,
-                          depth: modelDepth,
-                          rotationX: mapRotX,
-                          rotationY: true3DRotationY,
-                          groundY: baseY,
-                          height: modelHeight,
-                          scale: footprintScale,
-                          cameraDistance: footprintCameraDistance,
-                          color: Colors.yellowAccent,
-                          strokeWidth: 3,
-                        ),
-                        size: Size(el.size.width, el.size.height),
                       ),
                     ),
                   ),
-                ),
-              ),
+              ],
             ),
-        ],
-      ),
-    );
+          );
 
     return Positioned(
       key: ValueKey(el.id),
@@ -2451,12 +2653,14 @@ class StoreMapState extends State<StoreMap>
                         setState(() {});
                         AppToast.success(context, "Item assigned to location!");
                       }
-
-                  } else if (widget.mode == MapMode.pick) {
+                    } else if (widget.mode == MapMode.pick) {
                       if (el.type == ElementType.door ||
                           el.type == ElementType.cashier ||
                           el.type == ElementType.wall) {
-                        AppToast.error(context, "Cannot assign items to ${el.type.name}s.");
+                        AppToast.error(
+                          context,
+                          "Cannot assign items to ${el.type.name}s.",
+                        );
                         return;
                       }
                       if (widget.onElementSelected != null) {
@@ -2534,6 +2738,7 @@ class StoreMapState extends State<StoreMap>
                             _dragPreviewSize = null;
                             _dragPreviewType = null;
                           });
+                          widget.onLayoutEdited?.call();
                         }
                       : null,
                   child: Container(
@@ -2894,6 +3099,109 @@ class StoreMapState extends State<StoreMap>
   }
 }
 
+/// Draws only the outside contour of a 3D object, not its floor footprint or
+/// the internal shelf faces.
+class _ObjectSilhouettePainter extends CustomPainter {
+  final double width;
+  final double height;
+  final double depth;
+  final double rotationX;
+  final double rotationY;
+  final double pulse;
+
+  const _ObjectSilhouettePainter({
+    required this.width,
+    required this.height,
+    required this.depth,
+    required this.rotationX,
+    required this.rotationY,
+    required this.pulse,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    Offset project(double x, double y, double z) {
+      final xRotated = x * math.cos(rotationY) - z * math.sin(rotationY);
+      final zRotated = x * math.sin(rotationY) + z * math.cos(rotationY);
+      final yRotated = y * math.cos(rotationX) - zRotated * math.sin(rotationX);
+      return Offset(size.width / 2 + xRotated * 40,
+          size.height / 2 - yRotated * 40);
+    }
+
+    final points = <Offset>[
+      for (final x in [-width / 2, width / 2])
+        for (final y in [-height / 2, height / 2])
+          for (final z in [-depth / 2, depth / 2]) project(x, y, z),
+    ]..sort((a, b) {
+        final xOrder = a.dx.compareTo(b.dx);
+        return xOrder != 0 ? xOrder : a.dy.compareTo(b.dy);
+      });
+
+    double cross(Offset a, Offset b, Offset c) =>
+        (b.dx - a.dx) * (c.dy - a.dy) -
+        (b.dy - a.dy) * (c.dx - a.dx);
+
+    final lower = <Offset>[];
+    for (final point in points) {
+      while (lower.length >= 2 &&
+          cross(lower[lower.length - 2], lower.last, point) <= 0) {
+        lower.removeLast();
+      }
+      lower.add(point);
+    }
+    final upper = <Offset>[];
+    for (final point in points.reversed) {
+      while (upper.length >= 2 &&
+          cross(upper[upper.length - 2], upper.last, point) <= 0) {
+        upper.removeLast();
+      }
+      upper.add(point);
+    }
+    final hull = [...lower.take(lower.length - 1),
+        ...upper.take(upper.length - 1)];
+    if (hull.length < 3) return;
+
+    final center = hull.reduce((a, b) => a + b) / hull.length.toDouble();
+    final contour = <Offset>[
+      for (final point in hull)
+        point + (point - center) / (point - center).distance * 5,
+    ];
+    final path = Path()..moveTo(contour.first.dx, contour.first.dy);
+    for (final point in contour.skip(1)) {
+      path.lineTo(point.dx, point.dy);
+    }
+    path.close();
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeJoin = StrokeJoin.round
+        ..strokeWidth = 10 + 4 * pulse
+        ..color = const Color(0xFFFF9800)
+            .withValues(alpha: 0.04 + 0.2 * pulse),
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeJoin = StrokeJoin.round
+        ..strokeWidth = 2 + 2 * pulse
+        ..color = const Color(0xFFFF9800)
+            .withValues(alpha: 0.12 + 0.88 * pulse),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ObjectSilhouettePainter oldDelegate) =>
+      pulse != oldDelegate.pulse ||
+      width != oldDelegate.width ||
+      height != oldDelegate.height ||
+      depth != oldDelegate.depth ||
+      rotationX != oldDelegate.rotationX ||
+      rotationY != oldDelegate.rotationY;
+}
+
 // class GridPainter extends CustomPainter {
 //   @override
 //   void paint(Canvas canvas, Size size) {
@@ -2949,6 +3257,7 @@ class GridPainter extends CustomPainter {
   bool shouldRepaint(covariant GridPainter oldDelegate) =>
       oldDelegate.flat != flat;
 }
+
 class CADBlockPainter extends CustomPainter {
   final Color baseColor;
   final double zHeight;
