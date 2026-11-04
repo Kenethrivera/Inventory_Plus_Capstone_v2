@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../data/inventory.dart';
 
 // ============================================================================
 // SHARED 3D PRIMITIVES
@@ -50,8 +51,9 @@ class BoxPart {
 class Model3D {
   final List<Face3D> faces;
   final List<BoxPart> parts;
+  final List<int>? boxLayers;
 
-  const Model3D(this.faces, this.parts);
+  const Model3D(this.faces, this.parts, {this.boxLayers});
 }
 
 // ============================================================================
@@ -241,6 +243,7 @@ void paintModel3D(
   Color outlineColor = Colors.black,
   double outlineOpacity = 0.55,
   double outlineWidth = 1.0,
+  bool outlineFacesInFillPass = false,
 }) {
   // --------------------------------------------------------------------------
   // FILL PASS
@@ -248,21 +251,24 @@ void paintModel3D(
   // Group every 6 faces back into their source box/chunk.
   // --------------------------------------------------------------------------
 
-  final boxes = <List<Face3D>>[];
+  final boxes = <({List<Face3D> faces, int layer})>[];
 
   for (int i = 0; i < model.faces.length; i += 6) {
     final end = math.min(i + 6, model.faces.length);
 
-    boxes.add(
-      model.faces.sublist(i, end),
-    );
+    boxes.add((
+      faces: model.faces.sublist(i, end),
+      layer: model.boxLayers?[i ~/ 6] ?? 0,
+    ));
   }
 
   // Sort complete boxes from farthest to nearest.
   boxes.sort(
     (boxA, boxB) {
-      final centerA = getBoxCenter(boxA);
-      final centerB = getBoxCenter(boxB);
+      final layerOrder = boxA.layer.compareTo(boxB.layer);
+      if (layerOrder != 0) return layerOrder;
+      final centerA = getBoxCenter(boxA.faces);
+      final centerB = getBoxCenter(boxB.faces);
 
       final depthA = rotate(centerA).z;
       final depthB = rotate(centerB).z;
@@ -271,7 +277,16 @@ void paintModel3D(
     },
   );
 
-  for (final box in boxes) {
+  final faceOutlinePaint = outlineFacesInFillPass && outlineOpacity > 0
+      ? (Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = outlineWidth
+          ..strokeJoin = StrokeJoin.round
+          ..color = outlineColor.withValues(alpha: outlineOpacity))
+      : null;
+
+  for (final entry in boxes) {
+    final box = entry.faces;
     // Sort faces within each box.
     box.sort(
       (a, b) {
@@ -322,8 +337,13 @@ void paintModel3D(
           ..style = PaintingStyle.fill
           ..color = face.color,
       );
+      if (faceOutlinePaint != null) {
+        canvas.drawPath(path, faceOutlinePaint);
+      }
     }
   }
+
+  if (outlineOpacity <= 0 || outlineFacesInFillPass) return;
 
   // --------------------------------------------------------------------------
   // OUTLINE PASS
@@ -1070,30 +1090,30 @@ class Cashier3D {
     this.depth = 1.6,
   });
 
-  Model3D build() {
+  Model3D build({double rotationY = 0}) {
     final faces = <Face3D>[];
     final parts = <BoxPart>[];
+    final boxLayers = <int>[];
+    var currentLayer = 0;
 
-    const baseColor =
-        Color(0xffECEFF1);
+    const baseColor = Color(0xffD4DEE5);
 
-    const topColor =
-        Color(0xff37474F);
+    const topColor = Color(0xff2D3E4B);
 
-    const deviceColor =
-        Color(0xff212121);
+    const deviceColor = Color(0xff526875);
 
-    const screenColor =
-        Color(0xff64B5F6);
-
-    const customerScreen =
-        Color(0xff81C784);
+    const screenColor = Color(0xff74D0F5);
 
     const scannerColor =
         Color(0xffB0BEC5);
 
-    const glassColor =
-        Color(0xffE0F7FA);
+    const glassColor = Color(0xffDDF3F5);
+
+    // Keep cashier faces solid. The shared createBox primitive uses alpha for
+    // shading, which lets the floor grid show through this light-colored body.
+    // Both long faces should have the same finish when the counter rotates.
+    const faceShades = <double>[1.0, 1.0, 0.86, 0.86, 0.95, 0.62];
+    final fixtureScale = math.min(1.0, math.min(width / 3.8, depth / 1.5));
 
     void addPart({
       required double x,
@@ -1104,17 +1124,23 @@ class Cashier3D {
       required double depth,
       required Color color,
     }) {
-      faces.addAll(
-        createBox(
-          x: x,
-          y: y,
-          z: z,
-          width: width,
-          height: height,
-          depth: depth,
-          color: color,
-        ),
+      final boxFaces = createBox(
+        x: x,
+        y: y,
+        z: z,
+        width: width,
+        height: height,
+        depth: depth,
+        color: color,
       );
+      for (var i = 0; i < boxFaces.length; i++) {
+        faces.add(
+          Face3D(
+            boxFaces[i].points,
+            Color.lerp(Colors.black, color, faceShades[i])!,
+          ),
+        );
+      }
 
       parts.add(
         BoxPart(
@@ -1126,6 +1152,7 @@ class Cashier3D {
           depth: depth,
         ),
       );
+      boxLayers.add(currentLayer);
     }
 
     addPart(
@@ -1138,6 +1165,45 @@ class Cashier3D {
       color: baseColor,
     );
 
+    // Draw only the camera-facing cabinet details. Painting the hidden panels
+    // through the wide base would expose them in the painter's 2.5D ordering.
+    final visibleLongSide = math.cos(rotationY) >= 0 ? 1.0 : -1.0;
+    final visibleEndSide = math.sin(rotationY) >= 0 ? 1.0 : -1.0;
+    currentLayer = 1;
+    final panelCount = (width / 2.0).round().clamp(1, 6);
+    final panelWidth = (width - 0.3) / panelCount;
+    addPart(
+      x: 0,
+      y: -2.62,
+      z: visibleLongSide * (depth / 2 + 0.015),
+      width: math.max(0.2, width - 0.16),
+      height: 0.22,
+      depth: 0.05,
+      color: const Color(0xff344653),
+    );
+    for (var i = 0; i < panelCount; i++) {
+      addPart(
+        x: -width / 2 + 0.15 + panelWidth * (i + 0.5),
+        y: -1.35,
+        z: visibleLongSide * (depth / 2 + 0.02),
+        width: math.max(0.1, panelWidth - 0.1),
+        height: 1.9,
+        depth: 0.04,
+        color: const Color(0xffE8EEF2),
+      );
+    }
+
+    addPart(
+      x: visibleEndSide * (width / 2 + 0.02),
+      y: -1.35,
+      z: 0,
+      width: 0.04,
+      height: 1.9,
+      depth: math.max(0.2, depth - 0.28),
+      color: const Color(0xffE8EEF2),
+    );
+
+    currentLayer = 2;
     addPart(
       x: 0,
       y: 0.1,
@@ -1148,29 +1214,38 @@ class Cashier3D {
       color: topColor,
     );
 
-    final leftSide =
-        -(width / 4);
+    addPart(
+      x: 0,
+      y: -0.04,
+      z: visibleLongSide * (depth / 2 + 0.08),
+      width: width + 0.12,
+      height: 0.08,
+      depth: 0.07,
+      color: const Color(0xff326BA4),
+    );
 
-    final rightSide =
-        width / 4;
+    currentLayer = 3;
+    final leftSide = -(width / 4);
+
+    final rightSide = width / 4;
 
     addPart(
       x: leftSide,
-      y: 0.22,
+      y: 0.29,
       z: 0,
-      width: 1.4,
+      width: 1.4 * fixtureScale,
       height: 0.05,
-      depth: 1.2,
+      depth: 1.2 * fixtureScale,
       color: scannerColor,
     );
 
     addPart(
       x: leftSide,
-      y: 0.25,
+      y: 0.34,
       z: 0,
-      width: 1.0,
+      width: 1.0 * fixtureScale,
       height: 0.02,
-      depth: 0.8,
+      depth: 0.8 * fixtureScale,
       color: glassColor,
     );
 
@@ -1178,9 +1253,9 @@ class Cashier3D {
       x: rightSide,
       y: 0.4,
       z: 0,
-      width: 0.3,
+      width: 0.3 * fixtureScale,
       height: 0.4,
-      depth: 0.3,
+      depth: 0.3 * fixtureScale,
       color: deviceColor,
     );
 
@@ -1188,7 +1263,7 @@ class Cashier3D {
       x: rightSide,
       y: 0.8,
       z: 0,
-      width: 1.2,
+      width: 1.2 * fixtureScale,
       height: 0.8,
       depth: 0.15,
       color: deviceColor,
@@ -1198,7 +1273,7 @@ class Cashier3D {
       x: rightSide,
       y: 0.8,
       z: 0.08,
-      width: 1.0,
+      width: 1.0 * fixtureScale,
       height: 0.65,
       depth: 0.05,
       color: screenColor,
@@ -1208,25 +1283,26 @@ class Cashier3D {
       x: rightSide,
       y: 0.85,
       z: -0.08,
-      width: 0.8,
+      width: 0.8 * fixtureScale,
       height: 0.4,
       depth: 0.05,
-      color: customerScreen,
+      color: screenColor,
     );
 
     addPart(
       x: rightSide,
       y: 0.26,
       z: 0.5,
-      width: 1.1,
+      width: 1.1 * fixtureScale,
       height: 0.1,
-      depth: 0.6,
+      depth: 0.6 * fixtureScale,
       color: deviceColor,
     );
 
     return Model3D(
       faces,
       parts,
+      boxLayers: boxLayers,
     );
   }
 }
@@ -1290,9 +1366,13 @@ class CashierPainter extends CustomPainter {
     paintModel3D(
       canvas,
       size,
-      cashier.build(),
+      cashier.build(rotationY: rotationY),
       rotate,
       project,
+      outlineColor: const Color(0xff203442),
+      outlineOpacity: 0.42,
+      outlineWidth: 0.8,
+      outlineFacesInFillPass: true,
     );
   }
 
@@ -1312,11 +1392,13 @@ class Door3D {
   final double width;
   final double height;
   final double depth;
+  final DoorStyle style;
 
   const Door3D({
     this.width = 2.0,
     this.height = 3.5,
     this.depth = 0.25,
+    this.style = DoorStyle.single,
   });
 
   Model3D build() {
@@ -1324,6 +1406,7 @@ class Door3D {
     final parts = <BoxPart>[];
 
     const frame = 0.22;
+    const faceShades = <double>[1.0, 0.72, 0.78, 0.86, 0.95, 0.62];
 
     void addPart({
       required double x,
@@ -1334,17 +1417,23 @@ class Door3D {
       required double depth,
       required Color color,
     }) {
-      faces.addAll(
-        createBox(
-          x: x,
-          y: y,
-          z: z,
-          width: width,
-          height: height,
-          depth: depth,
-          color: color,
-        ),
+      final boxFaces = createBox(
+        x: x,
+        y: y,
+        z: z,
+        width: width,
+        height: height,
+        depth: depth,
+        color: color,
       );
+      for (var i = 0; i < boxFaces.length; i++) {
+        faces.add(
+          Face3D(
+            boxFaces[i].points,
+            Color.lerp(Colors.black, color, faceShades[i])!,
+          ),
+        );
+      }
 
       parts.add(
         BoxPart(
@@ -1358,6 +1447,10 @@ class Door3D {
       );
     }
 
+    final frameColor = style == DoorStyle.loading
+        ? const Color(0xff405260)
+        : const Color(0xff6D4C41);
+
     addPart(
       x: -width / 2 + frame / 2,
       y: 0,
@@ -1365,7 +1458,7 @@ class Door3D {
       width: frame,
       height: height,
       depth: depth,
-      color: const Color(0xff6D4C41),
+      color: frameColor,
     );
 
     addPart(
@@ -1375,7 +1468,7 @@ class Door3D {
       width: frame,
       height: height,
       depth: depth,
-      color: const Color(0xff6D4C41),
+      color: frameColor,
     );
 
     addPart(
@@ -1385,28 +1478,81 @@ class Door3D {
       width: width,
       height: frame,
       depth: depth,
-      color: const Color(0xff6D4C41),
+      color: frameColor,
     );
 
-    addPart(
-      x: 0,
-      y: -0.05,
-      z: -0.01,
-      width: width - frame * 2,
-      height: height - frame,
-      depth: depth * 0.7,
-      color: const Color(0xffA1887F),
-    );
-
-    addPart(
-      x: 0,
-      y: 0,
-      z: depth * 0.4,
-      width: width - frame * 2.4,
-      height: height - frame * 1.6,
-      depth: 0.05,
-      color: const Color(0xff8D6E63),
-    );
+    if (style == DoorStyle.loading) {
+      final panelHeight = height - frame * 1.5;
+      addPart(
+        x: 0,
+        y: -frame / 4,
+        z: 0,
+        width: width - frame * 2,
+        height: panelHeight,
+        depth: depth * 0.7,
+        color: const Color(0xff91A4B2),
+      );
+      // Horizontal slats make a wide loading entrance read as a shutter.
+      for (var i = 1; i < 10; i++) {
+        addPart(
+          x: 0,
+          y: -panelHeight / 2 + i * panelHeight / 10,
+          z: depth * 0.4,
+          width: width - frame * 2.2,
+          height: 0.055,
+          depth: 0.04,
+          color: const Color(0xff506674),
+        );
+      }
+      addPart(
+        x: 0,
+        y: -height / 2 + 0.28,
+        z: depth * 0.5,
+        width: 0.65,
+        height: 0.1,
+        depth: 0.06,
+        color: const Color(0xff253745),
+      );
+    } else {
+      final isDouble = style == DoorStyle.doubleDoor;
+      final centerFrame = isDouble ? 0.12 : 0.0;
+      final leafWidth =
+          (width - frame * 2 - centerFrame) / (isDouble ? 2 : 1);
+      if (isDouble) {
+        addPart(
+          x: 0,
+          y: 0,
+          z: depth * 0.2,
+          width: centerFrame,
+          height: height - frame,
+          depth: depth * 0.8,
+          color: frameColor,
+        );
+      }
+      for (var i = 0; i < (isDouble ? 2 : 1); i++) {
+        final x = isDouble
+            ? (i == 0 ? -1 : 1) * (leafWidth + centerFrame) / 2
+            : 0.0;
+        addPart(
+          x: x,
+          y: -0.05,
+          z: -0.01,
+          width: leafWidth,
+          height: height - frame,
+          depth: depth * 0.7,
+          color: const Color(0xffA1887F),
+        );
+        addPart(
+          x: x,
+          y: 0,
+          z: depth * 0.4,
+          width: leafWidth - frame * 0.4,
+          height: height - frame * 1.6,
+          depth: 0.05,
+          color: const Color(0xff8D6E63),
+        );
+      }
+    }
 
     return Model3D(
       faces,
@@ -1496,34 +1642,32 @@ class DoorPainter extends CustomPainter {
             ? door.depth * 0.6
             : -door.depth * 0.6;
 
-    final handle =
-        rotate(
-          Point3D(
-            door.width * 0.35,
-            -0.5,
-            handleZ,
-          ),
+    if (door.style != DoorStyle.loading) {
+      final handleXs = door.style == DoorStyle.doubleDoor
+          ? <double>[-0.24, 0.24]
+          : <double>[door.width * 0.35];
+      for (final handleX in handleXs) {
+        final handlePosition = project(
+          rotate(Point3D(handleX, -0.5, handleZ)),
+          size,
         );
-
-    final handlePosition =
-        project(handle, size);
-
-    canvas.drawCircle(
-      handlePosition,
-      4,
-      Paint()
-        ..color = const Color(0xffD6B36A)
-        ..style = PaintingStyle.fill,
-    );
-
-    canvas.drawCircle(
-      handlePosition,
-      4,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..color = Colors.black,
-    );
+        canvas.drawCircle(
+          handlePosition,
+          4,
+          Paint()
+            ..color = const Color(0xffD6B36A)
+            ..style = PaintingStyle.fill,
+        );
+        canvas.drawCircle(
+          handlePosition,
+          4,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = Colors.black,
+        );
+      }
+    }
   }
 
   @override

@@ -8,6 +8,7 @@ import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/restock_request_dialog.dart';
+import 'widgets/write_off_request_dialog.dart';
 import '../services/app_error_mapper.dart';
 import 'store_map.dart';
 
@@ -1646,7 +1647,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
   }
 
   void _openDetails(InventoryItem item) {
-    final rootContext = context;
     showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -1666,12 +1666,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
               controller: widget.controller,
               onClose: () => Navigator.of(dialogContext).pop(),
               onSave: widget.onUpdateItem,
-              onManage: () {
-                Navigator.of(dialogContext).pop();
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (rootContext.mounted) widget.onSelectItem(item);
-                });
-              },
             ),
           ),
         ),
@@ -1703,14 +1697,12 @@ class _ItemDetailsDrawer extends StatefulWidget {
   final InventoryController controller;
   final VoidCallback onClose;
   final Future<void> Function(InventoryItem) onSave;
-  final VoidCallback onManage;
 
   const _ItemDetailsDrawer({
     required this.item,
     required this.controller,
     required this.onClose,
     required this.onSave,
-    required this.onManage,
   });
 
   @override
@@ -2108,16 +2100,24 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                     ),
                   )),
                   const SizedBox(width: 7),
-                  Expanded(child: OutlinedButton(
-                    onPressed: widget.onManage,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFDC2626),
-                      side: const BorderSide(color: Color(0xFFFECACA)),
-                      textStyle: const TextStyle(fontFamily: _font, fontSize: 11),
-                    ),
-                    child: const Text('Write off'),
-                  )),
-                  const SizedBox(width: 7),
+                  if (widget.controller.canRequestInventoryApproval) ...[
+                    Expanded(child: OutlinedButton(
+                      onPressed: item.quantity > 0
+                          ? () => unawaited(showWriteOffRequestDialog(
+                              context: context,
+                              controller: widget.controller,
+                              item: item,
+                            ))
+                          : null,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFDC2626),
+                        side: const BorderSide(color: Color(0xFFFECACA)),
+                        textStyle: const TextStyle(fontFamily: _font, fontSize: 11),
+                      ),
+                      child: const Text('Write off'),
+                    )),
+                    const SizedBox(width: 7),
+                  ],
                 ],
                 Expanded(child: OutlinedButton(
                   onPressed: widget.onClose,

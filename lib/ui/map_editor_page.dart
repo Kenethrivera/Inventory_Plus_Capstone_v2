@@ -26,6 +26,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
   MapElement? _manageSelected;
   MapMode _mode = MapMode.view; // Default to Preview
   MapViewStyle _viewStyle = MapViewStyle.threeD;
+  bool _hideWalls = false;
   String? _selectedItemId;
   List<MapElement> _draftLayout = <MapElement>[];
   List<MapElement> _baselineLayout = <MapElement>[];
@@ -406,8 +407,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   Map<String, MapElement> get _assignmentTargets => {
     for (final element in _draftLayout)
-      if (element.type == ElementType.rack ||
-          element.type == ElementType.shelf)
+      if (element.type == ElementType.rack || element.type == ElementType.shelf)
         element.id: element,
   };
 
@@ -532,75 +532,72 @@ class _MapEditorPageState extends State<MapEditorPage> {
                     ),
                     child: const Text('Clear Layout'),
                     onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (dialogContext) => AppDialog(
-                                icon: LucideIcons.trash2,
-                                color: Colors.red.shade600,
-                                title: "Clear Map?",
-                                subtitle: "Delete entire map layout",
-                                child: const Text(
-                                  "Are you sure you want to delete the entire saved map "
-                                  "layout? Existing item assignments will not be changed.",
-                                  style: TextStyle(
-                                    fontFamily: _fontFam,
-                                    fontSize: 13,
-                                  ),
+                      showDialog(
+                        context: context,
+                        builder: (dialogContext) => AppDialog(
+                          icon: LucideIcons.trash2,
+                          color: Colors.red.shade600,
+                          title: "Clear Map?",
+                          subtitle: "Delete entire map layout",
+                          child: const Text(
+                            "Are you sure you want to delete the entire saved map "
+                            "layout? Existing item assignments will not be changed.",
+                            style: TextStyle(
+                              fontFamily: _fontFam,
+                              fontSize: 13,
+                            ),
+                          ),
+                          actions: [
+                            OutlinedButton(
+                              onPressed: () => Navigator.pop(dialogContext),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.black87,
+                                side: BorderSide(color: Colors.grey.shade300),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                                actions: [
-                                  OutlinedButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.black87,
-                                      side: BorderSide(
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 14,
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      "Cancel",
-                                      style: TextStyle(
-                                        fontFamily: _fontFam,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: _isSaving
-                                        ? null
-                                        : () async {
-                                            Navigator.pop(dialogContext);
-                                            await _saveDraft(clear: true);
-                                          },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.red.shade600,
-                                      elevation: 0,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 14,
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      "Delete",
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontFamily: _fontFam,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                               ),
-                            );
-                          },
+                              child: const Text(
+                                "Cancel",
+                                style: TextStyle(
+                                  fontFamily: _fontFam,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            ElevatedButton(
+                              onPressed: _isSaving
+                                  ? null
+                                  : () async {
+                                      Navigator.pop(dialogContext);
+                                      await _saveDraft(clear: true);
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red.shade600,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                              ),
+                              child: const Text(
+                                "Delete",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontFamily: _fontFam,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -778,6 +775,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                                     controller: widget.controller,
                                     mode: _mode,
                                     viewStyle: _viewStyle,
+                                    hideWalls: _hideWalls,
                                     showMobileToolbar: !desktopLayout,
                                     selectedItemId: _selectedItemId,
                                     onSelectionAssigned: () {
@@ -803,7 +801,16 @@ class _MapEditorPageState extends State<MapEditorPage> {
                               Positioned(
                                 top: 16,
                                 right: 16,
-                                child: _buildViewStyleToggle(),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_mode == MapMode.manage) ...[
+                                      _buildWallVisibilityToggle(),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    _buildViewStyleToggle(),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -838,7 +845,11 @@ class _MapEditorPageState extends State<MapEditorPage> {
             tooltip: 'Undo (Ctrl+Z)',
             onPressed: _isSaving || _undoStack.isEmpty ? null : _undo,
           ),
-          Container(width: 40, height: 1, color: Colors.blueGrey.withOpacity(0.5)),
+          Container(
+            width: 40,
+            height: 1,
+            color: Colors.blueGrey.withOpacity(0.5),
+          ),
           _buildHistoryButton(
             icon: LucideIcons.redo2,
             tooltip: 'Redo (Ctrl+Y)',
@@ -1019,6 +1030,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   Widget _buildManageSelectionControls(MapElement element) {
     final label = element.type.name;
+    final canShrink = canResizeMapElementWidth(element, grow: false);
+    final canGrow = canResizeMapElementWidth(element, grow: true);
     final heading =
         '${label[0].toUpperCase()}${label.substring(1)} #${_draftLayout.where((e) => e.type == element.type).toList().indexWhere((e) => e.id == element.id) + 1}';
     return Container(
@@ -1076,47 +1089,88 @@ class _MapEditorPageState extends State<MapEditorPage> {
             ),
             Center(child: _manageMiniButton('▼', MapSidebarAction.down)),
             const SizedBox(height: 10),
-            _manageSectionLabel('ADJUST WIDTH'),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: _manageAction(
-                    '◀ Left −',
-                    null,
-                    MapSidebarAction.widthLeftMinus,
+            if (element.type == ElementType.door) ...[
+              _manageSectionLabel('DOOR TYPE'),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final style in DoorStyle.values)
+                    ChoiceChip(
+                      label: Text(style.label),
+                      selected:
+                          DoorStyle.fromWidth(element.size.width) == style,
+                      selectedColor: _primaryBlue,
+                      backgroundColor: const Color(0xFFF8FAFC),
+                      checkmarkColor: Colors.white,
+                      side: BorderSide(
+                        color: DoorStyle.fromWidth(element.size.width) == style
+                            ? _primaryBlue
+                            : const Color(0xFFCBD5E1),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      labelStyle: TextStyle(
+                        color: DoorStyle.fromWidth(element.size.width) == style
+                            ? Colors.white
+                            : const Color(0xFF334155),
+                        fontWeight: FontWeight.w700,
+                        fontFamily: _fontFam,
+                      ),
+                      onSelected: (_) => _storeMapKey.currentState
+                          ?.setSelectedDoorStyle(style),
+                    ),
+                ],
+              ),
+            ] else ...[
+              _manageSectionLabel('ADJUST WIDTH'),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: _manageAction(
+                      '◀ Left −',
+                      null,
+                      MapSidebarAction.widthLeftMinus,
+                      enabled: canShrink,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: _manageAction(
-                    '▶ Left +',
-                    null,
-                    MapSidebarAction.widthLeftPlus,
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _manageAction(
+                      '▶ Left +',
+                      null,
+                      MapSidebarAction.widthLeftPlus,
+                      enabled: canGrow,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: _manageAction(
-                    '◀ Right −',
-                    null,
-                    MapSidebarAction.widthRightMinus,
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: _manageAction(
+                      '◀ Right −',
+                      null,
+                      MapSidebarAction.widthRightMinus,
+                      enabled: canShrink,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: _manageAction(
-                    '▶ Right +',
-                    null,
-                    MapSidebarAction.widthRightPlus,
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _manageAction(
+                      '▶ Right +',
+                      null,
+                      MapSidebarAction.widthRightPlus,
+                      enabled: canGrow,
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
             if (element.type == ElementType.wall) ...[
               _manageSectionLabel('WALL ALIGNMENT'),
@@ -1172,11 +1226,14 @@ class _MapEditorPageState extends State<MapEditorPage> {
     IconData? icon,
     MapSidebarAction action, {
     bool destructive = false,
+    bool enabled = true,
   }) => _HoverManageButton(
     label: label,
     icon: icon,
     destructive: destructive,
-    onTap: () => _storeMapKey.currentState?.applySidebarAction(action),
+    onTap: enabled
+        ? () => _storeMapKey.currentState?.applySidebarAction(action)
+        : null,
   );
 
   Widget _buildManagePaletteItem(
@@ -1544,8 +1601,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
                               assignedTarget == null
                                   ? "Unassigned"
                                   : assignedTarget.type == ElementType.rack
-                                      ? "Rack Assigned"
-                                      : "Shelf Assigned",
+                                  ? "Rack Assigned"
+                                  : "Shelf Assigned",
                               style: TextStyle(
                                 color: isAssigned
                                     ? _primaryBlue
@@ -1607,6 +1664,55 @@ class _MapEditorPageState extends State<MapEditorPage> {
   }
 
   // ─── OVERLAYS ──────────────────────────────────────────────────────────────
+
+  Widget _buildWallVisibilityToggle() => Tooltip(
+    message: _hideWalls
+        ? 'Show walls'
+        : 'Hide walls to select objects behind them',
+    child: Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          if (!_hideWalls && _manageSelected?.type == ElementType.wall) {
+            _storeMapKey.currentState?.clearManageSelection();
+          }
+          setState(() => _hideWalls = !_hideWalls);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: _hideWalls ? const Color(0xFFEFF6FF) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _hideWalls ? _primaryBlue : const Color(0xFFDBEAFE),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _hideWalls ? LucideIcons.eye : LucideIcons.eyeOff,
+                size: 16,
+                color: _hideWalls ? _primaryBlue : const Color(0xFF475569),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                _hideWalls ? 'Show walls' : 'Hide walls',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontFamily: _fontFam,
+                  fontWeight: FontWeight.w700,
+                  color: _hideWalls ? _primaryBlue : const Color(0xFF475569),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 
   Widget _buildViewStyleToggle() => Container(
     padding: const EdgeInsets.all(4),
@@ -1762,7 +1868,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
 class _HoverManageButton extends StatefulWidget {
   final String label;
   final IconData? icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool destructive;
   final double? width;
   final double height;
@@ -1782,12 +1888,17 @@ class _HoverManageButtonState extends State<_HoverManageButton> {
   bool hover = false;
   @override
   Widget build(BuildContext context) {
-    final fg = widget.destructive
+    final enabled = widget.onTap != null;
+    final fg = !enabled
+        ? const Color(0xFF94A3B8)
+        : widget.destructive
         ? (hover ? Colors.white : const Color(0xFFDC2626))
         : (hover ? Colors.white : const Color(0xFF1D4ED8));
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hover = true),
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) {
+        if (enabled) setState(() => hover = true);
+      },
       onExit: (_) => setState(() => hover = false),
       child: GestureDetector(
         onTap: widget.onTap,
@@ -1797,11 +1908,15 @@ class _HoverManageButtonState extends State<_HoverManageButton> {
           height: widget.height,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: widget.destructive
+            color: !enabled
+                ? const Color(0xFFF1F5F9)
+                : widget.destructive
                 ? (hover ? const Color(0xFFDC2626) : const Color(0xFFFEF2F2))
                 : (hover ? const Color(0xFF2563EB) : const Color(0xFFEFF6FF)),
             border: Border.all(
-              color: widget.destructive
+              color: !enabled
+                  ? const Color(0xFFE2E8F0)
+                  : widget.destructive
                   ? const Color(0xFFFECACA)
                   : const Color(0xFFBFDBFE),
             ),

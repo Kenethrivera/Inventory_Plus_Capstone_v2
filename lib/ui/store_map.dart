@@ -35,6 +35,32 @@ const double _rack3DHeight = 6.0;
 const double _shelf3DHeight = 5.25;
 const double _door3DHeight = 5.2;
 const double _wall3DHeight = 6.5;
+const double _cashierMinWidth = 168.0;
+const double _cashierMaxWidth = 248.0;
+const double _rackMinWidth = 80.0;
+const double _rackMaxWidth = 200.0;
+const double _shelfMinWidth = 64.0;
+const double _shelfMaxWidth = 184.0;
+
+({double min, double max})? mapElementWidthLimits(ElementType type) =>
+    switch (type) {
+      ElementType.wall => (min: 15.0, max: double.infinity),
+      ElementType.cashier => (min: _cashierMinWidth, max: _cashierMaxWidth),
+      ElementType.rack => (min: _rackMinWidth, max: _rackMaxWidth),
+      ElementType.shelf => (min: _shelfMinWidth, max: _shelfMaxWidth),
+      ElementType.door => null,
+    };
+
+bool canResizeMapElementWidth(MapElement element, {required bool grow}) {
+  final limits = mapElementWidthLimits(element.type);
+  if (limits == null) return false;
+  final length =
+      element.type == ElementType.wall &&
+          element.size.height > element.size.width
+      ? element.size.height
+      : element.size.width;
+  return grow ? length < limits.max : length > limits.min;
+}
 
 class StoreMap extends StatefulWidget {
   final InventoryController controller;
@@ -43,6 +69,7 @@ class StoreMap extends StatefulWidget {
   final String? itemName;
   final MapMode mode;
   final MapViewStyle viewStyle;
+  final bool hideWalls;
   final bool showMobileToolbar;
   final String? selectedItemId;
   final bool centerOnSelectedItem;
@@ -63,6 +90,7 @@ class StoreMap extends StatefulWidget {
     this.itemName,
     this.mode = MapMode.view,
     this.viewStyle = MapViewStyle.threeD,
+    this.hideWalls = false,
     this.showMobileToolbar = true,
     this.selectedItemId,
     this.centerOnSelectedItem = false,
@@ -85,7 +113,9 @@ class StoreMapState extends State<StoreMap>
   late AnimationController _animController;
   late Animation<double> _bounceAnimation;
   String? _activeElementId;
+  String? _hoveredElementId;
   bool _isAdjustingWidth = false;
+  bool _isChoosingDoorType = false;
 
   bool _isNudging = false;
   final TransformationController _transformationController =
@@ -114,6 +144,7 @@ class StoreMapState extends State<StoreMap>
   double _currentMapMinX = 0.0;
   double _currentMapMinY = 0.0;
   Size _currentViewportSize = Size.zero;
+  ({double minX, double minY, double width, double height})? _dragCanvasBounds;
   bool _viewportRecenterQueued = false;
   StreamSubscription<List<MapElement>>? _mapLayoutSubscription;
   StreamSubscription<List<InventoryItem>>? _inventorySubscription;
@@ -330,8 +361,10 @@ class StoreMapState extends State<StoreMap>
     if (oldWidget.mode != widget.mode) {
       _selectedPopupElement = null;
       _activeElementId = null;
+      _hoveredElementId = null;
       _isNudging = false;
       _isAdjustingWidth = false;
+      _isChoosingDoorType = false;
     }
   }
 
@@ -433,7 +466,7 @@ class StoreMapState extends State<StoreMap>
       // Changed to 15 depth so it perfectly matches the wall thickness!
       return const Size(80, 15);
     } else if (type == ElementType.cashier) {
-      return const Size(168, 64); // Wider counter
+      return const Size(_cashierMinWidth, 64);
     } else if (type == ElementType.shelf) {
       return const Size(104, 48); // Standard shelf footprint
     } else if (type == ElementType.rack) {
@@ -451,7 +484,18 @@ class StoreMapState extends State<StoreMap>
         Offset(size.width / 2, size.height / 2);
   }
 
+  void _lockDragCanvas() {
+    if (_dragCanvasBounds != null) return;
+    _dragCanvasBounds = (
+      minX: _currentMapMinX,
+      minY: _currentMapMinY,
+      width: _currentMapWidth,
+      height: _currentMapHeight,
+    );
+  }
+
   void _updatePalettePreview(DragTargetDetails<ElementType> details) {
+    _lockDragCanvas();
     final size = _getDefaultSize(details.data);
     final position = _paletteWorldPosition(details.offset, size);
     if (position == null) return;
@@ -461,12 +505,7 @@ class StoreMapState extends State<StoreMap>
       position: position,
       label: '',
     )..size = size;
-    final snapped = _snapObjectNearWall(
-      element,
-      position,
-      size,
-      0.0,
-    );
+    final snapped = _snapObjectNearWall(element, position, size, 0.0);
     setState(() {
       _dragPreviewPos = snapped;
       _dragPreviewSize = size;
@@ -479,19 +518,22 @@ class StoreMapState extends State<StoreMap>
   void _acceptPaletteElement(DragTargetDetails<ElementType> details) {
     final size = _getDefaultSize(details.data);
     final position = _paletteWorldPosition(details.offset, size);
-    if (position == null) return;
+    if (position == null) {
+      setState(() {
+        _dragCanvasBounds = null;
+        _dragPreviewPos = null;
+        _dragPreviewSize = null;
+        _dragPreviewType = null;
+      });
+      return;
+    }
     final element = MapElement(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       type: details.data,
       position: position,
       label: details.data.name.toUpperCase(),
     )..size = size;
-    final snapped = _snapObjectNearWall(
-      element,
-      position,
-      size,
-      0.0,
-    );
+    final snapped = _snapObjectNearWall(element, position, size, 0.0);
     element.position = snapped;
     if (!_hasCollision(element, snapped, size, 0.0)) {
       setState(() => _layout.add(element));
@@ -503,6 +545,7 @@ class StoreMapState extends State<StoreMap>
       );
     }
     setState(() {
+      _dragCanvasBounds = null;
       _dragPreviewPos = null;
       _dragPreviewSize = null;
       _dragPreviewType = null;
@@ -1053,6 +1096,7 @@ class StoreMapState extends State<StoreMap>
       _activeElementId = null;
       _isNudging = false;
       _isAdjustingWidth = false;
+      _isChoosingDoorType = false;
     });
     widget.onManageSelectionChanged?.call(null);
   }
@@ -1098,6 +1142,7 @@ class StoreMapState extends State<StoreMap>
       _activeElementId = clone.id;
       _isNudging = false;
       _isAdjustingWidth = false;
+      _isChoosingDoorType = false;
     });
     widget.onManageSelectionChanged?.call(clone);
     widget.onLayoutEdited?.call();
@@ -1122,6 +1167,7 @@ class StoreMapState extends State<StoreMap>
       setState(() {
         _activeElementId = null;
         _isAdjustingWidth = false;
+        _isChoosingDoorType = false;
         _isNudging = false;
       });
       widget.onManageSelectionChanged?.call(null);
@@ -1280,12 +1326,11 @@ class StoreMapState extends State<StoreMap>
     double amount, {
     required bool isLeft,
   }) {
-    const double minSizeWall = 15.0;
-    const double minSizeObject = 40.0;
-
-    final double minLength = el.type == ElementType.wall
-        ? minSizeWall
-        : minSizeObject;
+    // Doors use fixed footprints selected through the Door Type control.
+    final limits = mapElementWidthLimits(el.type);
+    if (limits == null || !canResizeMapElementWidth(el, grow: amount > 0)) {
+      return;
+    }
 
     // Rotating a wall swaps width and height (its rotation stays at zero).
     // Always resize along the wall's LONG axis so its 15-unit thickness never
@@ -1293,10 +1338,7 @@ class StoreMapState extends State<StoreMap>
     final bool verticalWall =
         el.type == ElementType.wall && el.size.height > el.size.width;
     final double oldLength = verticalWall ? el.size.height : el.size.width;
-    final double newLength = (oldLength + amount).clamp(
-      minLength,
-      double.infinity,
-    );
+    final double newLength = (oldLength + amount).clamp(limits.min, limits.max);
 
     final double actualChange = newLength - oldLength;
 
@@ -1331,6 +1373,32 @@ class StoreMapState extends State<StoreMap>
     widget.onLayoutEdited?.call();
   }
 
+  void setSelectedDoorStyle(DoorStyle style) {
+    if (widget.mode != MapMode.manage) return;
+    final matches = _layout.where((el) => el.id == _activeElementId);
+    if (matches.isEmpty || matches.first.type != ElementType.door) return;
+    final door = matches.first;
+    const depth = 15.0;
+    final nextSize = Size(style.width, depth);
+    if (door.size == nextSize) return;
+
+    final center =
+        door.position + Offset(door.size.width / 2, door.size.height / 2);
+    final nextPosition = center - Offset(nextSize.width / 2, depth / 2);
+    if (_hasCollision(door, nextPosition, nextSize, door.rotation)) {
+      AppToast.error(
+        context,
+        'Cannot change door type. It would overlap another object.',
+      );
+      return;
+    }
+    setState(() {
+      door.position = nextPosition;
+      door.size = nextSize;
+    });
+    widget.onLayoutEdited?.call();
+  }
+
   Widget _buildBottomActionBar() {
     final activeEl = _layout.firstWhere(
       (el) => el.id == _activeElementId,
@@ -1346,7 +1414,9 @@ class StoreMapState extends State<StoreMap>
 
     // Determine which menu to show
     Widget currentMenu;
-    if (_isAdjustingWidth) {
+    if (_isChoosingDoorType && activeEl.type == ElementType.door) {
+      currentMenu = _buildDoorTypeMenu(activeEl);
+    } else if (_isAdjustingWidth) {
       currentMenu = _buildWidthAdjustmentMenu(activeEl);
     } else if (_isNudging) {
       currentMenu = _buildNudgeMenu(activeEl);
@@ -1435,12 +1505,17 @@ class StoreMapState extends State<StoreMap>
         Container(width: 1, height: 40, color: Colors.grey.shade700),
         const SizedBox(width: 12),
         _buildActionMenuButton(
-          icon: Icons.compare_arrows,
-          label: "Adjust Width",
+          icon: activeEl.type == ElementType.door
+              ? Icons.door_front_door_outlined
+              : Icons.compare_arrows,
+          label: activeEl.type == ElementType.door
+              ? "Door Type"
+              : "Adjust Width",
           color: Colors.orange,
           onTap: () {
             setState(() {
-              _isAdjustingWidth = true;
+              _isChoosingDoorType = activeEl.type == ElementType.door;
+              _isAdjustingWidth = activeEl.type != ElementType.door;
               _isNudging = false;
             });
           },
@@ -1456,6 +1531,7 @@ class StoreMapState extends State<StoreMap>
             setState(() {
               _isNudging = true;
               _isAdjustingWidth = false;
+              _isChoosingDoorType = false;
             });
           },
         ),
@@ -1473,6 +1549,7 @@ class StoreMapState extends State<StoreMap>
             setState(() {
               _activeElementId = null;
               _isAdjustingWidth = false;
+              _isChoosingDoorType = false;
               _isNudging = false;
             });
             widget.onLayoutEdited?.call();
@@ -1483,6 +1560,8 @@ class StoreMapState extends State<StoreMap>
   }
 
   Widget _buildWidthAdjustmentMenu(MapElement activeEl) {
+    final canShrink = canResizeMapElementWidth(activeEl, grow: false);
+    final canGrow = canResizeMapElementWidth(activeEl, grow: true);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1503,16 +1582,19 @@ class StoreMapState extends State<StoreMap>
           icon: Icons.remove,
           label: "Dec Left",
           color: Colors.orangeAccent,
-          onTap: () =>
-              _changeElementWidthDirectional(activeEl, -40, isLeft: true),
+          onTap: canShrink
+              ? () =>
+                    _changeElementWidthDirectional(activeEl, -40, isLeft: true)
+              : null,
         ),
         const SizedBox(width: 12),
         _buildActionMenuButton(
           icon: Icons.add,
           label: "Inc Left",
           color: Colors.greenAccent,
-          onTap: () =>
-              _changeElementWidthDirectional(activeEl, 40, isLeft: true),
+          onTap: canGrow
+              ? () => _changeElementWidthDirectional(activeEl, 40, isLeft: true)
+              : null,
         ),
         const SizedBox(width: 12),
         Container(width: 1, height: 40, color: Colors.grey.shade700),
@@ -1521,17 +1603,52 @@ class StoreMapState extends State<StoreMap>
           icon: Icons.remove,
           label: "Dec Right",
           color: Colors.orangeAccent,
-          onTap: () =>
-              _changeElementWidthDirectional(activeEl, -40, isLeft: false),
+          onTap: canShrink
+              ? () =>
+                    _changeElementWidthDirectional(activeEl, -40, isLeft: false)
+              : null,
         ),
         const SizedBox(width: 12),
         _buildActionMenuButton(
           icon: Icons.add,
           label: "Inc Right",
           color: Colors.greenAccent,
-          onTap: () =>
-              _changeElementWidthDirectional(activeEl, 40, isLeft: false),
+          onTap: canGrow
+              ? () =>
+                    _changeElementWidthDirectional(activeEl, 40, isLeft: false)
+              : null,
         ),
+      ],
+    );
+  }
+
+  Widget _buildDoorTypeMenu(MapElement activeEl) {
+    final selected = DoorStyle.fromWidth(activeEl.size.width);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildActionMenuButton(
+          icon: Icons.arrow_back,
+          label: 'Back',
+          color: Colors.white,
+          onTap: () => setState(() => _isChoosingDoorType = false),
+        ),
+        const SizedBox(width: 12),
+        Container(width: 1, height: 40, color: Colors.grey.shade700),
+        const SizedBox(width: 12),
+        for (final style in DoorStyle.values) ...[
+          _buildActionMenuButton(
+            icon: switch (style) {
+              DoorStyle.single => Icons.door_front_door_outlined,
+              DoorStyle.doubleDoor => Icons.meeting_room_outlined,
+              DoorStyle.loading => Icons.garage_outlined,
+            },
+            label: style.label,
+            color: selected == style ? Colors.greenAccent : Colors.white,
+            onTap: () => setSelectedDoorStyle(style),
+          ),
+          const SizedBox(width: 12),
+        ],
       ],
     );
   }
@@ -1592,19 +1709,19 @@ class StoreMapState extends State<StoreMap>
     required IconData icon,
     required String label,
     required Color color,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 24),
+          Icon(icon, color: onTap == null ? Colors.grey : color, size: 24),
           const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: onTap == null ? Colors.grey : Colors.white,
               fontSize: 10,
               fontWeight: FontWeight.bold,
             ),
@@ -1632,22 +1749,20 @@ class StoreMapState extends State<StoreMap>
       if (bottomEdge > maxY) maxY = bottomEdge;
     }
 
-    // 2. Include the preview element if dragging
-    if (_dragPreviewPos != null && _dragPreviewSize != null) {
-      if (_dragPreviewPos!.dx < minX) minX = _dragPreviewPos!.dx;
-      if (_dragPreviewPos!.dy < minY) minY = _dragPreviewPos!.dy;
-
-      final double dragRight = _dragPreviewPos!.dx + _dragPreviewSize!.width;
-      final double dragBottom = _dragPreviewPos!.dy + _dragPreviewSize!.height;
-      if (dragRight > maxX) maxX = dragRight;
-      if (dragBottom > maxY) maxY = dragBottom;
+    // A drag must not resize the coordinate system used to locate the pointer.
+    // Recompute bounds once after the gesture ends.
+    final dragBounds = _dragCanvasBounds;
+    if (dragBounds != null) {
+      minX = dragBounds.minX;
+      minY = dragBounds.minY;
+      maxX = dragBounds.minX + dragBounds.width;
+      maxY = dragBounds.minY + dragBounds.height;
+    } else {
+      minX = (minX / 40.0).floor() * 40.0 - padding;
+      minY = (minY / 40.0).floor() * 40.0 - padding;
+      maxX = (maxX / 40.0).ceil() * 40.0 + padding;
+      maxY = (maxY / 40.0).ceil() * 40.0 + padding;
     }
-
-    // 3. Snap the bounding box to the grid and add padding
-    minX = (minX / 40.0).floor() * 40.0 - padding;
-    minY = (minY / 40.0).floor() * 40.0 - padding;
-    maxX = (maxX / 40.0).ceil() * 40.0 + padding;
-    maxY = (maxY / 40.0).ceil() * 40.0 + padding;
 
     double mapWidth = maxX - minX;
     double mapHeight = maxY - minY;
@@ -1907,6 +2022,9 @@ class StoreMapState extends State<StoreMap>
             ..._layout.where((el) => el.type != ElementType.wall),
           ]
         : _buildRenderOrder();
+    final visibleLayout = widget.mode == MapMode.manage && widget.hideWalls
+        ? sortedLayout.where((el) => el.type != ElementType.wall)
+        : sortedLayout;
 
     Widget map = LayoutBuilder(
       builder: (context, constraints) {
@@ -1952,6 +2070,7 @@ class StoreMapState extends State<StoreMap>
           onMove: _updatePalettePreview,
           onLeave: (_) {
             setState(() {
+              _dragCanvasBounds = null;
               _dragPreviewPos = null;
               _dragPreviewSize = null;
               _dragPreviewType = null;
@@ -1968,102 +2087,104 @@ class StoreMapState extends State<StoreMap>
             child: Builder(
               builder: (BuildContext dropContext) {
                 return GestureDetector(
-                    onTap: () {
-                      if (widget.mode == MapMode.manage) {
-                        setState(() {
-                          _activeElementId = null;
-                          _isAdjustingWidth = false;
-                          _isNudging = false; // Add reset for nudge menu here
-                        });
-                        widget.onManageSelectionChanged?.call(null);
-                      } else if (widget.mode == MapMode.view) {
-                        setState(() {
-                          _selectedPopupElement = null;
-                        });
-                      }
-                    },
-                    child: Transform(
-                      alignment: FractionalOffset.center,
-                      transform: widget.viewStyle == MapViewStyle.twoD
-                          ? Matrix4.identity()
-                          : (Matrix4.identity()
-                              ..rotateX(-0.95)
-                              ..rotateZ(0.785)),
-                      child: Container(
-                        key: _mapKey,
-                        width: mapWidth,
-                        height: mapHeight,
-                        decoration: const BoxDecoration(
-                          color: Colors
-                              .transparent, // Completely transparent to show background
-                        ),
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            CustomPaint(
-                              painter: GridPainter(
-                                flat: widget.viewStyle == MapViewStyle.twoD,
-                              ),
-                              size: Size(mapWidth, mapHeight),
+                  onTap: () {
+                    if (widget.mode == MapMode.manage) {
+                      setState(() {
+                        _activeElementId = null;
+                        _isAdjustingWidth = false;
+                        _isChoosingDoorType = false;
+                        _isNudging = false; // Add reset for nudge menu here
+                      });
+                      widget.onManageSelectionChanged?.call(null);
+                    } else if (widget.mode == MapMode.view) {
+                      setState(() {
+                        _selectedPopupElement = null;
+                      });
+                    }
+                  },
+                  child: Transform(
+                    alignment: FractionalOffset.center,
+                    transform: widget.viewStyle == MapViewStyle.twoD
+                        ? Matrix4.identity()
+                        : (Matrix4.identity()
+                            ..rotateX(-0.95)
+                            ..rotateZ(0.785)),
+                    child: Container(
+                      key: _mapKey,
+                      width: mapWidth,
+                      height: mapHeight,
+                      decoration: const BoxDecoration(
+                        color: Colors
+                            .transparent, // Completely transparent to show background
+                      ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          CustomPaint(
+                            painter: GridPainter(
+                              flat: widget.viewStyle == MapViewStyle.twoD,
                             ),
-                            if (_dragPreviewPos != null &&
-                                _dragPreviewSize != null &&
-                                _dragPreviewType != null)
-                              Positioned(
-                                left: _dragPreviewPos!.dx - minX,
-                                top: _dragPreviewPos!.dy - minY,
-                                width: _dragPreviewSize!.width,
-                                height: _dragPreviewSize!.height,
-                                child: IgnorePointer(
-                                  child: Transform.rotate(
-                                    angle: _dragPreviewRotation,
-                                    child: Stack(
-                                      clipBehavior: Clip.none,
-                                      children: [
-                                        // Low-opacity render of the actual object.
-                                        Opacity(
-                                          opacity: 0.55,
-                                          child: _buildElementVisual(
-                                            _dragPreviewType!,
-                                            _dragPreviewSize!,
-                                            _dragPreviewRotation,
-                                          ),
+                            size: Size(mapWidth, mapHeight),
+                          ),
+                          if (_dragPreviewPos != null &&
+                              _dragPreviewSize != null &&
+                              _dragPreviewType != null)
+                            Positioned(
+                              left: _dragPreviewPos!.dx - minX,
+                              top: _dragPreviewPos!.dy - minY,
+                              width: _dragPreviewSize!.width,
+                              height: _dragPreviewSize!.height,
+                              child: IgnorePointer(
+                                child: Transform.rotate(
+                                  angle: _dragPreviewRotation,
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      // Low-opacity render of the actual object.
+                                      Opacity(
+                                        opacity: 0.55,
+                                        child: _buildElementVisual(
+                                          _dragPreviewType!,
+                                          _dragPreviewSize!,
+                                          _dragPreviewRotation,
                                         ),
-                                        // Subtle valid/invalid tint over the
-                                        // footprint so placement feedback
-                                        // still reads at a glance.
-                                        Positioned.fill(
-                                          child: Container(
-                                            decoration: BoxDecoration(
+                                      ),
+                                      // Subtle valid/invalid tint over the
+                                      // footprint so placement feedback
+                                      // still reads at a glance.
+                                      Positioned.fill(
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: _dragPreviewValid
+                                                ? Colors.greenAccent
+                                                      .withOpacity(0.12)
+                                                : Colors.redAccent.withOpacity(
+                                                    0.25,
+                                                  ),
+                                            border: Border.all(
                                               color: _dragPreviewValid
-                                                  ? Colors.greenAccent
-                                                        .withOpacity(0.12)
-                                                  : Colors.redAccent
-                                                        .withOpacity(0.25),
-                                              border: Border.all(
-                                                color: _dragPreviewValid
-                                                    ? Colors.green
-                                                    : Colors.red,
-                                                width: 2,
-                                              ),
+                                                  ? Colors.green
+                                                  : Colors.red,
+                                              width: 2,
                                             ),
                                           ),
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                            ...sortedLayout.map(
-                              (el) => _buildPhysicalElement(el, minX, minY),
                             ),
-                            if (widget.mode == MapMode.view &&
-                                _selectedPopupElement != null)
-                              _buildFloatingPopup(mapWidth, minX, minY),
-                          ],
-                        ),
+                          ...visibleLayout.map(
+                            (el) => _buildPhysicalElement(el, minX, minY),
+                          ),
+                          if (widget.mode == MapMode.view &&
+                              _selectedPopupElement != null)
+                            _buildFloatingPopup(mapWidth, minX, minY),
+                        ],
                       ),
                     ),
+                  ),
                 );
               },
             ),
@@ -2171,20 +2292,24 @@ class StoreMapState extends State<StoreMap>
         ),
         border: Border.all(
           color: highlighted
-              ? const Color(0xFFFF9800)
-                  .withValues(alpha: 0.15 + 0.85 * highlightPulse)
+              ? const Color(
+                  0xFFFF9800,
+                ).withValues(alpha: 0.15 + 0.85 * highlightPulse)
               : (selected ? const Color(0xFF1D4ED8) : edge),
           width: emphasized ? 3 : 1.5,
         ),
         boxShadow: emphasized
             ? [
                 BoxShadow(
-                  color: (highlighted
-                          ? const Color(0xFFFF9800)
-                          : const Color(0xFF2563EB))
-                      .withValues(
-                        alpha: highlighted ? 0.05 + 0.4 * highlightPulse : 0.25,
-                      ),
+                  color:
+                      (highlighted
+                              ? const Color(0xFFFF9800)
+                              : const Color(0xFF2563EB))
+                          .withValues(
+                            alpha: highlighted
+                                ? 0.05 + 0.4 * highlightPulse
+                                : 0.25,
+                          ),
                   blurRadius: 8,
                   spreadRadius: 2,
                 ),
@@ -2271,6 +2396,7 @@ class StoreMapState extends State<StoreMap>
             width: modelWidth,
             depth: modelDepth,
             height: _door3DHeight,
+            style: DoorStyle.fromWidth(size.width),
           ),
           rotationX: mapRotX,
           rotationY: true3DRotationY,
@@ -2331,6 +2457,7 @@ class StoreMapState extends State<StoreMap>
     final bool isPreviewSelected =
         widget.mode == MapMode.view && _selectedPopupElement?.id == sourceId;
     final bool showObjectGlow = isActive || isPreviewSelected || isHighlighted;
+    final bool isHovered = sourceId == _hoveredElementId && !showObjectGlow;
 
     // `el` may be a synthetic wall segment created by _splitWallsAtJunctions
     // purely for rendering/z-order purposes — it is NOT in storeLayout and
@@ -2426,6 +2553,7 @@ class StoreMapState extends State<StoreMap>
             width: modelWidth,
             depth: modelDepth,
             height: _door3DHeight,
+            style: DoorStyle.fromWidth(el.size.width),
           ),
           rotationX: mapRotX,
           rotationY: true3DRotationY,
@@ -2468,23 +2596,30 @@ class StoreMapState extends State<StoreMap>
         (el.type == ElementType.wall || el.type == ElementType.door)
         ? 12.0
         : 0.0;
+    final bool hitVisibleModel =
+        widget.viewStyle == MapViewStyle.threeD && modelPainter != null;
+    final double hitSideExtra = hitVisibleModel ? el.size.height / 2 + 40 : 0;
+    final double hitTopExtra = hitVisibleModel ? modelHeight * 40 + 40 : 0;
+    final double hitBottomExtra = hitVisibleModel ? 40 : 0;
+    final double hitOuterHeight =
+        el.size.height + 40 + hitTopExtra + hitBottomExtra;
 
     Widget shelf = widget.viewStyle == MapViewStyle.twoD
         ? (isHighlighted
-            ? AnimatedBuilder(
-                animation: _animController,
-                builder: (context, child) => _buildFlatElement(
+              ? AnimatedBuilder(
+                  animation: _animController,
+                  builder: (context, child) => _buildFlatElement(
+                    el.type,
+                    el.size,
+                    highlighted: true,
+                    highlightPulse: _animController.value,
+                  ),
+                )
+              : _buildFlatElement(
                   el.type,
                   el.size,
-                  highlighted: true,
-                  highlightPulse: _animController.value,
-                ),
-              )
-            : _buildFlatElement(
-                el.type,
-                el.size,
-                selected: showObjectGlow,
-              ))
+                  selected: showObjectGlow || isHovered,
+                ))
         : Container(
             width: el.size.width,
             height: el.size.height,
@@ -2525,6 +2660,21 @@ class StoreMapState extends State<StoreMap>
                                 ),
                                 child: Transform.scale(
                                   scale: 1.045,
+                                  child: CustomPaint(
+                                    painter: modelPainter,
+                                    size: Size(el.size.width, el.size.height),
+                                  ),
+                                ),
+                              ),
+                            if (isHovered)
+                              ColorFiltered(
+                                key: ValueKey('map-hover-glow-$sourceId'),
+                                colorFilter: const ColorFilter.mode(
+                                  Color(0xB32563EB),
+                                  BlendMode.srcIn,
+                                ),
+                                child: Transform.scale(
+                                  scale: 1.025,
                                   child: CustomPaint(
                                     painter: modelPainter,
                                     size: Size(el.size.width, el.size.height),
@@ -2597,27 +2747,50 @@ class StoreMapState extends State<StoreMap>
 
     return Positioned(
       key: ValueKey(el.id),
-      left: el.position.dx - minX - 20,
-      top: el.position.dy - minY - 20,
-      width: el.size.width + 40,
-      height: el.size.height + 40,
+      left: el.position.dx - minX - 20 - hitSideExtra,
+      top: el.position.dy - minY - 20 - hitTopExtra,
+      width: el.size.width + 40 + hitSideExtra * 2,
+      height: hitOuterHeight,
       child: Transform.rotate(
         angle: el.rotation,
+        alignment: Alignment(
+          0,
+          (hitTopExtra - hitBottomExtra) / hitOuterHeight,
+        ),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
             Positioned(
               left: 20 - hitPadding,
               top: 20 - hitPadding,
+              width: el.size.width + hitSideExtra * 2 + hitPadding * 2,
+              height:
+                  el.size.height +
+                  hitTopExtra +
+                  hitBottomExtra +
+                  hitPadding * 2,
               child: MouseRegion(
                 cursor: SystemMouseCursors.click,
+                opaque: false,
+                hitTestBehavior: HitTestBehavior.deferToChild,
+                onEnter: (_) {
+                  if (_hoveredElementId != sourceId) {
+                    setState(() => _hoveredElementId = sourceId);
+                  }
+                },
+                onExit: (_) {
+                  if (_hoveredElementId == sourceId) {
+                    setState(() => _hoveredElementId = null);
+                  }
+                },
                 child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
+                  behavior: HitTestBehavior.deferToChild,
                   onTap: () async {
                     if (widget.mode == MapMode.manage) {
                       setState(() {
                         if (_activeElementId != interactiveEl.id) {
                           _isAdjustingWidth = false;
+                          _isChoosingDoorType = false;
                           _isNudging = false; // Add reset for nudge menu here
                         }
                         _activeElementId = interactiveEl.id;
@@ -2682,6 +2855,7 @@ class StoreMapState extends State<StoreMap>
                   },
                   onPanStart: widget.mode == MapMode.manage
                       ? (details) {
+                          _lockDragCanvas();
                           _rawDragPosition = interactiveEl.position;
                         }
                       : null,
@@ -2733,6 +2907,7 @@ class StoreMapState extends State<StoreMap>
                   onPanEnd: widget.mode == MapMode.manage
                       ? (details) {
                           setState(() {
+                            _dragCanvasBounds = null;
                             _rawDragPosition = null;
                             _dragPreviewPos = null;
                             _dragPreviewSize = null;
@@ -2741,12 +2916,44 @@ class StoreMapState extends State<StoreMap>
                           widget.onLayoutEdited?.call();
                         }
                       : null,
-                  child: Container(
-                    // Transparent padding = bigger tap/hover target without
-                    // changing how thin the wall/door actually looks.
-                    padding: EdgeInsets.all(hitPadding),
-                    color: Colors.transparent,
-                    child: shelf,
+                  onPanCancel: widget.mode == MapMode.manage
+                      ? () {
+                          setState(() {
+                            _dragCanvasBounds = null;
+                            _rawDragPosition = null;
+                            _dragPreviewPos = null;
+                            _dragPreviewSize = null;
+                            _dragPreviewType = null;
+                          });
+                        }
+                      : null,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _MapObjectHitPainter(
+                            footprint: el.size,
+                            hitPadding: hitPadding,
+                            sideExtra: hitSideExtra,
+                            topExtra: hitTopExtra,
+                            modelHeight: modelHeight,
+                            baseY: baseY,
+                            rotationX: mapRotX,
+                            rotationY: true3DRotationY,
+                            elementRotation: el.rotation,
+                            nudgeX: nudgeX,
+                            nudgeY: nudgeY,
+                            threeD: hitVisibleModel,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: hitSideExtra + hitPadding,
+                        top: hitTopExtra + hitPadding,
+                        child: IgnorePointer(child: shelf),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -3099,6 +3306,129 @@ class StoreMapState extends State<StoreMap>
   }
 }
 
+/// Hits the projected body as well as its floor footprint. The painter draws
+/// nothing; its convex hull lets pointer events pass through empty corners.
+class _MapObjectHitPainter extends CustomPainter {
+  final Size footprint;
+  final double hitPadding;
+  final double sideExtra;
+  final double topExtra;
+  final double modelHeight;
+  final double baseY;
+  final double rotationX;
+  final double rotationY;
+  final double elementRotation;
+  final double nudgeX;
+  final double nudgeY;
+  final bool threeD;
+
+  const _MapObjectHitPainter({
+    required this.footprint,
+    required this.hitPadding,
+    required this.sideExtra,
+    required this.topExtra,
+    required this.modelHeight,
+    required this.baseY,
+    required this.rotationX,
+    required this.rotationY,
+    required this.elementRotation,
+    required this.nudgeX,
+    required this.nudgeY,
+    required this.threeD,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {}
+
+  @override
+  bool? hitTest(Offset position) {
+    final origin = Offset(sideExtra + hitPadding, topExtra + hitPadding);
+    final footprintBounds = Rect.fromLTWH(
+      origin.dx,
+      origin.dy,
+      footprint.width,
+      footprint.height,
+    ).inflate(hitPadding);
+    if (footprintBounds.contains(position)) return true;
+    if (!threeD || modelHeight <= 0) return false;
+
+    final innerTransform = Matrix4.identity()
+      ..rotateZ(-elementRotation)
+      ..rotateZ(-math.pi / 4)
+      ..rotateX(0.17);
+    final center = Offset(footprint.width / 2, footprint.height / 2);
+    final paintOffset = Offset(
+      -baseY * 12 - 33 + nudgeX,
+      baseY * 12 - 35 + nudgeY,
+    );
+    final halfWidth = footprint.width / 80 + 0.3;
+    final halfDepth = footprint.height / 80 + 0.3;
+    final bottom = math.min(-modelHeight / 2, baseY) - 0.4;
+    final top = math.max(modelHeight / 2, baseY + modelHeight) + 0.4;
+
+    final points =
+        <Offset>[
+          for (final x in [-halfWidth, halfWidth])
+            for (final y in [bottom, top])
+              for (final z in [-halfDepth, halfDepth])
+                () {
+                  final rotatedX =
+                      x * math.cos(rotationY) - z * math.sin(rotationY);
+                  final rotatedZ =
+                      x * math.sin(rotationY) + z * math.cos(rotationY);
+                  final rotatedY =
+                      y * math.cos(rotationX) - rotatedZ * math.sin(rotationX);
+                  final projected = Offset(
+                    center.dx + rotatedX * 40,
+                    center.dy - rotatedY * 40,
+                  );
+                  return origin +
+                      center +
+                      MatrixUtils.transformPoint(
+                        innerTransform,
+                        projected + paintOffset - center,
+                      );
+                }(),
+        ]..sort((a, b) {
+          final xOrder = a.dx.compareTo(b.dx);
+          return xOrder != 0 ? xOrder : a.dy.compareTo(b.dy);
+        });
+
+    double cross(Offset a, Offset b, Offset c) =>
+        (b.dx - a.dx) * (c.dy - a.dy) - (b.dy - a.dy) * (c.dx - a.dx);
+    final lower = <Offset>[];
+    for (final point in points) {
+      while (lower.length >= 2 &&
+          cross(lower[lower.length - 2], lower.last, point) <= 0) {
+        lower.removeLast();
+      }
+      lower.add(point);
+    }
+    final upper = <Offset>[];
+    for (final point in points.reversed) {
+      while (upper.length >= 2 &&
+          cross(upper[upper.length - 2], upper.last, point) <= 0) {
+        upper.removeLast();
+      }
+      upper.add(point);
+    }
+    final hull = [
+      ...lower.take(lower.length - 1),
+      ...upper.take(upper.length - 1),
+    ];
+    if (hull.length < 3) return false;
+    final centroid = hull.reduce((a, b) => a + b) / hull.length.toDouble();
+    final paddedHull = [
+      for (final point in hull)
+        point + (point - centroid) / (point - centroid).distance * 6,
+    ];
+    return (Path()..addPolygon(paddedHull, true)).contains(position);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MapObjectHitPainter oldDelegate) => false;
+}
+
 /// Draws only the outside contour of a 3D object, not its floor footprint or
 /// the internal shelf faces.
 class _ObjectSilhouettePainter extends CustomPainter {
@@ -3124,22 +3454,24 @@ class _ObjectSilhouettePainter extends CustomPainter {
       final xRotated = x * math.cos(rotationY) - z * math.sin(rotationY);
       final zRotated = x * math.sin(rotationY) + z * math.cos(rotationY);
       final yRotated = y * math.cos(rotationX) - zRotated * math.sin(rotationX);
-      return Offset(size.width / 2 + xRotated * 40,
-          size.height / 2 - yRotated * 40);
+      return Offset(
+        size.width / 2 + xRotated * 40,
+        size.height / 2 - yRotated * 40,
+      );
     }
 
-    final points = <Offset>[
-      for (final x in [-width / 2, width / 2])
-        for (final y in [-height / 2, height / 2])
-          for (final z in [-depth / 2, depth / 2]) project(x, y, z),
-    ]..sort((a, b) {
-        final xOrder = a.dx.compareTo(b.dx);
-        return xOrder != 0 ? xOrder : a.dy.compareTo(b.dy);
-      });
+    final points =
+        <Offset>[
+          for (final x in [-width / 2, width / 2])
+            for (final y in [-height / 2, height / 2])
+              for (final z in [-depth / 2, depth / 2]) project(x, y, z),
+        ]..sort((a, b) {
+          final xOrder = a.dx.compareTo(b.dx);
+          return xOrder != 0 ? xOrder : a.dy.compareTo(b.dy);
+        });
 
     double cross(Offset a, Offset b, Offset c) =>
-        (b.dx - a.dx) * (c.dy - a.dy) -
-        (b.dy - a.dy) * (c.dx - a.dx);
+        (b.dx - a.dx) * (c.dy - a.dy) - (b.dy - a.dy) * (c.dx - a.dx);
 
     final lower = <Offset>[];
     for (final point in points) {
@@ -3157,8 +3489,10 @@ class _ObjectSilhouettePainter extends CustomPainter {
       }
       upper.add(point);
     }
-    final hull = [...lower.take(lower.length - 1),
-        ...upper.take(upper.length - 1)];
+    final hull = [
+      ...lower.take(lower.length - 1),
+      ...upper.take(upper.length - 1),
+    ];
     if (hull.length < 3) return;
 
     final center = hull.reduce((a, b) => a + b) / hull.length.toDouble();
@@ -3178,8 +3512,7 @@ class _ObjectSilhouettePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeJoin = StrokeJoin.round
         ..strokeWidth = 10 + 4 * pulse
-        ..color = const Color(0xFFFF9800)
-            .withValues(alpha: 0.04 + 0.2 * pulse),
+        ..color = const Color(0xFFFF9800).withValues(alpha: 0.04 + 0.2 * pulse),
     );
     canvas.drawPath(
       path,
@@ -3187,8 +3520,9 @@ class _ObjectSilhouettePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeJoin = StrokeJoin.round
         ..strokeWidth = 2 + 2 * pulse
-        ..color = const Color(0xFFFF9800)
-            .withValues(alpha: 0.12 + 0.88 * pulse),
+        ..color = const Color(
+          0xFFFF9800,
+        ).withValues(alpha: 0.12 + 0.88 * pulse),
     );
   }
 

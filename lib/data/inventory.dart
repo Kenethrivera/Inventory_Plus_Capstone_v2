@@ -2,6 +2,25 @@ import 'package:flutter/material.dart';
 
 enum ElementType { door, rack, shelf, cashier, wall }
 
+/// Door variants use distinct fixed footprints, so the width already saved in
+/// existing layouts also identifies which model to render.
+enum DoorStyle {
+  single(80.0, 'Single'),
+  doubleDoor(160.0, 'Double'),
+  loading(240.0, 'Loading');
+
+  const DoorStyle(this.width, this.label);
+
+  final double width;
+  final String label;
+
+  static DoorStyle fromWidth(double width) {
+    if (width < 120) return DoorStyle.single;
+    if (width < 200) return DoorStyle.doubleDoor;
+    return DoorStyle.loading;
+  }
+}
+
 class MapElement {
   final String id;
   final ElementType type;

@@ -86,6 +86,15 @@ class InventoryApp extends StatelessWidget {
     return MaterialApp(
       title: 'Inventory Plus',
       debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(context);
+        return MediaQuery(
+          data: mediaQuery.copyWith(
+            textScaler: _CompactTextScaler(mediaQuery.textScaler),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.orange),
         useMaterial3: true,
@@ -125,6 +134,31 @@ class InventoryApp extends StatelessWidget {
       },
     );
   }
+}
+
+class _CompactTextScaler extends TextScaler {
+  const _CompactTextScaler(this.base);
+
+  static const double compactFrom = 12.0;
+  static const double largeTextFactor = 0.8;
+  final TextScaler base;
+
+  @override
+  double scale(double fontSize) => base.scale(
+    fontSize <= compactFrom
+        ? fontSize
+        : compactFrom + (fontSize - compactFrom) * largeTextFactor,
+  );
+
+  @override
+  double get textScaleFactor => scale(1.0);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _CompactTextScaler && other.base == base;
+
+  @override
+  int get hashCode => Object.hash(_CompactTextScaler, base);
 }
 
 class AuthWrapper extends StatefulWidget {
