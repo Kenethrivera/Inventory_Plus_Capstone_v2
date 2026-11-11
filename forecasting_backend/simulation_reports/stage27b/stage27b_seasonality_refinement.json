@@ -1,0 +1,824 @@
+{
+  "baseline_accuracy": 0.9166666666666666,
+  "baseline_audit": {
+    "adversarial_diagnostics": [
+      {
+        "baseline_classification": "RAINY",
+        "baseline_p_value": 0.009526360569832486,
+        "case": "nonseasonal_monotonic_trend_24_months",
+        "interpretation": "baseline_false_seasonal_assignment_from_trend_confounding",
+        "known_pattern": "NEUTRAL_TREND_ONLY",
+        "original_classification": "UNKNOWN",
+        "refined_classification": "UNKNOWN"
+      },
+      {
+        "baseline_classification": "NEUTRAL",
+        "baseline_p_value": 0.4252005422694703,
+        "case": "three_cycles_with_middle_cycle_direction_reversal",
+        "interpretation": "baseline_masks_reversal_as_stable_neutral",
+        "known_pattern": "UNSTABLE_REVERSAL",
+        "original_classification": "UNKNOWN",
+        "refined_classification": "UNKNOWN"
+      }
+    ],
+    "errors": [
+      {
+        "actual": "SUMMER",
+        "effect": 0.1471861471861482,
+        "error_type": "substantive_classification_error",
+        "p_value": 0.2510840978508571,
+        "predicted": "NEUTRAL",
+        "product_name": "Cementitious Tile Adhesive 25kg",
+        "sku": "SIM-SUM-007"
+      },
+      {
+        "actual": "NEUTRAL",
+        "effect": null,
+        "error_type": "safe_no_sales_abstention",
+        "p_value": null,
+        "predicted": "UNKNOWN",
+        "product_name": "LED Utility Bulb 9W Control",
+        "sku": "SIM-NEU-008"
+      }
+    ],
+    "risk_notes": [
+      "raw seasonal means do not remove trend",
+      "the baseline has no repeatability or reversal gate",
+      "the baseline has no internal chronological generalization gate",
+      "nonsignificance is treated as NEUTRAL rather than UNKNOWN"
+    ],
+    "safe_no_sales_abstentions": 1,
+    "substantive_errors": 1
+  },
+  "chronological_comparison": [
+    {
+      "accuracy": 0.0,
+      "assigned_products": 0,
+      "correct": 0,
+      "coverage": 0.0,
+      "covered_accuracy": null,
+      "false_seasonal_assignments": 0,
+      "model": "original_evidence_gated",
+      "products": 24,
+      "seasonal_precision": null,
+      "seasonal_predictions": 0,
+      "unknown_products": 24,
+      "unknown_rate": 1.0,
+      "window_months": 6
+    },
+    {
+      "accuracy": 0.0,
+      "assigned_products": 0,
+      "correct": 0,
+      "coverage": 0.0,
+      "covered_accuracy": null,
+      "false_seasonal_assignments": 0,
+      "model": "simple_baseline",
+      "products": 24,
+      "seasonal_precision": null,
+      "seasonal_predictions": 0,
+      "unknown_products": 24,
+      "unknown_rate": 1.0,
+      "window_months": 6
+    },
+    {
+      "accuracy": 0.0,
+      "assigned_products": 0,
+      "correct": 0,
+      "coverage": 0.0,
+      "covered_accuracy": null,
+      "false_seasonal_assignments": 0,
+      "model": "refined",
+      "products": 24,
+      "seasonal_precision": null,
+      "seasonal_predictions": 0,
+      "unknown_products": 24,
+      "unknown_rate": 1.0,
+      "window_months": 6
+    },
+    {
+      "accuracy": 0.0,
+      "assigned_products": 0,
+      "correct": 0,
+      "coverage": 0.0,
+      "covered_accuracy": null,
+      "false_seasonal_assignments": 0,
+      "model": "original_evidence_gated",
+      "products": 24,
+      "seasonal_precision": null,
+      "seasonal_predictions": 0,
+      "unknown_products": 24,
+      "unknown_rate": 1.0,
+      "window_months": 12
+    },
+    {
+      "accuracy": 0.0,
+      "assigned_products": 0,
+      "correct": 0,
+      "coverage": 0.0,
+      "covered_accuracy": null,
+      "false_seasonal_assignments": 0,
+      "model": "simple_baseline",
+      "products": 24,
+      "seasonal_precision": null,
+      "seasonal_predictions": 0,
+      "unknown_products": 24,
+      "unknown_rate": 1.0,
+      "window_months": 12
+    },
+    {
+      "accuracy": 0.0,
+      "assigned_products": 0,
+      "correct": 0,
+      "coverage": 0.0,
+      "covered_accuracy": null,
+      "false_seasonal_assignments": 0,
+      "model": "refined",
+      "products": 24,
+      "seasonal_precision": null,
+      "seasonal_predictions": 0,
+      "unknown_products": 24,
+      "unknown_rate": 1.0,
+      "window_months": 12
+    },
+    {
+      "accuracy": 0.5416666666666666,
+      "assigned_products": 13,
+      "correct": 13,
+      "coverage": 0.5416666666666666,
+      "covered_accuracy": 1.0,
+      "false_seasonal_assignments": 0,
+      "model": "original_evidence_gated",
+      "products": 24,
+      "seasonal_precision": 1.0,
+      "seasonal_predictions": 10,
+      "unknown_products": 11,
+      "unknown_rate": 0.4583333333333333,
+      "window_months": 24
+    },
+    {
+      "accuracy": 0.8333333333333334,
+      "assigned_products": 23,
+      "correct": 20,
+      "coverage": 0.9583333333333334,
+      "covered_accuracy": 0.8695652173913043,
+      "false_seasonal_assignments": 0,
+      "model": "simple_baseline",
+      "products": 24,
+      "seasonal_precision": 1.0,
+      "seasonal_predictions": 13,
+      "unknown_products": 1,
+      "unknown_rate": 0.041666666666666664,
+      "window_months": 24
+    },
+    {
+      "accuracy": 0.625,
+      "assigned_products": 15,
+      "correct": 15,
+      "coverage": 0.625,
+      "covered_accuracy": 1.0,
+      "false_seasonal_assignments": 0,
+      "model": "refined",
+      "products": 24,
+      "seasonal_precision": 1.0,
+      "seasonal_predictions": 12,
+      "unknown_products": 9,
+      "unknown_rate": 0.375,
+      "window_months": 24
+    },
+    {
+      "accuracy": 0.625,
+      "assigned_products": 15,
+      "correct": 15,
+      "coverage": 0.625,
+      "covered_accuracy": 1.0,
+      "false_seasonal_assignments": 0,
+      "model": "original_evidence_gated",
+      "products": 24,
+      "seasonal_precision": 1.0,
+      "seasonal_predictions": 9,
+      "unknown_products": 9,
+      "unknown_rate": 0.375,
+      "window_months": 36
+    },
+    {
+      "accuracy": 0.9166666666666666,
+      "assigned_products": 23,
+      "correct": 22,
+      "coverage": 0.9583333333333334,
+      "covered_accuracy": 0.9565217391304348,
+      "false_seasonal_assignments": 0,
+      "model": "simple_baseline",
+      "products": 24,
+      "seasonal_precision": 1.0,
+      "seasonal_predictions": 15,
+      "unknown_products": 1,
+      "unknown_rate": 0.041666666666666664,
+      "window_months": 36
+    },
+    {
+      "accuracy": 0.875,
+      "assigned_products": 21,
+      "correct": 21,
+      "coverage": 0.875,
+      "covered_accuracy": 1.0,
+      "false_seasonal_assignments": 0,
+      "model": "refined",
+      "products": 24,
+      "seasonal_precision": 1.0,
+      "seasonal_predictions": 15,
+      "unknown_products": 3,
+      "unknown_rate": 0.125,
+      "window_months": 36
+    }
+  ],
+  "conclusion": "The refinement improves the conservative method's coverage, but it is not genuinely better than the simple baseline on this synthetic benchmark. Retain the original conservative method for advisory use, or retain the baseline only as a transparent comparison; do not activate automatic labels.",
+  "decision": "REVISE",
+  "development_candidate_selection": [
+    {
+      "assigned_products": 13,
+      "confirmation_rate": 1.0,
+      "confirmed": 10,
+      "policy": "drop_cycle_significance",
+      "significant_opposite_directions": 0,
+      "tested_seasonal_classifications": 10
+    },
+    {
+      "assigned_products": 13,
+      "confirmation_rate": 1.0,
+      "confirmed": 10,
+      "policy": "drop_bootstrap_significance",
+      "significant_opposite_directions": 0,
+      "tested_seasonal_classifications": 10
+    },
+    {
+      "assigned_products": 15,
+      "confirmation_rate": 0.9166666666666666,
+      "confirmed": 11,
+      "policy": "nonredundant_combined",
+      "significant_opposite_directions": 0,
+      "tested_seasonal_classifications": 12
+    }
+  ],
+  "final_comparison": {
+    "original_evidence_gated": {
+      "classification_metrics": {
+        "accuracy": 0.625,
+        "assigned_products": 15,
+        "confusion_matrix": {
+          "NEUTRAL": {
+            "NEUTRAL": 6,
+            "RAINY": 0,
+            "SUMMER": 0,
+            "UNKNOWN": 2
+          },
+          "RAINY": {
+            "NEUTRAL": 0,
+            "RAINY": 6,
+            "SUMMER": 0,
+            "UNKNOWN": 2
+          },
+          "SUMMER": {
+            "NEUTRAL": 0,
+            "RAINY": 0,
+            "SUMMER": 3,
+            "UNKNOWN": 5
+          }
+        },
+        "correct": 15,
+        "coverage": 0.625,
+        "covered_accuracy": 1.0,
+        "false_seasonal_assignments": 0,
+        "per_group": {
+          "NEUTRAL": {
+            "correct": 6,
+            "products": 8
+          },
+          "RAINY": {
+            "correct": 6,
+            "products": 8
+          },
+          "SUMMER": {
+            "correct": 3,
+            "products": 8
+          }
+        },
+        "products": 24,
+        "seasonal_precision": 1.0,
+        "seasonal_predictions": 9,
+        "unknown_products": 9,
+        "unknown_rate": 0.375
+      },
+      "fourth_year_confirmation": {
+        "confirmation_rate": 0.8888888888888888,
+        "confirmed": 8,
+        "significant_opposite_directions": 0,
+        "tested_seasonal_classifications": 9
+      }
+    },
+    "refined": {
+      "classification_metrics": {
+        "accuracy": 0.875,
+        "assigned_products": 21,
+        "confusion_matrix": {
+          "NEUTRAL": {
+            "NEUTRAL": 6,
+            "RAINY": 0,
+            "SUMMER": 0,
+            "UNKNOWN": 2
+          },
+          "RAINY": {
+            "NEUTRAL": 0,
+            "RAINY": 7,
+            "SUMMER": 0,
+            "UNKNOWN": 1
+          },
+          "SUMMER": {
+            "NEUTRAL": 0,
+            "RAINY": 0,
+            "SUMMER": 8,
+            "UNKNOWN": 0
+          }
+        },
+        "correct": 21,
+        "coverage": 0.875,
+        "covered_accuracy": 1.0,
+        "false_seasonal_assignments": 0,
+        "per_group": {
+          "NEUTRAL": {
+            "correct": 6,
+            "products": 8
+          },
+          "RAINY": {
+            "correct": 7,
+            "products": 8
+          },
+          "SUMMER": {
+            "correct": 8,
+            "products": 8
+          }
+        },
+        "products": 24,
+        "seasonal_precision": 1.0,
+        "seasonal_predictions": 15,
+        "unknown_products": 3,
+        "unknown_rate": 0.125
+      },
+      "fourth_year_confirmation": {
+        "confirmation_rate": 0.6666666666666666,
+        "confirmed": 10,
+        "significant_opposite_directions": 0,
+        "tested_seasonal_classifications": 15
+      }
+    },
+    "simple_baseline": {
+      "classification_metrics": {
+        "accuracy": 0.9166666666666666,
+        "assigned_products": 23,
+        "confusion_matrix": {
+          "NEUTRAL": {
+            "NEUTRAL": 7,
+            "RAINY": 0,
+            "SUMMER": 0,
+            "UNKNOWN": 1
+          },
+          "RAINY": {
+            "NEUTRAL": 0,
+            "RAINY": 8,
+            "SUMMER": 0,
+            "UNKNOWN": 0
+          },
+          "SUMMER": {
+            "NEUTRAL": 1,
+            "RAINY": 0,
+            "SUMMER": 7,
+            "UNKNOWN": 0
+          }
+        },
+        "correct": 22,
+        "coverage": 0.9583333333333334,
+        "covered_accuracy": 0.9565217391304348,
+        "false_seasonal_assignments": 0,
+        "per_group": {
+          "NEUTRAL": {
+            "correct": 7,
+            "products": 8
+          },
+          "RAINY": {
+            "correct": 8,
+            "products": 8
+          },
+          "SUMMER": {
+            "correct": 7,
+            "products": 8
+          }
+        },
+        "products": 24,
+        "seasonal_precision": 1.0,
+        "seasonal_predictions": 15,
+        "unknown_products": 1,
+        "unknown_rate": 0.041666666666666664
+      },
+      "fourth_year_confirmation": {
+        "confirmation_rate": 0.6666666666666666,
+        "confirmed": 10,
+        "significant_opposite_directions": 0,
+        "tested_seasonal_classifications": 15
+      }
+    }
+  },
+  "genuinely_better_than_simple_baseline": false,
+  "input_verification": {
+    "frozen": {
+      "actual_products": 24,
+      "actual_rows": 35064,
+      "expected_products": 24,
+      "expected_rows": 35064,
+      "generator_quantity_mismatches": 0,
+      "history_end": "2026-11-09",
+      "history_start": "2022-11-10",
+      "metadata_mismatches": 0,
+      "missing_product_date_rows": 0,
+      "positive_demand_rows": 26606,
+      "sample_mismatches": [],
+      "sample_missing_product_dates": [],
+      "sample_unexpected_product_dates": [],
+      "source_path": "C:\\inventory_plus_capstone_v2\\Inventory_Plus_Capstone_v2\\forecasting_backend\\simulation_reports\\expanded_seasonal_daily_demand.csv",
+      "source_sha256": "7dcc1e61a4a5e727c876a657ccf516d4d4df4564348b3261cfac0afabd23ee1d",
+      "status": "PASS",
+      "unexpected_product_date_rows": 0,
+      "zero_demand_rows": 8458
+    },
+    "live": {
+      "actual_rows": 35064,
+      "database_verified": true,
+      "expected_rows": 35064,
+      "metadata_mismatches": 0,
+      "missing_product_date_rows": 0,
+      "quantity_mismatches": 0,
+      "sample_metadata_mismatches": [],
+      "sample_missing_product_dates": [],
+      "sample_quantity_mismatches": [],
+      "sample_unexpected_product_dates": [],
+      "source_path": "C:\\inventory_plus_capstone_v2\\Inventory_Plus_Capstone_v2\\database\\stage26_live_history.csv",
+      "source_sha256": "8b75a4c30b41ed9cbb9ce34adecbe9960f5d19431e07cc8701e0a26af13bc4c1",
+      "status": "PASS",
+      "unexpected_product_date_rows": 0
+    }
+  },
+  "limitations": [
+    "The benchmark labels encode frozen simulation hypotheses, not validated real-store seasonal relationships.",
+    "Stock availability is unknown, so observed zero sales cannot be proven to represent zero demand.",
+    "The small 24-product benchmark yields wide uncertainty for error-rate comparisons.",
+    "The refined policy was selected without labels, but all final comparisons remain synthetic evidence only.",
+    "No existing classification, forecast, replenishment result, Supabase record, or Flutter screen is changed."
+  ],
+  "original_accuracy": 0.625,
+  "refined_accuracy": 0.875,
+  "refinement_contract": {
+    "candidate_count": 3,
+    "candidates": [
+      "drop_cycle_significance",
+      "drop_bootstrap_significance",
+      "nonredundant_combined"
+    ],
+    "numeric_thresholds_changed": false,
+    "selection_excluded": [
+      "frozen_labels",
+      "fourth_year_sales",
+      "sku",
+      "product_name",
+      "category"
+    ],
+    "selection_inputs": [
+      "24_month_date_quantity_history",
+      "months_25_to_36_direction_confirmation"
+    ]
+  },
+  "selected_policy": "nonredundant_combined",
+  "stage": "2.7B",
+  "unknown_failure_breakdown": [
+    {
+      "bic_margin_vs_6": 131.43884745959917,
+      "cycle_count_margin_vs_2": -1,
+      "cycle_directions": [
+        "INCONCLUSIVE",
+        "SUMMER",
+        "INCONCLUSIVE"
+      ],
+      "delta_bic": 137.43884745959917,
+      "effect": 1.1000417675694316,
+      "effect_ci_high": 1.4859594283587987,
+      "effect_ci_low": 0.7141241067800645,
+      "effect_zero_margin": 0.7141241067800645,
+      "failed_direction_gates": [
+        "at_least_two_consistent_significant_cycles"
+      ],
+      "failed_neutral_gates": [
+        "trend_only_bic_preferred",
+        "effect_ci_spans_zero",
+        "oos_point_gain_not_positive",
+        "no_significant_cycles"
+      ],
+      "frozen_hypothesis_label": "SUMMER",
+      "oos_bootstrap_ci_low": 0.09363736291590592,
+      "oos_bootstrap_margin": 0.09363736291590592,
+      "oos_point_gain": 0.41767142779547556,
+      "original_reason": "evidence_gates_not_jointly_satisfied",
+      "positive_sales_days": 1096,
+      "product_id": "31000000-0000-4000-8000-000000000002",
+      "product_name": "Portland Cement 40kg",
+      "root_cause": "insufficient_power_from_overlapping_significance_gates",
+      "selected_refined_classification": "SUMMER",
+      "significant_cycle_count": 1,
+      "sku": "SIM-SUM-002"
+    },
+    {
+      "bic_margin_vs_6": 87.36382010472141,
+      "cycle_count_margin_vs_2": 1,
+      "cycle_directions": [
+        "SUMMER",
+        "SUMMER",
+        "SUMMER"
+      ],
+      "delta_bic": 93.36382010472141,
+      "effect": 0.4337623749425898,
+      "effect_ci_high": 0.5642905965079168,
+      "effect_ci_low": 0.30323415337726284,
+      "effect_zero_margin": 0.30323415337726284,
+      "failed_direction_gates": [
+        "oos_bootstrap_ci_above_zero"
+      ],
+      "failed_neutral_gates": [
+        "trend_only_bic_preferred",
+        "effect_ci_spans_zero",
+        "oos_point_gain_not_positive",
+        "no_significant_cycles"
+      ],
+      "frozen_hypothesis_label": "SUMMER",
+      "oos_bootstrap_ci_low": -0.019051307901181928,
+      "oos_bootstrap_margin": -0.019051307901181928,
+      "oos_point_gain": 0.09567428266056871,
+      "original_reason": "evidence_gates_not_jointly_satisfied",
+      "positive_sales_days": 808,
+      "product_id": "31000000-0000-4000-8000-000000000003",
+      "product_name": "Washed Construction Sand",
+      "root_cause": "insufficient_power_from_overlapping_significance_gates",
+      "selected_refined_classification": "SUMMER",
+      "significant_cycle_count": 3,
+      "sku": "SIM-SUM-003"
+    },
+    {
+      "bic_margin_vs_6": 19.067263987791762,
+      "cycle_count_margin_vs_2": -1,
+      "cycle_directions": [
+        "SUMMER",
+        "INCONCLUSIVE",
+        "INCONCLUSIVE"
+      ],
+      "delta_bic": 25.067263987791762,
+      "effect": 0.16957224255466777,
+      "effect_ci_high": 0.29348232608115765,
+      "effect_ci_low": 0.04566215902817787,
+      "effect_zero_margin": 0.04566215902817787,
+      "failed_direction_gates": [
+        "at_least_two_consistent_significant_cycles",
+        "oos_bootstrap_ci_above_zero"
+      ],
+      "failed_neutral_gates": [
+        "trend_only_bic_preferred",
+        "effect_ci_spans_zero",
+        "oos_point_gain_not_positive",
+        "no_significant_cycles"
+      ],
+      "frozen_hypothesis_label": "SUMMER",
+      "oos_bootstrap_ci_low": -0.003010037286567626,
+      "oos_bootstrap_margin": -0.003010037286567626,
+      "oos_point_gain": 0.05762975544435651,
+      "original_reason": "evidence_gates_not_jointly_satisfied",
+      "positive_sales_days": 758,
+      "product_id": "31000000-0000-4000-8000-000000000004",
+      "product_name": "Construction Gravel 3/4-inch",
+      "root_cause": "insufficient_power_from_overlapping_significance_gates",
+      "selected_refined_classification": "SUMMER",
+      "significant_cycle_count": 1,
+      "sku": "SIM-SUM-004"
+    },
+    {
+      "bic_margin_vs_6": 26.891719771084276,
+      "cycle_count_margin_vs_2": -1,
+      "cycle_directions": [
+        "INCONCLUSIVE",
+        "INCONCLUSIVE",
+        "SUMMER"
+      ],
+      "delta_bic": 32.891719771084276,
+      "effect": 0.6058262010323209,
+      "effect_ci_high": 0.9572328359342206,
+      "effect_ci_low": 0.2544195661304211,
+      "effect_zero_margin": 0.2544195661304211,
+      "failed_direction_gates": [
+        "at_least_two_consistent_significant_cycles",
+        "oos_bootstrap_ci_above_zero"
+      ],
+      "failed_neutral_gates": [
+        "trend_only_bic_preferred",
+        "effect_ci_spans_zero",
+        "oos_point_gain_not_positive",
+        "no_significant_cycles"
+      ],
+      "frozen_hypothesis_label": "SUMMER",
+      "oos_bootstrap_ci_low": -0.03087654477367246,
+      "oos_bootstrap_margin": -0.03087654477367246,
+      "oos_point_gain": 0.1055466084769386,
+      "original_reason": "evidence_gates_not_jointly_satisfied",
+      "positive_sales_days": 1025,
+      "product_id": "31000000-0000-4000-8000-000000000005",
+      "product_name": "Steel Reinforcing Bar 10mm",
+      "root_cause": "insufficient_power_from_overlapping_significance_gates",
+      "selected_refined_classification": "SUMMER",
+      "significant_cycle_count": 1,
+      "sku": "SIM-SUM-005"
+    },
+    {
+      "bic_margin_vs_6": 34.39047906952469,
+      "cycle_count_margin_vs_2": -2,
+      "cycle_directions": [
+        "INCONCLUSIVE",
+        "INCONCLUSIVE",
+        "INCONCLUSIVE"
+      ],
+      "delta_bic": 40.39047906952469,
+      "effect": 0.21745885716827554,
+      "effect_ci_high": 0.4238647620484482,
+      "effect_ci_low": 0.01105295228810288,
+      "effect_zero_margin": 0.01105295228810288,
+      "failed_direction_gates": [
+        "at_least_two_consistent_significant_cycles"
+      ],
+      "failed_neutral_gates": [
+        "trend_only_bic_preferred",
+        "effect_ci_spans_zero",
+        "oos_point_gain_not_positive"
+      ],
+      "frozen_hypothesis_label": "SUMMER",
+      "oos_bootstrap_ci_low": 0.07563131726666623,
+      "oos_bootstrap_margin": 0.07563131726666623,
+      "oos_point_gain": 0.14602626686510117,
+      "original_reason": "evidence_gates_not_jointly_satisfied",
+      "positive_sales_days": 1039,
+      "product_id": "31000000-0000-4000-8000-000000000007",
+      "product_name": "Cementitious Tile Adhesive 25kg",
+      "root_cause": "insufficient_power_from_overlapping_significance_gates",
+      "selected_refined_classification": "SUMMER",
+      "significant_cycle_count": 0,
+      "sku": "SIM-SUM-007"
+    },
+    {
+      "bic_margin_vs_6": -4.5740460981136835,
+      "cycle_count_margin_vs_2": -2,
+      "cycle_directions": [
+        "INCONCLUSIVE",
+        "INCONCLUSIVE",
+        "INCONCLUSIVE"
+      ],
+      "delta_bic": 1.4259539018863165,
+      "effect": -0.16676767421843183,
+      "effect_ci_high": -0.03688455950192421,
+      "effect_ci_low": -0.29665078893493946,
+      "effect_zero_margin": 0.03688455950192421,
+      "failed_direction_gates": [
+        "delta_bic_at_least_6",
+        "at_least_two_consistent_significant_cycles",
+        "oos_bootstrap_ci_above_zero"
+      ],
+      "failed_neutral_gates": [
+        "trend_only_bic_preferred",
+        "effect_ci_spans_zero",
+        "oos_point_gain_not_positive"
+      ],
+      "frozen_hypothesis_label": "RAINY",
+      "oos_bootstrap_ci_low": -0.010598123829894907,
+      "oos_bootstrap_margin": -0.010598123829894907,
+      "oos_point_gain": 0.011824962366544513,
+      "original_reason": "evidence_gates_not_jointly_satisfied",
+      "positive_sales_days": 690,
+      "product_id": "32000000-0000-4000-8000-000000000003",
+      "product_name": "Galvanized Roof Flashing",
+      "root_cause": "weak_or_overlapping_seasonal_effect",
+      "selected_refined_classification": "UNKNOWN",
+      "significant_cycle_count": 0,
+      "sku": "SIM-RAIN-003"
+    },
+    {
+      "bic_margin_vs_6": 20.451261379332095,
+      "cycle_count_margin_vs_2": 1,
+      "cycle_directions": [
+        "RAINY",
+        "RAINY",
+        "RAINY"
+      ],
+      "delta_bic": 26.451261379332095,
+      "effect": -0.11918078775875339,
+      "effect_ci_high": -0.07489578148932223,
+      "effect_ci_low": -0.16346579402818456,
+      "effect_zero_margin": 0.07489578148932223,
+      "failed_direction_gates": [
+        "oos_bootstrap_ci_above_zero"
+      ],
+      "failed_neutral_gates": [
+        "trend_only_bic_preferred",
+        "effect_ci_spans_zero",
+        "oos_point_gain_not_positive",
+        "no_significant_cycles"
+      ],
+      "frozen_hypothesis_label": "RAINY",
+      "oos_bootstrap_ci_low": -0.01979888960109352,
+      "oos_bootstrap_margin": -0.01979888960109352,
+      "oos_point_gain": 0.006862541539299494,
+      "original_reason": "evidence_gates_not_jointly_satisfied",
+      "positive_sales_days": 99,
+      "product_id": "32000000-0000-4000-8000-000000000007",
+      "product_name": "Drainage Sump Pump 1HP",
+      "root_cause": "insufficient_power_from_overlapping_significance_gates",
+      "selected_refined_classification": "RAINY",
+      "significant_cycle_count": 3,
+      "sku": "SIM-RAIN-007"
+    },
+    {
+      "bic_margin_vs_6": -11.493318986437828,
+      "cycle_count_margin_vs_2": -2,
+      "cycle_directions": [
+        "INCONCLUSIVE",
+        "INCONCLUSIVE",
+        "INCONCLUSIVE"
+      ],
+      "delta_bic": -5.493318986437828,
+      "effect": 0.27709847854389724,
+      "effect_ci_high": 0.5246622317336713,
+      "effect_ci_low": 0.029534725354123104,
+      "effect_zero_margin": 0.029534725354123104,
+      "failed_direction_gates": [
+        "delta_bic_at_least_6",
+        "at_least_two_consistent_significant_cycles",
+        "oos_bootstrap_ci_above_zero"
+      ],
+      "failed_neutral_gates": [
+        "effect_ci_spans_zero",
+        "oos_point_gain_not_positive"
+      ],
+      "frozen_hypothesis_label": "NEUTRAL",
+      "oos_bootstrap_ci_low": -0.0027241492991289477,
+      "oos_bootstrap_margin": -0.0027241492991289477,
+      "oos_point_gain": 0.02480260821516412,
+      "original_reason": "evidence_gates_not_jointly_satisfied",
+      "positive_sales_days": 1069,
+      "product_id": "33000000-0000-4000-8000-000000000002",
+      "product_name": "Hex Bolts M8 Box",
+      "root_cause": "weak_or_overlapping_seasonal_effect",
+      "selected_refined_classification": "UNKNOWN",
+      "significant_cycle_count": 0,
+      "sku": "SIM-NEU-002"
+    },
+    {
+      "bic_margin_vs_6": null,
+      "cycle_count_margin_vs_2": -2,
+      "cycle_directions": [],
+      "delta_bic": null,
+      "effect": null,
+      "effect_ci_high": null,
+      "effect_ci_low": null,
+      "effect_zero_margin": null,
+      "failed_direction_gates": [
+        "eligible_history",
+        "delta_bic_at_least_6",
+        "effect_ci_excludes_zero",
+        "at_least_two_consistent_significant_cycles",
+        "oos_bootstrap_ci_above_zero"
+      ],
+      "failed_neutral_gates": [
+        "eligible_history",
+        "trend_only_bic_preferred",
+        "effect_ci_spans_zero",
+        "oos_point_gain_not_positive"
+      ],
+      "frozen_hypothesis_label": "NEUTRAL",
+      "oos_bootstrap_ci_low": null,
+      "oos_bootstrap_margin": null,
+      "oos_point_gain": null,
+      "original_reason": "no_sales_history",
+      "positive_sales_days": 0,
+      "product_id": "33000000-0000-4000-8000-000000000008",
+      "product_name": "LED Utility Bulb 9W Control",
+      "root_cause": "no_sales_control",
+      "selected_refined_classification": "UNKNOWN",
+      "significant_cycle_count": 0,
+      "sku": "SIM-NEU-008"
+    }
+  ],
+  "unknown_failure_summary": {
+    "insufficient_power_from_overlapping_significance_gates": 6,
+    "no_sales_control": 1,
+    "weak_or_overlapping_seasonal_effect": 2
+  }
+}
