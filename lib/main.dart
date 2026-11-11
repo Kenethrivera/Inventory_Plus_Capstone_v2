@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'ui/login_page.dart';
 import 'ui/main_screen.dart'; 
 import 'logic/inventory_controller.dart'; 
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'login/auth_service.dart';
+import 'login/session_storage.dart';
 import 'navigation/main_section.dart';
 import 'services/main_section_url.dart';
 import 'services/realtime/realtime_sync_service.dart';
@@ -165,12 +165,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
     if (kDebugMode) debugPrint('[Startup] Auth restore started');
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-      final sessionToken = prefs.getString('sessionToken');
+      final sessionStorage = AppSessionStorage();
+      final sessionToken = await sessionStorage.readTokenForRestore();
 
-      if (!isLoggedIn || sessionToken == null || sessionToken.isEmpty) {
-        await prefs.clear();
+      if (sessionToken == null || sessionToken.isEmpty) {
+        await sessionStorage.clear();
         await _routeToLogin();
         return;
       }
@@ -179,7 +178,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         final userProfile = await AuthService().restoreSession(sessionToken);
 
         if (userProfile == null) {
-          await prefs.clear();
+          await sessionStorage.clear();
           await _routeToLogin();
           return;
         }
