@@ -46,7 +46,12 @@ void main() {
     final controllerSource = File(
       'lib/logic/inventory_controller.dart',
     ).readAsStringSync();
-    expect(controllerSource, contains('...initialAssignment'));
+    expect(
+      controllerSource,
+      contains(
+        "'p_assigned_helper_id': initialAssignment['assigned_helper_id']",
+      ),
+    );
   });
 
   test('Auto-assign leaves all initial assignment fields unset', () {

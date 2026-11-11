@@ -100,8 +100,21 @@ void main() {
       await tester.tap(onTime);
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('5 ÷ 5 × 100'), findsOneWidget);
-      expect(find.textContaining('100.00 × 40% = 40.00'), findsOneWidget);
+      final dialog = find.byType(Dialog);
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.textContaining('5 ÷ 5 × 100'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.textContaining('100.00 × 40% = 40.00'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('score header explains formula and actual result', (
@@ -115,11 +128,25 @@ void main() {
       await tester.tap(info);
       await tester.pumpAndSettle();
 
+      final dialog = find.byType(Dialog);
       expect(
-        find.textContaining('Final Score = (On-Time × 40%)'),
+        find.descendant(
+          of: dialog,
+          matching: find.textContaining('Final Score ='),
+        ),
         findsOneWidget,
       );
-      expect(find.textContaining('= 91.50'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.textContaining('(On-Time × 40%)'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: dialog, matching: find.textContaining('= 91.50')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('Peer cohort row explains eligibility scope', (tester) async {

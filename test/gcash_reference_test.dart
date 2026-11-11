@@ -71,12 +71,15 @@ void main() {
     expect(pos, contains('normalizeGcashReference'));
     expect(pos, isNot(contains('Insert last 5 digits')));
     expect(controller, contains('normalizeGcashReference(paymentReference)'));
-    expect(controller, contains("updateData['payment_reference']"));
+    expect(
+      controller,
+      contains("'p_payment_reference': normalizedPaymentReference"),
+    );
   });
 
   test('durable history stores and returns the full text reference', () {
-    expect(ordersSchema, contains('"payment_reference"      text'));
-    expect(orderHistorySchema, contains('"payment_reference"    text'));
+    expect(ordersSchema, matches(RegExp(r'"payment_reference"\s+text')));
+    expect(orderHistorySchema, matches(RegExp(r'"payment_reference"\s+text')));
     expect(historySync, contains('new.payment_reference'));
     expect(
       historySync,
