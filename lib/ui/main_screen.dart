@@ -10,7 +10,6 @@ import 'package:inventory_plus/notifications/notification_controller.dart';
 import 'package:inventory_plus/notifications/notification_factory.dart';
 import 'package:inventory_plus/notifications/notification_provider.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/inventory.dart';
 import '../data/ai_insights_service.dart';
@@ -23,8 +22,10 @@ import '../services/export_period.dart';
 import '../services/export_reminder_service.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
+import '../login/session_storage.dart';
 import 'dashboard_page.dart';
 import 'approval_center_page.dart';
+import 'classification_test_page.dart';
 import 'forecasting_page.dart';
 import 'inventory_page.dart';
 import 'item_detail_page.dart';
@@ -276,7 +277,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   bool _isMainSectionPath(String path) =>
-      path == '/main' || path.startsWith('/main/');
+      path == '/main' ||
+      path.startsWith('/main/') ||
+      path == '/classification_test';
 
   void _restoreMainSectionFromPath(String path) {
     if (!mounted || !_isMainSectionPath(path)) return;
@@ -1096,9 +1099,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     await _staffPresenceService?.stop(logoutReason: 'store_hours_expired');
     await widget.controller.revokeCurrentSession();
 
-    final prefs = await SharedPreferences.getInstance();
     await widget.realtimeSync.stop();
-    await prefs.clear();
+    await AppSessionStorage().clear();
 
     if (!mounted) return;
 
@@ -1265,9 +1267,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     try {
       await _staffPresenceService?.stop(logoutReason: 'profile_changed');
       await widget.controller.revokeCurrentSession();
-      final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
-      await prefs.clear();
+      await AppSessionStorage().clear();
     } catch (error, stackTrace) {
       debugPrint('[Session] Profile invalidation cleanup failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -2241,6 +2242,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         final int forecastingIndex = isAdmin ? pageIndex++ : -1;
 
+        final int classificationTestIndex = isAdmin ? pageIndex++ : -1;
+
         final int posIndex = (isCashier || isAdmin) ? pageIndex++ : -1;
 
         final int orderQueueIndex = (isHelper || isAdmin) ? pageIndex++ : -1;
@@ -2297,6 +2300,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               isActive: _currentIndex == forecastingIndex,
             ),
           );
+
+          pages.add(ClassificationTestPage(controller: widget.controller));
         }
 
         if (isAdmin) {
@@ -2446,6 +2451,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 _buildSidebar(
                   dashboardIndex: dashboardIndex,
                   forecastingIndex: forecastingIndex,
+                  classificationTestIndex: classificationTestIndex,
                   posIndex: posIndex,
                   orderQueueIndex: orderQueueIndex,
                   inventoryIndex: inventoryIndex,
@@ -2685,6 +2691,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               selectedIcon: Icon(LucideIcons.trendingUp, color: _primaryBlue),
               label: 'Forecast',
             ),
+          if (isAdmin)
+            const NavigationDestination(
+              icon: Icon(LucideIcons.scanSearch, color: _inactiveText),
+              selectedIcon: Icon(LucideIcons.scanSearch, color: _primaryBlue),
+              label: 'Classify',
+            ),
           if (isCashier || isAdmin)
             const NavigationDestination(
               icon: Icon(LucideIcons.shoppingCart, color: _inactiveText),
@@ -2749,6 +2761,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Widget _buildSidebar({
     required int dashboardIndex,
     required int forecastingIndex,
+    required int classificationTestIndex,
     required int posIndex,
     required int orderQueueIndex,
     required int inventoryIndex,
@@ -2828,6 +2841,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     forecastingIndex,
                     LucideIcons.trendingUp,
                     'Forecasting',
+                  ),
+                  _buildSidebarItem(
+                    classificationTestIndex,
+                    LucideIcons.scanSearch,
+                    'Classification Test',
                   ),
                   _buildSidebarItem(
                     posIndex,
@@ -3361,9 +3379,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _clearStoreAccessScheduling();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       await widget.controller.revokeCurrentSession();
-      final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
-      await prefs.clear();
+      await AppSessionStorage().clear();
 
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
@@ -3384,9 +3401,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _clearStoreAccessScheduling();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       await widget.controller.revokeCurrentSession();
-      final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
-      await prefs.clear();
+      await AppSessionStorage().clear();
 
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);

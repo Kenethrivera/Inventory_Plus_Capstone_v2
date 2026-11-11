@@ -12,12 +12,18 @@ void main() {
     );
     expect(MainSection.fromPath('/main'), isNull);
     expect(MainSection.fromPath('/main/not-a-page'), isNull);
+    expect(
+      MainSection.fromPath('/classification_test'),
+      MainSection.classificationTest,
+    );
+    expect(MainSection.classificationTest.routePath, '/classification_test');
   });
 
   test('role page order matches MainScreen page construction', () {
     expect(MainSection.forRole('admin'), const <MainSection>[
       MainSection.dashboard,
       MainSection.forecasting,
+      MainSection.classificationTest,
       MainSection.pos,
       MainSection.queue,
       MainSection.inventory,
