@@ -10,7 +10,6 @@ import 'package:inventory_plus/notifications/notification_controller.dart';
 import 'package:inventory_plus/notifications/notification_factory.dart';
 import 'package:inventory_plus/notifications/notification_provider.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/inventory.dart';
 import '../data/ai_insights_service.dart';
@@ -24,9 +23,12 @@ import '../services/export_period.dart';
 import '../services/export_reminder_service.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
+import '../login/session_storage.dart';
 import 'dashboard_page.dart';
 import 'approval_center_page.dart';
 import 'analytics_page.dart';
+import 'classification_test_page.dart';
+import 'forecasting_page.dart';
 import 'inventory_page.dart';
 import 'item_detail_page.dart';
 import 'map_editor_page.dart';
@@ -302,7 +304,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   bool _isMainSectionPath(String path) =>
-      path == '/main' || path.startsWith('/main/');
+      path == '/main' ||
+      path.startsWith('/main/') ||
+      path == '/classification_test';
 
   void _restoreMainSectionFromPath(String path) {
     if (!mounted || !_isMainSectionPath(path)) return;
@@ -1122,9 +1126,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     await _staffPresenceService?.stop(logoutReason: 'store_hours_expired');
     await widget.controller.revokeCurrentSession();
 
-    final prefs = await SharedPreferences.getInstance();
     await widget.realtimeSync.stop();
-    await prefs.clear();
+    await AppSessionStorage().clear();
 
     if (!mounted) return;
 
@@ -1291,9 +1294,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     try {
       await _staffPresenceService?.stop(logoutReason: 'profile_changed');
       await widget.controller.revokeCurrentSession();
-      final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
-      await prefs.clear();
+      await AppSessionStorage().clear();
     } catch (error, stackTrace) {
       debugPrint('[Session] Profile invalidation cleanup failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -2278,7 +2280,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         final int ordersActivityIndex = isAdmin ? pageIndex++ : -1;
 
+        final int analyticsIndex = isAdmin ? pageIndex++ : -1;
+
         final int forecastingIndex = isAdmin ? pageIndex++ : -1;
+
+        final int classificationTestIndex = isAdmin ? pageIndex++ : -1;
 
         final int posIndex = (isCashier || isAdmin) ? pageIndex++ : -1;
 
@@ -2353,10 +2359,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           pages.add(
             AnalyticsPage(
               controller: widget.controller,
-              isActive: _currentIndex == forecastingIndex,
+              isActive: _currentIndex == analyticsIndex,
               onOpenInventory: () => _selectMainIndex(inventoryIndex),
             ),
           );
+
+          pages.add(
+            ForecastingPage(
+              controller: widget.controller,
+              aiService: _aiInsightsService,
+              isActive: _currentIndex == forecastingIndex,
+            ),
+          );
+
+          pages.add(ClassificationTestPage(controller: widget.controller));
         }
 
         if (isAdmin) {
@@ -2531,7 +2547,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 _buildSidebar(
                   dashboardIndex: dashboardIndex,
                   ordersActivityIndex: ordersActivityIndex,
+                  analyticsIndex: analyticsIndex,
                   forecastingIndex: forecastingIndex,
+                  classificationTestIndex: classificationTestIndex,
                   inventoryIndex: inventoryIndex,
                   approvalsIndex: approvalsIndex,
                   performanceIndex: performanceIndex,
@@ -3090,10 +3108,26 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Widget _buildAdminMobileNavigationBar() {
     const destinations = <({MainSection section, IconData icon, String label})>[
-      (section: MainSection.dashboard, icon: LucideIcons.layoutDashboard, label: 'Home'),
-      (section: MainSection.ordersActivity, icon: LucideIcons.receiptText, label: 'Orders'),
-      (section: MainSection.inventory, icon: LucideIcons.box, label: 'Inventory'),
-      (section: MainSection.approvals, icon: LucideIcons.clipboardCheck, label: 'Approvals'),
+      (
+        section: MainSection.dashboard,
+        icon: LucideIcons.layoutDashboard,
+        label: 'Home',
+      ),
+      (
+        section: MainSection.ordersActivity,
+        icon: LucideIcons.receiptText,
+        label: 'Orders',
+      ),
+      (
+        section: MainSection.inventory,
+        icon: LucideIcons.box,
+        label: 'Inventory',
+      ),
+      (
+        section: MainSection.approvals,
+        icon: LucideIcons.clipboardCheck,
+        label: 'Approvals',
+      ),
     ];
     return SafeArea(
       top: false,
@@ -3115,7 +3149,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 5,
+                        ),
                         decoration: BoxDecoration(
                           color: _currentMainSection == destination.section
                               ? _accent.withValues(alpha: .1)
@@ -3164,24 +3201,96 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 0, 16, 14),
-              child: Text('Menu', style: TextStyle(
-                fontSize: 20, fontWeight: FontWeight.w700, color: _darkText,
-              )),
+              child: Text(
+                'Menu',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: _darkText,
+                ),
+              ),
             ),
             _adminDrawerHeading('Main'),
-            _adminDrawerItem(drawerContext, MainSection.dashboard, LucideIcons.layoutDashboard, 'Home'),
-            _adminDrawerItem(drawerContext, MainSection.ordersActivity, LucideIcons.receiptText, 'Orders'),
-            _adminDrawerItem(drawerContext, MainSection.inventory, LucideIcons.box, 'Inventory'),
-            _adminDrawerItem(drawerContext, MainSection.approvals, LucideIcons.clipboardCheck, 'Approvals'),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.dashboard,
+              LucideIcons.layoutDashboard,
+              'Home',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.ordersActivity,
+              LucideIcons.receiptText,
+              'Orders',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.inventory,
+              LucideIcons.box,
+              'Inventory',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.approvals,
+              LucideIcons.clipboardCheck,
+              'Approvals',
+            ),
             const Divider(height: 28),
             _adminDrawerHeading('More'),
-            _adminDrawerItem(drawerContext, MainSection.forecasting, LucideIcons.trendingUp, 'Forecast'),
-            _adminDrawerItem(drawerContext, MainSection.performance, LucideIcons.barChart2, 'Performance'),
-            _adminDrawerItem(drawerContext, MainSection.storeMap, LucideIcons.map, 'Store map'),
-            _adminDrawerItem(drawerContext, MainSection.pos, LucideIcons.shoppingCart, 'POS system'),
-            _adminDrawerItem(drawerContext, MainSection.queue, LucideIcons.listChecks, 'Order queue'),
-            _adminDrawerItem(drawerContext, MainSection.transactions, LucideIcons.history, 'Transactions'),
-            _adminDrawerItem(drawerContext, MainSection.systemSettings, LucideIcons.settings, 'Settings'),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.analytics,
+              LucideIcons.trendingUp,
+              'Analytics',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.forecasting,
+              LucideIcons.chartNoAxesCombined,
+              'Forecast',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.classificationTest,
+              LucideIcons.scanSearch,
+              'Classification test',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.performance,
+              LucideIcons.barChart2,
+              'Performance',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.storeMap,
+              LucideIcons.map,
+              'Store map',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.pos,
+              LucideIcons.shoppingCart,
+              'POS system',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.queue,
+              LucideIcons.listChecks,
+              'Order queue',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.transactions,
+              LucideIcons.history,
+              'Transactions',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.systemSettings,
+              LucideIcons.settings,
+              'Settings',
+            ),
           ],
         ),
       ),
@@ -3190,9 +3299,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Widget _adminDrawerHeading(String label) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-    child: Text(label, style: const TextStyle(
-      color: _inactiveText, fontSize: 12, fontWeight: FontWeight.w700,
-    )),
+    child: Text(
+      label,
+      style: const TextStyle(
+        color: _inactiveText,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
   );
 
   Widget _adminDrawerItem(
@@ -3275,7 +3389,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Widget _buildSidebar({
     required int dashboardIndex,
     required int ordersActivityIndex,
+    required int analyticsIndex,
     required int forecastingIndex,
+    required int classificationTestIndex,
     required int inventoryIndex,
     required int approvalsIndex,
     required int performanceIndex,
@@ -3361,9 +3477,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       'Inventory',
                     ),
                     _buildSidebarItem(
-                      forecastingIndex,
+                      analyticsIndex,
                       LucideIcons.trendingUp,
                       'Analytics',
+                    ),
+                    _buildSidebarItem(
+                      forecastingIndex,
+                      LucideIcons.chartNoAxesCombined,
+                      'Forecasting',
+                    ),
+                    _buildSidebarItem(
+                      classificationTestIndex,
+                      LucideIcons.scanSearch,
+                      'Classification Test',
                     ),
                     const SizedBox(height: 16),
                     _sidebarHeading('Administration'),
@@ -3543,7 +3669,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       final showDetails = constraints.maxWidth >= 1100;
       final window = _scheduledStoreAccessWindow;
       final now = DateTime.now();
-      final isOpen = window != null &&
+      final isOpen =
+          window != null &&
           !now.isBefore(window.opening) &&
           now.isBefore(window.shiftEnd);
       final nextOpening = window != null && now.isAfter(window.shiftEnd)
@@ -3559,7 +3686,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       final parts = displayName.split(RegExp(r'\s+'));
       final initials = parts.length > 1
           ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
-          : displayName.substring(0, displayName.length < 2 ? 1 : 2).toUpperCase();
+          : displayName
+                .substring(0, displayName.length < 2 ? 1 : 2)
+                .toUpperCase();
 
       return Container(
         height: 66,
@@ -3606,11 +3735,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         final activeCount = userId == null
                             ? 0
                             : (snapshot.data ?? const <CustomerOrder>[])
-                                .where((order) =>
-                                    order.createdById == userId &&
-                                    (order.status == 'pending' ||
-                                        order.status == 'prepared'))
-                                .length;
+                                  .where(
+                                    (order) =>
+                                        order.createdById == userId &&
+                                        (order.status == 'pending' ||
+                                            order.status == 'prepared'),
+                                  )
+                                  .length;
                         return _cashierHeaderTab(
                           label: 'My orders',
                           selected: _currentIndex == historyIndex,
@@ -3625,7 +3756,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       builder: (context, snapshot) => _cashierHeaderTab(
                         label: 'Requests',
                         selected: _currentIndex == requestsIndex,
-                        badgeCount: snapshot.data?.status ==
+                        badgeCount:
+                            snapshot.data?.status ==
                                 InventoryApprovalStatus.pending
                             ? 1
                             : 0,
@@ -3781,11 +3913,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 18,
-              color: isSelected ? _accent : _inactiveText,
-            ),
+            Icon(icon, size: 18, color: isSelected ? _accent : _inactiveText),
             const SizedBox(width: 8),
             Text(
               label,
@@ -4163,9 +4291,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _clearStoreAccessScheduling();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       await widget.controller.revokeCurrentSession();
-      final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
-      await prefs.clear();
+      await AppSessionStorage().clear();
 
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
@@ -4186,9 +4313,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _clearStoreAccessScheduling();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       await widget.controller.revokeCurrentSession();
-      final prefs = await SharedPreferences.getInstance();
       await widget.realtimeSync.stop();
-      await prefs.clear();
+      await AppSessionStorage().clear();
 
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);

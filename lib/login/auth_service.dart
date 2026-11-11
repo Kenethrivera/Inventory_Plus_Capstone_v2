@@ -1,11 +1,4 @@
-import 'dart:convert';
-
-import 'package:crypto/crypto.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-import '../services/app_logger.dart';
 
 class LoginRateLimitedException implements Exception {
   const LoginRateLimitedException({required this.retryAfterSeconds});
@@ -15,10 +8,6 @@ class LoginRateLimitedException implements Exception {
 
 class AuthService {
   final _supabase = Supabase.instance.client;
-
-  String _hashPassword(String password) =>
-      sha256.convert(utf8.encode(password)).toString();
-
   Future<Map<String, dynamic>?> login(String username, String password) async {
     final response = await _supabase.rpc(
       'profile_login_v1',
@@ -77,60 +66,6 @@ class AuthService {
     profile['session_token'] = token;
     profile['session_expires_at'] = payload['expires_at'];
     return profile;
-  }
-
-  Future<String?> getEmailFromUsername(String username) async {
-    final response = await _supabase
-        .from('profiles')
-        .select('email')
-        .eq('username', username)
-        .maybeSingle();
-    return response?['email'];
-  }
-
-  Future<bool> isAdminUser(String username) async {
-    final response = await _supabase
-        .from('profiles')
-        .select('role')
-        .eq('username', username)
-        .maybeSingle();
-    return response?['role']?.toString().toLowerCase() == 'admin';
-  }
-
-  Future<bool> sendEmailJsOtp(String email, String code) async {
-    try {
-      final response = await http.post(
-        Uri.parse('https://api.emailjs.com/api/v1.0/email/send'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'service_id': dotenv.env['EMAILJS_SERVICE_ID'],
-          'template_id': dotenv.env['EMAILJS_TEMPLATE_ID'],
-          'user_id': dotenv.env['EMAILJS_PUBLIC_KEY'],
-          'template_params': {'email': email, 'otp_code': code},
-        }),
-      );
-      if (response.statusCode == 200) return true;
-      throw Exception('Password reset email request failed.');
-    } catch (error, stackTrace) {
-      AppLogger.error(
-        'Password reset email request failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      throw Exception('Password reset email request failed.');
-    }
-  }
-
-  Future<bool> resetPasswordForUser(String email, String newPassword) async {
-    try {
-      await _supabase
-          .from('profiles')
-          .update({'password': _hashPassword(newPassword)})
-          .eq('email', email);
-      return true;
-    } catch (_) {
-      return false;
-    }
   }
 
   Future<String> requestPasswordRecovery(

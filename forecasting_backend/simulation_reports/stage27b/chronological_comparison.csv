@@ -1,0 +1,13 @@
+window_months,model,products,correct,accuracy,assigned_products,coverage,covered_accuracy,unknown_products,unknown_rate,seasonal_predictions,seasonal_precision,false_seasonal_assignments
+6,original_evidence_gated,24,0,0.0,0,0.0,,24,1.0,0,,0
+6,simple_baseline,24,0,0.0,0,0.0,,24,1.0,0,,0
+6,refined,24,0,0.0,0,0.0,,24,1.0,0,,0
+12,original_evidence_gated,24,0,0.0,0,0.0,,24,1.0,0,,0
+12,simple_baseline,24,0,0.0,0,0.0,,24,1.0,0,,0
+12,refined,24,0,0.0,0,0.0,,24,1.0,0,,0
+24,original_evidence_gated,24,13,0.5416666666666666,13,0.5416666666666666,1.0,11,0.4583333333333333,10,1.0,0
+24,simple_baseline,24,20,0.8333333333333334,23,0.9583333333333334,0.8695652173913043,1,0.041666666666666664,13,1.0,0
+24,refined,24,15,0.625,15,0.625,1.0,9,0.375,12,1.0,0
+36,original_evidence_gated,24,15,0.625,15,0.625,1.0,9,0.375,9,1.0,0
+36,simple_baseline,24,22,0.9166666666666666,23,0.9583333333333334,0.9565217391304348,1,0.041666666666666664,15,1.0,0
+36,refined,24,21,0.875,21,0.875,1.0,3,0.125,15,1.0,0
