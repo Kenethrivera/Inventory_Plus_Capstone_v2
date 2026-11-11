@@ -95,11 +95,12 @@ class _InventoryPageState extends State<InventoryPage> {
           context,
           title: 'Generate Inventory Report',
           note: 'Past reports use current unit costs.',
-          onGenerate: (range) => _generateAndPrintInventoryReport(context, range),
+          onGenerate: (range) =>
+              _generateAndPrintInventoryReport(context, range),
         );
       },
-      onQrLabels: () {
-        _generateAndPrintQRLabels(context);
+      onQrLabels: (items) {
+        _generateAndPrintQRLabels(context, items: items);
       },
       onNewItem: () => _openNewItem(context),
     );
@@ -113,10 +114,7 @@ class _InventoryPageState extends State<InventoryPage> {
       }
     }
 
-    final page = AddItemPage(
-      controller: widget.controller,
-      onAdd: onAdd,
-    );
+    final page = AddItemPage(controller: widget.controller, onAdd: onAdd);
     showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -134,15 +132,14 @@ class _InventoryPageState extends State<InventoryPage> {
         ),
       ),
       transitionBuilder: (context, animation, _, child) => SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(1, 0), end: Offset.zero,
-        ).animate(CurvedAnimation(
-          parent: animation, curve: Curves.easeOutCubic)),
+        position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+            .animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            ),
         child: child,
       ),
     );
   }
-
 
   Future<void> _generateAndPrintInventoryReport(
     BuildContext context,
@@ -253,8 +250,11 @@ class _InventoryPageState extends State<InventoryPage> {
     }
   }
 
-  Future<void> _generateAndPrintQRLabels(BuildContext context) async {
-    final items = widget.controller.allItems;
+  Future<void> _generateAndPrintQRLabels(
+    BuildContext context, {
+    List<InventoryItem>? items,
+  }) async {
+    items ??= widget.controller.allItems;
 
     if (items.isEmpty) {
       _showToast("No inventory items found to generate labels.", isError: true);

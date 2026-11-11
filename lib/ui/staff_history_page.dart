@@ -37,6 +37,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   final TextEditingController _searchController = TextEditingController();
   final GlobalKey _mobileRecordsKey = GlobalKey();
   late Future<HistoryPageResult<Map<String, dynamic>>> _historyFuture;
+  late Stream<List<CustomerOrder>> _helperOrdersStream;
   StreamSubscription<HistoryInvalidation>? _historySubscription;
   Timer? _searchDebounce;
   int _ordersPage = 1;
@@ -65,6 +66,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   @override
   void initState() {
     super.initState();
+    _helperOrdersStream = widget.controller.streamOrders();
     _historyFuture = _loadCurrentPageResult();
     _bindHistoryInvalidations();
   }
@@ -73,6 +75,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   void didUpdateWidget(StaffHistoryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
+      _helperOrdersStream = widget.controller.streamOrders();
       _bindHistoryInvalidations();
       _historyFuture = _loadCurrentPageResult();
     }
@@ -405,6 +408,15 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
               final horizontalPadding = constraints.maxWidth < 700
                   ? 14.0
                   : 24.0;
+              if (isMobile && _isHelper) {
+                return _buildHelperMobileHistory(
+                  orders: displayedOrders,
+                  loading: loading,
+                  error: snapshot.error,
+                  totalItems: result?.totalCount ?? _knownTotalCount,
+                  horizontalPadding: horizontalPadding,
+                );
+              }
               if (isMobile) {
                 return Center(
                   child: SizedBox(
@@ -493,6 +505,277 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     );
   }
 
+  Widget _buildHelperMobileHistory({
+    required List<CustomerOrder> orders,
+    required bool loading,
+    required Object? error,
+    required int totalItems,
+    required double horizontalPadding,
+  }) {
+    return StreamBuilder<List<CustomerOrder>>(
+      stream: _helperOrdersStream,
+      builder: (context, snapshot) {
+        final now = DateTime.now();
+        final completedToday = (snapshot.data ?? const <CustomerOrder>[])
+            .where((order) {
+              final preparedAt = order.preparedAt?.toLocal();
+              return _sameUser(order.preparedById) &&
+                  preparedAt != null &&
+                  preparedAt.year == now.year &&
+                  preparedAt.month == now.month &&
+                  preparedAt.day == now.day;
+            })
+            .toList(growable: false);
+        final prepMinutes = completedToday
+            .map((order) {
+              final start = order.assignedAt ?? order.createdAt;
+              return order.preparedAt!.difference(start).inMinutes;
+            })
+            .where((minutes) => minutes >= 0)
+            .toList(growable: false);
+        final averagePrep = prepMinutes.isEmpty
+            ? '—'
+            : '${(prepMinutes.reduce((a, b) => a + b) / prepMinutes.length).round()}m';
+
+        return SingleChildScrollView(
+          key: const PageStorageKey('helper-work-history-mobile'),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            28,
+            horizontalPadding,
+            24,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Work history',
+                style: TextStyle(
+                  color: Color(0xFF171717),
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
+                  fontFamily: _fontFam,
+                ),
+              ),
+              const SizedBox(height: 22),
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: const Color(0xFFE2DED8)),
+                  borderRadius: BorderRadius.circular(19),
+                ),
+                child: Row(
+                  children: [
+                    _helperSummaryCell(
+                      'Orders today',
+                      '${completedToday.length}',
+                    ),
+                    const SizedBox(
+                      height: 58,
+                      child: VerticalDivider(
+                        width: 1,
+                        color: Color(0xFFE2DED8),
+                      ),
+                    ),
+                    _helperSummaryCell('Avg. prep', averagePrep),
+                    const SizedBox(
+                      height: 58,
+                      child: VerticalDivider(
+                        width: 1,
+                        color: Color(0xFFE2DED8),
+                      ),
+                    ),
+                    _helperSummaryCell('Accuracy', '—'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              if (loading && orders.isEmpty)
+                const SizedBox(height: 180, child: HistoryLoadingRows())
+              else if (error != null && orders.isEmpty)
+                _HistoryState(
+                  icon: Icons.error_outline,
+                  title: 'Could not load work history',
+                  actionLabel: 'Retry',
+                  onAction: () => _refreshCurrent(forceRefresh: true),
+                )
+              else if (orders.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: const Color(0xFFE2DED8)),
+                    borderRadius: BorderRadius.circular(19),
+                  ),
+                  child: const Text(
+                    'No work history yet.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFF756D67),
+                      fontSize: 14,
+                      fontFamily: _fontFam,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: const Color(0xFFE2DED8)),
+                    borderRadius: BorderRadius.circular(19),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < orders.length; i++) ...[
+                        if (i > 0)
+                          const Divider(height: 1, color: Color(0xFFE2DED8)),
+                        _buildHelperHistoryRow(orders[i]),
+                      ],
+                    ],
+                  ),
+                ),
+              if (totalItems > historyPageSize) ...[
+                const SizedBox(height: 14),
+                HistoryPaginationFooter(
+                  currentPage: _currentPage,
+                  totalItems: totalItems,
+                  pageSize: historyPageSize,
+                  loading: loading,
+                  onPageSelected: _selectPage,
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _helperSummaryCell(String label, String value) => Expanded(
+    child: Column(
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Color(0xFF756D67),
+            fontSize: 11,
+            fontFamily: _fontFam,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Color(0xFF171717),
+            fontSize: 21,
+            fontWeight: FontWeight.w800,
+            fontFamily: _fontFam,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildHelperHistoryRow(CustomerOrder order) {
+    final status = order.status.toLowerCase();
+    final (statusLabel, statusColor, statusBackground) = switch (status) {
+      'prepared' => (
+        'Ready for pickup',
+        const Color(0xFF148044),
+        const Color(0xFFE3F4E9),
+      ),
+      'completed' => (
+        'Completed',
+        const Color(0xFF625E58),
+        const Color(0xFFF0EEEA),
+      ),
+      'cancelled' || 'returned' => (
+        status == 'returned' ? 'Returned' : 'Cancelled',
+        const Color(0xFFC3273C),
+        const Color(0xFFFCE8EA),
+      ),
+      _ => ('Assigned', const Color(0xFF28619C), const Color(0xFFE4EFFD)),
+    };
+    final created = order.createdAt.toLocal();
+    final today = DateTime.now();
+    final dateLabel =
+        created.year == today.year &&
+            created.month == today.month &&
+            created.day == today.day
+        ? _formatTime(created)
+        : '${_formatDate(created)} · ${_formatTime(created)}';
+    final start = order.assignedAt ?? order.createdAt;
+    final elapsed = order.preparedAt?.difference(start).inMinutes;
+    final durationLabel = elapsed != null && elapsed >= 0
+        ? ' · $elapsed min'
+        : '';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showOrderDetails(order),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '#${_shortOrderId(order.id)}',
+                      style: const TextStyle(
+                        color: Color(0xFF171717),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        fontFamily: _fontFam,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${order.items.length} item${order.items.length == 1 ? '' : 's'} · $dateLabel$durationLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF756D67),
+                        fontSize: 12,
+                        fontFamily: _fontFam,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: statusBackground,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  statusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: _fontFam,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMobilePagedContent({
     required HistoryPageResult<Map<String, dynamic>>? result,
     required bool loading,
@@ -552,10 +835,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
                 ],
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: content,
-          ),
+          Padding(padding: const EdgeInsets.all(8), child: content),
           HistoryPaginationFooter(
             currentPage: _currentPage,
             totalItems: totalItems,
@@ -977,10 +1257,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     );
   }
 
-  Widget _buildOrderCards(
-    List<CustomerOrder> orders, {
-    bool embedded = false,
-  }) {
+  Widget _buildOrderCards(List<CustomerOrder> orders, {bool embedded = false}) {
     return ListView.separated(
       shrinkWrap: embedded,
       physics: embedded ? const NeverScrollableScrollPhysics() : null,
@@ -1401,47 +1678,47 @@ class _CompactMetric extends StatelessWidget {
               ],
             )
           : Row(
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: metric.color.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(metric.icon, color: metric.color, size: 16),
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  metric.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _mutedText,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: _fontFam,
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: metric.color.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
                   ),
+                  child: Icon(metric.icon, color: metric.color, size: 16),
                 ),
-                Text(
-                  metric.value,
-                  style: const TextStyle(
-                    color: _darkText,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    fontFamily: _fontFam,
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        metric.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _mutedText,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: _fontFam,
+                        ),
+                      ),
+                      Text(
+                        metric.value,
+                        style: const TextStyle(
+                          color: _darkText,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          fontFamily: _fontFam,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -20,6 +20,7 @@ CREATE OR REPLACE FUNCTION private.require_app_session_v1 (
     and session.revoked_at is null
     and session.expires_at > now()
     and profile.location_id is not null
+    and profile.is_active
   limit 1
 $function$;
 

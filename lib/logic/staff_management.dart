@@ -25,6 +25,20 @@ String? normalizeOptionalStaffField(String? value) {
   return normalized == null || normalized.isEmpty ? null : normalized;
 }
 
+String generateStaffPassword({required String name, required String role}) {
+  final parts = name.trim().split(RegExp(r'\s+'));
+  if (parts.isEmpty || parts.first.isEmpty) return '';
+  final initials = parts.length == 1
+      ? parts.first[0].toUpperCase()
+      : '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  final prefix = switch (role.trim().toLowerCase()) {
+    'admin' => 'Admin',
+    'helper' => 'Helper',
+    _ => 'Cashier',
+  };
+  return '$prefix$initials@123';
+}
+
 Map<String, dynamic> buildStaffCreationPayload({
   required String name,
   required String username,
@@ -34,6 +48,7 @@ Map<String, dynamic> buildStaffCreationPayload({
   String? email,
   String? phone,
   String? address,
+  bool mustChangePassword = false,
 }) {
   return <String, dynamic>{
     'name': name.trim(),
@@ -44,6 +59,7 @@ Map<String, dynamic> buildStaffCreationPayload({
     'email': normalizeOptionalStaffField(email),
     'phone': normalizeOptionalStaffField(phone),
     'address': normalizeOptionalStaffField(address),
+    if (mustChangePassword) 'must_change_password': true,
   };
 }
 

@@ -1633,6 +1633,16 @@ Future<void> _toggleFlash() async {
                   PopupMenuButton<String>(
                     tooltip: 'More options',
                     enabled: !_isGeminiFallbackRunning,
+                    color: Colors.white,
+                    surfaceTintColor: Colors.transparent,
+                    shadowColor: const Color(0x33000000),
+                    elevation: 8,
+                    menuPadding: const EdgeInsets.symmetric(vertical: 5),
+                    position: PopupMenuPosition.under,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: Color(0xFFE6E1DC)),
+                    ),
                     icon: const Icon(Icons.more_horiz, size: 19,
                         color: Colors.white70),
                     padding: EdgeInsets.zero,

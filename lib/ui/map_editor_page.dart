@@ -7,9 +7,10 @@ import '../logic/inventory_controller.dart';
 import 'store_map.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
+import 'widgets/app_styled_dropdown.dart';
 
-const Color _primaryBlue = Color(0xFF2563EB);
-const Color _lightBg = Color(0xFFF4F6F8);
+const Color _primaryBlue = Color(0xFFC83D08);
+const Color _lightBg = Color(0xFFF7F5F3);
 const String _fontFam = 'Hellix'; // Or 'Outline'
 
 class MapEditorPage extends StatefulWidget {
@@ -24,10 +25,14 @@ class MapEditorPage extends StatefulWidget {
 class _MapEditorPageState extends State<MapEditorPage> {
   final GlobalKey<StoreMapState> _storeMapKey = GlobalKey<StoreMapState>();
   MapElement? _manageSelected;
-  MapMode _mode = MapMode.view; // Default to Preview
-  MapViewStyle _viewStyle = MapViewStyle.threeD;
-  bool _hideWalls = false;
+  MapMode _mode = MapMode.manage;
+  MapViewStyle _viewStyle = MapViewStyle.twoD;
+  ElementType? _placementType;
+  String? _productToAssignId;
   String? _selectedItemId;
+  String _assignFilter = 'All';
+  String _assignmentSearch = '';
+  bool _hideWalls = false;
   List<MapElement> _draftLayout = <MapElement>[];
   List<MapElement> _baselineLayout = <MapElement>[];
   List<MapElement> _historyCurrent = <MapElement>[];
@@ -44,11 +49,6 @@ class _MapEditorPageState extends State<MapEditorPage> {
   Object? _layoutLoadError;
   StreamSubscription<List<MapElement>>? _layoutSubscription;
   StreamSubscription<List<InventoryItem>>? _inventorySubscription;
-
-  // Assign mode state
-  String _searchQuery = '';
-  String _assignFilter = 'All'; // All, Unassigned, Assigned
-  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -85,6 +85,17 @@ class _MapEditorPageState extends State<MapEditorPage> {
         _isLayoutReady = true;
         _layoutLoadError = null;
       });
+      final selectable = canonical.where(
+        (element) =>
+            element.type == ElementType.rack ||
+            element.type == ElementType.shelf,
+      );
+      if (selectable.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted)
+            _storeMapKey.currentState?.selectManageElement(selectable.first.id);
+        });
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _layoutLoadError = error);
@@ -94,6 +105,30 @@ class _MapEditorPageState extends State<MapEditorPage> {
   bool get _hasDirtyDraft =>
       _isLayoutReady &&
       widget.controller.mapLayoutSignature(_draftLayout) != _baselineSignature;
+
+  Map<String, MapElement> get _assignmentTargets => {
+    for (final element in _draftLayout)
+      if (element.type == ElementType.rack || element.type == ElementType.shelf)
+        element.id: element,
+  };
+
+  int get _assignedCount {
+    final targets = _assignmentTargets;
+    return widget.controller.allItems
+        .where((item) => targets.containsKey(item.locationId))
+        .length;
+  }
+
+  String? get _selectedAssignmentTargetId {
+    final selected = _selectedItemId;
+    if (selected == null) return null;
+    for (final item in widget.controller.allItems) {
+      if (item.id == selected) {
+        return _assignmentTargets[item.locationId]?.id;
+      }
+    }
+    return null;
+  }
 
   void _resetHistory(Iterable<MapElement> layout) {
     _historyCurrent = widget.controller.cloneMapLayout(layout);
@@ -198,7 +233,6 @@ class _MapEditorPageState extends State<MapEditorPage> {
       _remoteChangePending = false;
       _remoteChangeToastShown = false;
       _manageSelected = null;
-      _selectedItemId = null;
     });
   }
 
@@ -206,7 +240,6 @@ class _MapEditorPageState extends State<MapEditorPage> {
   void dispose() {
     _layoutSubscription?.cancel();
     _inventorySubscription?.cancel();
-    _searchController.dispose();
     super.dispose();
   }
 
@@ -405,53 +438,22 @@ class _MapEditorPageState extends State<MapEditorPage> {
     });
   }
 
-  Map<String, MapElement> get _assignmentTargets => {
-    for (final element in _draftLayout)
-      if (element.type == ElementType.rack || element.type == ElementType.shelf)
-        element.id: element,
-  };
-
-  int get _assignedCount {
-    final targets = _assignmentTargets;
-    return widget.controller.allItems
-        .where((item) => targets.containsKey(item.locationId))
-        .length;
-  }
-
-  String? get _selectedAssignmentTargetId {
-    final selectedItemId = _selectedItemId;
-    if (selectedItemId == null) return null;
-    final targets = _assignmentTargets;
-    for (final item in widget.controller.allItems) {
-      if (item.id == selectedItemId) {
-        return targets[item.locationId]?.id;
-      }
-    }
-    return null;
-  }
-
-  int get _totalCount => widget.controller.allItems.length;
-
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => _buildDashboardMap(context);
+
+  Widget _buildDashboardMap(BuildContext context) {
     if (!_isLayoutReady) {
-      return Scaffold(
-        backgroundColor: _lightBg,
-        body: Center(
+      return ColoredBox(
+        color: _lightBg,
+        child: Center(
           child: _layoutLoadError == null
               ? const CircularProgressIndicator(color: _primaryBlue)
               : Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      LucideIcons.triangleAlert,
-                      color: Colors.red,
-                      size: 32,
-                    ),
-                    const SizedBox(height: 12),
                     const Text('Could not load the store map.'),
                     const SizedBox(height: 12),
-                    ElevatedButton(
+                    OutlinedButton(
                       onPressed: () {
                         setState(() => _layoutLoadError = null);
                         unawaited(_initializeLayout());
@@ -463,11 +465,6 @@ class _MapEditorPageState extends State<MapEditorPage> {
         ),
       );
     }
-
-    final double screenWidth = MediaQuery.sizeOf(context).width;
-    final bool desktopLayout = screenWidth >= 900;
-    final bool tabsFitInHeader = screenWidth >= 1200;
-
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
@@ -485,341 +482,108 @@ class _MapEditorPageState extends State<MapEditorPage> {
         autofocus: true,
         child: PopScope(
           canPop: _allowRoutePop || !_hasDirtyDraft,
-          onPopInvokedWithResult: (bool didPop, Object? result) {
+          onPopInvokedWithResult: (didPop, result) {
             if (!didPop) unawaited(_confirmDiscardAndLeave());
           },
           child: Scaffold(
             backgroundColor: _lightBg,
-            appBar: AppBar(
-              automaticallyImplyLeading:
-                  false, // Hidden back button as requested
-              backgroundColor: Colors.white,
-              surfaceTintColor: Colors.transparent,
-              elevation: 0,
-              toolbarHeight: 94,
-              titleSpacing: 24,
-              title: tabsFitInHeader
-                  ? Row(
-                      children: [
-                        SizedBox(width: 310, child: _buildHeaderSummary()),
-                        Expanded(
-                          child: Center(
-                            child: SizedBox(
-                              width: 535,
-                              child: _buildModeTabs(inHeader: true),
+            body: LayoutBuilder(
+              builder: (context, constraints) {
+                final desktop = constraints.maxWidth >= 920;
+                final horizontal = desktop ? 32.0 : 16.0;
+                return SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(horizontal, 32, horizontal, 28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 16,
+                        runSpacing: 16,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: desktop
+                                ? constraints.maxWidth - 340
+                                : constraints.maxWidth - horizontal * 2,
+                            child: const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Store map',
+                                  style: TextStyle(
+                                    color: Color(0xFF171717),
+                                    fontSize: 25,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: _fontFam,
+                                  ),
+                                ),
+                                SizedBox(height: 5),
+                                Text(
+                                  'Lay out the floor, place fixtures and assign products. Helpers see the saved map on their phones.',
+                                  style: TextStyle(
+                                    color: Color(0xFF827872),
+                                    fontSize: 14,
+                                    fontFamily: _fontFam,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                      ],
-                    )
-                  : _buildHeaderSummary(),
-              actions: [
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.red.shade600,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      textStyle: const TextStyle(
-                        fontFamily: _fontFam,
-                        fontWeight: FontWeight.bold,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              OutlinedButton(
+                                onPressed: _hasDirtyDraft && !_isSaving
+                                    ? _discardDraft
+                                    : null,
+                                child: const Text('Discard'),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: _primaryBlue,
+                                ),
+                                onPressed: _hasDirtyDraft && !_isSaving
+                                    ? () => unawaited(_saveDraft())
+                                    : null,
+                                child: Text(_isSaving ? 'Saving…' : 'Save map'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ),
-                    child: const Text('Clear Layout'),
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (dialogContext) => AppDialog(
-                          icon: LucideIcons.trash2,
-                          color: Colors.red.shade600,
-                          title: "Clear Map?",
-                          subtitle: "Delete entire map layout",
-                          child: const Text(
-                            "Are you sure you want to delete the entire saved map "
-                            "layout? Existing item assignments will not be changed.",
-                            style: TextStyle(
-                              fontFamily: _fontFam,
-                              fontSize: 13,
-                            ),
-                          ),
-                          actions: [
-                            OutlinedButton(
-                              onPressed: () => Navigator.pop(dialogContext),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.black87,
-                                side: BorderSide(color: Colors.grey.shade300),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                              ),
-                              child: const Text(
-                                "Cancel",
-                                style: TextStyle(
-                                  fontFamily: _fontFam,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            ElevatedButton(
-                              onPressed: _isSaving
-                                  ? null
-                                  : () async {
-                                      Navigator.pop(dialogContext);
-                                      await _saveDraft(clear: true);
-                                    },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red.shade600,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                              ),
-                              child: const Text(
-                                "Delete",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontFamily: _fontFam,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                      const SizedBox(height: 24),
+                      if (_remoteChangePending) _buildRemoteChangeBanner(),
+                      _buildMapToolbar(),
+                      const SizedBox(height: 14),
+                      if (desktop)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: _buildMapCanvas()),
+                            const SizedBox(width: 18),
+                            SizedBox(
+                              width: 340,
+                              child: _mode == MapMode.selection
+                                  ? _buildAssignmentPanel()
+                                  : _buildFixturePanel(),
                             ),
                           ],
+                        )
+                      else
+                        Column(
+                          children: [
+                            _buildMapCanvas(),
+                            const SizedBox(height: 16),
+                            _mode == MapMode.selection
+                                ? _buildAssignmentPanel()
+                                : _buildFixturePanel(),
+                          ],
                         ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  margin: const EdgeInsets.only(top: 20, bottom: 20, right: 24),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _primaryBlue,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                    ),
-                    onPressed: _isSaving
-                        ? null
-                        : () {
-                            showDialog(
-                              context: context,
-                              builder: (dialogContext) => AppDialog(
-                                icon: LucideIcons.save,
-                                color: _primaryBlue,
-                                title: "Save Map Layout?",
-                                subtitle: "Apply changes to store map",
-                                child: const Text(
-                                  "Are you sure you want to save the current map layout? This will lock in the new item locations.",
-                                  style: TextStyle(
-                                    fontFamily: _fontFam,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                actions: [
-                                  OutlinedButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.black87,
-                                      side: BorderSide(
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 14,
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      "Cancel",
-                                      style: TextStyle(
-                                        fontFamily: _fontFam,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: () async {
-                                      Navigator.pop(dialogContext);
-                                      await _saveDraft();
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: _primaryBlue,
-                                      elevation: 0,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 14,
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      "Save Layout",
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontFamily: _fontFam,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                    child: const Text(
-                      "Save layout",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontFamily: _fontFam,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            body: Column(
-              children: [
-                if (!tabsFitInHeader) _buildModeTabs(),
-                if (_remoteChangePending) _buildRemoteChangeBanner(),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Desktop Manage Layout palette, kept outside the map canvas.
-                      if (_mode == MapMode.manage && desktopLayout)
-                        Container(
-                          width: 290,
-                          margin: const EdgeInsets.only(
-                            top: 16,
-                            left: 16,
-                            bottom: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFDBEAFE)),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: _buildManageSidebar(),
-                        ),
-                      // SIDEBAR (Only visible in Assign mode)
-                      if (_mode == MapMode.selection)
-                        Container(
-                          width: 320,
-                          margin: const EdgeInsets.only(
-                            top: 16,
-                            left: 16,
-                            bottom: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.02),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: _buildAssignSidebar(),
-                        ),
-                      // MAIN MAP CANVAS
-                      Expanded(
-                        child: Container(
-                          margin: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: _lightBg,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Stack(
-                            children: [
-                              Positioned.fill(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: StoreMap(
-                                    key: _storeMapKey,
-                                    layout: _draftLayout,
-                                    highlightId: _mode == MapMode.selection
-                                        ? _selectedAssignmentTargetId
-                                        : null,
-                                    centerOnSelectedItem:
-                                        _mode == MapMode.selection,
-                                    itemAssignmentEnabled:
-                                        !_hasDirtyDraft &&
-                                        !_remoteChangePending,
-                                    onManageSelectionChanged: (element) {
-                                      if (mounted)
-                                        setState(
-                                          () => _manageSelected = element,
-                                        );
-                                    },
-                                    onLayoutEdited: _recordLayoutEdit,
-                                    controller: widget.controller,
-                                    mode: _mode,
-                                    viewStyle: _viewStyle,
-                                    hideWalls: _hideWalls,
-                                    showMobileToolbar: !desktopLayout,
-                                    selectedItemId: _selectedItemId,
-                                    onSelectionAssigned: () {
-                                      setState(() {
-                                        _selectedItemId = null;
-                                      });
-                                    },
-                                  ),
-                                ),
-                              ),
-                              // Overlays based on mode
-                              if (_mode == MapMode.view)
-                                _buildPreviewOverlays(),
-                              if (_mode == MapMode.selection &&
-                                  _selectedItemId != null)
-                                _buildAssignOverlayBanner(),
-                              if (_mode == MapMode.manage)
-                                Positioned(
-                                  bottom: 32,
-                                  left: desktopLayout ? 32 : 100,
-                                  child: _buildHistoryControls(),
-                                ),
-                              Positioned(
-                                top: 16,
-                                right: 16,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (_mode == MapMode.manage) ...[
-                                      _buildWallVisibilityToggle(),
-                                      const SizedBox(width: 8),
-                                    ],
-                                    _buildViewStyleToggle(),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     ],
                   ),
-                ),
-              ],
+                );
+              },
             ),
           ),
         ),
@@ -827,52 +591,1058 @@ class _MapEditorPageState extends State<MapEditorPage> {
     );
   }
 
-  Widget _buildHistoryControls() {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.blueGrey.withOpacity(0.5), width: 1.5),
-        boxShadow: const [
-          BoxShadow(color: Colors.black45, blurRadius: 8, offset: Offset(0, 4)),
-        ],
+  void _switchMode(MapMode mode) {
+    if (_mode == mode) return;
+    _storeMapKey.currentState?.clearManageSelection();
+    setState(() {
+      _mode = mode;
+      _placementType = null;
+      _manageSelected = null;
+      _selectedItemId = null;
+      _productToAssignId = null;
+    });
+  }
+
+  Widget _buildModeTabs() => Container(
+    padding: const EdgeInsets.all(3),
+    decoration: _mapPanelDecoration(),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _modeTab(MapMode.manage, 'Manage layout', LucideIcons.pencil),
+        _modeTab(MapMode.selection, 'Assign items', LucideIcons.link),
+      ],
+    ),
+  );
+
+  Widget _modeTab(MapMode mode, String label, IconData icon) {
+    final selected = _mode == mode;
+    return TextButton.icon(
+      onPressed: () => _switchMode(mode),
+      style: TextButton.styleFrom(
+        foregroundColor: selected ? Colors.white : const Color(0xFF514A45),
+        backgroundColor: selected
+            ? const Color(0xFF1C1C1C)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
-      child: Column(
+      icon: Icon(icon, size: 15),
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+    );
+  }
+
+  Widget _buildMapToolbar() {
+    final editingTools = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_mode == MapMode.manage)
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: _mapPanelDecoration(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _mapTool('Select', LucideIcons.mousePointer2, null),
+                for (final type in ElementType.values)
+                  _mapTool(_elementLabel(type), _elementIcon(type), type),
+              ],
+            ),
+          ),
+        if (_mode == MapMode.manage) const SizedBox(width: 10),
+        if (_mode == MapMode.manage)
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: _mapPanelDecoration(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Undo',
+                  onPressed: _undoStack.isEmpty ? null : _undo,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 34,
+                    height: 34,
+                  ),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(LucideIcons.undo2, size: 17),
+                ),
+                IconButton(
+                  tooltip: 'Redo',
+                  onPressed: _redoStack.isEmpty ? null : _redo,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 34,
+                    height: 34,
+                  ),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(LucideIcons.redo2, size: 17),
+                ),
+                TextButton.icon(
+                  onPressed: _draftLayout.isEmpty || _isSaving
+                      ? null
+                      : _confirmClearDraft,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  icon: const Icon(LucideIcons.eraser, size: 17),
+                  label: const Text('Clear'),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+    final viewToggle = Container(
+      padding: const EdgeInsets.all(3),
+      decoration: _mapPanelDecoration(),
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildHistoryButton(
-            icon: LucideIcons.undo2,
-            tooltip: 'Undo (Ctrl+Z)',
-            onPressed: _isSaving || _undoStack.isEmpty ? null : _undo,
+          _viewTool(MapViewStyle.twoD, 'Floor plan', LucideIcons.square),
+          _viewTool(MapViewStyle.threeD, '3D view', LucideIcons.box),
+        ],
+      ),
+    );
+    final zoomControls = Container(
+      padding: const EdgeInsets.all(3),
+      decoration: _mapPanelDecoration(),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _mapZoomButton(
+            'Zoom in',
+            LucideIcons.plus,
+            () => _storeMapKey.currentState?.zoomIn(),
           ),
+          _mapZoomButton(
+            'Zoom out',
+            LucideIcons.minus,
+            () => _storeMapKey.currentState?.zoomOut(),
+          ),
+          _mapZoomButton(
+            'Center map',
+            LucideIcons.focus,
+            () => _storeMapKey.currentState?.recenterMap(),
+          ),
+        ],
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [_buildModeTabs(), viewToggle],
+          ),
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              if (_mode == MapMode.manage) editingTools,
+              if (_mode == MapMode.manage) const SizedBox(width: 10),
+              zoomControls,
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _mapZoomButton(
+    String tooltip,
+    IconData icon,
+    VoidCallback onPressed,
+  ) => IconButton(
+    tooltip: tooltip,
+    onPressed: onPressed,
+    constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+    padding: EdgeInsets.zero,
+    icon: Icon(icon, size: 17, color: const Color(0xFF302C29)),
+  );
+
+  Widget _mapTool(String label, IconData icon, ElementType? type) {
+    final selected = _placementType == type;
+    final enabled = _viewStyle == MapViewStyle.twoD || type == null;
+    return TextButton.icon(
+      onPressed: !enabled ? null : () => setState(() => _placementType = type),
+      style: TextButton.styleFrom(
+        foregroundColor: selected ? Colors.white : const Color(0xFF292725),
+        backgroundColor: selected
+            ? const Color(0xFF1C1C1C)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
+      ),
+      icon: Icon(icon, size: 15),
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+    );
+  }
+
+  Widget _viewTool(MapViewStyle style, String label, IconData icon) {
+    final selected = _viewStyle == style;
+    return TextButton.icon(
+      onPressed: () => setState(() {
+        _viewStyle = style;
+        if (style == MapViewStyle.threeD) _placementType = null;
+      }),
+      style: TextButton.styleFrom(
+        foregroundColor: selected ? _primaryBlue : const Color(0xFF302C29),
+        backgroundColor: selected
+            ? const Color(0xFFFFF0E8)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+      ),
+      icon: Icon(icon, size: 15),
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+    );
+  }
+
+  BoxDecoration _mapPanelDecoration() => BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(11),
+    border: Border.all(color: const Color(0xFFE7E1DB)),
+  );
+
+  String _elementLabel(ElementType type) => switch (type) {
+    ElementType.wall => 'Wall',
+    ElementType.door => 'Door',
+    ElementType.rack => 'Rack',
+    ElementType.shelf => 'Shelf',
+    ElementType.cashier => 'Cashier',
+  };
+
+  IconData _elementIcon(ElementType type) => switch (type) {
+    ElementType.wall => LucideIcons.grid3x3,
+    ElementType.door => LucideIcons.doorOpen,
+    ElementType.rack => LucideIcons.columns3,
+    ElementType.shelf => LucideIcons.rows3,
+    ElementType.cashier => LucideIcons.rectangleHorizontal,
+  };
+
+  Widget _buildMapCanvas() => Container(
+    height: 640,
+    decoration: _mapPanelDecoration(),
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      children: [
+        if (_placementType != null && _viewStyle == MapViewStyle.twoD)
           Container(
-            width: 40,
-            height: 1,
-            color: Colors.blueGrey.withOpacity(0.5),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            color: const Color(0xFFFFF0E8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Click anywhere on the grid to place a ${_elementLabel(_placementType!).toLowerCase()}.',
+                    style: const TextStyle(color: _primaryBlue, fontSize: 12),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _placementType = null),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
           ),
-          _buildHistoryButton(
-            icon: LucideIcons.redo2,
-            tooltip: 'Redo (Ctrl+Y)',
-            onPressed: _isSaving || _redoStack.isEmpty ? null : _redo,
+        if (_mode == MapMode.selection)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            color: const Color(0xFFFFF0E8),
+            child: Text(
+              _hasDirtyDraft || _remoteChangePending
+                  ? 'Save or reload the map before assigning products.'
+                  : _selectedItemId == null
+                  ? 'Select a product from the list, then tap a rack or shelf on the map.'
+                  : 'Tap a rack or shelf to place the selected product.',
+              style: const TextStyle(color: _primaryBlue, fontSize: 12),
+            ),
+          ),
+        Expanded(
+          child: StoreMap(
+            key: _storeMapKey,
+            controller: widget.controller,
+            layout: _draftLayout,
+            mode: _mode,
+            viewStyle: _viewStyle,
+            hideWalls: _hideWalls,
+            fitEntireMap: true,
+            showZoomControls: false,
+            showMobileToolbar: false,
+            placementType: _mode == MapMode.manage ? _placementType : null,
+            selectedItemId: _mode == MapMode.selection ? _selectedItemId : null,
+            highlightId: _mode == MapMode.selection
+                ? _selectedAssignmentTargetId
+                : null,
+            itemAssignmentEnabled:
+                !_hasDirtyDraft && !_remoteChangePending && !_isSaving,
+            onSelectionAssigned: () => setState(() => _selectedItemId = null),
+            onPlacementCompleted: () => setState(() {}),
+            onManageSelectionChanged: (element) {
+              if (mounted)
+                setState(() {
+                  _manageSelected = element;
+                  _productToAssignId = null;
+                });
+            },
+            onLayoutEdited: _recordLayoutEdit,
+          ),
+        ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: Color(0xFFE7E1DB))),
+          ),
+          child: Text(
+            _mode == MapMode.selection
+                ? '$_assignedCount of ${widget.controller.allItems.length} products assigned'
+                : '${_draftLayout.length} elements    Drag to move · corner handle to resize · Delete to remove',
+            style: const TextStyle(color: Color(0xFF827872), fontSize: 11),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  void _discardDraft() {
+    _storeMapKey.currentState?.clearManageSelection();
+    setState(() {
+      _draftLayout = widget.controller.cloneMapLayout(_baselineLayout);
+      _resetHistory(_baselineLayout);
+      _manageSelected = null;
+      _placementType = null;
+    });
+  }
+
+  Future<void> _confirmClearDraft() async {
+    final clear = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Clear the floor plan?'),
+        content: const Text(
+          'All fixtures will be removed from this draft. You can undo before saving.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (clear != true || !mounted) return;
+    _storeMapKey.currentState?.clearManageSelection();
+    setState(() {
+      _draftLayout.clear();
+      _manageSelected = null;
+      _placementType = null;
+    });
+    _recordLayoutEdit();
+  }
+
+  Widget _buildAssignmentPanel() {
+    final targets = _assignmentTargets;
+    final allItems = widget.controller.allItems;
+    final items = allItems.where((item) {
+      final assigned = targets.containsKey(item.locationId);
+      if (_assignFilter == 'Assigned' && !assigned) return false;
+      if (_assignFilter == 'Unassigned' && assigned) return false;
+      final query = _assignmentSearch.trim().toLowerCase();
+      return query.isEmpty ||
+          item.name.toLowerCase().contains(query) ||
+          item.sku.toLowerCase().contains(query);
+    }).toList();
+    items.sort((a, b) {
+      final aAssigned = targets.containsKey(a.locationId);
+      final bAssigned = targets.containsKey(b.locationId);
+      if (aAssigned != bAssigned) return aAssigned ? 1 : -1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+    return Container(
+      height: 640,
+      decoration: _mapPanelDecoration(),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Items to place',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$_assignedCount of ${allItems.length} products assigned',
+                  style: const TextStyle(
+                    color: Color(0xFF827872),
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  onChanged: (value) =>
+                      setState(() => _assignmentSearch = value),
+                  style: const TextStyle(fontSize: 12),
+                  decoration: _mapInputDecoration().copyWith(
+                    hintText: 'Search items or SKU…',
+                    prefixIcon: const Icon(LucideIcons.search, size: 16),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _assignmentFilterChip('All', allItems.length),
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: _assignmentFilterChip(
+                        'Unassigned',
+                        allItems.length - _assignedCount,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: _assignmentFilterChip('Assigned', _assignedCount),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFE7E1DB)),
+          if (targets.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Add a rack or shelf in Manage layout before placing products.',
+                style: TextStyle(color: Color(0xFF827872), fontSize: 12),
+              ),
+            ),
+          Expanded(
+            child: items.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No products match this filter.',
+                      style: TextStyle(color: Color(0xFF827872), fontSize: 12),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(10),
+                    itemCount: items.length,
+                    itemBuilder: (context, index) {
+                      final item = items[index];
+                      final assignedTarget = targets[item.locationId];
+                      final selected = _selectedItemId == item.id;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 7),
+                        child: Material(
+                          color: selected
+                              ? const Color(0xFFFFF0E8)
+                              : Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(9),
+                            side: BorderSide(
+                              color: selected
+                                  ? _primaryBlue
+                                  : const Color(0xFFE7E1DB),
+                            ),
+                          ),
+                          child: InkWell(
+                            key: ValueKey('map-assign-product-${item.id}'),
+                            borderRadius: BorderRadius.circular(9),
+                            onTap: () => setState(() {
+                              _selectedItemId = selected ? null : item.id;
+                            }),
+                            child: Padding(
+                              padding: const EdgeInsets.all(9),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    children: [
+                                      _mapProductImage(item),
+                                      const SizedBox(width: 9),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              item.name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            Text(
+                                              assignedTarget
+                                                          ?.label
+                                                          .isNotEmpty ==
+                                                      true
+                                                  ? assignedTarget!.label
+                                                  : assignedTarget == null
+                                                  ? 'Unassigned · ${item.sku}'
+                                                  : '${_elementLabel(assignedTarget.type)} assigned',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: assignedTarget == null
+                                                    ? const Color(0xFF827872)
+                                                    : _primaryBlue,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (assignedTarget != null)
+                                        const Icon(
+                                          LucideIcons.circleCheck,
+                                          size: 16,
+                                          color: Color(0xFF168044),
+                                        ),
+                                    ],
+                                  ),
+                                  if (selected && assignedTarget != null) ...[
+                                    const SizedBox(height: 6),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton(
+                                        onPressed:
+                                            _hasDirtyDraft ||
+                                                _remoteChangePending ||
+                                                _isSaving
+                                            ? null
+                                            : () => unawaited(
+                                                _assignProduct(item.id, null),
+                                              ),
+                                        child: const Text(
+                                          'Remove from map',
+                                          style: TextStyle(fontSize: 11),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHistoryButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback? onPressed,
-  }) => IconButton(
-    constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-    padding: EdgeInsets.zero,
-    tooltip: tooltip,
-    icon: Icon(icon, size: 21),
-    color: Colors.white,
-    disabledColor: Colors.white38,
-    onPressed: onPressed,
+  Widget _assignmentFilterChip(String label, int count) {
+    final selected = _assignFilter == label;
+    return TextButton(
+      onPressed: () => setState(() => _assignFilter = label),
+      style: TextButton.styleFrom(
+        foregroundColor: selected ? Colors.white : const Color(0xFF514A45),
+        backgroundColor: selected ? _primaryBlue : const Color(0xFFF7F5F3),
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
+      ),
+      child: Text(
+        '$label $count',
+        maxLines: 1,
+        style: const TextStyle(fontSize: 10),
+      ),
+    );
+  }
+
+  Widget _buildFixturePanel() {
+    final selectedId = _manageSelected?.id;
+    final matches = _draftLayout.where((element) => element.id == selectedId);
+    final element = matches.isEmpty ? null : matches.first;
+    return Container(
+      height: 640,
+      decoration: _mapPanelDecoration(),
+      clipBehavior: Clip.antiAlias,
+      child: element == null
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Select a fixture on the map to edit it and assign products.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Color(0xFF827872), fontSize: 13),
+                ),
+              ),
+            )
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _lightBg,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFE7E1DB)),
+                        ),
+                        child: Text(
+                          _elementLabel(element.type),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Rotate',
+                        onPressed: () => _storeMapKey.currentState
+                            ?.applySidebarAction(MapSidebarAction.rotate),
+                        icon: const Icon(LucideIcons.rotateCw, size: 17),
+                      ),
+                      if (element.type == ElementType.wall)
+                        IconButton(
+                          tooltip: 'Auto-align wall',
+                          onPressed: () =>
+                              _storeMapKey.currentState?.applySidebarAction(
+                                MapSidebarAction.autoAlignWall,
+                              ),
+                          icon: const Icon(LucideIcons.magnet, size: 17),
+                        ),
+                      IconButton(
+                        tooltip: 'Duplicate',
+                        onPressed: () => _storeMapKey.currentState
+                            ?.applySidebarAction(MapSidebarAction.duplicate),
+                        icon: const Icon(LucideIcons.copy, size: 17),
+                      ),
+                      IconButton(
+                        tooltip: 'Delete',
+                        onPressed: () => _storeMapKey.currentState
+                            ?.applySidebarAction(MapSidebarAction.delete),
+                        icon: const Icon(
+                          LucideIcons.trash2,
+                          size: 17,
+                          color: Color(0xFFD11A1A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: Color(0xFFE7E1DB)),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Label',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        TextFormField(
+                          key: ValueKey('map-label-${element.id}'),
+                          initialValue: element.label,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: _mapInputDecoration(),
+                          onFieldSubmitted: (value) => _updateSelectedElement(
+                            element,
+                            element.copyWith(label: value.trim()),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Use “Rack A · Fasteners” to show a short name on the map.',
+                          style: TextStyle(
+                            color: Color(0xFF827872),
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        _buildManageSelectionControls(element),
+                        const SizedBox(height: 22),
+                        if (element.type == ElementType.rack ||
+                            element.type == ElementType.shelf)
+                          _buildAssignedProducts(element),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildManageSelectionControls(MapElement element) {
+    final canShrink = canResizeMapElementWidth(element, grow: false);
+    final canGrow = canResizeMapElementWidth(element, grow: true);
+    final doorStyle = element.type == ElementType.door
+        ? DoorStyle.fromWidth(element.size.width)
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 1, color: Color(0xFFE7E1DB)),
+        const SizedBox(height: 18),
+        const Text(
+          'Manage fixture',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 12),
+        _manageSectionLabel('NUDGE'),
+        const SizedBox(height: 6),
+        Center(child: _manageMiniButton('▲', MapSidebarAction.up)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _manageMiniButton('◀', MapSidebarAction.left),
+            const SizedBox(width: 42),
+            _manageMiniButton('▶', MapSidebarAction.right),
+          ],
+        ),
+        Center(child: _manageMiniButton('▼', MapSidebarAction.down)),
+        const SizedBox(height: 14),
+        if (element.type == ElementType.door) ...[
+          _manageSectionLabel('DOOR TYPE'),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final style in DoorStyle.values)
+                ChoiceChip(
+                  label: Text(style.label),
+                  selected: doorStyle == style,
+                  selectedColor: const Color(0xFFFFF0E8),
+                  checkmarkColor: _primaryBlue,
+                  side: BorderSide(
+                    color: doorStyle == style
+                        ? _primaryBlue
+                        : const Color(0xFFE7E1DB),
+                  ),
+                  labelStyle: TextStyle(
+                    color: doorStyle == style
+                        ? _primaryBlue
+                        : const Color(0xFF292725),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  onSelected: (_) =>
+                      _storeMapKey.currentState?.setSelectedDoorStyle(style),
+                ),
+            ],
+          ),
+        ] else ...[
+          _manageSectionLabel('ADJUST WIDTH'),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _manageAction(
+                  '◀ Left −',
+                  null,
+                  MapSidebarAction.widthLeftMinus,
+                  enabled: canShrink,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _manageAction(
+                  '▶ Left +',
+                  null,
+                  MapSidebarAction.widthLeftPlus,
+                  enabled: canGrow,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _manageAction(
+                  '◀ Right −',
+                  null,
+                  MapSidebarAction.widthRightMinus,
+                  enabled: canShrink,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _manageAction(
+                  '▶ Right +',
+                  null,
+                  MapSidebarAction.widthRightPlus,
+                  enabled: canGrow,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _manageSectionLabel(String text) => Text(
+    text,
+    style: const TextStyle(
+      color: Color(0xFF827872),
+      fontSize: 10,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.7,
+    ),
   );
+
+  Widget _manageMiniButton(String label, MapSidebarAction action) => Padding(
+    padding: const EdgeInsets.all(2),
+    child: SizedBox(
+      width: 44,
+      height: 34,
+      child: OutlinedButton(
+        onPressed: () => _storeMapKey.currentState?.applySidebarAction(action),
+        style: _manageButtonStyle(),
+        child: Text(label, style: const TextStyle(fontSize: 12)),
+      ),
+    ),
+  );
+
+  Widget _manageAction(
+    String label,
+    IconData? icon,
+    MapSidebarAction action, {
+    bool enabled = true,
+  }) => SizedBox(
+    width: double.infinity,
+    child: OutlinedButton.icon(
+      onPressed: enabled
+          ? () => _storeMapKey.currentState?.applySidebarAction(action)
+          : null,
+      style: _manageButtonStyle(),
+      icon: icon == null ? const SizedBox.shrink() : Icon(icon, size: 14),
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+    ),
+  );
+
+  ButtonStyle _manageButtonStyle() => OutlinedButton.styleFrom(
+    foregroundColor: const Color(0xFF292725),
+    side: const BorderSide(color: Color(0xFFE7E1DB)),
+    minimumSize: const Size(0, 36),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+  );
+
+  InputDecoration _mapInputDecoration() => InputDecoration(
+    isDense: true,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: Color(0xFFE7E1DB)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: Color(0xFFE7E1DB)),
+    ),
+  );
+
+  void _updateSelectedElement(MapElement previous, MapElement updated) {
+    final index = _draftLayout.indexWhere(
+      (element) => element.id == previous.id,
+    );
+    if (index < 0) return;
+    if (!(_storeMapKey.currentState?.canUpdateElement(updated) ?? true)) {
+      AppToast.error(context, 'That position overlaps another fixture.');
+      return;
+    }
+    setState(() {
+      _draftLayout[index] = updated;
+      _manageSelected = updated;
+    });
+    _recordLayoutEdit();
+  }
+
+  Widget _buildAssignedProducts(MapElement element) {
+    final assigned = widget.controller.allItems
+        .where((item) => item.locationId == element.id)
+        .toList(growable: false);
+    final available = widget.controller.allItems
+        .where((item) => item.locationId == null || item.locationId!.isEmpty)
+        .toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 1, color: Color(0xFFE7E1DB)),
+        const SizedBox(height: 18),
+        Text(
+          'Products here · ${assigned.length}',
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 10),
+        for (final item in assigned)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                _mapProductImage(item),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        item.shelfLevel?.isNotEmpty == true
+                            ? item.shelfLevel!
+                            : item.sku,
+                        style: const TextStyle(
+                          color: Color(0xFF827872),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Remove ${item.name} from this fixture',
+                  onPressed: _hasDirtyDraft || _remoteChangePending
+                      ? null
+                      : () => unawaited(_assignProduct(item.id, null)),
+                  icon: const Icon(LucideIcons.x, size: 15),
+                ),
+              ],
+            ),
+          ),
+        if (assigned.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'No products assigned yet.',
+              style: TextStyle(color: Color(0xFF827872), fontSize: 12),
+            ),
+          ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: AppStyledDropdown<String>(
+                value: available.any((item) => item.id == _productToAssignId)
+                    ? _productToAssignId
+                    : null,
+                decoration: _mapInputDecoration(),
+                hint: const Text(
+                  'Assign a product…',
+                  style: TextStyle(fontSize: 12),
+                ),
+                items: available
+                    .map(
+                      (item) => DropdownMenuItem(
+                        value: item.id,
+                        child: Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) =>
+                    setState(() => _productToAssignId = value),
+              ),
+            ),
+            const SizedBox(width: 7),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: _primaryBlue),
+              onPressed:
+                  _productToAssignId == null ||
+                      _hasDirtyDraft ||
+                      _remoteChangePending
+                  ? null
+                  : () => unawaited(
+                      _assignProduct(_productToAssignId!, element.id),
+                    ),
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+        if (_hasDirtyDraft) ...[
+          const SizedBox(height: 7),
+          const Text(
+            'Save the map before assigning products.',
+            style: TextStyle(color: Color(0xFF827872), fontSize: 11),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _mapProductImage(InventoryItem item) => Container(
+    width: 36,
+    height: 36,
+    decoration: _mapPanelDecoration(),
+    clipBehavior: Clip.antiAlias,
+    child: item.imageUrl.isEmpty
+        ? const Icon(LucideIcons.package, size: 18, color: Color(0xFFAAA19B))
+        : Image.network(
+            item.imageUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const Icon(
+              LucideIcons.package,
+              size: 18,
+              color: Color(0xFFAAA19B),
+            ),
+          ),
+  );
+
+  Future<void> _assignProduct(String itemId, String? elementId) async {
+    try {
+      await widget.controller.assignItemToLocation(itemId, elementId);
+      if (!mounted) return;
+      setState(() => _productToAssignId = null);
+      AppToast.success(
+        context,
+        elementId == null
+            ? 'Product removed from this fixture.'
+            : 'Product assigned.',
+      );
+    } catch (_) {
+      if (mounted)
+        AppToast.error(context, 'Could not update product assignment.');
+    }
+  }
 
   Widget _buildRemoteChangeBanner() {
     return Container(
@@ -909,1044 +1679,4 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   // Desktop-only drag palette. The map's existing DragTarget<ElementType>
   // receives the same type values as the mobile + toolbar.
-  Widget _buildManageSidebar() {
-    // When an element is selected, replace the entire drag palette with
-    // its editing controls. Closing the editor restores the palette.
-    if (_manageSelected != null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              child: _buildManageSelectionControls(_manageSelected!),
-            ),
-          ),
-        ],
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
-          color: const Color(0xFFEFF6FF),
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'MAP ELEMENTS',
-                style: TextStyle(
-                  fontFamily: _fontFam,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1D4ED8),
-                  letterSpacing: 0.7,
-                ),
-              ),
-              SizedBox(height: 6),
-              Text(
-                'Press and hold, then drag to map',
-                style: TextStyle(
-                  fontFamily: _fontFam,
-                  fontSize: 12,
-                  color: Color(0xFF64748B),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(12),
-            children: [
-              _buildManagePaletteItem(
-                ElementType.door,
-                'Door',
-                LucideIcons.doorOpen,
-                const Color(0xFF16A34A),
-              ),
-              _buildManagePaletteItem(
-                ElementType.rack,
-                'Rack',
-                Icons.view_headline,
-                const Color(0xFF2563EB),
-              ),
-              _buildManagePaletteItem(
-                ElementType.shelf,
-                'Shelf',
-                Icons.shelves,
-                const Color(0xFFEA580C),
-              ),
-              _buildManagePaletteItem(
-                ElementType.cashier,
-                'Cashier',
-                Icons.point_of_sale,
-                const Color(0xFF9333EA),
-              ),
-              _buildManagePaletteItem(
-                ElementType.wall,
-                'Wall',
-                Icons.line_weight,
-                const Color(0xFF64748B),
-              ),
-            ],
-          ),
-        ),
-        if (_manageSelected != null)
-          Flexible(
-            child: SingleChildScrollView(
-              child: _buildManageSelectionControls(_manageSelected!),
-            ),
-          ),
-        if (_manageSelected == null)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(LucideIcons.info, size: 16, color: Color(0xFF2563EB)),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Drag elements onto the map. Select a placed element to rotate, resize, move, or remove it.',
-                    style: TextStyle(
-                      fontFamily: _fontFam,
-                      fontSize: 11,
-                      color: Color(0xFF64748B),
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildManageSelectionControls(MapElement element) {
-    final label = element.type.name;
-    final canShrink = canResizeMapElementWidth(element, grow: false);
-    final canGrow = canResizeMapElementWidth(element, grow: true);
-    final heading =
-        '${label[0].toUpperCase()}${label.substring(1)} #${_draftLayout.where((e) => e.type == element.type).toList().indexWhere((e) => e.id == element.id) + 1}';
-    return Container(
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Color(0xFFDBEAFE))),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    heading,
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                      fontFamily: _fontFam,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Deselect object',
-                  onPressed: () =>
-                      _storeMapKey.currentState?.clearManageSelection(),
-                  icon: const Icon(Icons.close, size: 17),
-                ),
-              ],
-            ),
-            const SizedBox(height: 5),
-            _manageSectionLabel('ROTATE'),
-            const SizedBox(height: 5),
-            _manageAction(
-              'Rotate 90°',
-              LucideIcons.rotateCw,
-              MapSidebarAction.rotate,
-            ),
-            const SizedBox(height: 10),
-            _manageSectionLabel('NUDGE'),
-            const SizedBox(height: 5),
-            Center(child: _manageMiniButton('▲', MapSidebarAction.up)),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _manageMiniButton('◀', MapSidebarAction.left),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Icon(Icons.add, size: 14, color: Color(0xFF94A3B8)),
-                ),
-                _manageMiniButton('▶', MapSidebarAction.right),
-              ],
-            ),
-            Center(child: _manageMiniButton('▼', MapSidebarAction.down)),
-            const SizedBox(height: 10),
-            if (element.type == ElementType.door) ...[
-              _manageSectionLabel('DOOR TYPE'),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final style in DoorStyle.values)
-                    ChoiceChip(
-                      label: Text(style.label),
-                      selected:
-                          DoorStyle.fromWidth(element.size.width) == style,
-                      selectedColor: _primaryBlue,
-                      backgroundColor: const Color(0xFFF8FAFC),
-                      checkmarkColor: Colors.white,
-                      side: BorderSide(
-                        color: DoorStyle.fromWidth(element.size.width) == style
-                            ? _primaryBlue
-                            : const Color(0xFFCBD5E1),
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      labelStyle: TextStyle(
-                        color: DoorStyle.fromWidth(element.size.width) == style
-                            ? Colors.white
-                            : const Color(0xFF334155),
-                        fontWeight: FontWeight.w700,
-                        fontFamily: _fontFam,
-                      ),
-                      onSelected: (_) => _storeMapKey.currentState
-                          ?.setSelectedDoorStyle(style),
-                    ),
-                ],
-              ),
-            ] else ...[
-              _manageSectionLabel('ADJUST WIDTH'),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: _manageAction(
-                      '◀ Left −',
-                      null,
-                      MapSidebarAction.widthLeftMinus,
-                      enabled: canShrink,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: _manageAction(
-                      '▶ Left +',
-                      null,
-                      MapSidebarAction.widthLeftPlus,
-                      enabled: canGrow,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: _manageAction(
-                      '◀ Right −',
-                      null,
-                      MapSidebarAction.widthRightMinus,
-                      enabled: canShrink,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: _manageAction(
-                      '▶ Right +',
-                      null,
-                      MapSidebarAction.widthRightPlus,
-                      enabled: canGrow,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 12),
-            if (element.type == ElementType.wall) ...[
-              _manageSectionLabel('WALL ALIGNMENT'),
-              const SizedBox(height: 6),
-              _manageAction(
-                'Auto-align corners',
-                LucideIcons.magnet,
-                MapSidebarAction.autoAlignWall,
-              ),
-              const SizedBox(height: 12),
-            ],
-            _manageAction(
-              'Duplicate object',
-              LucideIcons.copy,
-              MapSidebarAction.duplicate,
-            ),
-            const SizedBox(height: 8),
-            _manageAction(
-              'Delete object',
-              LucideIcons.trash2,
-              MapSidebarAction.delete,
-              destructive: true,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _manageSectionLabel(String text) => Text(
-    text,
-    style: const TextStyle(
-      color: Color(0xFF64748B),
-      fontSize: 10,
-      fontWeight: FontWeight.w800,
-      letterSpacing: .8,
-      fontFamily: _fontFam,
-    ),
-  );
-
-  Widget _manageMiniButton(String text, MapSidebarAction action) => Padding(
-    padding: const EdgeInsets.all(2),
-    child: _HoverManageButton(
-      label: text,
-      onTap: () => _storeMapKey.currentState?.applySidebarAction(action),
-      width: 44,
-      height: 33,
-    ),
-  );
-
-  Widget _manageAction(
-    String label,
-    IconData? icon,
-    MapSidebarAction action, {
-    bool destructive = false,
-    bool enabled = true,
-  }) => _HoverManageButton(
-    label: label,
-    icon: icon,
-    destructive: destructive,
-    onTap: enabled
-        ? () => _storeMapKey.currentState?.applySidebarAction(action)
-        : null,
-  );
-
-  Widget _buildManagePaletteItem(
-    ElementType type,
-    String label,
-    IconData icon,
-    Color accent,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Draggable<ElementType>(
-        data: type,
-        feedback: const SizedBox.shrink(),
-        childWhenDragging: Opacity(
-          opacity: 0.35,
-          child: _buildPaletteCard(label, icon, accent),
-        ),
-        child: _buildPaletteCard(label, icon, accent),
-      ),
-    );
-  }
-
-  Widget _buildPaletteCard(String label, IconData icon, Color accent) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFF),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFDBEAFE)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: accent.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: accent, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontFamily: _fontFam,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: Color(0xFF0F172A),
-              ),
-            ),
-          ),
-          const Icon(
-            LucideIcons.gripVertical,
-            size: 18,
-            color: Color(0xFF94A3B8),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── TOP TABS ──────────────────────────────────────────────────────────────
-
-  Widget _buildHeaderSummary() {
-    final double progress = _totalCount == 0
-        ? 0.0
-        : (_assignedCount / _totalCount).clamp(0.0, 1.0).toDouble();
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Store Layout Designer',
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: Color(0xFF0F172A),
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            fontFamily: _fontFam,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '$_assignedCount of $_totalCount items assigned',
-              style: const TextStyle(
-                color: Color(0xFF64748B),
-                fontSize: 13,
-                fontWeight: FontWeight.normal,
-                fontFamily: _fontFam,
-              ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 100,
-              height: 4,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  backgroundColor: const Color(0xFFE2E8F0),
-                  valueColor: const AlwaysStoppedAnimation<Color>(_primaryBlue),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildModeTabs({bool inHeader = false}) {
-    return Container(
-      color: Colors.white,
-      padding: inHeader
-          ? EdgeInsets.zero
-          : const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: _buildTabButton(
-                MapMode.manage,
-                LucideIcons.pencil,
-                "Manage Layout",
-              ),
-            ),
-            Expanded(
-              child: _buildTabButton(
-                MapMode.selection,
-                LucideIcons.link,
-                "Assign Items",
-              ),
-            ),
-            Expanded(
-              child: _buildTabButton(MapMode.view, LucideIcons.eye, "Preview"),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabButton(MapMode mode, IconData icon, String label) {
-    final isSelected = _mode == mode;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _mode = mode;
-          if (mode != MapMode.manage) _manageSelected = null;
-          if (mode != MapMode.selection) _selectedItemId = null;
-        });
-      },
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? _primaryBlue : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: isSelected ? Colors.white : Colors.grey.shade600,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontFamily: _fontFam,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                color: isSelected ? Colors.white : Colors.grey.shade700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ─── ASSIGN SIDEBAR ────────────────────────────────────────────────────────
-
-  Widget _buildAssignSidebar() {
-    var items = widget.controller.allItems.toList();
-    final targets = _assignmentTargets;
-    bool isAssigned(InventoryItem item) => targets.containsKey(item.locationId);
-
-    // Filter Logic
-    if (_assignFilter == 'Unassigned') {
-      items = items.where((item) => !isAssigned(item)).toList();
-    } else if (_assignFilter == 'Assigned') {
-      items = items.where(isAssigned).toList();
-    }
-    if (_searchQuery.isNotEmpty) {
-      items = items
-          .where(
-            (i) => i.name.toLowerCase().contains(_searchQuery.toLowerCase()),
-          )
-          .toList();
-    }
-
-    // Sort: Unassigned first, then alphabetical
-    items.sort((a, b) {
-      if (!isAssigned(a) && isAssigned(b)) return -1;
-      if (isAssigned(a) && !isAssigned(b)) return 1;
-      return a.name.compareTo(b.name);
-    });
-
-    final unassignedCount = _totalCount - _assignedCount;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Text(
-            "ITEMS TO PLACE",
-            style: TextStyle(
-              color: Colors.grey.shade500,
-              fontSize: 12,
-              fontFamily: _fontFam,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.0,
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: TextField(
-            controller: _searchController,
-            style: const TextStyle(
-              color: Color(0xFF0F172A),
-              fontSize: 14,
-              fontFamily: _fontFam,
-            ),
-            decoration: InputDecoration(
-              hintText: 'Search items...',
-              hintStyle: TextStyle(
-                color: Colors.grey.shade400,
-                fontFamily: _fontFam,
-              ),
-              prefixIcon: Icon(
-                LucideIcons.search,
-                size: 18,
-                color: Colors.grey.shade500,
-              ),
-              filled: true,
-              fillColor: _lightBg,
-              contentPadding: const EdgeInsets.symmetric(
-                vertical: 0,
-                horizontal: 16,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-            ),
-            onChanged: (val) => setState(() => _searchQuery = val),
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Filters
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(child: _buildFilterPill('All', _totalCount)),
-              const SizedBox(width: 8),
-              Expanded(child: _buildFilterPill('Unassigned', unassignedCount)),
-              const SizedBox(width: 8),
-              Expanded(child: _buildFilterPill('Assigned', _assignedCount)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index];
-              final isSelected = _selectedItemId == item.id;
-              final assignedTarget = targets[item.locationId];
-              final isAssigned = assignedTarget != null;
-
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedItemId = isSelected ? null : item.id;
-                  });
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? _primaryBlue.withOpacity(0.05)
-                        : _lightBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected ? _primaryBlue : Colors.transparent,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      // Status Icon
-                      Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: isAssigned ? _primaryBlue : Colors.white,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isAssigned
-                                ? _primaryBlue
-                                : Colors.grey.shade300,
-                            width: 1.5,
-                          ),
-                        ),
-                        child: isAssigned
-                            ? const Icon(
-                                LucideIcons.check,
-                                size: 14,
-                                color: Colors.white,
-                              )
-                            : null,
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.name,
-                              style: TextStyle(
-                                color: const Color(0xFF0F172A),
-                                fontWeight: FontWeight.bold,
-                                fontFamily: _fontFam,
-                                fontSize: 14,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              assignedTarget == null
-                                  ? "Unassigned"
-                                  : assignedTarget.type == ElementType.rack
-                                  ? "Rack Assigned"
-                                  : "Shelf Assigned",
-                              style: TextStyle(
-                                color: isAssigned
-                                    ? _primaryBlue
-                                    : Colors.grey.shade500,
-                                fontSize: 12,
-                                fontFamily: _fontFam,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFilterPill(String label, int count) {
-    final isSelected = _assignFilter == label;
-    return GestureDetector(
-      onTap: () => setState(() => _assignFilter = label),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? _primaryBlue : _lightBg,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey.shade700,
-                fontSize: 11,
-                fontFamily: _fontFam,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              "$count",
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey.shade700,
-                fontSize: 13,
-                fontFamily: _fontFam,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ─── OVERLAYS ──────────────────────────────────────────────────────────────
-
-  Widget _buildWallVisibilityToggle() => Tooltip(
-    message: _hideWalls
-        ? 'Show walls'
-        : 'Hide walls to select objects behind them',
-    child: Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          if (!_hideWalls && _manageSelected?.type == ElementType.wall) {
-            _storeMapKey.currentState?.clearManageSelection();
-          }
-          setState(() => _hideWalls = !_hideWalls);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: _hideWalls ? const Color(0xFFEFF6FF) : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: _hideWalls ? _primaryBlue : const Color(0xFFDBEAFE),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _hideWalls ? LucideIcons.eye : LucideIcons.eyeOff,
-                size: 16,
-                color: _hideWalls ? _primaryBlue : const Color(0xFF475569),
-              ),
-              const SizedBox(width: 7),
-              Text(
-                _hideWalls ? 'Show walls' : 'Hide walls',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontFamily: _fontFam,
-                  fontWeight: FontWeight.w700,
-                  color: _hideWalls ? _primaryBlue : const Color(0xFF475569),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-
-  Widget _buildViewStyleToggle() => Container(
-    padding: const EdgeInsets.all(4),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFFDBEAFE)),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.08),
-          blurRadius: 12,
-          offset: const Offset(0, 3),
-        ),
-      ],
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _viewStyleButton(MapViewStyle.twoD, '2D', LucideIcons.map),
-        const SizedBox(width: 4),
-        _viewStyleButton(MapViewStyle.threeD, '3D', LucideIcons.box),
-      ],
-    ),
-  );
-
-  Widget _viewStyleButton(MapViewStyle style, String label, IconData icon) {
-    final selected = _viewStyle == style;
-    return Tooltip(
-      message: style == MapViewStyle.twoD
-          ? 'Flat 2D floor plan'
-          : 'Isometric 3D view',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            if (_viewStyle != style) setState(() => _viewStyle = style);
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-            decoration: BoxDecoration(
-              color: selected ? _primaryBlue : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  icon,
-                  size: 16,
-                  color: selected ? Colors.white : const Color(0xFF475569),
-                ),
-                const SizedBox(width: 7),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontFamily: _fontFam,
-                    fontWeight: FontWeight.w700,
-                    color: selected ? Colors.white : const Color(0xFF475569),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPreviewOverlays() {
-    return Stack(
-      children: [
-        Positioned(
-          top: 24,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(LucideIcons.eye, color: _primaryBlue, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    "Preview mode — view only, tap an item to see details",
-                    style: TextStyle(
-                      color: _primaryBlue,
-                      fontSize: 13,
-                      fontFamily: _fontFam,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAssignOverlayBanner() {
-    return Positioned(
-      top: 24,
-      left: 0,
-      right: 0,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Text(
-            _selectedAssignmentTargetId == null
-                ? "Tap a rack or shelf to link this item"
-                : "Current location highlighted. Tap another to move it.",
-            style: TextStyle(
-              color: _primaryBlue,
-              fontSize: 14,
-              fontFamily: _fontFam,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Shared hover behavior for desktop map-control buttons.
-class _HoverManageButton extends StatefulWidget {
-  final String label;
-  final IconData? icon;
-  final VoidCallback? onTap;
-  final bool destructive;
-  final double? width;
-  final double height;
-  const _HoverManageButton({
-    required this.label,
-    required this.onTap,
-    this.icon,
-    this.destructive = false,
-    this.width,
-    this.height = 36,
-  });
-  @override
-  State<_HoverManageButton> createState() => _HoverManageButtonState();
-}
-
-class _HoverManageButtonState extends State<_HoverManageButton> {
-  bool hover = false;
-  @override
-  Widget build(BuildContext context) {
-    final enabled = widget.onTap != null;
-    final fg = !enabled
-        ? const Color(0xFF94A3B8)
-        : widget.destructive
-        ? (hover ? Colors.white : const Color(0xFFDC2626))
-        : (hover ? Colors.white : const Color(0xFF1D4ED8));
-    return MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) {
-        if (enabled) setState(() => hover = true);
-      },
-      onExit: (_) => setState(() => hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          width: widget.width,
-          height: widget.height,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: !enabled
-                ? const Color(0xFFF1F5F9)
-                : widget.destructive
-                ? (hover ? const Color(0xFFDC2626) : const Color(0xFFFEF2F2))
-                : (hover ? const Color(0xFF2563EB) : const Color(0xFFEFF6FF)),
-            border: Border.all(
-              color: !enabled
-                  ? const Color(0xFFE2E8F0)
-                  : widget.destructive
-                  ? const Color(0xFFFECACA)
-                  : const Color(0xFFBFDBFE),
-            ),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (widget.icon != null) ...[
-                Icon(widget.icon, size: 15, color: fg),
-                const SizedBox(width: 6),
-              ],
-              Flexible(
-                child: Text(
-                  widget.label,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  style: TextStyle(
-                    color: fg,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: _fontFam,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

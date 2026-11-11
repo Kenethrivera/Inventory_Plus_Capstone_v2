@@ -16,6 +16,7 @@ declare
   v_snapshot record;
   v_request public.approval_requests;
   v_limit numeric;
+  v_max_approved numeric;
   v_reason text := nullif(trim(coalesce(p_reason, '')), '');
 begin
   select * into v_profile
@@ -34,11 +35,18 @@ begin
     p_checkout_token
   );
 
-  select coalesce(settings.cashier_auto_approved_discount_limit_pct, 10)
-    into v_limit
-  from public.store_settings settings
-  where settings.location_id = v_profile.location_id;
+  select coalesce(cashier.cashier_discount_limit_pct,
+                  settings.cashier_auto_approved_discount_limit_pct, 10),
+         coalesce(settings.max_approved_discount_pct, 25)
+    into v_limit, v_max_approved
+    from public.store_settings settings
+    left join public.profiles cashier on cashier.id = v_profile.profile_id
+   where settings.location_id = v_profile.location_id;
   v_limit := coalesce(v_limit, 10);
+  v_max_approved := coalesce(v_max_approved, 25);
+  if v_snapshot.effective_percentage > v_max_approved then
+    raise exception 'Discount exceeds the store maximum';
+  end if;
   if v_snapshot.effective_percentage <= v_limit then
     raise exception 'This discount is within the Cashier auto-approved limit';
   end if;

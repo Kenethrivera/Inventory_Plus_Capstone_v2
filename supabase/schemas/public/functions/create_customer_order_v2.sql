@@ -31,6 +31,8 @@ declare
   v_item record;
   v_new_quantity numeric;
   v_limit numeric;
+  v_max_approved numeric;
+  v_gcash_enabled boolean;
   v_requires_approval boolean;
   v_expected_total numeric;
 begin
@@ -90,11 +92,25 @@ begin
     raise exception 'Cart pricing changed. Review the discount and try again';
   end if;
 
-  select coalesce(settings.cashier_auto_approved_discount_limit_pct, 10)
-    into v_limit
-  from public.store_settings settings
-  where settings.location_id = v_profile.location_id;
+  select coalesce(cashier.cashier_discount_limit_pct,
+                  settings.cashier_auto_approved_discount_limit_pct, 10),
+         coalesce(settings.max_approved_discount_pct, 25),
+         coalesce(settings.gcash_enabled, true)
+    into v_limit, v_max_approved, v_gcash_enabled
+    from public.store_settings settings
+    left join public.profiles cashier on cashier.id = v_profile.profile_id
+   where settings.location_id = v_profile.location_id;
   v_limit := coalesce(v_limit, 10);
+  v_max_approved := coalesce(v_max_approved, 25);
+  v_gcash_enabled := coalesce(v_gcash_enabled, true);
+  if lower(trim(coalesce(p_payment_mode, ''))) = 'gcash'
+      and not v_gcash_enabled then
+    raise exception 'GCash payments are disabled for this store';
+  end if;
+  if v_profile.role <> 'admin'
+      and v_snapshot.effective_percentage > v_max_approved then
+    raise exception 'Discount exceeds the store maximum';
+  end if;
   v_requires_approval := v_profile.role <> 'admin'
     and v_snapshot.effective_percentage > v_limit;
 

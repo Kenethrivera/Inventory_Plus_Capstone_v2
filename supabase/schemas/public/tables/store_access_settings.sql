@@ -7,6 +7,7 @@ CREATE TABLE "public"."store_access_settings" (
   "staff_access_after_minutes"  integer                  NOT NULL DEFAULT 30,
   "restrict_staff_login"        boolean                  NOT NULL DEFAULT true,
   "allow_admin_anytime"         boolean                  NOT NULL DEFAULT true,
+  "weekly_hours"                jsonb                    NOT NULL DEFAULT '{}'::jsonb,
   "updated_at"                  timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT "store_access_settings_location_id_key" UNIQUE (location_id),
   CONSTRAINT "store_access_settings_pkey" PRIMARY KEY (id)

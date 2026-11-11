@@ -8,6 +8,7 @@ import '../data/ai_insights_service.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 import '../logic/forecasting_controller.dart';
+import 'widgets/app_styled_dropdown.dart';
 
 class ForecastingPage extends StatefulWidget {
   
@@ -463,41 +464,30 @@ class _ForecastingPageState extends State<ForecastingPage> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Container(
+                  SizedBox(
                     height: 36,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: _forecastingFilter,
-                        isDense: true,
-                        items: <String>['Season', 'Month'].map((String value) {
-                          return DropdownMenuItem<String>(
-                            value: value,
-                            child: Text(
-                              value,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
+                    child: AppStyledDropdown<String>(
+                      value: _forecastingFilter,
+                      isDense: true,
+                      items: <String>['Season', 'Month'].map((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(
+                            value,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
                             ),
-                          );
-                        }).toList(),
-                        onChanged: (newValue) {
-                          if (newValue != null &&
-                              newValue != _forecastingFilter) {
-                            setState(() => _forecastingFilter = newValue);
-                            _fetchForecast();
-                          }
-                        },
-                        icon: const Icon(
-                          Icons.arrow_drop_down,
-                          color: Colors.blue,
-                        ),
-                      ),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (newValue) {
+                        if (newValue != null &&
+                            newValue != _forecastingFilter) {
+                          setState(() => _forecastingFilter = newValue);
+                          _fetchForecast();
+                        }
+                      },
                     ),
                   ),
                 ],

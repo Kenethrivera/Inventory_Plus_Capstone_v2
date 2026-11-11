@@ -8,11 +8,11 @@ import '../logic/staff_performance.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/history_period_controls.dart';
 
-const _blue = Color(0xFF2563EB);
-const _ink = Color(0xFF0F172A);
-const _muted = Color(0xFF64748B);
-const _border = Color(0xFFE2E8F0);
-const _surface = Color(0xFFF8FAFC);
+const _accent = Color(0xFFC83D08);
+const _ink = Color(0xFF171717);
+const _muted = Color(0xFF817A75);
+const _border = Color(0xFFE6E1DC);
+const _surface = Color(0xFFF7F6F4);
 
 @immutable
 class StaffPerformanceRankedRecord {
@@ -59,10 +59,12 @@ class StaffPerformancePage extends StatefulWidget {
     super.key,
     required this.controller,
     required this.isActive,
+    this.embedded = false,
   });
 
   final InventoryController controller;
   final bool isActive;
+  final bool embedded;
 
   @override
   State<StaffPerformancePage> createState() => _StaffPerformancePageState();
@@ -176,12 +178,14 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
       color: _surface,
       child: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+          padding: EdgeInsets.fromLTRB(32, widget.embedded ? 28 : 32, 32, 48),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildHeader(),
-              const SizedBox(height: 20),
+              if (!widget.embedded) ...[
+                _buildHeader(),
+                const SizedBox(height: 28),
+              ],
               _buildControls(),
               const SizedBox(height: 18),
               if (_loading && _snapshot == null)
@@ -219,8 +223,8 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
                 'Staff Performance',
                 style: TextStyle(
                   color: _ink,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 23,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               SizedBox(height: 5),
@@ -234,7 +238,7 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
         IconButton(
           tooltip: 'How performance is calculated',
           onPressed: _showFormula,
-          icon: const Icon(Icons.info_outline, color: _blue),
+          icon: const Icon(Icons.info_outline, color: _accent),
         ),
       ],
     );
@@ -258,7 +262,17 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
           label: (value) => value.label,
           onSelected: (mode) => _changePeriod(_period.withMode(mode)),
         ),
-        HistoryPeriodControls(selection: _period, onChanged: _changePeriod),
+        HistoryPeriodControls(
+          selection: _period,
+          onChanged: _changePeriod,
+          warmPalette: true,
+        ),
+        if (widget.embedded)
+          IconButton(
+            tooltip: 'How performance is calculated',
+            onPressed: _showFormula,
+            icon: const Icon(Icons.info_outline, color: _accent),
+          ),
       ],
     );
   }
@@ -462,10 +476,10 @@ class _ChoiceGroup<T> extends StatelessWidget {
                 showCheckmark: false,
                 visualDensity: VisualDensity.compact,
                 side: BorderSide.none,
-                selectedColor: const Color(0xFFDBEAFE),
+                selectedColor: const Color(0xFFFFEDE5),
                 backgroundColor: Colors.transparent,
                 labelStyle: TextStyle(
-                  color: selected == value ? _blue : _muted,
+                  color: selected == value ? _accent : _muted,
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                 ),
@@ -508,10 +522,10 @@ class _MetricCard extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: const Color(0xFFFFF1E8),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: _blue, size: 20),
+                child: Icon(icon, color: _accent, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -529,8 +543,8 @@ class _MetricCard extends StatelessWidget {
                       value,
                       style: const TextStyle(
                         color: _ink,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
@@ -650,7 +664,7 @@ class _PerformanceTable extends StatelessWidget {
                         onPressed: () => onView(record!),
                         icon: const Icon(Icons.visibility_outlined, size: 18),
                         visualDensity: VisualDensity.compact,
-                        color: _blue,
+                        color: _accent,
                       ),
                     )
                   : Padding(
@@ -745,7 +759,7 @@ class _PerformanceCard extends StatelessWidget {
                   tooltip: 'View details',
                   onPressed: onView,
                   icon: const Icon(Icons.visibility_outlined, size: 19),
-                  color: _blue,
+                  color: _accent,
                 ),
               ],
             ),
@@ -911,7 +925,7 @@ Future<void> showStaffMetricExplanation(
     context: context,
     builder: (context) => AppDialog(
       icon: Icons.info_outline,
-      color: _blue,
+      color: _accent,
       title: explanation.title,
       subtitle: 'Metric explanation',
       maxWidth: 560,
@@ -1108,9 +1122,9 @@ class _ExplanationResult extends StatelessWidget {
     margin: const EdgeInsets.only(bottom: 14),
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
-      color: const Color(0xFFEFF6FF),
+      color: const Color(0xFFFFF1E8),
       borderRadius: BorderRadius.circular(9),
-      border: Border.all(color: const Color(0xFFBFDBFE)),
+      border: Border.all(color: const Color(0xFFF3C9B8)),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1118,7 +1132,7 @@ class _ExplanationResult extends StatelessWidget {
         const Text(
           'Result',
           style: TextStyle(
-            color: _blue,
+            color: _accent,
             fontSize: 11,
             fontWeight: FontWeight.w900,
           ),
@@ -1162,7 +1176,7 @@ class _ExplanationScoreEffect extends StatelessWidget {
       Text(
         effect,
         style: const TextStyle(
-          color: _blue,
+          color: _accent,
           fontSize: 12,
           fontWeight: FontWeight.w900,
         ),

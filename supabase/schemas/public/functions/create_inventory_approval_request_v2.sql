@@ -61,23 +61,31 @@ begin
   if p_quantity is null or p_quantity <= 0 then
     raise exception 'Quantity must be greater than 0';
   end if;
-  select upload.* into v_upload
-  from private.approval_evidence_uploads upload
-  where upload.storage_path = v_proof_path
-    and upload.location_id = v_profile.location_id
-    and upload.requested_by_id = v_profile.profile_id
-    and upload.file_name = v_proof_name
-    and upload.mime_type = v_proof_mime
-    and upload.expires_at > now()
-    and upload.cleanup_claimed_at is null
-  for update;
-  if not found then raise exception 'Valid uploaded photo evidence is required'; end if;
-  if not exists (
-    select 1 from storage.objects evidence
-    where evidence.bucket_id = 'approval_evidence'
-      and evidence.name = v_upload.storage_path
-  ) then
-    raise exception 'Uploaded proof image was not found';
+  if v_type = 'write_off' and v_proof_path is null then
+    raise exception 'Photo evidence is required for write-off requests';
+  end if;
+  if v_proof_path is not null or v_proof_name is not null or v_proof_mime is not null then
+    if v_proof_path is null or v_proof_name is null or v_proof_mime is null then
+      raise exception 'Photo evidence details are incomplete';
+    end if;
+    select upload.* into v_upload
+    from private.approval_evidence_uploads upload
+    where upload.storage_path = v_proof_path
+      and upload.location_id = v_profile.location_id
+      and upload.requested_by_id = v_profile.profile_id
+      and upload.file_name = v_proof_name
+      and upload.mime_type = v_proof_mime
+      and upload.expires_at > now()
+      and upload.cleanup_claimed_at is null
+    for update;
+    if not found then raise exception 'Valid uploaded photo evidence is required'; end if;
+    if not exists (
+      select 1 from storage.objects evidence
+      where evidence.bucket_id = 'approval_evidence'
+        and evidence.name = v_upload.storage_path
+    ) then
+      raise exception 'Uploaded proof image was not found';
+    end if;
   end if;
 
   select product.id, product.location_id, product.product_name, product.sku,
@@ -108,11 +116,13 @@ begin
     v_profile.profile_name, v_profile.role, v_product.id,
     v_product.product_name, coalesce(v_product.sku, ''), v_product.unit,
     p_quantity, v_product.product_quantity, v_reason, v_note,
-    v_upload.storage_path, v_upload.file_name, v_upload.mime_type,
+    v_proof_path, v_proof_name, v_proof_mime,
     v_operation_id
   ) returning * into v_request;
 
-  delete from private.approval_evidence_uploads where id = v_upload.id;
+  if v_proof_path is not null then
+    delete from private.approval_evidence_uploads where id = v_upload.id;
+  end if;
   perform private.upsert_inventory_approval_notification_v1(v_request);
   return private.approval_request_json_v1(v_request);
 end;

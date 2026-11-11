@@ -47,9 +47,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   StreamSubscription<void>? _transactionHistorySubscription;
   List<Map<String, dynamic>> _transactionHistory = [];
   final ValueNotifier<List<Map<String, dynamic>>> _transactionHistoryNotifier =
-      ValueNotifier<List<Map<String, dynamic>>>(
-        const <Map<String, dynamic>>[],
-      );
+      ValueNotifier<List<Map<String, dynamic>>>(const <Map<String, dynamic>>[]);
   bool _isLoadingHistory = true;
   bool _isClosing = false;
 
@@ -58,7 +56,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
   bool _isSaving = false;
   bool get _isDisabled => widget.controller.isDisabled(_currentItem.id);
-  
+
   String? _newImageUrl;
   XFile? _selectedImage;
   final ImagePicker _picker = ImagePicker();
@@ -120,8 +118,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   void _resolveCurrentItem() {
     if (!mounted || _isClosing) return;
 
-    final InventoryItem? latest =
-        widget.controller.findAnyItemById(_currentItem.id);
+    final InventoryItem? latest = widget.controller.findAnyItemById(
+      _currentItem.id,
+    );
 
     if (latest == null) {
       _isClosing = true;
@@ -494,11 +493,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   }
 
   Future<void> _handleSave() async {
-
     if (!_validate()) {
-    _toast('Please fix the highlighted fields', isError: true);
-    return;
-  }
+      _toast('Please fix the highlighted fields', isError: true);
+      return;
+    }
 
     setState(() => _isSaving = true);
 
@@ -507,7 +505,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
       if (_newImageUrl != null && _newImageUrl != _currentItem.imageUrl) {
         if (_newImageUrl!.isEmpty) {
-           finalImageUrl = '';
+          finalImageUrl = '';
         } else if (!_newImageUrl!.startsWith('http')) {
           final String fileName = _nameController.text.isNotEmpty
               ? '${_nameController.text}_image.jpg'
@@ -540,13 +538,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         newSku: _skuController.text,
         newPrice: _priceController.text,
         newStock: _stockController.text,
-        newMaxStock: _currentItem.maxQuantity.toString(), // Passes existing back safely
+        newMaxStock: _currentItem.maxQuantity
+            .toString(), // Passes existing back safely
         newDesc: _descController.text,
         manufacturer: _manufacturerController.text,
         model: _modelController.text,
         productSize: _sizeController.text,
-        shelfLevel: _currentItem.shelfLevel ?? '', // Passes existing back safely
-        binNumber: _currentItem.binNumber ?? '', // Passes existing back safely
+        shelfLevel:
+            _currentItem.shelfLevel ?? '', // Passes existing back safely
         imageUrl: finalImageUrl,
       );
 
@@ -588,7 +587,6 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   String _fmt(double v) =>
       v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
 
-  
   bool _validate() {
     final errors = <String, String>{};
     if (_nameController.text.trim().isEmpty)
@@ -723,7 +721,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             icon: const Icon(LucideIcons.check, color: Colors.greenAccent),
             onPressed: _handleSave,
           )
-        else if (widget.controller.currentUserRole?.toLowerCase() == 'admin' && !_isDisabled)
+        else if (widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
+            !_isDisabled)
           IconButton(
             icon: const Icon(LucideIcons.pencil, color: Colors.white, size: 20),
             onPressed: () => setState(() => _isEditing = true),
@@ -799,15 +798,15 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     final imageUrl = _newImageUrl ?? _currentItem.imageUrl;
 
     if (imageUrl.isEmpty) {
-  return Container(
-    color: Colors.grey.shade200,
-    child: const Icon(
-      Icons.image_not_supported,
-      color: Colors.grey,
-      size: 50,
-    ),
-  );
-}
+      return Container(
+        color: Colors.grey.shade200,
+        child: const Icon(
+          Icons.image_not_supported,
+          color: Colors.grey,
+          size: 50,
+        ),
+      );
+    }
 
     if (kIsWeb || imageUrl.startsWith('http')) {
       return Image.network(
@@ -845,7 +844,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     Color color,
     TextEditingController controller, {
     String? errorKey,
-    bool isReadOnly = false
+    bool isReadOnly = false,
   }) {
     final error = errorKey == null ? null : _errors[errorKey];
     return Expanded(
@@ -870,7 +869,11 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 children: [
                   Text(
                     label.toUpperCase(),
-                    style: const TextStyle(fontSize: 10, color: Colors.grey, fontFamily: _fontFam),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey,
+                      fontFamily: _fontFam,
+                    ),
                   ),
                   if (_isEditing && error != null)
                     Padding(
@@ -936,7 +939,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               SizedBox(width: 8),
               Text(
                 "Specifications",
-                style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontFamily: _fontFam,
+                ),
               ),
             ],
           ),
@@ -989,7 +995,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               SizedBox(width: 8),
               Text(
                 "Inventory Info",
-                style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontFamily: _fontFam,
+                ),
               ),
             ],
           ),
@@ -1001,7 +1010,12 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             errorKey: 'name',
           ),
           const SizedBox(height: 16),
-          _buildField("SKU", _skuController, _currentItem.sku, isReadOnly: true),
+          _buildField(
+            "SKU",
+            _skuController,
+            _currentItem.sku,
+            isReadOnly: true,
+          ),
           const SizedBox(height: 16),
           _buildField(
             "Description",
@@ -1013,8 +1027,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       ),
     );
   }
+
   Widget _buildLocationMapBox() {
-    final hasLocation = _currentItem.locationId != null && _currentItem.locationId!.isNotEmpty;
+    final hasLocation =
+        _currentItem.locationId != null && _currentItem.locationId!.isNotEmpty;
 
     return Container(
       width: double.infinity,
@@ -1037,7 +1053,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                     SizedBox(width: 8),
                     Text(
                       "Store Location",
-                      style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontFamily: _fontFam,
+                      ),
                     ),
                   ],
                 ),
@@ -1045,7 +1064,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   TextButton(
                     onPressed: _showFullscreenMap,
                     style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
@@ -1061,7 +1083,11 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                           ),
                         ),
                         SizedBox(width: 4),
-                        Icon(LucideIcons.maximize, size: 14, color: _primaryBlue),
+                        Icon(
+                          LucideIcons.maximize,
+                          size: 14,
+                          color: _primaryBlue,
+                        ),
                       ],
                     ),
                   ),
@@ -1090,7 +1116,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
               child: StoreMap(
                 controller: widget.controller,
                 mode: MapMode.view,
-                selectedItemId: _currentItem.id, // Auto-opens the specific item's location
+                selectedItemId:
+                    _currentItem.id, // Auto-opens the specific item's location
                 fitEntireMap: true,
                 compactZoomControls: true,
               ),
@@ -1123,7 +1150,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   SizedBox(width: 8),
                   Text(
                     "Transaction History",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontFamily: _fontFam,
+                    ),
                   ),
                 ],
               ),
@@ -1214,11 +1244,19 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       ),
       title: Text(
         "${isPositive ? '+' : ''}$quantityChange  •  ${type.replaceAll('_', ' ').capitalize()}",
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: _fontFam),
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+          fontFamily: _fontFam,
+        ),
       ),
       subtitle: Text(
         "By $userName  •  $formattedDate",
-        style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontFamily: _fontFam),
+        style: TextStyle(
+          fontSize: 11,
+          color: Colors.grey.shade500,
+          fontFamily: _fontFam,
+        ),
       ),
       trailing: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1228,7 +1266,11 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         ),
         child: Text(
           "Qty: ${transaction['new_quantity']}",
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, fontFamily: _fontFam),
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            fontFamily: _fontFam,
+          ),
         ),
       ),
     );
@@ -1349,7 +1391,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey, fontFamily: _fontFam)),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.grey,
+            fontFamily: _fontFam,
+          ),
+        ),
         (_isEditing && !isReadOnly)
             ? TextField(
                 controller: controller,
@@ -1390,23 +1439,56 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   }
 
   Widget _buildBottomActions() {
-  final role = widget.controller.currentUserRole?.toLowerCase();
-  final isAdmin = role == 'admin';
-  final canRequest = role == 'helper' || role == 'staff' || role == 'cashier';
-  final disabled = _isDisabled;
+    final role = widget.controller.currentUserRole?.toLowerCase();
+    final isAdmin = role == 'admin';
+    final canRequest = role == 'helper' || role == 'staff' || role == 'cashier';
+    final disabled = _isDisabled;
 
-  final buttons = <Widget>[];
+    final buttons = <Widget>[];
 
-  if (!disabled) {
-    // Active item
-    if (canRequest) {
+    if (!disabled) {
+      // Active item
+      if (canRequest) {
+        buttons.add(
+          ElevatedButton.icon(
+            onPressed: _showRestockDialog,
+            icon: const Icon(LucideIcons.plus, size: 18),
+            label: const Text(
+              "Request Restock",
+              style: TextStyle(fontFamily: _fontFam),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primaryBlue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+        );
+        buttons.add(
+          OutlinedButton.icon(
+            onPressed: _currentItem.quantity > 0 ? _showWriteOffDialog : null,
+            icon: const Icon(LucideIcons.packageMinus, size: 18),
+            label: const Text(
+              "Request Write-off",
+              style: TextStyle(fontFamily: _fontFam),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red,
+              side: const BorderSide(color: Colors.red),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+        );
+      }
+    } else if (isAdmin) {
+      // Legacy inactive item compatibility actions.
       buttons.add(
         ElevatedButton.icon(
-          onPressed: _showRestockDialog,
-          icon: const Icon(LucideIcons.plus, size: 18),
-          label: const Text("Request Restock", style: TextStyle(fontFamily: _fontFam)),
+          onPressed: _restoreItem,
+          icon: const Icon(LucideIcons.rotateCcw, size: 18),
+          label: const Text("Restore", style: TextStyle(fontFamily: _fontFam)),
           style: ElevatedButton.styleFrom(
-            backgroundColor: _primaryBlue,
+            backgroundColor: Colors.green,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
@@ -1414,9 +1496,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       );
       buttons.add(
         OutlinedButton.icon(
-          onPressed: _currentItem.quantity > 0 ? _showWriteOffDialog : null,
-          icon: const Icon(LucideIcons.packageMinus, size: 18),
-          label: const Text("Request Write-off", style: TextStyle(fontFamily: _fontFam)),
+          onPressed: _showDeleteDialog,
+          icon: const Icon(LucideIcons.trash2, size: 18),
+          label: const Text("Delete", style: TextStyle(fontFamily: _fontFam)),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.red,
             side: const BorderSide(color: Colors.red),
@@ -1425,57 +1507,31 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         ),
       );
     }
-  } else if (isAdmin) {
-    // Legacy inactive item compatibility actions.
-    buttons.add(
-      ElevatedButton.icon(
-        onPressed: _restoreItem,
-        icon: const Icon(LucideIcons.rotateCcw, size: 18),
-        label: const Text("Restore", style: TextStyle(fontFamily: _fontFam)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
+
+    if (buttons.isEmpty) return const SizedBox.shrink();
+
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Colors.grey.shade200)),
         ),
-      ),
-    );
-    buttons.add(
-      OutlinedButton.icon(
-        onPressed: _showDeleteDialog,
-        icon: const Icon(LucideIcons.trash2, size: 18),
-        label: const Text("Delete", style: TextStyle(fontFamily: _fontFam)),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.red,
-          side: const BorderSide(color: Colors.red),
-          padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          children: [
+            for (var i = 0; i < buttons.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(child: buttons[i]),
+            ],
+          ],
         ),
       ),
     );
   }
 
-  if (buttons.isEmpty) return const SizedBox.shrink();
-
-  return Positioned(
-    bottom: 0,
-    left: 0,
-    right: 0,
-    child: Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
-      ),
-      child: Row(
-        children: [
-          for (var i = 0; i < buttons.length; i++) ...[
-            if (i > 0) const SizedBox(width: 8),
-            Expanded(child: buttons[i]),
-          ],
-        ],
-      ),
-    ),
-  );
-}
   Future<void> _restoreItem() async {
     final overlay = Overlay.of(context, rootOverlay: true);
     final name = _currentItem.name;
@@ -1501,7 +1557,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         icon: LucideIcons.trash2,
         color: Colors.red,
         title: 'Delete permanently?',
-        subtitle: "This permanently removes the legacy inactive item. Its past sales will show as Deleted item in the dashboard and activity log.",
+        subtitle:
+            "This permanently removes the legacy inactive item. Its past sales will show as Deleted item in the dashboard and activity log.",
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -1520,7 +1577,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             icon: const Icon(LucideIcons.trash2, size: 16),
             label: const Text(
               'Delete',
-              style: TextStyle(fontWeight: FontWeight.bold, fontFamily: _fontFam),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontFamily: _fontFam,
+              ),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
@@ -1559,7 +1619,11 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   const SizedBox(height: 4),
                   Text(
                     '${_currentItem.sku}  •  ${_fmt(_currentItem.quantity)} ${_currentItem.unit} in stock',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontFamily: _fontFam),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                      fontFamily: _fontFam,
+                    ),
                   ),
                 ],
               ),
@@ -1567,7 +1631,11 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             const SizedBox(height: 14),
             Text(
               'This permanently removes the item from your inventory.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700, fontFamily: _fontFam),
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+                fontFamily: _fontFam,
+              ),
             ),
           ],
         ),
@@ -1613,18 +1681,26 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             children: [
               Container(
                 color: const Color(0xFF0F172A),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       'Location: ${_currentItem.name}',
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: _fontFam),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: _fontFam,
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.close, color: Colors.white),
                       onPressed: () => Navigator.pop(dialogContext),
-                    )
+                    ),
                   ],
                 ),
               ),
@@ -1632,7 +1708,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 child: StoreMap(
                   controller: widget.controller,
                   mode: MapMode.view,
-                  selectedItemId: _currentItem.id, // Auto-opens the specific item's location
+                  selectedItemId: _currentItem
+                      .id, // Auto-opens the specific item's location
                   fitEntireMap: true,
                 ),
               ),

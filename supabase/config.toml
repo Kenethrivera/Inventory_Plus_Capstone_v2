@@ -3,3 +3,6 @@
 schema_paths = [
   "schemas",
 ]
+
+[functions.password-recovery]
+verify_jwt = false

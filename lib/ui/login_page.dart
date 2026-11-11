@@ -25,7 +25,7 @@ class _LoginPageState extends State<LoginPage> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
-  
+
   final _usernameFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
 
@@ -264,19 +264,36 @@ class _LoginPageState extends State<LoginPage> {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          title, 
-          style: const TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Outfit')
+          title,
+          style: const TextStyle(
+            color: Color(0xFF0F172A),
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Outfit',
+          ),
         ),
         content: SingleChildScrollView(
           child: Text(
-            content, 
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 13, height: 1.5, fontFamily: 'Outfit')
+            content,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 13,
+              height: 1.5,
+              fontFamily: 'Outfit',
+            ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("Close", style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold, fontFamily: 'Outfit')),
+            child: const Text(
+              "Close",
+              style: TextStyle(
+                color: Color(0xFF2563EB),
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Outfit',
+              ),
+            ),
           ),
         ],
       ),
@@ -315,12 +332,16 @@ class _LoginPageState extends State<LoginPage> {
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade50, // Light blue rounded square
+                          color:
+                              Colors.blue.shade50, // Light blue rounded square
                           borderRadius: BorderRadius.circular(16),
                         ),
                         // Note: Used a blue icon to perfectly match your screenshot reference!
-                        child: Icon(LucideIcons.package,
-                            color: Colors.blue.shade600, size: 40),
+                        child: Icon(
+                          LucideIcons.package,
+                          color: Colors.blue.shade600,
+                          size: 40,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -331,8 +352,8 @@ class _LoginPageState extends State<LoginPage> {
                           color: Color(0xFF0F172A),
                           fontSize: 24,
                           fontWeight: FontWeight.w800,
-                          fontFamily: 'Outfit'
-                        )
+                          fontFamily: 'Outfit',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -340,10 +361,10 @@ class _LoginPageState extends State<LoginPage> {
                       child: Text(
                         "Hardware Management System",
                         style: TextStyle(
-                          color: Colors.grey.shade500, 
+                          color: Colors.grey.shade500,
                           fontSize: 13,
-                          fontFamily: 'Outfit'
-                        )
+                          fontFamily: 'Outfit',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 40),
@@ -390,12 +411,15 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 16),
                     ],
 
-                    const Text("Username",
-                        style: TextStyle(
-                            color: Color(0xFF0F172A),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            fontFamily: 'Outfit')),
+                    const Text(
+                      "Username",
+                      style: TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Outfit',
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     _buildTextField(
                       controller: _usernameController,
@@ -403,18 +427,22 @@ class _LoginPageState extends State<LoginPage> {
                       icon: LucideIcons.user,
                       isPassword: false,
                       focusNode: _usernameFocusNode,
-                      onSubmitted: (_) =>
-                          FocusScope.of(context).requestFocus(_passwordFocusNode),
+                      onSubmitted: (_) => FocusScope.of(
+                        context,
+                      ).requestFocus(_passwordFocusNode),
                     ),
 
                     const SizedBox(height: 20),
 
-                    const Text("Password",
-                        style: TextStyle(
-                            color: Color(0xFF0F172A),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            fontFamily: 'Outfit')),
+                    const Text(
+                      "Password",
+                      style: TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Outfit',
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     _buildTextField(
                       controller: _passwordController,
@@ -427,12 +455,15 @@ class _LoginPageState extends State<LoginPage> {
                           : (_) => _handleLogin(),
                       suffix: IconButton(
                         icon: Icon(
-                          _isPasswordVisible ? LucideIcons.eyeOff : LucideIcons.eye,
+                          _isPasswordVisible
+                              ? LucideIcons.eyeOff
+                              : LucideIcons.eye,
                           color: Colors.grey.shade500,
                           size: 18,
                         ),
                         onPressed: () => setState(
-                            () => _isPasswordVisible = !_isPasswordVisible),
+                          () => _isPasswordVisible = !_isPasswordVisible,
+                        ),
                       ),
                     ),
 
@@ -447,13 +478,15 @@ class _LoginPageState extends State<LoginPage> {
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        child: const Text("Forgot password?",
-                            style: TextStyle(
-                              color: Color(0xFF2563EB), 
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              fontFamily: 'Outfit'
-                            )),
+                        child: const Text(
+                          "Forgot password?",
+                          style: TextStyle(
+                            color: Color(0xFF2563EB),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Outfit',
+                          ),
+                        ),
                       ),
                     ),
 
@@ -467,10 +500,13 @@ class _LoginPageState extends State<LoginPage> {
                             ? null
                             : _handleLogin,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB), // Solid blue
+                          backgroundColor: const Color(
+                            0xFF2563EB,
+                          ), // Solid blue
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           elevation: 0,
                         ),
                         child: _isLoading
@@ -478,15 +514,21 @@ class _LoginPageState extends State<LoginPage> {
                                 height: 20,
                                 width: 20,
                                 child: CircularProgressIndicator(
-                                    color: Colors.white, strokeWidth: 2))
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
                             : const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Text("Sign In",
-                                      style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w700,
-                                          fontFamily: 'Outfit')),
+                                  Text(
+                                    "Sign In",
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      fontFamily: 'Outfit',
+                                    ),
+                                  ),
                                   SizedBox(width: 8),
                                   Icon(LucideIcons.arrowRight, size: 18),
                                 ],
@@ -509,11 +551,24 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           onPressed: () => _showPolicyDialog(
                             "Terms of Service",
-                            "By accessing and using Inventory Plus, you accept and agree to be bound by the terms and provisions of this agreement.\n\nAny participation in this service will constitute acceptance of this agreement. These terms are governed by the laws of the Republic of the Philippines."
+                            "By accessing and using Inventory Plus, you accept and agree to be bound by the terms and provisions of this agreement.\n\nAny participation in this service will constitute acceptance of this agreement. These terms are governed by the laws of the Republic of the Philippines.",
                           ),
-                          child: Text("Terms of Service", style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontFamily: 'Outfit')),
+                          child: Text(
+                            "Terms of Service",
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 12,
+                              fontFamily: 'Outfit',
+                            ),
+                          ),
                         ),
-                        Text("   •   ", style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                        Text(
+                          "   •   ",
+                          style: TextStyle(
+                            color: Colors.grey.shade400,
+                            fontSize: 12,
+                          ),
+                        ),
                         TextButton(
                           style: TextButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -522,9 +577,16 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           onPressed: () => _showPolicyDialog(
                             "Privacy Policy",
-                            "Inventory Plus is committed to protecting your personal information. \n\nWe process your data in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines. We collect, use, and store your data solely for inventory management and system authentication purposes."
+                            "Inventory Plus is committed to protecting your personal information. \n\nWe process your data in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines. We collect, use, and store your data solely for inventory management and system authentication purposes.",
                           ),
-                          child: Text("Privacy Policy", style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontFamily: 'Outfit')),
+                          child: Text(
+                            "Privacy Policy",
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 12,
+                              fontFamily: 'Outfit',
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -548,12 +610,16 @@ class _LoginPageState extends State<LoginPage> {
     Widget? suffix,
   }) {
     final isFocused = focusNode.hasFocus;
-    
+
     return TextFormField(
       controller: controller,
       obscureText: isPassword && !_isPasswordVisible,
       focusNode: focusNode,
-      style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontFamily: 'Outfit'),
+      style: const TextStyle(
+        color: Color(0xFF0F172A),
+        fontSize: 14,
+        fontFamily: 'Outfit',
+      ),
       validator: (value) {
         final text = value?.trim() ?? '';
         if (text.isEmpty) {
@@ -576,15 +642,22 @@ class _LoginPageState extends State<LoginPage> {
         filled: true,
         fillColor: isFocused ? Colors.white : Colors.grey.shade50,
         border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade200)),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade200),
+        ),
         enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade200)),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade200),
+        ),
         focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5)),
-        errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12, fontFamily: 'Outfit'),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+        ),
+        errorStyle: const TextStyle(
+          color: Colors.redAccent,
+          fontSize: 12,
+          fontFamily: 'Outfit',
+        ),
         contentPadding: const EdgeInsets.symmetric(vertical: 16),
       ),
     );
@@ -963,15 +1036,17 @@ class _LoginPageState extends State<LoginPage> {
 // ─── Forgot Password Modal ───────────────────────────────────────────────────
 
 class ForgotPasswordModal extends StatefulWidget {
-  const ForgotPasswordModal({super.key});
+  const ForgotPasswordModal({super.key, this.authService, this.now});
+
+  final AuthService? authService;
+  final DateTime Function()? now;
 
   @override
   State<ForgotPasswordModal> createState() => _ForgotPasswordModalState();
 }
 
-class _ForgotPasswordModalState extends State<ForgotPasswordModal>
-     {
-  final _authService = AuthService();
+class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
+  late final AuthService _authService = widget.authService ?? AuthService();
   final _controller = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
@@ -979,17 +1054,103 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
   final _focusNode2 = FocusNode();
 
   int _step = 0; // 0: username, 1: OTP, 2: new password
+  String _recoveryChannel = 'email';
+  String? _recoveryChallengeId;
+  String? _recoveryResetToken;
+  String? _recoveryUsername;
   String? _email;
   String? _generatedOtp;
+  DateTime? _otpExpiresAt;
+  DateTime? _resendAvailableAt;
+  Timer? _otpTimer;
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
 
   static const _blue = Color(0xFF2563EB);
+  static const _otpLifetime = Duration(minutes: 10);
+  static const _resendCooldown = Duration(minutes: 1);
+
+  DateTime get _now => widget.now?.call() ?? DateTime.now();
+
+  int _secondsUntil(DateTime? deadline) {
+    if (deadline == null) return 0;
+    final milliseconds = deadline.difference(_now).inMilliseconds;
+    return milliseconds <= 0 ? 0 : (milliseconds + 999) ~/ 1000;
+  }
+
+  String _clockText(int seconds) =>
+      '${(seconds ~/ 60).toString().padLeft(2, '0')}:'
+      '${(seconds % 60).toString().padLeft(2, '0')}';
+
+  void _startOtpClock(DateTime requestedAt) {
+    _otpTimer?.cancel();
+    _otpExpiresAt = requestedAt.add(_otpLifetime);
+    _resendAvailableAt = requestedAt.add(_resendCooldown);
+    _otpTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _step == 1) setState(() {});
+    });
+  }
+
+  Future<void> _resendOtp() async {
+    final username = _recoveryUsername;
+    if (_isLoading ||
+        _step != 1 ||
+        _secondsUntil(_resendAvailableAt) > 0 ||
+        username == null) {
+      return;
+    }
+    setState(() => _isLoading = true);
+    final requestedAt = _now;
+    try {
+      if (_recoveryChannel == 'sms') {
+        final challengeId = await _authService.requestPasswordRecovery(
+          username,
+          'sms',
+        );
+        if (!mounted) return;
+        setState(() {
+          _recoveryChallengeId = challengeId;
+          _recoveryResetToken = null;
+          _controller.clear();
+          _startOtpClock(requestedAt);
+        });
+      } else {
+        final email = _email;
+        final code = email == null
+            ? null
+            : (100000 + Random().nextInt(900000)).toString();
+        if (email != null && code != null) {
+          await _sendRecoveryEmail(email, code);
+        }
+        if (!mounted) return;
+        setState(() {
+          _generatedOtp = code;
+          _controller.clear();
+          _startOtpClock(requestedAt);
+        });
+      }
+      AppToast.success(context, 'If eligible, a new code has been sent.');
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Password recovery resend failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        AppToast.error(
+          context,
+          AppErrorMapper.message(error, fallback: AppErrorCategory.server),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   final _stepTitles = ["Reset password", "Enter OTP", "New password"];
   final _stepSubtitles = [
-    "Enter your admin username to receive an OTP.",
+    "Enter your admin username and choose how to receive a code.",
     "If this account is eligible for password recovery, further instructions will be provided.",
     "Pick a strong password to keep your account secure.",
   ];
@@ -1008,12 +1169,12 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
       _controller.text.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'));
 
   int get _metCount => [
-        _hasMinLength,
-        _hasUppercase,
-        _hasLowercase,
-        _hasDigit,
-        _hasSymbol,
-      ].where((e) => e).length;
+    _hasMinLength,
+    _hasUppercase,
+    _hasLowercase,
+    _hasDigit,
+    _hasSymbol,
+  ].where((e) => e).length;
 
   bool get _allMet => _metCount == 5;
 
@@ -1027,6 +1188,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
 
   @override
   void dispose() {
+    _otpTimer?.cancel();
     // WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     _confirmPasswordController.dispose();
@@ -1055,7 +1217,8 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
     if (username.isEmpty) return '*@$domain';
     if (username.length <= 2) return '${username[0]}*@$domain';
 
-    final masked = username[0] +
+    final masked =
+        username[0] +
         '*' * (username.length - 2) +
         username[username.length - 1];
     return '$masked@$domain';
@@ -1080,25 +1243,32 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
                   color: Colors.blue.shade50,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(LucideIcons.userX,
-                    color: Colors.blue.shade600, size: 32),
+                child: Icon(
+                  LucideIcons.userX,
+                  color: Colors.blue.shade600,
+                  size: 32,
+                ),
               ),
               const SizedBox(height: 16),
-              const Text("Contact Your Administrator",
-                  style: TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'Outfit')),
+              const Text(
+                "Contact Your Administrator",
+                style: TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Outfit',
+                ),
+              ),
               const SizedBox(height: 8),
               Text(
                 "Staff accounts cannot reset their password here. Please contact your admin to reset your password.",
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 13,
-                    height: 1.5,
-                    fontFamily: 'Outfit'),
+                  color: Colors.grey.shade600,
+                  fontSize: 13,
+                  height: 1.5,
+                  fontFamily: 'Outfit',
+                ),
               ),
               const SizedBox(height: 24),
               SizedBox(
@@ -1109,13 +1279,18 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
                     backgroundColor: _blue,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text("Got it",
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, fontFamily: 'Outfit')),
+                  child: const Text(
+                    "Got it",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Outfit',
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -1133,28 +1308,68 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
 
     try {
       if (_step == 0) {
-        final isAdmin = await _authService.isAdminUser(input);
-        final email = await _authService.getEmailFromUsername(input);
-        final eligibleEmail = isAdmin ? email : null;
-        final otp = eligibleEmail == null
-            ? null
-            : (100000 + Random().nextInt(900000)).toString();
-
-        setState(() {
-          _email = eligibleEmail;
-          _generatedOtp = otp;
-          _step = 1;
-          _controller.clear();
-        });
-        if (eligibleEmail != null && otp != null) {
-          unawaited(_sendRecoveryOtp(eligibleEmail, otp));
+        final requestedAt = _now;
+        if (_recoveryChannel == 'sms') {
+          final challengeId = await _authService.requestPasswordRecovery(
+            input,
+            'sms',
+          );
+          if (!mounted) return;
+          setState(() {
+            _recoveryChallengeId = challengeId;
+            _recoveryResetToken = null;
+            _recoveryUsername = input;
+            _step = 1;
+            _controller.clear();
+            _startOtpClock(requestedAt);
+          });
+        } else {
+          final isAdmin = await _authService.isAdminUser(input);
+          final email = await _authService.getEmailFromUsername(input);
+          final eligibleEmail = isAdmin ? email : null;
+          final otp = eligibleEmail == null
+              ? null
+              : (100000 + Random().nextInt(900000)).toString();
+          if (!mounted) return;
+          setState(() {
+            _email = eligibleEmail;
+            _generatedOtp = otp;
+            _recoveryUsername = input;
+            _step = 1;
+            _controller.clear();
+            _startOtpClock(requestedAt);
+          });
+          if (eligibleEmail != null && otp != null) {
+            unawaited(_sendRecoveryEmail(eligibleEmail, otp));
+          }
         }
         WidgetsBinding.instance.addPostFrameCallback((_) {
-  if (mounted) _focusNode1.requestFocus();
-});
+          if (mounted) _focusNode1.requestFocus();
+        });
       } else if (_step == 1) {
-        if (input != _generatedOtp) {
-          AppToast.error(context, 'Invalid verification code. Please try again.');
+        if (_secondsUntil(_otpExpiresAt) == 0) {
+          AppToast.error(context, 'Code expired. Request a new code.');
+          return;
+        }
+        if (_recoveryChannel == 'sms') {
+          final token = await _authService.verifyPasswordRecovery(
+            _recoveryChallengeId!,
+            input,
+          );
+          if (!mounted) return;
+          if (token == null || token.isEmpty) {
+            AppToast.error(
+              context,
+              'Invalid or expired code. Please try again.',
+            );
+            return;
+          }
+          _recoveryResetToken = token;
+        } else if (input != _generatedOtp) {
+          AppToast.error(
+            context,
+            'Invalid verification code. Please try again.',
+          );
           return;
         }
         setState(() {
@@ -1162,8 +1377,8 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
           _controller.clear();
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
-  if (mounted) _focusNode1.requestFocus();
-});
+          if (mounted) _focusNode1.requestFocus();
+        });
       } else {
         final password = _controller.text;
         final confirm = _confirmPasswordController.text;
@@ -1180,7 +1395,20 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
           return;
         }
 
-        await _authService.resetPasswordForUser(_email!, password);
+        final saved = _recoveryChannel == 'sms'
+            ? await _authService.completePasswordRecovery(
+                _recoveryResetToken!,
+                password,
+              )
+            : await _authService.resetPasswordForUser(_email!, password);
+        if (!mounted) return;
+        if (!saved) {
+          AppToast.error(
+            context,
+            'The reset session expired. Please request a new code.',
+          );
+          return;
+        }
 
         if (mounted) {
           final overlay = Overlay.of(context, rootOverlay: true);
@@ -1205,12 +1433,12 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
     }
   }
 
-  Future<void> _sendRecoveryOtp(String email, String otp) async {
+  Future<void> _sendRecoveryEmail(String email, String code) async {
     try {
-      await _authService.sendEmailJsOtp(email, otp);
+      await _authService.sendEmailJsOtp(email, code);
     } catch (error, stackTrace) {
       AppLogger.error(
-        'Password recovery instructions could not be sent',
+        'Password recovery email could not be sent',
         error: error,
         stackTrace: stackTrace,
       );
@@ -1222,7 +1450,15 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
       Navigator.pop(context);
     } else {
       setState(() {
-        _step--;
+        _step = _recoveryChannel == 'sms' ? 0 : _step - 1;
+        if (_step == 0) {
+          _otpTimer?.cancel();
+          _otpExpiresAt = null;
+          _resendAvailableAt = null;
+          _recoveryUsername = null;
+        }
+        _recoveryChallengeId = null;
+        _recoveryResetToken = null;
         _controller.clear();
         _confirmPasswordController.clear();
       });
@@ -1393,22 +1629,43 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
               style: IconButton.styleFrom(
                 backgroundColor: Colors.blue.shade50,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ),
           const SizedBox(height: 8),
 
-          if (_step == 0)
+          if (_step == 0) ...[
             _buildModalField(
-              
               controller: _controller,
               focusNode: _focusNode1,
               label: "Username",
               hint: "Enter admin username",
               icon: LucideIcons.user,
-            )
-          else if (_step == 1) ...[
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Send code by',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Email'),
+                  selected: _recoveryChannel == 'email',
+                  onSelected: (_) => setState(() => _recoveryChannel = 'email'),
+                ),
+                ChoiceChip(
+                  label: const Text('SMS'),
+                  selected: _recoveryChannel == 'sms',
+                  onSelected: (_) => setState(() => _recoveryChannel = 'sms'),
+                ),
+              ],
+            ),
+          ] else if (_step == 1) ...[
             _buildModalField(
               controller: _controller,
               focusNode: _focusNode1,
@@ -1424,19 +1681,52 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
             const SizedBox(height: 8),
             Row(
               children: [
-                Icon(Icons.info_outline,
-                    color: Colors.grey.shade500, size: 14),
+                Icon(Icons.info_outline, color: Colors.grey.shade500, size: 14),
                 const SizedBox(width: 6),
-                Text("Enter the verification code if you received one.",
+                Expanded(
+                  child: Text(
+                    "Enter the verification code if you received one.",
                     style: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontSize: 12,
-                        fontFamily: 'Outfit')),
+                      color: Colors.grey.shade500,
+                      fontSize: 12,
+                      fontFamily: 'Outfit',
+                    ),
+                  ),
+                ),
               ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              _secondsUntil(_otpExpiresAt) > 0
+                  ? 'Code expires in ${_clockText(_secondsUntil(_otpExpiresAt))}'
+                  : 'Code expired',
+              style: TextStyle(
+                color: _secondsUntil(_otpExpiresAt) > 0
+                    ? const Color(0xFF64748B)
+                    : const Color(0xFFDC2626),
+                fontSize: 12,
+                fontFamily: 'Outfit',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: _isLoading || _secondsUntil(_resendAvailableAt) > 0
+                  ? null
+                  : _resendOtp,
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                foregroundColor: _blue,
+                alignment: Alignment.centerLeft,
+              ),
+              child: Text(
+                _secondsUntil(_resendAvailableAt) > 0
+                    ? 'Resend OTP in ${_clockText(_secondsUntil(_resendAvailableAt))}'
+                    : 'Resend OTP',
+              ),
             ),
           ] else ...[
             _buildModalField(
-              
               controller: _controller,
               focusNode: _focusNode1,
               label: "New password",
@@ -1487,13 +1777,16 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
                     foregroundColor: _blue,
                     side: BorderSide(color: Colors.blue.shade200),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   child: Text(
                     _step == 0 ? "Cancel" : "Back",
                     style: const TextStyle(
-                        fontFamily: 'Outfit', fontWeight: FontWeight.w600),
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -1506,7 +1799,8 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
                     backgroundColor: _blue,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
@@ -1515,12 +1809,16 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
                           height: 18,
                           width: 18,
                           child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2))
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
                       : Text(
                           _step == 2 ? "Update password" : "Continue",
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Outfit'),
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Outfit',
+                          ),
                         ),
                 ),
               ),
@@ -1588,12 +1886,15 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(
-                color: Color(0xFF0F172A),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Outfit')),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF0F172A),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Outfit',
+          ),
+        ),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
@@ -1604,16 +1905,22 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
           inputFormatters: inputFormatters,
           onChanged: onChanged,
           style: const TextStyle(
-              color: Color(0xFF0F172A), fontSize: 14, fontFamily: 'Outfit'),
+            color: Color(0xFF0F172A),
+            fontSize: 14,
+            fontFamily: 'Outfit',
+          ),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle:
-                TextStyle(color: Colors.grey.shade400, fontFamily: 'Outfit'),
+            hintStyle: TextStyle(
+              color: Colors.grey.shade400,
+              fontFamily: 'Outfit',
+            ),
             prefixIcon: Icon(icon, color: Colors.blue.shade300, size: 18),
             suffixIcon: suffix,
             filled: true,
-            fillColor:
-                isFocused ? Colors.white : Colors.blue.shade50.withOpacity(0.4),
+            fillColor: isFocused
+                ? Colors.white
+                : Colors.blue.shade50.withOpacity(0.4),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: Colors.blue.shade50),
@@ -1634,53 +1941,66 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal>
   }
 }
 
-  Widget _buildModalField({
-    required TextEditingController controller,
-    required FocusNode focusNode,
-    required String label,
-    required String hint,
-    required IconData icon,
-    bool obscure = false,
-    Widget? suffix,
-    TextInputType? keyboardType,
-  }) {
-    final isFocused = focusNode.hasFocus;
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(
-                color: Color(0xFF0F172A),
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Outfit')),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          focusNode: focusNode,
-          obscureText: obscure,
-          keyboardType: keyboardType,
-          style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontFamily: 'Outfit'),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(color: Colors.grey.shade400, fontFamily: 'Outfit'),
-            prefixIcon: Icon(icon, color: Colors.grey.shade400, size: 18),
-            suffixIcon: suffix,
-            filled: true,
-            fillColor: isFocused ? Colors.white : Colors.grey.shade50,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade200)),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade200)),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5)),
-            contentPadding: const EdgeInsets.symmetric(vertical: 16),
-          ),
+Widget _buildModalField({
+  required TextEditingController controller,
+  required FocusNode focusNode,
+  required String label,
+  required String hint,
+  required IconData icon,
+  bool obscure = false,
+  Widget? suffix,
+  TextInputType? keyboardType,
+}) {
+  final isFocused = focusNode.hasFocus;
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF0F172A),
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'Outfit',
         ),
-      ],
-    );
-  }
+      ),
+      const SizedBox(height: 8),
+      TextField(
+        controller: controller,
+        focusNode: focusNode,
+        obscureText: obscure,
+        keyboardType: keyboardType,
+        style: const TextStyle(
+          color: Color(0xFF0F172A),
+          fontSize: 14,
+          fontFamily: 'Outfit',
+        ),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(
+            color: Colors.grey.shade400,
+            fontFamily: 'Outfit',
+          ),
+          prefixIcon: Icon(icon, color: Colors.grey.shade400, size: 18),
+          suffixIcon: suffix,
+          filled: true,
+          fillColor: isFocused ? Colors.white : Colors.grey.shade50,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+          ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 16),
+        ),
+      ),
+    ],
+  );
+}

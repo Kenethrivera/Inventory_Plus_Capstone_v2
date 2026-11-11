@@ -12,6 +12,18 @@ enum MapMode { view, manage, selection, pick }
 /// Changes only the map projection; both views use the same saved layout.
 enum MapViewStyle { twoD, threeD }
 
+class PickStopMarker {
+  const PickStopMarker({
+    required this.locationId,
+    required this.number,
+    this.label,
+  });
+
+  final String locationId;
+  final int number;
+  final String? label;
+}
+
 enum MapSidebarAction {
   rotate,
   up,
@@ -28,7 +40,7 @@ enum MapSidebarAction {
 }
 
 // Updated to the soft light-blue background
-const Color kMapContainerBg = Color.fromARGB(255, 214, 235, 255);
+const Color kMapContainerBg = Color(0xFFF7F5F3);
 
 // Visual model heights are separate from the saved 2D footprints.
 const double _rack3DHeight = 6.0;
@@ -65,43 +77,57 @@ bool canResizeMapElementWidth(MapElement element, {required bool grow}) {
 class StoreMap extends StatefulWidget {
   final InventoryController controller;
   final String? highlightId;
-  final ItemLocation? location;
+  final bool showProductCounts;
+  final List<PickStopMarker> pickStopMarkers;
   final String? itemName;
   final MapMode mode;
   final MapViewStyle viewStyle;
   final bool hideWalls;
   final bool showMobileToolbar;
   final String? selectedItemId;
+  final bool showItemPopup;
   final bool centerOnSelectedItem;
   final bool fitEntireMap;
   final bool compactZoomControls;
+  final bool miniZoomControls;
+  final bool showZoomControls;
+  final Color zoomAccentColor;
   final List<MapElement>? layout;
   final bool itemAssignmentEnabled;
   final VoidCallback? onSelectionAssigned;
   final Function(MapElement)? onElementSelected;
   final ValueChanged<MapElement?>? onManageSelectionChanged;
   final VoidCallback? onLayoutEdited;
+  final ElementType? placementType;
+  final VoidCallback? onPlacementCompleted;
 
   const StoreMap({
     super.key,
     required this.controller,
     this.highlightId,
-    this.location,
+    this.showProductCounts = true,
+    this.pickStopMarkers = const [],
     this.itemName,
     this.mode = MapMode.view,
     this.viewStyle = MapViewStyle.threeD,
     this.hideWalls = false,
     this.showMobileToolbar = true,
     this.selectedItemId,
+    this.showItemPopup = true,
     this.centerOnSelectedItem = false,
     this.fitEntireMap = false,
     this.compactZoomControls = false,
+    this.miniZoomControls = false,
+    this.showZoomControls = true,
+    this.zoomAccentColor = const Color(0xFF2563EB),
     this.layout,
     this.itemAssignmentEnabled = true,
     this.onSelectionAssigned,
     this.onElementSelected,
     this.onManageSelectionChanged,
     this.onLayoutEdited,
+    this.placementType,
+    this.onPlacementCompleted,
   });
 
   @override
@@ -110,10 +136,17 @@ class StoreMap extends StatefulWidget {
 
 class StoreMapState extends State<StoreMap>
     with SingleTickerProviderStateMixin {
+  void zoomIn() => _zoom(1.2);
+
+  void zoomOut() => _zoom(0.8);
+
+  void recenterMap() => setState(() => _recenterMap(preserveScale: true));
+
   late AnimationController _animController;
   late Animation<double> _bounceAnimation;
   String? _activeElementId;
   String? _hoveredElementId;
+  bool _isPaletteDragActive = false;
   bool _isAdjustingWidth = false;
   bool _isChoosingDoorType = false;
 
@@ -295,7 +328,7 @@ class StoreMapState extends State<StoreMap>
     _bounceAnimation = Tween<double>(begin: 0, end: -8).animate(
       CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
     );
-    if (widget.selectedItemId != null) {
+    if (widget.showItemPopup && widget.selectedItemId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _autoOpenItemCard(widget.selectedItemId!);
       });
@@ -310,7 +343,7 @@ class StoreMapState extends State<StoreMap>
       setState(() => _mapLayoutLoadFailed = false);
 
       final selectedItemId = widget.selectedItemId;
-      if (selectedItemId != null) {
+      if (widget.showItemPopup && selectedItemId != null) {
         _autoOpenItemCard(selectedItemId);
         if (widget.centerOnSelectedItem || widget.fitEntireMap) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -345,7 +378,9 @@ class StoreMapState extends State<StoreMap>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         final selectedItemId = widget.selectedItemId;
-        if (selectedItemId != null) _autoOpenItemCard(selectedItemId);
+        if (widget.showItemPopup && selectedItemId != null) {
+          _autoOpenItemCard(selectedItemId);
+        }
         _recenterMap(preserveScale: _isInitialScaleSet);
       });
     }
@@ -390,7 +425,7 @@ class StoreMapState extends State<StoreMap>
     _inventorySubscription = widget.controller.inventorySnapshots.listen((_) {
       if (!mounted) return;
       final String? selectedItemId = widget.selectedItemId;
-      if (selectedItemId != null) {
+      if (widget.showItemPopup && selectedItemId != null) {
         final previousLocationId = _selectedPopupElement?.id;
         _autoOpenItemCard(selectedItemId);
         if (widget.centerOnSelectedItem &&
@@ -507,6 +542,7 @@ class StoreMapState extends State<StoreMap>
     )..size = size;
     final snapped = _snapObjectNearWall(element, position, size, 0.0);
     setState(() {
+      _hoveredElementId = null;
       _dragPreviewPos = snapped;
       _dragPreviewSize = size;
       _dragPreviewValid = !_hasCollision(element, snapped, size, 0.0);
@@ -550,6 +586,32 @@ class StoreMapState extends State<StoreMap>
       _dragPreviewSize = null;
       _dragPreviewType = null;
     });
+  }
+
+  void _placeElementAt(Offset globalPosition, ElementType type) {
+    final size = _getDefaultSize(type);
+    final position = _paletteWorldPosition(globalPosition, size);
+    if (position == null) return;
+    final element = MapElement(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      type: type,
+      position: position,
+      size: size,
+      label: type.name.toUpperCase(),
+    );
+    final snapped = _snapObjectNearWall(element, position, size, 0);
+    if (_hasCollision(element, snapped, size, 0)) {
+      AppToast.error(context, 'Cannot place an element over another fixture.');
+      return;
+    }
+    element.position = snapped;
+    setState(() {
+      _layout.add(element);
+      _activeElementId = element.id;
+    });
+    widget.onManageSelectionChanged?.call(element);
+    widget.onLayoutEdited?.call();
+    widget.onPlacementCompleted?.call();
   }
 
   Offset _snapToGrid(Offset position, Size size, ElementType type) {
@@ -851,6 +913,8 @@ class StoreMapState extends State<StoreMap>
               // The Draggable Icon
               Draggable<ElementType>(
                 data: type,
+                onDragStarted: () => setPaletteDragActive(true),
+                onDragEnd: (_) => setPaletteDragActive(false),
                 feedback: const SizedBox.shrink(),
                 child: Container(
                   width: 56,
@@ -928,26 +992,27 @@ class StoreMapState extends State<StoreMap>
   // ==========================================
   Widget _buildZoomControls() {
     final compact = widget.compactZoomControls;
-    final buttonSize = compact ? 34.0 : 48.0;
-    final iconSize = compact ? 17.0 : 24.0;
-    final iconColor = compact ? const Color(0xFF2563EB) : Colors.white;
+    final mini = compact && widget.miniZoomControls;
+    final buttonSize = mini ? 20.0 : (compact ? 26.0 : 48.0);
+    final iconSize = mini ? 12.0 : (compact ? 14.0 : 24.0);
+    final iconColor = compact ? widget.zoomAccentColor : Colors.white;
     return Positioned(
-      bottom: compact ? 8 : 20,
-      right: compact ? 8 : 20,
+      bottom: compact ? 6 : 20,
+      right: compact ? 6 : 20,
       child: Container(
         decoration: BoxDecoration(
           color: compact ? Colors.white : const Color(0xFF1E293B),
-          borderRadius: BorderRadius.circular(compact ? 10 : 16),
+          borderRadius: BorderRadius.circular(mini ? 6 : (compact ? 8 : 16)),
           border: Border.all(
             color: compact
-                ? const Color(0xFFBFDBFE)
+                ? widget.zoomAccentColor.withValues(alpha: 0.35)
                 : Colors.blueGrey.withOpacity(0.5),
-            width: 1.5,
+            width: compact ? 1 : 1.5,
           ),
           boxShadow: [
             BoxShadow(
               color: compact ? const Color(0x220F172A) : Colors.black45,
-              blurRadius: compact ? 5 : 8,
+              blurRadius: compact ? 3 : 8,
               offset: Offset(0, compact ? 2 : 4),
             ),
           ],
@@ -966,9 +1031,9 @@ class StoreMapState extends State<StoreMap>
             ),
             Container(
               height: 1,
-              width: compact ? 28 : 40,
+              width: mini ? 16 : (compact ? 20 : 40),
               color: compact
-                  ? const Color(0xFFDBEAFE)
+                  ? widget.zoomAccentColor.withValues(alpha: 0.15)
                   : Colors.blueGrey.withOpacity(0.5),
             ),
             IconButton(
@@ -982,9 +1047,9 @@ class StoreMapState extends State<StoreMap>
             ),
             Container(
               height: 1,
-              width: compact ? 28 : 40,
+              width: mini ? 16 : (compact ? 20 : 40),
               color: compact
-                  ? const Color(0xFFDBEAFE)
+                  ? widget.zoomAccentColor.withValues(alpha: 0.15)
                   : Colors.blueGrey.withOpacity(0.5),
             ),
             IconButton(
@@ -996,7 +1061,7 @@ class StoreMapState extends State<StoreMap>
               icon: Icon(
                 LucideIcons.focus,
                 color: iconColor,
-                size: compact ? 16 : 20,
+                size: mini ? 11 : (compact ? 13 : 20),
               ),
               onPressed: () {
                 setState(() {
@@ -1043,12 +1108,7 @@ class StoreMapState extends State<StoreMap>
         border: Border.all(color: Colors.black.withOpacity(0.08), width: 1),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          _buildLiveMapDisplay(),
-          if (widget.location != null) _buildFooter(),
-        ],
-      ),
+      child: Column(children: [_buildLiveMapDisplay()]),
     );
   }
 
@@ -1099,6 +1159,24 @@ class StoreMapState extends State<StoreMap>
       _isChoosingDoorType = false;
     });
     widget.onManageSelectionChanged?.call(null);
+  }
+
+  void selectManageElement(String elementId) {
+    final matches = _layout.where((element) => element.id == elementId);
+    if (!mounted || matches.isEmpty) return;
+    setState(() => _activeElementId = elementId);
+    widget.onManageSelectionChanged?.call(matches.first);
+  }
+
+  bool canUpdateElement(MapElement element) =>
+      !_hasCollision(element, element.position, element.size, element.rotation);
+
+  void setPaletteDragActive(bool active) {
+    if (!mounted || _isPaletteDragActive == active) return;
+    setState(() {
+      _isPaletteDragActive = active;
+      _hoveredElementId = null;
+    });
   }
 
   void _duplicateSelectedElement(MapElement original) {
@@ -1349,13 +1427,24 @@ class StoreMapState extends State<StoreMap>
         ? Size(el.size.width, newLength)
         : Size(newLength, el.size.height);
 
-    // Left = first endpoint (left when horizontal, top when vertical).
-    // Right = last endpoint (right when horizontal, bottom when vertical).
-    final Offset newPosition = isLeft
-        ? (verticalWall
-              ? Offset(el.position.dx, el.position.dy - actualChange)
-              : Offset(el.position.dx - actualChange, el.position.dy))
-        : el.position;
+    // Keep the opposite edge fixed. Rotated furniture needs its center moved
+    // along its local width axis; moving only the unrotated top-left corner
+    // makes both visible ends shift as its width changes.
+    final Offset newPosition;
+    if (verticalWall) {
+      newPosition = isLeft
+          ? Offset(el.position.dx, el.position.dy - actualChange)
+          : el.position;
+    } else {
+      final centerShift = (isLeft ? -1.0 : 1.0) * actualChange / 2;
+      newPosition =
+          el.position +
+          Offset(
+            centerShift * math.cos(el.rotation),
+            centerShift * math.sin(el.rotation),
+          ) -
+          Offset(actualChange / 2, 0);
+    }
 
     // Check collision before applying the resize.
     if (_hasCollision(el, newPosition, newSize, el.rotation)) {
@@ -1738,15 +1827,14 @@ class StoreMapState extends State<StoreMap>
     double maxY = 200.0;
     const double padding = 40.0;
 
-    // 1. Find the bounds of all placed elements (including negative coordinates)
-    for (var el in _layout) {
-      if (el.position.dx < minX) minX = el.position.dx;
-      if (el.position.dy < minY) minY = el.position.dy;
-
-      final double rightEdge = el.position.dx + el.size.width;
-      final double bottomEdge = el.position.dy + el.size.height;
-      if (rightEdge > maxX) maxX = rightEdge;
-      if (bottomEdge > maxY) maxY = bottomEdge;
+    // Match the floor to the rotated footprints used by collision checks.
+    for (final el in _layout) {
+      for (final corner in _getCorners(el.position, el.size, el.rotation)) {
+        minX = math.min(minX, corner.dx);
+        minY = math.min(minY, corner.dy);
+        maxX = math.max(maxX, corner.dx);
+        maxY = math.max(maxY, corner.dy);
+      }
     }
 
     // A drag must not resize the coordinate system used to locate the pointer.
@@ -2087,7 +2175,17 @@ class StoreMapState extends State<StoreMap>
             child: Builder(
               builder: (BuildContext dropContext) {
                 return GestureDetector(
+                  onTapUp:
+                      widget.mode == MapMode.manage &&
+                          widget.viewStyle == MapViewStyle.twoD &&
+                          widget.placementType != null
+                      ? (details) => _placeElementAt(
+                          details.globalPosition,
+                          widget.placementType!,
+                        )
+                      : null,
                   onTap: () {
+                    if (widget.placementType != null) return;
                     if (widget.mode == MapMode.manage) {
                       setState(() {
                         _activeElementId = null;
@@ -2178,7 +2276,9 @@ class StoreMapState extends State<StoreMap>
                           ...visibleLayout.map(
                             (el) => _buildPhysicalElement(el, minX, minY),
                           ),
+                          ..._buildPickStopMarkers(minX, minY),
                           if (widget.mode == MapMode.view &&
+                              widget.showItemPopup &&
                               _selectedPopupElement != null)
                             _buildFloatingPopup(mapWidth, minX, minY),
                         ],
@@ -2212,7 +2312,7 @@ class StoreMapState extends State<StoreMap>
           _buildLeftToolbar(),
         ],
 
-        _buildZoomControls(),
+        if (widget.showZoomControls) _buildZoomControls(),
       ],
     );
 
@@ -2242,97 +2342,255 @@ class StoreMapState extends State<StoreMap>
     }
   }
 
+  List<Widget> _buildPickStopMarkers(double minX, double minY) {
+    if (widget.pickStopMarkers.isEmpty) return const [];
+    final fixtures = {for (final element in _layout) element.id: element};
+    final seenAtFixture = <String, int>{};
+    final badges = <Widget>[];
+    for (final marker in widget.pickStopMarkers) {
+      final fixture = fixtures[marker.locationId];
+      if (fixture == null ||
+          (fixture.type != ElementType.rack &&
+              fixture.type != ElementType.shelf)) {
+        continue;
+      }
+      final offset = seenAtFixture.update(
+        marker.locationId,
+        (count) => count + 1,
+        ifAbsent: () => 0,
+      );
+      if (widget.viewStyle == MapViewStyle.threeD) {
+        final label = marker.label?.trim().isNotEmpty == true
+            ? marker.label!.trim()
+            : fixture.label;
+        badges.add(
+          Positioned(
+            left: fixture.position.dx - minX + fixture.size.width / 2 - 12,
+            top: fixture.position.dy - minY - 12 - offset * 26,
+            child: IgnorePointer(
+              child: Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.inverted(
+                  Matrix4.identity()
+                    ..rotateX(-0.95)
+                    ..rotateZ(0.785),
+                ),
+                child: Semantics(
+                  label: 'Pick stop ${marker.number}: $label',
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF262626),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x33000000),
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      '${marker.number}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        continue;
+      }
+      badges.add(
+        Positioned(
+          left:
+              fixture.position.dx -
+              minX +
+              fixture.size.width -
+              11 -
+              offset * 24,
+          top: fixture.position.dy - minY - 11,
+          child: IgnorePointer(
+            child: Semantics(
+              label: 'Pick stop ${marker.number}',
+              child: Container(
+                width: 22,
+                height: 22,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF171717),
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '${marker.number}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return badges;
+  }
+
   Widget _buildFlatElement(
     ElementType type,
     Size size, {
     bool selected = false,
     bool highlighted = false,
     double highlightPulse = 1,
+    String? label,
+    int productCount = 0,
   }) {
     final Color fill;
     final Color edge;
     final String name;
     switch (type) {
       case ElementType.wall:
-        fill = const Color(0xFF64748B);
-        edge = const Color(0xFF475569);
+        fill = const Color(0xFF56524F);
+        edge = const Color(0xFF45413E);
         name = '';
         break;
       case ElementType.door:
-        fill = const Color(0xFFF59E0B);
-        edge = const Color(0xFFB45309);
+        fill = const Color(0xFFD9F5E2);
+        edge = const Color(0xFF70C78B);
         name = '';
         break;
       case ElementType.rack:
-        fill = const Color(0xFFBFDBFE);
-        edge = const Color(0xFF3B82F6);
+        fill = const Color(0xFFF2EDE6);
+        edge = const Color(0xFFAFA69E);
         name = 'RACK';
         break;
       case ElementType.shelf:
-        fill = const Color(0xFFA7F3D0);
-        edge = const Color(0xFF059669);
+        fill = const Color(0xFFEBF0F5);
+        edge = const Color(0xFF9DAFC3);
         name = 'SHELF';
         break;
       case ElementType.cashier:
-        fill = const Color(0xFFC4B5FD);
-        edge = const Color(0xFF7C3AED);
+        fill = const Color(0xFFE8EFFF);
+        edge = const Color(0xFF2859EE);
         name = 'CASHIER';
         break;
     }
 
     final emphasized = selected || highlighted;
-    return Container(
-      width: size.width,
-      height: size.height,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(
-          type == ElementType.wall || type == ElementType.door ? 2 : 5,
-        ),
-        border: Border.all(
-          color: highlighted
-              ? const Color(
-                  0xFFFF9800,
-                ).withValues(alpha: 0.15 + 0.85 * highlightPulse)
-              : (selected ? const Color(0xFF1D4ED8) : edge),
-          width: emphasized ? 3 : 1.5,
-        ),
-        boxShadow: emphasized
-            ? [
-                BoxShadow(
-                  color:
-                      (highlighted
-                              ? const Color(0xFFFF9800)
-                              : const Color(0xFF2563EB))
-                          .withValues(
-                            alpha: highlighted
-                                ? 0.05 + 0.4 * highlightPulse
-                                : 0.25,
-                          ),
-                  blurRadius: 8,
-                  spreadRadius: 2,
+    final displayLabel =
+        (label?.trim().isNotEmpty == true
+                ? label!.split(' · ').first.trim()
+                : name)
+            .replaceAll('_', ' ');
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: size.width,
+          height: size.height,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(
+              type == ElementType.wall || type == ElementType.door ? 2 : 5,
+            ),
+            border: Border.all(
+              color: highlighted
+                  ? const Color(
+                      0xFFFF9800,
+                    ).withValues(alpha: 0.15 + 0.85 * highlightPulse)
+                  : (selected ? const Color(0xFFC83D08) : edge),
+              width: emphasized ? 3 : 1.5,
+            ),
+            boxShadow: emphasized
+                ? [
+                    BoxShadow(
+                      color:
+                          (highlighted
+                                  ? const Color(0xFFFF9800)
+                                  : const Color(0xFFC83D08))
+                              .withValues(
+                                alpha: highlighted
+                                    ? 0.05 + 0.4 * highlightPulse
+                                    : 0.25,
+                              ),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Stack(
+            children: [
+              if (type == ElementType.rack)
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _RackDividerPainter(
+                      horizontal: size.height > size.width,
+                    ),
+                  ),
                 ),
-              ]
-            : null,
-      ),
-      child: name.isNotEmpty && size.width >= 65 && size.height >= 33
-          ? Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
+              if (displayLabel.isNotEmpty &&
+                  size.width >= 65 &&
+                  size.height >= 33)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: RotatedBox(
+                      quarterTurns: size.height > size.width * 1.8 ? 3 : 0,
+                      child: Text(
+                        displayLabel,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF243244),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (widget.showProductCounts &&
+            productCount > 0 &&
+            type != ElementType.wall &&
+            type != ElementType.door)
+          Positioned(
+            top: -9,
+            right: -9,
+            child: Container(
+              width: 21,
+              height: 21,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Color(0xFF171717),
+                shape: BoxShape.circle,
+              ),
               child: Text(
-                name,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                '$productCount',
                 style: const TextStyle(
-                  color: Color(0xFF1E293B),
-                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
                   fontSize: 10,
-                  letterSpacing: 0.6,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            )
-          : null,
+            ),
+          ),
+      ],
     );
   }
 
@@ -2445,6 +2703,15 @@ class StoreMapState extends State<StoreMap>
     );
   }
 
+  void _hoverPhysicalElement(String sourceId) {
+    if (_isPaletteDragActive ||
+        _dragPreviewType != null ||
+        _hoveredElementId == sourceId) {
+      return;
+    }
+    setState(() => _hoveredElementId = sourceId);
+  }
+
   Widget _buildPhysicalElement(MapElement el, double minX, double minY) {
     // Split wall segments carry a synthetic id like "wall_3__seg0" so each
     // piece sorts independently; compare against the original source id
@@ -2457,7 +2724,11 @@ class StoreMapState extends State<StoreMap>
     final bool isPreviewSelected =
         widget.mode == MapMode.view && _selectedPopupElement?.id == sourceId;
     final bool showObjectGlow = isActive || isPreviewSelected || isHighlighted;
-    final bool isHovered = sourceId == _hoveredElementId && !showObjectGlow;
+    final bool isHovered =
+        sourceId == _hoveredElementId &&
+        !_isPaletteDragActive &&
+        _dragPreviewType == null &&
+        !showObjectGlow;
 
     // `el` may be a synthetic wall segment created by _splitWallsAtJunctions
     // purely for rendering/z-order purposes — it is NOT in storeLayout and
@@ -2613,12 +2884,20 @@ class StoreMapState extends State<StoreMap>
                     el.size,
                     highlighted: true,
                     highlightPulse: _animController.value,
+                    label: el.label,
+                    productCount: widget.controller.allItems
+                        .where((item) => item.locationId == sourceId)
+                        .length,
                   ),
                 )
               : _buildFlatElement(
                   el.type,
                   el.size,
                   selected: showObjectGlow || isHovered,
+                  label: el.label,
+                  productCount: widget.controller.allItems
+                      .where((item) => item.locationId == sourceId)
+                      .length,
                 ))
         : Container(
             width: el.size.width,
@@ -2770,14 +3049,13 @@ class StoreMapState extends State<StoreMap>
                   hitBottomExtra +
                   hitPadding * 2,
               child: MouseRegion(
-                cursor: SystemMouseCursors.click,
+                cursor: widget.mode == MapMode.view && !widget.showItemPopup
+                    ? SystemMouseCursors.basic
+                    : SystemMouseCursors.click,
                 opaque: false,
                 hitTestBehavior: HitTestBehavior.deferToChild,
-                onEnter: (_) {
-                  if (_hoveredElementId != sourceId) {
-                    setState(() => _hoveredElementId = sourceId);
-                  }
-                },
+                onEnter: (_) => _hoverPhysicalElement(sourceId),
+                onHover: (_) => _hoverPhysicalElement(sourceId),
                 onExit: (_) {
                   if (_hoveredElementId == sourceId) {
                     setState(() => _hoveredElementId = null);
@@ -2839,7 +3117,8 @@ class StoreMapState extends State<StoreMap>
                       if (widget.onElementSelected != null) {
                         widget.onElementSelected!(interactiveEl);
                       }
-                    } else if (widget.mode == MapMode.view) {
+                    } else if (widget.mode == MapMode.view &&
+                        widget.showItemPopup) {
                       if (el.type != ElementType.door &&
                           el.type != ElementType.cashier &&
                           el.type != ElementType.wall) {
@@ -3153,27 +3432,6 @@ class StoreMapState extends State<StoreMap>
     );
   }
 
-  Widget _buildFooter() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: const Color(0xFFE5E7EB),
-      child: Row(
-        children: [
-          _buildDetailItem("Aisle", widget.location?.aisle ?? "N/A"),
-          const SizedBox(width: 8),
-          _buildDetailItem("Shelf", widget.location?.shelf.toString() ?? "N/A"),
-          const SizedBox(width: 8),
-          _buildDetailItem("Section", widget.location?.section ?? "N/A"),
-          const SizedBox(width: 8),
-          _buildDetailItem(
-            "Layer",
-            (widget.location as dynamic)?.layer?.toString() ?? "N/A",
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildArrow(IconData icon) {
     return Container(
       padding: const EdgeInsets.all(2),
@@ -3184,35 +3442,6 @@ class StoreMapState extends State<StoreMap>
         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
       ),
       child: Icon(icon, size: 16, color: Colors.white),
-    );
-  }
-
-  Widget _buildDetailItem(String label, String value) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F172A),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
-            ),
-            Text(
-              value,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: Colors.white,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -3558,6 +3787,39 @@ class _ObjectSilhouettePainter extends CustomPainter {
 //   @override
 //   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 // }
+class _RackDividerPainter extends CustomPainter {
+  const _RackDividerPainter({required this.horizontal});
+
+  final bool horizontal;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFCEC7BF)
+      ..strokeWidth = 1;
+    final length = horizontal ? size.height : size.width;
+    for (var offset = 40.0; offset < length; offset += 40) {
+      if (horizontal) {
+        canvas.drawLine(
+          Offset(5, offset),
+          Offset(size.width - 5, offset),
+          paint,
+        );
+      } else {
+        canvas.drawLine(
+          Offset(offset, 5),
+          Offset(offset, size.height - 5),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RackDividerPainter oldDelegate) =>
+      oldDelegate.horizontal != horizontal;
+}
+
 class GridPainter extends CustomPainter {
   final bool flat;
 
@@ -3566,13 +3828,11 @@ class GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final floorPaint = Paint()
-      ..color = flat
-          ? const Color(0xFFEFF6FF)
-          : const Color.fromARGB(255, 165, 205, 245);
+      ..color = flat ? const Color(0xFFFCFBF9) : const Color(0xFFFAF9F7);
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), floorPaint);
 
     final linePaint = Paint()
-      ..color = flat ? const Color(0xFFC3DBF8) : Colors.white
+      ..color = flat ? const Color(0xFFEDEAE6) : const Color(0xFFE8E4DF)
       ..strokeWidth = flat ? 1.0 : 1.5;
 
     final double step = flat ? 20.0 : 40.0;

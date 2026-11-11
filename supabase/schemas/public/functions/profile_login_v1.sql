@@ -51,6 +51,7 @@ begin
     and profile.password = encode(extensions.digest(
       convert_to(coalesce(p_password, ''), 'UTF8'), 'sha256'), 'hex')
     and profile.location_id is not null
+    and profile.is_active
   limit 1;
 
   if not found then

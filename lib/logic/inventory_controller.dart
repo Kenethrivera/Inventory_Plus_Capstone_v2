@@ -275,6 +275,7 @@ class InventoryController {
   Map<String, double> _baselineByProduct = {};
 
   String gcashQrUrl = '';
+  bool gcashEnabled = true;
   double cashierAutoApprovedDiscountLimitPct = 10.0;
 
   Future<void> loadStoreSettings() async {
@@ -516,6 +517,36 @@ class InventoryController {
     _publishRuntimeSettings();
   }
 
+  Future<void> saveSettingsDashboardExtras({
+    required bool autoAssignOrders,
+    required int maxHelperOrders,
+    required double maxApprovedDiscount,
+    required double defaultCashierLimit,
+    required bool acceptGcash,
+    required String gcashAccountName,
+    required String gcashNumber,
+    required Map<String, double> cashierLimits,
+  }) async {
+    await supabase.rpc(
+      'update_settings_dashboard_v1',
+      params: {
+        'p_session_token': _requireSessionToken(),
+        'p_auto_assign_orders': autoAssignOrders,
+        'p_max_helper_orders': maxHelperOrders,
+        'p_max_approved_discount': maxApprovedDiscount,
+        'p_default_cashier_limit': defaultCashierLimit,
+        'p_gcash_enabled': acceptGcash,
+        'p_gcash_account_name': gcashAccountName.trim(),
+        'p_gcash_number': gcashNumber.trim(),
+        'p_cashier_limits': cashierLimits,
+      },
+    );
+    gcashEnabled = acceptGcash;
+    cashierAutoApprovedDiscountLimitPct = defaultCashierLimit;
+    _paymentSettingsLoaded = false;
+    await _refreshPaymentSettings();
+  }
+
   Future<void> Function({
     required String locationId,
     required String transactionId,
@@ -664,6 +695,7 @@ class InventoryController {
     _clearStaffConfigurationSnapshot();
     _clearApprovalState();
     gcashQrUrl = '';
+    gcashEnabled = true;
     cashierAutoApprovedDiscountLimitPct = 10.0;
     _paymentSettingsLoaded = false;
     _publishRuntimeSettings();
@@ -816,16 +848,47 @@ class InventoryController {
 
   Future<void> _performPaymentRefresh() async {
     final locationId = activeLocationId;
+    final accountId = currentUserNumericId;
     if (locationId == null) return;
     try {
-      final response = await supabase
-          .from('store_settings')
-          .select('gcash_qr_url, cashier_auto_approved_discount_limit_pct')
-          .eq('location_id', locationId)
-          .maybeSingle();
-      if (activeLocationId != locationId) return;
+      Map<String, dynamic>? response;
+      try {
+        response = await supabase
+            .from('store_settings')
+            .select(
+              'gcash_qr_url, cashier_auto_approved_discount_limit_pct, gcash_enabled',
+            )
+            .eq('location_id', locationId)
+            .maybeSingle();
+      } catch (_) {
+        response = await supabase
+            .from('store_settings')
+            .select('gcash_qr_url, cashier_auto_approved_discount_limit_pct')
+            .eq('location_id', locationId)
+            .maybeSingle();
+      }
+      double? cashierOverride;
+      if (accountId != null) {
+        try {
+          final profile = await supabase
+              .from('profiles')
+              .select('cashier_discount_limit_pct')
+              .eq('id', accountId)
+              .eq('location_id', locationId)
+              .maybeSingle();
+          cashierOverride = (profile?['cashier_discount_limit_pct'] as num?)
+              ?.toDouble();
+        } catch (_) {
+          // Older databases have no per-cashier override column yet.
+        }
+      }
+      if (activeLocationId != locationId || currentUserNumericId != accountId) {
+        return;
+      }
       gcashQrUrl = response?['gcash_qr_url']?.toString() ?? '';
+      gcashEnabled = response?['gcash_enabled'] != false;
       cashierAutoApprovedDiscountLimitPct =
+          cashierOverride ??
           (response?['cashier_auto_approved_discount_limit_pct'] as num?)
               ?.toDouble() ??
           10.0;
@@ -975,7 +1038,7 @@ class InventoryController {
           'p_model': newItem.model,
           'p_product_size': newItem.productSize,
           'p_shelf_level': newItem.shelfLevel,
-          'p_bin_number': newItem.binNumber,
+          'p_bin_number': null,
           'p_unit': newItem.unit,
           'p_max_quantity': newItem.maxQuantity,
         },
@@ -1047,13 +1110,13 @@ class InventoryController {
     try {
       final path = _productImagePath(uploadKey, fileName);
       await supabase.storage
-          .from('product_images')
+          .from('store_assets')
           .upload(
             path,
             imageFile,
             fileOptions: const FileOptions(upsert: true, cacheControl: '0'),
           );
-      return supabase.storage.from('product_images').getPublicUrl(path);
+      return _productImageUrl(path);
     } catch (error, stackTrace) {
       AppLogger.error(
         'Product image upload failed',
@@ -1089,8 +1152,11 @@ class InventoryController {
         ? rawExtension
         : 'jpg';
     final digest = sha256.convert(utf8.encode(normalizedKey)).toString();
-    return 'public/$locationId/$digest.$extension';
+    return 'public/$locationId/products/$digest.$extension';
   }
+
+  String _productImageUrl(String path) =>
+      '${supabase.storage.from('store_assets').getPublicUrl(path)}?v=${DateTime.now().microsecondsSinceEpoch}';
 
   Future<void> writeOffStock(
     String id,
@@ -1244,9 +1310,9 @@ class InventoryController {
     required InventoryApprovalType type,
     required String productId,
     required double quantity,
-    required String proofStoragePath,
-    required String proofFileName,
-    required String proofMimeType,
+    String? proofStoragePath,
+    String? proofFileName,
+    String? proofMimeType,
     String? reason,
     String? note,
   }) async {
@@ -1268,10 +1334,14 @@ class InventoryController {
         (reason == null || reason.trim().isEmpty)) {
       throw ArgumentError.value(reason, 'reason', 'A reason is required');
     }
-    if (proofStoragePath.trim().isEmpty ||
-        proofFileName.trim().isEmpty ||
-        proofMimeType.trim().isEmpty) {
-      throw ArgumentError('Photo evidence is required.');
+    final hasProof = proofStoragePath?.trim().isNotEmpty ?? false;
+    if (type == InventoryApprovalType.writeOff && !hasProof) {
+      throw ArgumentError('Photo evidence is required for write-off requests.');
+    }
+    if (hasProof &&
+        ((proofFileName?.trim().isEmpty ?? true) ||
+            (proofMimeType?.trim().isEmpty ?? true))) {
+      throw ArgumentError('Photo evidence details are incomplete.');
     }
     late final dynamic response;
     try {
@@ -1285,9 +1355,11 @@ class InventoryController {
           'p_quantity': quantity,
           'p_reason': reason?.trim(),
           'p_note': note?.trim(),
-          'p_proof_storage_path': proofStoragePath.trim(),
-          'p_proof_file_name': proofFileName.trim(),
-          'p_proof_mime_type': proofMimeType.trim().toLowerCase(),
+          'p_proof_storage_path': hasProof ? proofStoragePath!.trim() : null,
+          'p_proof_file_name': hasProof ? proofFileName!.trim() : null,
+          'p_proof_mime_type': hasProof
+              ? proofMimeType!.trim().toLowerCase()
+              : null,
         },
       );
     } catch (error, stackTrace) {
@@ -1303,6 +1375,25 @@ class InventoryController {
     _invalidateApprovalPages(refreshVisible: false);
     await _notifyApprovalLifecycle(request);
     return request;
+  }
+
+  Future<List<InventoryApprovalRequest>>
+  fetchMyInventoryApprovalRequests() async {
+    if (!canRequestInventoryApproval) {
+      throw StateError('Only Cashier or Helper accounts may view requests.');
+    }
+    final response = await supabase.rpc(
+      'my_inventory_approval_requests_v1',
+      params: <String, dynamic>{'p_session_token': _requireSessionToken()},
+    );
+    final records = response as List<dynamic>? ?? const [];
+    return records
+        .map(
+          (row) => InventoryApprovalRequest.fromJson(
+            Map<String, dynamic>.from(row as Map),
+          ),
+        )
+        .toList(growable: false);
   }
 
   Future<String> uploadApprovalEvidence({
@@ -1397,6 +1488,26 @@ class InventoryController {
                 ?.toInt() ??
             0,
     };
+  }
+
+  Future<int> fetchPendingApprovalCount() async {
+    if (!isAdmin) return 0;
+    final accountId = currentUserId;
+    final locationId = activeLocationId;
+    if (accountId == null || locationId == null) return 0;
+    final response = await supabase.rpc(
+      'approval_requests_page_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_status': InventoryApprovalStatus.pending.databaseValue,
+        'p_page': 1,
+        'p_page_size': 1,
+      },
+    );
+    if (accountId != currentUserId || locationId != activeLocationId) return 0;
+    return (Map<String, dynamic>.from(response as Map)['total_count'] as num?)
+            ?.toInt() ??
+        0;
   }
 
   Future<InventoryApprovalRequest> approveInventoryApprovalRequest(
@@ -1574,13 +1685,13 @@ class InventoryController {
     try {
       final path = _productImagePath(uploadKey, fileName);
       await supabase.storage
-          .from('product_images')
+          .from('store_assets')
           .uploadBinary(
             path,
             imageBytes,
             fileOptions: const FileOptions(upsert: true, cacheControl: '0'),
           );
-      return supabase.storage.from('product_images').getPublicUrl(path);
+      return _productImageUrl(path);
     } catch (error, stackTrace) {
       AppLogger.error(
         'Product image upload failed',
@@ -1606,11 +1717,12 @@ class InventoryController {
 
     // Product details remain a normal save. Quantity and its history entry are
     // committed together by adjust_inventory_quantity_v1 below.
-    await supabase
+    final savedProduct = await supabase
         .from('products')
         .update({
           'product_name': updatedItem.name,
           'sku': updatedItem.sku,
+          'category': updatedItem.category,
           'product_price': updatedItem.price,
           'description': updatedItem.description,
           'manufacturer': updatedItem.manufacturer,
@@ -1623,7 +1735,14 @@ class InventoryController {
           'max_quantity': updatedItem.maxQuantity,
         })
         .eq('id', updatedItem.id)
-        .eq('location_id', locationId);
+        .eq('location_id', locationId)
+        .select('id')
+        .maybeSingle();
+    if (savedProduct == null) {
+      throw const AppUserFacingException(
+        'Product was not saved. Refresh inventory and try again.',
+      );
+    }
 
     String? transactionId;
     var authoritativeQuantity = oldItem.quantity;
@@ -1884,28 +2003,6 @@ class InventoryController {
     );
   }
 
-  Future<void> updateItemLocationDetails(
-    String itemId, {
-    required int shelf,
-    required String layer,
-  }) async {
-    try {
-      await supabase
-          .from('products')
-          .update({'shelf_level': shelf.toString(), 'bin_number': layer})
-          .eq('id', itemId);
-
-      final index = _items.indexWhere((item) => item.id == itemId);
-      if (index != -1) {
-        _items[index] = _items[index].copyWith(
-          shelfLevel: shelf.toString(),
-          binNumber: layer,
-        );
-        _publishInventorySnapshot();
-      }
-    } catch (e) {}
-  }
-
   List<InventoryItem> get unassignedItems => _items
       .where((item) => item.shelfLevel == null || item.shelfLevel!.isEmpty)
       .toList();
@@ -1971,6 +2068,7 @@ class InventoryController {
     String? manufacturer,
     String? model,
     String? productSize,
+    String? category,
     String? shelfLevel,
     String? binNumber,
     String? imageUrl,
@@ -1986,6 +2084,7 @@ class InventoryController {
       manufacturer: manufacturer,
       model: model,
       productSize: productSize,
+      category: category,
       shelfLevel: shelfLevel,
       binNumber: binNumber,
       imageUrl: imageUrl,
@@ -2005,7 +2104,6 @@ class InventoryController {
     String? model,
     String? productSize,
     String? shelfLevel,
-    String? binNumber,
     String? imageUrl,
     String unit = 'pcs',
   }) {
@@ -2025,7 +2123,6 @@ class InventoryController {
       model: model,
       productSize: productSize,
       shelfLevel: shelfLevel,
-      binNumber: binNumber,
       imageUrl: imageUrl ?? '',
       unit: unit,
     );
@@ -2194,16 +2291,19 @@ class InventoryController {
     final locationId = activeLocationId;
     if (userId == null || locationId == null) return;
     try {
-      final row = await supabase
-          .from('profiles')
-          .select(
-            'id, location_id, name, role, email, address, phone, '
-            'must_change_password',
-          )
-          .eq('id', userId)
-          .maybeSingle();
+      final restored = await supabase.rpc(
+        'profile_restore_session_v1',
+        params: <String, dynamic>{'p_session_token': _requireSessionToken()},
+      );
+      final session = restored is Map
+          ? Map<String, dynamic>.from(restored)
+          : null;
+      final profile = session?['profile'];
+      final row = profile is Map ? Map<String, dynamic>.from(profile) : null;
       if (currentUserId != userId || activeLocationId != locationId) return;
-      if (row == null || row['location_id']?.toString() != locationId) {
+      if (row == null ||
+          row['location_id']?.toString() != locationId ||
+          row['is_active'] == false) {
         _currentProfileSnapshot = null;
         _currentUserProfileController.add(null);
         return;
@@ -2277,6 +2377,7 @@ class InventoryController {
               email: email,
               phone: phone,
               address: address,
+              mustChangePassword: roleRequiresForcedPasswordChange(role),
             ),
           )
           .select()
@@ -2332,25 +2433,52 @@ class InventoryController {
 
   Future<bool> updateStaffRole(String id, String newRole) async {
     try {
-      final row = await supabase
-          .from('profiles')
-          .update({'role': newRole})
-          .eq('id', id)
-          .select()
-          .single();
-      final index = _staffSnapshot.indexWhere(
-        (staff) => staff['id'].toString() == id,
+      final staff = await fetchStaffProfile(id);
+      if (staff == null) return false;
+      return await updateStaffAccount(
+        id: id,
+        name: staff['name']?.toString() ?? '',
+        email: staff['email']?.toString() ?? '',
+        phone: staff['phone']?.toString() ?? '',
+        address: staff['address']?.toString() ?? '',
+        role: newRole,
+        isActive: staff['is_active'] != false,
       );
-      if (index >= 0) {
-        final updated = List<Map<String, dynamic>>.from(_staffSnapshot);
-        updated[index] = Map<String, dynamic>.from(row);
-        _staffSnapshot = List<Map<String, dynamic>>.unmodifiable(updated);
-        _publishStaffConfigurationSnapshot();
-      }
-      return true;
-    } catch (e) {
+    } catch (_) {
       return false;
     }
+  }
+
+  Future<bool> updateStaffAccount({
+    required String id,
+    required String name,
+    required String email,
+    required String phone,
+    String? address,
+    required String role,
+    required bool isActive,
+  }) async {
+    if (!isAdmin) throw StateError('Only Admin accounts may edit staff.');
+    final profileId = int.tryParse(id);
+    if (profileId == null) return false;
+    final response = await supabase.rpc(
+      'update_staff_account_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_target_profile_id': profileId,
+        'p_name': name.trim(),
+        'p_email': email.trim(),
+        'p_phone': phone.trim(),
+        if (address != null) 'p_address': address.trim(),
+        'p_role': role,
+        'p_is_active': isActive,
+      },
+    );
+    if (response != true) return false;
+    await _refreshStaffConfiguration();
+    if (id == currentUserId) await _refreshCurrentProfile();
+    _invalidateStaffPerformance();
+    return true;
   }
 
   Future<Map<String, dynamic>?> fetchStaffProfile(String id) async {
@@ -2587,19 +2715,23 @@ class InventoryController {
     }
 
     return _runSerializedHistoryQuery('all:$locationId', () async {
-      final response = await supabase
-          .from('transaction_history')
-          .select('*, products(product_name, sku), profiles(name, role)')
-          .eq('location_id', locationId)
-          .order('created_at', ascending: false);
-
-      if (activeLocationId != locationId) {
-        throw StateError('Transaction history location changed.');
+      const pageSize = 500;
+      final rows = <Map<String, dynamic>>[];
+      for (var offset = 0; ; offset += pageSize) {
+        final response = await supabase
+            .from('transaction_history')
+            .select('*, products(product_name, sku), profiles(name, role)')
+            .eq('location_id', locationId)
+            .order('created_at', ascending: false)
+            .order('id', ascending: false)
+            .range(offset, offset + pageSize - 1);
+        if (activeLocationId != locationId) {
+          throw StateError('Transaction history location changed.');
+        }
+        rows.addAll(List<Map<String, dynamic>>.from(response));
+        if (response.length < pageSize) break;
       }
-
-      return List<Map<String, dynamic>>.unmodifiable(
-        List<Map<String, dynamic>>.from(response),
-      );
+      return List<Map<String, dynamic>>.unmodifiable(rows);
     });
   }
 
@@ -3006,6 +3138,34 @@ class InventoryController {
     return refresh;
   }
 
+  /// Orders shown in the admin Orders & activity tab. The operational orders
+  /// table retains assignment and payment details that the history projection
+  /// does not expose to the client.
+  Future<List<CustomerOrder>> loadActivityOrders() async {
+    final locationId = activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      return const <CustomerOrder>[];
+    }
+
+    const pageSize = 500;
+    final orders = <CustomerOrder>[];
+    for (var offset = 0; ; offset += pageSize) {
+      final rows = await supabase
+          .from('orders')
+          .select()
+          .eq('location_id', locationId)
+          .order('created_at', ascending: false)
+          .order('id', ascending: false)
+          .range(offset, offset + pageSize - 1);
+      if (activeLocationId != locationId) {
+        throw StateError('Orders location changed while loading.');
+      }
+      orders.addAll(rows.map((row) => CustomerOrder.fromJson(row)));
+      if (rows.length < pageSize) break;
+    }
+    return List<CustomerOrder>.unmodifiable(orders);
+  }
+
   Future<OrderHistoryData> _performOrderHistoryLoad() async {
     final String? locationId = activeLocationId;
     if (locationId == null || locationId.isEmpty) {
@@ -3015,27 +3175,31 @@ class InventoryController {
       );
     }
 
-    final response = await supabase
-        .from('order_history')
-        .select(
-          'id:order_id, status, items, created_at, event_at, total_amount, '
-          'discount_amount, created_by_id, created_by_name, '
-          'assigned_helper_id, assigned_helper_name, assigned_at, '
-          'prepared_by_id, prepared_by_name, prepared_at, '
-          'completed_by_id, completed_by_name, completed_at, '
-          'cancelled_by_id, cancelled_by_name, cancelled_at, '
-          'returned_by_id, returned_by_name, returned_at',
-        )
-        .eq('location_id', locationId)
-        .order('created_at', ascending: false);
-
-    if (activeLocationId != locationId) {
-      throw StateError('Order history location changed.');
+    const pageSize = 500;
+    final orders = <Map<String, dynamic>>[];
+    for (var offset = 0; ; offset += pageSize) {
+      final response = await supabase
+          .from('order_history')
+          .select(
+            'id:order_id, status, items, created_at, event_at, total_amount, '
+            'discount_amount, created_by_id, created_by_name, '
+            'assigned_helper_id, assigned_helper_name, assigned_at, '
+            'prepared_by_id, prepared_by_name, prepared_at, '
+            'completed_by_id, completed_by_name, completed_at, '
+            'cancelled_by_id, cancelled_by_name, cancelled_at, '
+            'returned_by_id, returned_by_name, returned_at, '
+            'payment_mode, cash_given, change_amount, payment_reference',
+          )
+          .eq('location_id', locationId)
+          .order('created_at', ascending: false)
+          .order('order_id', ascending: false)
+          .range(offset, offset + pageSize - 1);
+      if (activeLocationId != locationId) {
+        throw StateError('Order history location changed.');
+      }
+      orders.addAll(List<Map<String, dynamic>>.from(response));
+      if (response.length < pageSize) break;
     }
-
-    final List<Map<String, dynamic>> orders = List<Map<String, dynamic>>.from(
-      response,
-    );
     final Set<Object> profileIds = <Object>{};
 
     for (final Map<String, dynamic> order in orders) {
@@ -3053,21 +3217,25 @@ class InventoryController {
 
     final Map<String, String> profileNames = <String, String>{};
     if (profileIds.isNotEmpty) {
-      final profiles = await supabase
-          .from('profiles')
-          .select('id, name')
-          .inFilter('id', profileIds.toList(growable: false));
+      final ids = profileIds.toList(growable: false);
+      for (var offset = 0; offset < ids.length; offset += pageSize) {
+        final chunk = ids.skip(offset).take(pageSize).toList(growable: false);
+        final profiles = await supabase
+            .from('profiles')
+            .select('id, name')
+            .inFilter('id', chunk);
 
-      if (activeLocationId != locationId) {
-        throw StateError('Order history location changed.');
-      }
+        if (activeLocationId != locationId) {
+          throw StateError('Order history location changed.');
+        }
 
-      for (final dynamic row in profiles) {
-        final Map<String, dynamic> profile = Map<String, dynamic>.from(
-          row as Map,
-        );
-        profileNames[profile['id'].toString()] =
-            profile['name']?.toString() ?? '—';
+        for (final dynamic row in profiles) {
+          final Map<String, dynamic> profile = Map<String, dynamic>.from(
+            row as Map,
+          );
+          profileNames[profile['id'].toString()] =
+              profile['name']?.toString() ?? '—';
+        }
       }
     }
 
@@ -3742,6 +3910,50 @@ class InventoryController {
     }
   }
 
+  /// Records a helper's verified pick so every store session sees the same
+  /// preparation progress through the existing order realtime stream.
+  Future<bool> markOrderItemPicked(String orderId, String productId) async {
+    final locationId = activeLocationId;
+    try {
+      final response = await supabase.rpc(
+        'mark_order_item_picked_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_order_id': orderId,
+          'p_product_id': productId,
+        },
+      );
+      final updated = CustomerOrder.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
+      if (locationId == activeLocationId &&
+          _ordersSnapshotLocationId == locationId) {
+        final index = _ordersSnapshot.indexWhere(
+          (order) => order.id == orderId,
+        );
+        if (index >= 0) {
+          final orders = List<CustomerOrder>.of(_ordersSnapshot);
+          orders[index] = updated;
+          _ordersSnapshot = List<CustomerOrder>.unmodifiable(orders);
+          _ordersController.add(_ordersSnapshot);
+        }
+      }
+      return true;
+    } catch (error, stackTrace) {
+      // Keep the existing local checklist usable until this RPC is installed.
+      if (error is PostgrestException &&
+          (error.code == 'PGRST202' || error.code == '42883')) {
+        AppLogger.error(
+          'Order picking progress RPC is unavailable',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return false;
+      }
+      _throwCriticalOperationError('Order item pick failed', error, stackTrace);
+    }
+  }
+
   Future<bool> claimOrderForCurrentHelper(Object orderId) async {
     final locationId = activeLocationId;
     final helperId = currentUserNumericId;
@@ -4209,7 +4421,7 @@ class InventoryController {
     );
   }
 
-  Future<void> assignItemToLocation(String itemId, String mapElementId) async {
+  Future<void> assignItemToLocation(String itemId, String? mapElementId) async {
     try {
       await supabase
           .from('products')
@@ -4218,7 +4430,10 @@ class InventoryController {
 
       final index = _items.indexWhere((item) => item.id == itemId);
       if (index != -1) {
-        _items[index] = _items[index].copyWith(locationId: mapElementId);
+        _items[index] = _items[index].copyWith(
+          locationId: mapElementId,
+          clearLocation: mapElementId == null,
+        );
         _publishInventorySnapshot();
       }
     } catch (e) {

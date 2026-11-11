@@ -6,15 +6,21 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../logic/inventory_approval.dart';
 import '../logic/inventory_controller.dart';
 import 'widgets/app_dialog.dart';
+import 'widgets/app_styled_dropdown.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/history_pagination_footer.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 
 class ApprovalCenterPage extends StatefulWidget {
-  const ApprovalCenterPage({super.key, required this.controller});
+  const ApprovalCenterPage({
+    super.key,
+    required this.controller,
+    this.onPendingCountChanged,
+  });
 
   final InventoryController controller;
+  final ValueChanged<int>? onPendingCountChanged;
 
   @override
   State<ApprovalCenterPage> createState() => _ApprovalCenterPageState();
@@ -36,6 +42,9 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   bool _summaryInFlight = false;
   InventoryApprovalPage? _lastAcceptedSnapshot;
   String? _error;
+  String? _selectedRequestId;
+  InventoryApprovalType? _typeFilter;
+  final TextEditingController _inlineNote = TextEditingController();
 
   @override
   void initState() {
@@ -64,6 +73,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   @override
   void dispose() {
     unawaited(_subscription?.cancel());
+    _inlineNote.dispose();
     super.dispose();
   }
 
@@ -76,9 +86,17 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     setState(() {
       _snapshot = value;
       _summary[value.key.status] = value.totalCount;
+      if (_selectedRequestId != null &&
+          !value.requests.any((request) => request.id == _selectedRequestId)) {
+        _selectedRequestId = null;
+        _inlineNote.clear();
+      }
       _loading = false;
       _error = null;
     });
+    if (value.key.status == InventoryApprovalStatus.pending) {
+      widget.onPendingCountChanged?.call(value.totalCount);
+    }
     unawaited(_loadSummary());
   }
 
@@ -92,6 +110,9 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
           _summary = summary;
           _summaryLoading = false;
         });
+        widget.onPendingCountChanged?.call(
+          summary[InventoryApprovalStatus.pending] ?? 0,
+        );
       }
     } catch (_) {
       if (mounted) setState(() => _summaryLoading = false);
@@ -143,6 +164,8 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       _status = status;
       _page = 1;
       _snapshot = null;
+      _selectedRequestId = null;
+      _inlineNote.clear();
     });
     unawaited(_load());
   }
@@ -174,10 +197,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       if (mounted) {
         AppToast.error(
           context,
-          AppErrorMapper.message(
-            error,
-            fallback: AppErrorCategory.dataLoad,
-          ),
+          AppErrorMapper.message(error, fallback: AppErrorCategory.dataLoad),
         );
       }
     }
@@ -187,7 +207,19 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       ? value.toInt().toString()
       : value.toStringAsFixed(2);
 
-  String _money(double? value) => '₱${(value ?? 0).toStringAsFixed(2)}';
+  String _money(double? value) {
+    final fixed = (value ?? 0).toStringAsFixed(2);
+    final parts = fixed.split('.');
+    final negative = parts.first.startsWith('-');
+    final digits = negative ? parts.first.substring(1) : parts.first;
+    final grouped = StringBuffer();
+    if (negative) grouped.write('-');
+    for (var index = 0; index < digits.length; index++) {
+      if (index > 0 && (digits.length - index) % 3 == 0) grouped.write(',');
+      grouped.write(digits[index]);
+    }
+    return '₱$grouped.${parts.last}';
+  }
 
   String _when(DateTime value) {
     final date = value.toLocal();
@@ -212,10 +244,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         if (mounted) {
           AppToast.error(
             context,
-            AppErrorMapper.message(
-              error,
-              fallback: AppErrorCategory.dataLoad,
-            ),
+            AppErrorMapper.message(error, fallback: AppErrorCategory.dataLoad),
           );
         }
         return;
@@ -460,12 +489,13 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   Future<void> _review(
     InventoryApprovalRequest request, {
     required bool approve,
+    String? inlineNote,
   }) async {
     if (!_viewedRequests.contains(request.id)) {
       await _details(request);
       return;
     }
-    final note = TextEditingController();
+    final note = TextEditingController(text: inlineNote);
     final conflict = approve && request.hasStockConflict;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -501,7 +531,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
                 fontFamily: _font,
               ),
             ),
-            if (!conflict) ...[
+            if (!conflict && inlineNote == null) ...[
               const SizedBox(height: 16),
               TextField(
                 controller: note,
@@ -565,10 +595,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       if (mounted) {
         AppToast.error(
           context,
-          AppErrorMapper.message(
-            error,
-            fallback: AppErrorCategory.dataSave,
-          ),
+          AppErrorMapper.message(error, fallback: AppErrorCategory.dataSave),
         );
       }
     } finally {
@@ -871,78 +898,77 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   @override
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
-    final records = snapshot?.requests ?? const <InventoryApprovalRequest>[];
+    final records = (snapshot?.requests ?? const <InventoryApprovalRequest>[])
+        .where((request) => _typeFilter == null || request.type == _typeFilter)
+        .toList(growable: false);
+    final selected = records.isEmpty
+        ? null
+        : records.firstWhere(
+            (request) => request.id == _selectedRequestId,
+            orElse: () => records.first,
+          );
+    if (selected != null) _viewedRequests.add(selected.id);
     return ColoredBox(
-      color: const Color(0xFFF4F6F8),
+      color: const Color(0xFFF7F5F3),
       child: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final horizontalPadding = constraints.maxWidth < 700 ? 14.0 : 22.0;
+            final compact = constraints.maxWidth < 1150;
+            final horizontalPadding = compact ? 16.0 : 32.0;
             return SingleChildScrollView(
               padding: EdgeInsets.fromLTRB(
                 horizontalPadding,
-                14,
+                34,
                 horizontalPadding,
-                16,
+                32,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Approval Center',
+                    'Approvals',
                     style: TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF161616),
+                      fontSize: 25,
+                      fontWeight: FontWeight.w700,
                       fontFamily: _font,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 4),
                   const Text(
-                    'Review and verify inventory change requests',
+                    'Restock, write-off and discount requests from cashiers and helpers.',
                     style: TextStyle(
-                      color: Color(0xFF64748B),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF827872),
+                      fontSize: 14,
                       fontFamily: _font,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  _buildSummaryMetrics(),
-                  const SizedBox(height: 10),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
+                  const SizedBox(height: 28),
+                  if (compact)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: _buildStatusTabs(),
-                          ),
+                        _approvalList(records, snapshot),
+                        const SizedBox(height: 18),
+                        if (selected != null) _approvalDetail(selected),
+                      ],
+                    )
+                  else
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 440,
+                          child: _approvalList(records, snapshot),
                         ),
-                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                        _tableBody(records),
-                        HistoryPaginationFooter(
-                          currentPage: _page,
-                          totalItems:
-                              snapshot?.totalCount ?? _summary[_status] ?? 0,
-                          pageSize: snapshot?.key.pageSize ?? 20,
-                          loading: _loading,
-                          onPageSelected: (page) {
-                            if (page == _page) return;
-                            setState(() => _page = page);
-                            unawaited(_load());
-                          },
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: selected == null
+                              ? _emptyDetail()
+                              : _approvalDetail(selected),
                         ),
                       ],
                     ),
-                  ),
                 ],
               ),
             );
@@ -952,448 +978,827 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     );
   }
 
-  Widget _buildSummaryMetrics() => LayoutBuilder(
-    builder: (context, constraints) {
-      final stacked = constraints.maxWidth < 440;
-      final width = stacked
-          ? constraints.maxWidth
-          : (constraints.maxWidth - 16) / 3;
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: InventoryApprovalStatus.values
-            .map(
-              (status) => SizedBox(
-                width: width,
-                child: _summaryTile(status.label, status),
-              ),
-            )
-            .toList(growable: false),
-      );
-    },
-  );
-
-  Widget _summaryTile(String label, InventoryApprovalStatus status) =>
-      Container(
-        height: 56,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label.toUpperCase(),
-                style: const TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                  fontFamily: _font,
-                ),
-              ),
-            ),
-            Text(
-              _summaryLoading ? '—' : '${_summary[status] ?? 0}',
-              style: TextStyle(
-                color: _statusColor(status),
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
+  Widget _approvalList(
+    List<InventoryApprovalRequest> records,
+    InventoryApprovalPage? snapshot,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        children: [
+          Flexible(child: _approvalStatusTabs()),
+          const SizedBox(width: 12),
+          SizedBox(
+            height: 38,
+            child: AppStyledDropdown<InventoryApprovalType?>(
+              value: _typeFilter,
+              isDense: true,
+              style: const TextStyle(
+                color: Color(0xFF171717),
+                fontSize: 13,
                 fontFamily: _font,
               ),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('All types')),
+                ...InventoryApprovalType.values.map(
+                  (type) =>
+                      DropdownMenuItem(value: type, child: Text(type.label)),
+                ),
+              ],
+              onChanged: (value) => setState(() {
+                _typeFilter = value;
+                _selectedRequestId = null;
+                _inlineNote.clear();
+              }),
             ),
-          ],
-        ),
-      );
-
-  Widget _buildStatusTabs() => SegmentedButton<InventoryApprovalStatus>(
-    showSelectedIcon: false,
-    style: SegmentedButton.styleFrom(
-      selectedBackgroundColor: _blue,
-      selectedForegroundColor: Colors.white,
-      foregroundColor: const Color(0xFF475569),
-      backgroundColor: const Color(0xFFF8FAFC),
-      side: const BorderSide(color: Color(0xFFCBD5E1)),
-      minimumSize: const Size(0, 34),
-      padding: const EdgeInsets.symmetric(horizontal: 13),
-      visualDensity: VisualDensity.compact,
-      textStyle: const TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w800,
-        fontFamily: _font,
+          ),
+        ],
       ),
-    ),
-    segments: InventoryApprovalStatus.values
-        .map(
-          (status) => ButtonSegment(value: status, label: Text(status.label)),
-        )
-        .toList(growable: false),
-    selected: <InventoryApprovalStatus>{_status},
-    onSelectionChanged: (selection) => _changeStatus(selection.first),
+      const SizedBox(height: 14),
+      Container(
+        decoration: _outlineDecoration(),
+        clipBehavior: Clip.antiAlias,
+        child: _loading && snapshot == null
+            ? const Padding(
+                padding: EdgeInsets.all(48),
+                child: Center(
+                  child: CircularProgressIndicator(color: Color(0xFFC83D08)),
+                ),
+              )
+            : _error != null && snapshot == null
+            ? Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center),
+                    TextButton(
+                      onPressed: () => _load(force: true),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
+            : records.isEmpty
+            ? Padding(
+                padding: const EdgeInsets.all(28),
+                child: Center(
+                  child: Text(
+                    _typeFilter == null
+                        ? 'No ${_status.label.toLowerCase()} requests.'
+                        : 'No ${_typeFilter!.label.toLowerCase()} requests on this page.',
+                    style: const TextStyle(
+                      color: Color(0xFF827872),
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              )
+            : Column(
+                children: [
+                  for (var index = 0; index < records.length; index++) ...[
+                    if (index > 0)
+                      const Divider(height: 1, color: Color(0xFFE8E2DC)),
+                    _approvalListItem(
+                      records[index],
+                      records[index].id ==
+                          (records.any((item) => item.id == _selectedRequestId)
+                              ? _selectedRequestId
+                              : records.first.id),
+                    ),
+                  ],
+                ],
+              ),
+      ),
+      if ((snapshot?.totalPages ?? 1) > 1)
+        HistoryPaginationFooter(
+          currentPage: _page,
+          totalItems: snapshot!.totalCount,
+          pageSize: snapshot.key.pageSize,
+          loading: _loading,
+          onPageSelected: (page) {
+            if (page == _page) return;
+            setState(() {
+              _page = page;
+              _selectedRequestId = null;
+              _inlineNote.clear();
+            });
+            unawaited(_load());
+          },
+        ),
+    ],
   );
 
-  Widget _tableBody(List<InventoryApprovalRequest> records) {
-    if (_loading && _snapshot == null) {
-      return const Padding(
-        padding: EdgeInsets.all(48),
-        child: CircularProgressIndicator(color: _blue),
-      );
-    }
-    if (_error != null && _snapshot == null) {
-      return Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          children: [
-            Text(_error!, style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => _load(force: true),
-              icon: const Icon(LucideIcons.refreshCw),
-              label: const Text('Retry'),
-            ),
-          ],
+  Widget _approvalStatusTabs() => Container(
+    height: 38,
+    padding: const EdgeInsets.all(3),
+    decoration: _outlineDecoration(),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: InventoryApprovalStatus.values
+          .map((status) {
+            final active = status == _status;
+            final count =
+                status == InventoryApprovalStatus.pending && !_summaryLoading
+                ? ' ${_summary[status] ?? 0}'
+                : '';
+            return InkWell(
+              onTap: () => _changeStatus(status),
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: active ? const Color(0xFF1C1C1C) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${status.label}$count',
+                  style: TextStyle(
+                    color: active ? Colors.white : const Color(0xFF766C66),
+                    fontSize: 12,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    fontFamily: _font,
+                  ),
+                ),
+              ),
+            );
+          })
+          .toList(growable: false),
+    ),
+  );
+
+  BoxDecoration _outlineDecoration() => BoxDecoration(
+    color: Colors.white,
+    border: Border.all(color: const Color(0xFFE8E2DC)),
+    borderRadius: BorderRadius.circular(12),
+  );
+
+  Widget _approvalListItem(InventoryApprovalRequest request, bool selected) {
+    final title = request.isDiscount
+        ? '${request.discountDisplay} off ${_money(request.subtotalAmount)} cart'
+        : '${request.productName} · ${_qty(request.quantity)} ${request.unit}';
+    return Material(
+      color: selected ? const Color(0xFFFFF0E8) : Colors.white,
+      child: InkWell(
+        onTap: () => setState(() {
+          _selectedRequestId = request.id;
+          _inlineNote.clear();
+          _viewedRequests.add(request.id);
+        }),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _requestAvatar(request.requestedByName),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        _typeBadge(request.type, request.type.label),
+                        const Spacer(),
+                        Text(
+                          _relativeWhen(request.requestedAt),
+                          style: const TextStyle(
+                            color: Color(0xFFAAA19B),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF171717),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '${request.requestedByName}${request.reason?.isNotEmpty == true ? ' · ${request.reason}' : ''}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF827872),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-      );
-    }
-    if (records.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(48),
-        child: Column(
-          children: [
-            Icon(LucideIcons.clipboardCheck, color: Colors.grey.shade400),
-            const SizedBox(height: 10),
-            Text(
-              'No ${_status.label.toLowerCase()} approval requests.',
-              style: const TextStyle(color: Colors.grey, fontFamily: _font),
-            ),
-          ],
+      ),
+    );
+  }
+
+  Color _approvalTypeColor(InventoryApprovalType type) => switch (type) {
+    InventoryApprovalType.restock => const Color(0xFF078443),
+    InventoryApprovalType.writeOff => const Color(0xFFD11A1A),
+    InventoryApprovalType.discount => const Color(0xFFC83D08),
+  };
+
+  Widget _typeBadge(InventoryApprovalType type, String label) {
+    final color = _approvalTypeColor(type);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .08),
+        border: Border.all(color: color.withValues(alpha: .22)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
         ),
-      );
-    }
+      ),
+    );
+  }
+
+  Widget _requestAvatar(String name) {
+    final initials = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .map((part) => part[0].toUpperCase())
+        .join();
+    return CircleAvatar(
+      radius: 18,
+      backgroundColor: const Color(0xFFE8F6EE),
+      child: Text(
+        initials.isEmpty ? '?' : initials,
+        style: const TextStyle(
+          color: Color(0xFF078443),
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  String _relativeWhen(DateTime when) {
+    final delta = DateTime.now().difference(when.toLocal());
+    if (delta.inMinutes < 1) return 'just now';
+    if (delta.inMinutes < 60) return '${delta.inMinutes} minutes ago';
+    if (delta.inHours < 24) return '${delta.inHours} hours ago';
+    return '${delta.inDays} days ago';
+  }
+
+  Widget _emptyDetail() => Container(
+    padding: const EdgeInsets.all(36),
+    decoration: _outlineDecoration(),
+    child: const Center(
+      child: Text(
+        'Select an approval request.',
+        style: TextStyle(color: Color(0xFF827872)),
+      ),
+    ),
+  );
+
+  Widget _approvalDetail(InventoryApprovalRequest request) => Container(
+    decoration: _outlineDecoration(),
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+          child: Row(
+            children: [
+              _requestAvatar(request.requestedByName),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      request.requestedByName,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      '${_roleLabel(request.requestedByRole)} · ${_when(request.requestedAt)}',
+                      style: const TextStyle(
+                        color: Color(0xFF827872),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _typeBadge(request.type, '${request.type.label} request'),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFFE8E2DC)),
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: request.isDiscount
+              ? _discountApprovalBody(request)
+              : _inventoryApprovalBody(request),
+        ),
+        if (request.status == InventoryApprovalStatus.pending) ...[
+          const Divider(height: 1, color: Color(0xFFE8E2DC)),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Note to ${request.requestedByName.split(' ').first} (required to reject)',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _approvalActionBar(request),
+              ],
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
+
+  Widget _approvalActionBar(InventoryApprovalRequest request) {
+    final noteField = SizedBox(
+      height: 40,
+      child: TextField(
+        controller: _inlineNote,
+        style: const TextStyle(fontSize: 13),
+        decoration: InputDecoration(
+          hintText: 'e.g. PO sent, arriving Friday',
+          hintStyle: const TextStyle(color: Color(0xFFAAA19B)),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: const BorderSide(color: Color(0xFFE8E2DC)),
+          ),
+        ),
+      ),
+    );
+    final buttons = [
+      OutlinedButton(
+        onPressed: _reviewing.contains(request.id)
+            ? null
+            : () {
+                if (_inlineNote.text.trim().isEmpty) {
+                  AppToast.error(
+                    context,
+                    'Add a note before rejecting this request.',
+                  );
+                  return;
+                }
+                unawaited(
+                  _review(
+                    request,
+                    approve: false,
+                    inlineNote: _inlineNote.text.trim(),
+                  ),
+                );
+              },
+        child: const Text('Reject', style: TextStyle(color: Color(0xFFD11A1A))),
+      ),
+      FilledButton(
+        style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC83D08)),
+        onPressed: _reviewing.contains(request.id) || request.hasStockConflict
+            ? null
+            : () => unawaited(
+                _review(
+                  request,
+                  approve: true,
+                  inlineNote: _inlineNote.text.trim(),
+                ),
+              ),
+        child: Text(switch (request.type) {
+          InventoryApprovalType.discount => 'Approve discount',
+          InventoryApprovalType.restock => 'Approve & add stock',
+          InventoryApprovalType.writeOff => 'Approve & write off',
+        }),
+      ),
+    ];
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 820) {
+        if (constraints.maxWidth < 560) {
           return Column(
-            children: records.map(_compactApprovalCard).toList(growable: false),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              noteField,
+              const SizedBox(height: 8),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: buttons,
+              ),
+            ],
           );
         }
-        const actionsWidth = 104.0;
-        final flexibleWidth = constraints.maxWidth - 76 - actionsWidth;
-        final widths = <double>[
-          flexibleWidth * 0.10,
-          flexibleWidth * 0.16,
-          flexibleWidth * 0.14,
-          flexibleWidth * 0.16,
-          flexibleWidth * 0.14,
-          flexibleWidth * 0.11,
-          flexibleWidth * 0.19,
-          actionsWidth,
-        ];
-        return SizedBox(
-          width: constraints.maxWidth,
-          child: DataTable(
-            horizontalMargin: 10,
-            columnSpacing: 8,
-            headingRowHeight: 40,
-            dataRowMinHeight: 54,
-            dataRowMaxHeight: 54,
-            dividerThickness: 1,
-            headingRowColor: const WidgetStatePropertyAll(Color(0xFFF8FAFC)),
-            columns: [
-              DataColumn(label: _headerCell('TYPE', widths[0])),
-              DataColumn(label: _headerCell('REQUEST', widths[1])),
-              DataColumn(label: _headerCell('REQUESTED BY', widths[2])),
-              DataColumn(label: _headerCell('DETAILS', widths[3])),
-              DataColumn(label: _headerCell('REASON', widths[4])),
-              DataColumn(label: _headerCell('STATUS', widths[5])),
-              DataColumn(label: _headerCell('REQUESTED AT', widths[6])),
-              DataColumn(label: _headerCell('ACTIONS', widths[7])),
-            ],
-            rows: records
-                .map((request) => _row(request, widths))
-                .toList(growable: false),
-          ),
+        return Row(
+          children: [
+            Expanded(child: noteField),
+            const SizedBox(width: 8),
+            buttons.first,
+            const SizedBox(width: 8),
+            buttons.last,
+          ],
         );
       },
     );
   }
 
-  DataRow _row(InventoryApprovalRequest request, List<double> widths) {
-    final busy = _reviewing.contains(request.id);
-    final viewed = _viewedRequests.contains(request.id);
-    return DataRow(
-      color: WidgetStateProperty.resolveWith(
-        (states) => states.contains(WidgetState.hovered)
-            ? const Color(0xFFF8FAFC)
-            : Colors.transparent,
+  String _roleLabel(String value) => switch (value.toLowerCase()) {
+    'cashier' => 'Cashier',
+    'helper' || 'order_helper' => 'Order helper',
+    'admin' => 'Administrator',
+    _ => value,
+  };
+
+  Widget _discountApprovalBody(InventoryApprovalRequest request) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Wrap(
+        spacing: 34,
+        runSpacing: 12,
+        children: [
+          _metric('Proposed discount', request.discountDisplay, large: true),
+          _metric('Customer saves', _money(request.discountAmount)),
+          _metric('New total', _money(request.resultingTotal)),
+        ],
       ),
-      cells: [
-        DataCell(
-          SizedBox(
-            width: widths[0],
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: _chip(request.type.label, _typeColor(request.type)),
-            ),
-          ),
+      const SizedBox(height: 24),
+      if (request.cartItems.isNotEmpty) ...[
+        Text(
+          'Cart ${request.checkoutToken?.isNotEmpty == true ? request.checkoutToken : ''}',
+          style: const TextStyle(color: Color(0xFF827872), fontSize: 12),
         ),
-        DataCell(_requestTableCell(request, widths[1])),
-        DataCell(_bodyCell(request.requestedByName, widths[2], strong: true)),
-        DataCell(
-          _bodyCell(
-            request.isDiscount
-                ? '${_money(request.subtotalAmount)} → '
-                      '${_money(request.resultingTotal)}'
-                : '${request.type == InventoryApprovalType.restock ? '+' : '-'}'
-                      '${_qty(request.quantity)} ${request.unit}',
-            widths[3],
-            strong: true,
-          ),
-        ),
-        DataCell(
-          _bodyCell(
-            request.reason?.trim().isNotEmpty == true ? request.reason! : '—',
-            widths[4],
-          ),
-        ),
-        DataCell(
-          SizedBox(
-            width: widths[5],
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: _chip(
-                request.displayStatus,
-                request.usedAt != null
-                    ? const Color(0xFF475569)
-                    : _statusColor(request.status),
-              ),
-            ),
-          ),
-        ),
-        DataCell(_bodyCell(_when(request.requestedAt), widths[6])),
-        DataCell(
-          SizedBox(
-            width: widths[7],
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _actionButton(
-                  label: 'View',
-                  icon: LucideIcons.eye,
-                  color: _blue,
-                  onPressed: () => _details(request),
-                ),
-                if (request.status == InventoryApprovalStatus.pending) ...[
-                  const SizedBox(width: 4),
-                  _actionButton(
-                    label: viewed
-                        ? 'Approve request'
-                        : 'View request before approving',
-                    icon: LucideIcons.check,
-                    color: const Color(0xFF15803D),
-                    onPressed: busy || request.hasStockConflict
-                        ? null
-                        : () => _review(request, approve: true),
-                  ),
-                  const SizedBox(width: 4),
-                  _actionButton(
-                    label: viewed
-                        ? 'Reject request'
-                        : 'View request before rejecting',
-                    icon: LucideIcons.x,
-                    color: const Color(0xFFDC2626),
-                    onPressed: busy
-                        ? null
-                        : () => _review(request, approve: false),
-                  ),
-                ],
+        const SizedBox(height: 8),
+        Container(
+          decoration: _outlineDecoration(),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (final item in request.cartItems) ...[
+                _approvalCartItemRow(item),
+                const Divider(height: 1, color: Color(0xFFE8E2DC)),
               ],
-            ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 11,
+                ),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Subtotal',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Text(
+                      _money(request.subtotalAmount),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ],
-    );
-  }
+      if (request.reason?.trim().isNotEmpty == true) ...[
+        const SizedBox(height: 22),
+        _textDetail("Cashier’s note", request.reason!),
+      ],
+      if (request.note?.trim().isNotEmpty == true) ...[
+        const SizedBox(height: 14),
+        _textDetail('Notes', request.note!),
+      ],
+      if (request.status != InventoryApprovalStatus.pending) ...[
+        const SizedBox(height: 24),
+        _decisionBanner(request),
+      ],
+    ],
+  );
 
-  Widget _requestTableCell(InventoryApprovalRequest request, double width) =>
-      SizedBox(
-        width: width,
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                request.isDiscount
-                    ? request.discountDisplay
-                    : request.productName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF334155),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: _font,
-                ),
-              ),
-            ),
-            if (!request.isDiscount && request.hasProof) ...[
-              const SizedBox(width: 4),
-              Tooltip(
-                message: 'View proof',
-                child: InkWell(
-                  onTap: () => _openProof(request),
-                  borderRadius: BorderRadius.circular(6),
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(LucideIcons.image, color: _blue, size: 15),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      );
-
-  Widget _compactApprovalCard(InventoryApprovalRequest request) {
-    final busy = _reviewing.contains(request.id);
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-      ),
+  Widget _approvalCartItemRow(Map<String, dynamic> item) {
+    final productId = item['product_id']?.toString();
+    final imageUrl = _productImageUrl(productId);
+    final name = item['product_name']?.toString() ?? 'Item';
+    final quantity = (item['quantity'] as num?)?.toDouble() ?? 0;
+    final price = (item['unit_price'] as num?)?.toDouble() ?? 0;
+    final total = (item['line_total'] as num?)?.toDouble() ?? quantity * price;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
         children: [
+          _productImage(imageUrl, size: 36),
+          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _chip(request.type.label, _typeColor(request.type)),
-                    const SizedBox(width: 7),
-                    _chip(request.displayStatus, _statusColor(request.status)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  request.isDiscount
-                      ? '${request.discountDisplay} · '
-                            '${_money(request.subtotalAmount)} → '
-                            '${_money(request.resultingTotal)}'
-                      : '${request.productName} · '
-                            '${request.type == InventoryApprovalType.restock ? '+' : '-'}'
-                            '${_qty(request.quantity)} ${request.unit}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontFamily: _font,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${request.requestedByName} · ${_when(request.requestedAt)}',
-                  style: const TextStyle(
-                    color: Color(0xFF64748B),
-                    fontSize: 11,
-                    fontFamily: _font,
-                  ),
-                ),
-              ],
+            child: Text(
+              name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13),
             ),
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _actionButton(
-                label: 'View',
-                icon: LucideIcons.eye,
-                color: _blue,
-                onPressed: () => _details(request),
-              ),
-              if (request.status == InventoryApprovalStatus.pending) ...[
-                const SizedBox(width: 4),
-                _actionButton(
-                  label: 'Approve request',
-                  icon: LucideIcons.check,
-                  color: const Color(0xFF15803D),
-                  onPressed: busy || request.hasStockConflict
-                      ? null
-                      : () => _review(request, approve: true),
-                ),
-                const SizedBox(width: 4),
-                _actionButton(
-                  label: 'Reject request',
-                  icon: LucideIcons.x,
-                  color: const Color(0xFFDC2626),
-                  onPressed: busy
-                      ? null
-                      : () => _review(request, approve: false),
-                ),
-              ],
-            ],
+          Text(
+            '${_qty(quantity)} × ${_money(price)}',
+            style: const TextStyle(color: Color(0xFF827872), fontSize: 12),
+          ),
+          const SizedBox(width: 20),
+          Text(
+            _money(total),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
           ),
         ],
       ),
     );
   }
 
-  Widget _headerCell(String label, double width) => SizedBox(
-    width: width,
-    child: Text(
-      label,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: Color(0xFF64748B),
-        fontSize: 10,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 0.35,
-        fontFamily: _font,
-      ),
-    ),
-  );
+  String? _productImageUrl(String? productId) {
+    if (productId == null) return null;
+    for (final item in widget.controller.allItems) {
+      if (item.id == productId && item.imageUrl.isNotEmpty) {
+        return item.imageUrl;
+      }
+    }
+    return null;
+  }
 
-  Widget _bodyCell(String value, double width, {bool strong = false}) =>
-      SizedBox(
-        width: width,
-        child: Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: const Color(0xFF334155),
-            fontSize: 12,
-            fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
-            fontFamily: _font,
+  Widget _productImage(String? url, {double size = 56}) => Container(
+    width: size,
+    height: size,
+    decoration: _outlineDecoration(),
+    clipBehavior: Clip.antiAlias,
+    child: url == null
+        ? const Icon(LucideIcons.package, color: Color(0xFFAAA19B), size: 22)
+        : Image.network(
+            url,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const Icon(
+              LucideIcons.package,
+              color: Color(0xFFAAA19B),
+              size: 22,
+            ),
           ),
-        ),
-      );
-
-  Widget _actionButton({
-    required String label,
-    required IconData icon,
-    required Color color,
-    required VoidCallback? onPressed,
-  }) => Tooltip(
-    message: label,
-    child: SizedBox(
-      width: 28,
-      height: 32,
-      child: IconButton(
-        onPressed: onPressed,
-        padding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
-        style: IconButton.styleFrom(
-          foregroundColor: color,
-          disabledForegroundColor: const Color(0xFFCBD5E1),
-          backgroundColor: color.withValues(alpha: 0.09),
-          disabledBackgroundColor: const Color(0xFFF8FAFC),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-        ),
-        icon: Icon(icon, size: 16),
-      ),
-    ),
   );
+
+  Widget _inventoryApprovalBody(InventoryApprovalRequest request) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < 620;
+          final main = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _productImage(_productImageUrl(request.productId), size: 64),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          request.productName,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          request.productSku,
+                          style: const TextStyle(
+                            color: Color(0xFF827872),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F5F3),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _metric('On hand', _qty(request.currentStock)),
+                    ),
+                    Expanded(
+                      child: _metric(
+                        request.type == InventoryApprovalType.restock
+                            ? 'Add'
+                            : 'Remove',
+                        '${request.type == InventoryApprovalType.restock ? '+' : '−'}${_qty(request.quantity)}',
+                        valueColor:
+                            request.type == InventoryApprovalType.restock
+                            ? const Color(0xFF078443)
+                            : const Color(0xFFD11A1A),
+                      ),
+                    ),
+                    Expanded(
+                      child: _metric('After', _stockAfterLabel(request)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              _textDetail(
+                'Reason',
+                request.reason?.isNotEmpty == true ? request.reason! : '—',
+              ),
+              if (request.note?.isNotEmpty == true) ...[
+                const SizedBox(height: 18),
+                _textDetail('Notes', request.note!),
+              ],
+              if (request.hasStockConflict) ...[
+                const SizedBox(height: 18),
+                const Text(
+                  'This write-off exceeds available stock.',
+                  style: TextStyle(color: Color(0xFFD11A1A)),
+                ),
+              ],
+            ],
+          );
+          final proof = _supportingImage(request);
+          return narrow
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [main, const SizedBox(height: 20), proof],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: main),
+                    const SizedBox(width: 24),
+                    SizedBox(width: 190, child: proof),
+                  ],
+                );
+        },
+      ),
+      if (request.status != InventoryApprovalStatus.pending) ...[
+        const SizedBox(height: 24),
+        _decisionBanner(request),
+      ],
+    ],
+  );
+
+  String _stockAfterLabel(InventoryApprovalRequest request) {
+    for (final item in widget.controller.allItems) {
+      if (item.id == request.productId) {
+        return '${_qty(request.resultingStock)} /${_qty(item.maxQuantity)}';
+      }
+    }
+    return _qty(request.resultingStock);
+  }
+
+  Widget _supportingImage(InventoryApprovalRequest request) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Supporting image',
+        style: TextStyle(color: Color(0xFF827872), fontSize: 12),
+      ),
+      const SizedBox(height: 8),
+      Container(
+        height: 190,
+        width: double.infinity,
+        decoration: _outlineDecoration(),
+        child: request.hasProof
+            ? FutureBuilder<String?>(
+                future: _proofUrl(request),
+                builder: (context, snapshot) {
+                  final url = snapshot.data;
+                  if (url == null) {
+                    return Center(
+                      child: snapshot.connectionState == ConnectionState.done
+                          ? const Text('Image unavailable')
+                          : const CircularProgressIndicator(),
+                    );
+                  }
+                  return InkWell(
+                    onTap: () => _openProof(request),
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) =>
+                          const Center(child: Text('Image unavailable')),
+                    ),
+                  );
+                },
+              )
+            : const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(LucideIcons.imageOff, color: Color(0xFFAAA19B)),
+                  SizedBox(height: 8),
+                  Text(
+                    'No image attached',
+                    style: TextStyle(color: Color(0xFFAAA19B), fontSize: 12),
+                  ),
+                ],
+              ),
+      ),
+    ],
+  );
+
+  Widget _metric(
+    String label,
+    String value, {
+    bool large = false,
+    Color? valueColor,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(color: Color(0xFF827872), fontSize: 12),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        value,
+        style: TextStyle(
+          color: valueColor ?? const Color(0xFF171717),
+          fontSize: large ? 28 : 17,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ],
+  );
+
+  Widget _textDetail(String label, String value) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(color: Color(0xFF827872), fontSize: 12),
+      ),
+      const SizedBox(height: 3),
+      Text(
+        value,
+        style: const TextStyle(color: Color(0xFF171717), fontSize: 13),
+      ),
+    ],
+  );
+
+  Widget _decisionBanner(InventoryApprovalRequest request) {
+    final approved = request.status == InventoryApprovalStatus.approved;
+    final color = approved ? const Color(0xFF078443) : const Color(0xFFD11A1A);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .09),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${approved ? 'Approved' : 'Rejected'} by ${request.reviewedByName ?? 'Administrator'}'
+            '${request.reviewedAt == null ? '' : ' · ${_when(request.reviewedAt!)}'}',
+            style: TextStyle(
+              color: color,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (request.reviewNote?.trim().isNotEmpty == true)
+            Text(
+              '“${request.reviewNote}”',
+              style: TextStyle(color: color, fontSize: 13),
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _chip(String label, Color color) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),

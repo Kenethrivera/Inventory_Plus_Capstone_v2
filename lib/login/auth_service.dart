@@ -1,11 +1,10 @@
-// lib/login/auth_service.dart
-import 'package:flutter_dotenv/flutter_dotenv.dart'; // Add this import
-
-import 'package:http/http.dart' as http;
-
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
+
 import 'package:crypto/crypto.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../services/app_logger.dart';
 
 class LoginRateLimitedException implements Exception {
@@ -17,10 +16,8 @@ class LoginRateLimitedException implements Exception {
 class AuthService {
   final _supabase = Supabase.instance.client;
 
-  String _hashPassword(String password) {
-    final bytes = utf8.encode(password);
-    return sha256.convert(bytes).toString();
-  }
+  String _hashPassword(String password) =>
+      sha256.convert(utf8.encode(password)).toString();
 
   Future<Map<String, dynamic>?> login(String username, String password) async {
     final response = await _supabase.rpc(
@@ -91,7 +88,16 @@ class AuthService {
     return response?['email'];
   }
 
-  Future<bool> sendEmailJsOtp(String email, String otpCode) async {
+  Future<bool> isAdminUser(String username) async {
+    final response = await _supabase
+        .from('profiles')
+        .select('role')
+        .eq('username', username)
+        .maybeSingle();
+    return response?['role']?.toString().toLowerCase() == 'admin';
+  }
+
+  Future<bool> sendEmailJsOtp(String email, String code) async {
     try {
       final response = await http.post(
         Uri.parse('https://api.emailjs.com/api/v1.0/email/send'),
@@ -100,22 +106,15 @@ class AuthService {
           'service_id': dotenv.env['EMAILJS_SERVICE_ID'],
           'template_id': dotenv.env['EMAILJS_TEMPLATE_ID'],
           'user_id': dotenv.env['EMAILJS_PUBLIC_KEY'],
-          'template_params': {'email': email, 'otp_code': otpCode},
+          'template_params': {'email': email, 'otp_code': code},
         }),
       );
-
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        AppLogger.error(
-          'Password reset email request failed with status ${response.statusCode}',
-        );
-        throw Exception('Password reset email request failed.');
-      }
-    } catch (e, stackTrace) {
+      if (response.statusCode == 200) return true;
+      throw Exception('Password reset email request failed.');
+    } catch (error, stackTrace) {
       AppLogger.error(
         'Password reset email request failed',
-        error: e,
+        error: error,
         stackTrace: stackTrace,
       );
       throw Exception('Password reset email request failed.');
@@ -124,36 +123,57 @@ class AuthService {
 
   Future<bool> resetPasswordForUser(String email, String newPassword) async {
     try {
-      final hashedNewPassword = _hashPassword(newPassword);
       await _supabase
           .from('profiles')
-          .update({'password': hashedNewPassword})
+          .update({'password': _hashPassword(newPassword)})
           .eq('email', email);
       return true;
-    } catch (e) {
+    } catch (_) {
       return false;
     }
   }
 
-  Future<void> requestPasswordReset(String email) async {
-    // This is a placeholder. The logic in ForgotPasswordPage seems to handle this.
-    // For now, we can check if the user exists.
-    final user = await _supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
-    if (user == null) {
-      throw Exception('Password reset request could not be completed.');
+  Future<String> requestPasswordRecovery(
+    String username,
+    String channel,
+  ) async {
+    final response = await _supabase.functions.invoke(
+      'password-recovery',
+      body: {'action': 'request', 'username': username, 'channel': channel},
+    );
+    final data = response.data;
+    final challengeId = data is Map ? data['challengeId']?.toString() : null;
+    if (challengeId == null || challengeId.isEmpty) {
+      throw StateError('Password recovery is unavailable. Please try again.');
     }
+    return challengeId;
   }
 
-  Future<bool> isAdminUser(String username) async {
-    final response = await _supabase
-        .from('profiles')
-        .select('role')
-        .eq('username', username)
-        .maybeSingle();
-    return response?['role']?.toString().toLowerCase() == 'admin';
+  Future<String?> verifyPasswordRecovery(
+    String challengeId,
+    String code,
+  ) async {
+    final response = await _supabase.functions.invoke(
+      'password-recovery',
+      body: {'action': 'verify', 'challengeId': challengeId, 'code': code},
+    );
+    final data = response.data;
+    return data is Map ? data['resetToken']?.toString() : null;
+  }
+
+  Future<bool> completePasswordRecovery(
+    String resetToken,
+    String password,
+  ) async {
+    final response = await _supabase.functions.invoke(
+      'password-recovery',
+      body: {
+        'action': 'complete',
+        'resetToken': resetToken,
+        'password': password,
+      },
+    );
+    final data = response.data;
+    return data is Map && data['success'] == true;
   }
 }

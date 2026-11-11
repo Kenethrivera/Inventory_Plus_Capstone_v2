@@ -28,6 +28,7 @@ begin
     and session.revoked_at is null
     and session.expires_at > now()
     and profile.location_id is not null
+    and profile.is_active
   limit 1;
 
   if not found then return null; end if;

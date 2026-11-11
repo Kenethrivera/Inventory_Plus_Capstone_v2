@@ -65,7 +65,7 @@ class MapElement {
     'height': size.height,
     'label': label,
     'rotation': rotation,
-  };  
+  };
 
   factory MapElement.fromJson(Map<String, dynamic> json) => MapElement(
     id: json['id'],
@@ -83,18 +83,6 @@ class MapElement {
   );
 }
 
-class ItemLocation {
-  final String aisle;
-  final int shelf;
-  final String section;
-
-  ItemLocation({
-    required this.aisle,
-    required this.shelf,
-    required this.section,
-  });
-}
-
 class InventoryItem {
   final String id;
   final String name;
@@ -105,7 +93,6 @@ class InventoryItem {
   final String category;
   final String description;
   final String imageUrl;
-  final ItemLocation? location;
   final String? locationId;
   final String? manufacturer;
   final String? model;
@@ -124,7 +111,6 @@ class InventoryItem {
     required this.category,
     required this.description,
     required this.imageUrl,
-    this.location,
     this.locationId,
     this.manufacturer,
     this.model,
@@ -167,6 +153,7 @@ class InventoryItem {
     String? description,
     String? imageUrl,
     String? locationId,
+    bool clearLocation = false,
     String? manufacturer,
     String? model,
     String? productSize,
@@ -184,7 +171,7 @@ class InventoryItem {
       category: category ?? this.category,
       description: description ?? this.description,
       imageUrl: imageUrl ?? this.imageUrl,
-      locationId: locationId ?? this.locationId,
+      locationId: clearLocation ? null : locationId ?? this.locationId,
       manufacturer: manufacturer ?? this.manufacturer,
       model: model ?? this.model,
       productSize: productSize ?? this.productSize,
@@ -199,27 +186,45 @@ class CustomerOrderItem {
   final String productId;
   final String productName;
   final double quantity;
+  final bool picked;
+  final String? unit;
+  final double? unitPrice;
+  final double? lineTotal;
 
   CustomerOrderItem({
     required this.productId,
     required this.productName,
     required this.quantity,
+    this.picked = false,
+    this.unit,
+    this.unitPrice,
+    this.lineTotal,
   });
 
   Map<String, dynamic> toJson() => {
-        'product_id': productId,
-        'product_name': productName,
-        'quantity': quantity,
-      };
+    'product_id': productId,
+    'product_name': productName,
+    'quantity': quantity,
+  };
 
-  factory CustomerOrderItem.fromJson(Map<String, dynamic> json) =>
-      CustomerOrderItem(
-        // The fallback ?? checks ensure it can read both your old format and the new format
-        productId: json['product_id']?.toString() ?? json['productId']?.toString() ?? '',
-        productName: json['product_name']?.toString() ?? json['productName']?.toString() ?? 'Unknown',
-        quantity: (json['quantity'] as num?)?.toDouble() ?? 0.0,
-      );
+  factory CustomerOrderItem.fromJson(
+    Map<String, dynamic> json,
+  ) => CustomerOrderItem(
+    // The fallback ?? checks ensure it can read both your old format and the new format
+    productId:
+        json['product_id']?.toString() ?? json['productId']?.toString() ?? '',
+    productName:
+        json['product_name']?.toString() ??
+        json['productName']?.toString() ??
+        'Unknown',
+    quantity: (json['quantity'] as num?)?.toDouble() ?? 0.0,
+    picked: json['picked'] == true,
+    unit: json['unit']?.toString(),
+    unitPrice: (json['unit_price'] as num?)?.toDouble(),
+    lineTotal: (json['line_total'] as num?)?.toDouble(),
+  );
 }
+
 class CustomerOrder {
   final String id;
   final List<CustomerOrderItem> items;

@@ -5,6 +5,30 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'realtime/realtime_sync_service.dart';
 
+class StoreDayHours {
+  final String openingTime;
+  final String closingTime;
+  final bool closed;
+
+  const StoreDayHours({
+    required this.openingTime,
+    required this.closingTime,
+    this.closed = false,
+  });
+
+  factory StoreDayHours.fromMap(Map<String, dynamic> map) => StoreDayHours(
+    openingTime: map['open']?.toString() ?? '08:00:00',
+    closingTime: map['close']?.toString() ?? '21:00:00',
+    closed: map['closed'] == true,
+  );
+
+  Map<String, dynamic> toMap() => {
+    'open': openingTime,
+    'close': closingTime,
+    'closed': closed,
+  };
+}
+
 class StoreAccessSettings {
   final String locationId;
   final String openingTime;
@@ -13,6 +37,7 @@ class StoreAccessSettings {
   final int staffAccessAfterMinutes;
   final bool restrictStaffLogin;
   final bool allowAdminAnytime;
+  final Map<int, StoreDayHours> weeklyHours;
 
   const StoreAccessSettings({
     required this.locationId,
@@ -22,7 +47,12 @@ class StoreAccessSettings {
     required this.staffAccessAfterMinutes,
     required this.restrictStaffLogin,
     required this.allowAdminAnytime,
+    this.weeklyHours = const {},
   });
+
+  StoreDayHours hoursForWeekday(int weekday) =>
+      weeklyHours[weekday] ??
+      StoreDayHours(openingTime: openingTime, closingTime: closingTime);
 
   factory StoreAccessSettings.fromMap(Map<String, dynamic> map) {
     return StoreAccessSettings(
@@ -35,7 +65,22 @@ class StoreAccessSettings {
           int.tryParse(map['staff_access_after_minutes'].toString()) ?? 30,
       restrictStaffLogin: map['restrict_staff_login'] == true,
       allowAdminAnytime: map['allow_admin_anytime'] != false,
+      weeklyHours: _parseWeeklyHours(map['weekly_hours']),
     );
+  }
+
+  static Map<int, StoreDayHours> _parseWeeklyHours(dynamic raw) {
+    if (raw is! Map) return const {};
+    final hours = <int, StoreDayHours>{};
+    for (final entry in raw.entries) {
+      final day = int.tryParse(entry.key.toString());
+      if (day != null && day >= 1 && day <= 7 && entry.value is Map) {
+        hours[day] = StoreDayHours.fromMap(
+          Map<String, dynamic>.from(entry.value as Map),
+        );
+      }
+    }
+    return hours;
   }
 
   Map<String, dynamic> toMap() {
@@ -47,6 +92,9 @@ class StoreAccessSettings {
       'staff_access_after_minutes': staffAccessAfterMinutes,
       'restrict_staff_login': restrictStaffLogin,
       'allow_admin_anytime': allowAdminAnytime,
+      'weekly_hours': {
+        for (var day = 1; day <= 7; day++) '$day': hoursForWeekday(day).toMap(),
+      },
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
   }
@@ -265,8 +313,10 @@ class StoreAccessService {
   }
 
   String allowedWindowText(StoreAccessSettings settings) {
-    final open = _parseTimeOfDay(settings.openingTime);
-    final close = _parseTimeOfDay(settings.closingTime);
+    final day = settings.hoursForWeekday(DateTime.now().weekday);
+    if (day.closed) return 'the next scheduled opening';
+    final open = _parseTimeOfDay(day.openingTime);
+    final close = _parseTimeOfDay(day.closingTime);
 
     final int openMinutes =
         open.hour * 60 + open.minute - settings.staffAccessBeforeMinutes;
@@ -306,9 +356,10 @@ class StoreAccessService {
     StoreAccessSettings settings,
     DateTime openingDate,
   ) {
-    final _ClockTime open = _parseTimeOfDay(settings.openingTime);
+    final schedule = settings.hoursForWeekday(openingDate.weekday);
+    final _ClockTime open = _parseTimeOfDay(schedule.openingTime);
 
-    final _ClockTime close = _parseTimeOfDay(settings.closingTime);
+    final _ClockTime close = _parseTimeOfDay(schedule.closingTime);
 
     final int openingMinutes = open.hour * 60 + open.minute;
 
@@ -379,26 +430,17 @@ class StoreAccessService {
 
     final DateTime today = DateTime(current.year, current.month, current.day);
 
-    final StoreAccessWindow yesterdayWindow = _buildAccessWindowForOpeningDate(
-      settings,
-      today.subtract(const Duration(days: 1)),
-    );
-
-    final StoreAccessWindow todayWindow = _buildAccessWindowForOpeningDate(
-      settings,
-      today,
-    );
-
     final StoreAccessWindow tomorrowWindow = _buildAccessWindowForOpeningDate(
       settings,
       today.add(const Duration(days: 1)),
     );
 
-    final List<StoreAccessWindow> candidates = [
-      yesterdayWindow,
-      todayWindow,
-      tomorrowWindow,
-    ];
+    final List<StoreAccessWindow> candidates = [];
+    for (var offset = -2; offset <= 7; offset++) {
+      final openingDate = today.add(Duration(days: offset));
+      if (settings.hoursForWeekday(openingDate.weekday).closed) continue;
+      candidates.add(_buildAccessWindowForOpeningDate(settings, openingDate));
+    }
 
     // First, find the session that currently contains "now".
     for (final window in candidates) {
@@ -418,7 +460,7 @@ class StoreAccessService {
       }
     }
 
-    return tomorrowWindow;
+    return candidates.isNotEmpty ? candidates.last : tomorrowWindow;
   }
 
   DateTime accessStartDateTime(StoreAccessSettings settings, {DateTime? now}) {

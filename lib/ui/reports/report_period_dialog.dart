@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'report_range.dart';
+import '../widgets/app_styled_dropdown.dart';
 
 /// Shared "Generate report" dialog: pick the report type, then which period.
 /// Calls [onGenerate] with the chosen [ReportRange] after the dialog closes.
@@ -183,82 +184,8 @@ Widget _box<T>({
   required T value,
   required List<DropdownMenuItem<T>> items,
   required ValueChanged<T?> onChanged,
-}) {
-  return Builder(
-    builder: (context) => Theme(
-      data: Theme.of(context).copyWith(
-        canvasColor: Colors.white,
-        focusColor: const Color(0xFFEFF6FF),
-        hoverColor: const Color(0xFFEFF6FF),
-        highlightColor: const Color(0xFFDBEAFE),
-        splashColor: const Color(0xFFDBEAFE),
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<T>(
-            value: value,
-            isExpanded: true,
-            dropdownColor: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            menuMaxHeight: 340,
-            itemHeight: 48,
-            elevation: 4,
-            icon: const Icon(
-              LucideIcons.chevronDown,
-              size: 18,
-              color: Color(0xFF64748B),
-            ),
-            selectedItemBuilder: (context) => items
-                .map(
-                  (item) => Align(
-                    alignment: Alignment.centerLeft,
-                    child: DefaultTextStyle.merge(
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      child: item.child,
-                    ),
-                  ),
-                )
-                .toList(),
-            items: items
-                .map(
-                  (item) => DropdownMenuItem<T>(
-                    value: item.value,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: DefaultTextStyle.merge(
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: item.value == value
-                                  ? const Color(0xFF2563EB)
-                                  : const Color(0xFF172033),
-                            ),
-                            child: item.child,
-                          ),
-                        ),
-                        if (item.value == value)
-                          const Icon(
-                            Icons.check_rounded,
-                            size: 18,
-                            color: Color(0xFF2563EB),
-                          ),
-                      ],
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: onChanged,
-          ),
-        ),
-      ),
-    ),
-  );
-}
+}) => AppStyledDropdown<T>(
+  value: value,
+  items: items,
+  onChanged: onChanged,
+);

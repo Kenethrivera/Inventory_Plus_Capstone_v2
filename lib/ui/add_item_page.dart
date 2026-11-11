@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
+import 'widgets/app_styled_dropdown.dart';
 import 'dart:async';
 import 'package:inventory_plus/services/app_error_mapper.dart';
 import 'package:inventory_plus/services/app_logger.dart';
@@ -404,7 +405,6 @@ class _AddItemPageState extends State<AddItemPage> {
         model: _modelController.text.trim(),
         productSize: _sizeController.text.trim(),
         shelfLevel: '', // Default empty value
-        binNumber: '', // Default empty value
         imageUrl: finalImageUrl ?? '',
         unit: _selectedUnit,
       );
@@ -614,10 +614,9 @@ class _AddItemPageState extends State<AddItemPage> {
       ),
     );
 
-    return DropdownButtonFormField<String>(
+    return AppStyledDropdown<String>(
       key: ValueKey('$_selectedUnit-$_unitFieldVersion'),
       initialValue: _selectedUnit,
-      isExpanded: true,
       decoration: InputDecoration(
         labelText: "Unit of Measure",
         helperText:

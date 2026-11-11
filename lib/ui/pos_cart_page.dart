@@ -16,6 +16,7 @@ import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/helper_assignment_selector.dart';
 import 'widgets/order_checklist_view.dart';
+import 'widgets/gcash_qr_image.dart';
 import 'visual_search_page.dart';
 import 'package:inventory_plus/notifications/notification_provider.dart';
 import 'dart:async';
@@ -1370,7 +1371,8 @@ class _PosCartPageState extends State<PosCartPage>
                         children: [
                           buildPaymentTile('Cash', LucideIcons.banknote),
                           const SizedBox(width: 8),
-                          buildPaymentTile('GCash', LucideIcons.smartphone),
+                          if (widget.controller.gcashEnabled)
+                            buildPaymentTile('GCash', LucideIcons.smartphone),
                         ],
                       ),
 
@@ -1534,81 +1536,9 @@ class _PosCartPageState extends State<PosCartPage>
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              // --- UPDATED: Zoomed QR with Full Screen Button ---
-                              // --- UPDATED: Clickable Zoomed QR ---
                               widget.controller.gcashQrUrl.isNotEmpty
-                                  ? GestureDetector(
-                                      onTap: () {
-                                        // Popup the full image
-                                        showDialog(
-                                          context: context,
-                                          builder: (ctx) => Dialog(
-                                            backgroundColor: Colors.transparent,
-                                            insetPadding: const EdgeInsets.all(
-                                              16,
-                                            ),
-                                            child: Stack(
-                                              alignment: Alignment.topRight,
-                                              children: [
-                                                ClipRRect(
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                  child: Image.network(
-                                                    widget
-                                                        .controller
-                                                        .gcashQrUrl,
-                                                    fit: BoxFit
-                                                        .contain, // Shows the FULL image
-                                                  ),
-                                                ),
-                                                IconButton(
-                                                  icon: const Icon(
-                                                    LucideIcons.xCircle,
-                                                    color: Colors.white,
-                                                    size: 32,
-                                                  ),
-                                                  onPressed: () =>
-                                                      Navigator.pop(ctx),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                      child: Container(
-                                        height: 180,
-                                        width: 180,
-                                        clipBehavior: Clip.hardEdge,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          // Optional: Adds a subtle border so it looks clickable
-                                          border: Border.all(
-                                            color: Colors.blue.shade100,
-                                            width: 2,
-                                          ),
-                                        ),
-                                        child: Transform.scale(
-                                          scale: 2,
-                                          child: Image.network(
-                                            widget.controller.gcashQrUrl,
-                                            fit: BoxFit.fitWidth,
-                                            alignment: const Alignment(
-                                              0.0,
-                                              -0.25,
-                                            ),
-                                            errorBuilder: (_, __, ___) =>
-                                                const Center(
-                                                  child: Icon(
-                                                    Icons.broken_image,
-                                                    color: Colors.grey,
-                                                  ),
-                                                ),
-                                          ),
-                                        ),
-                                      ),
+                                  ? GcashQrImage(
+                                      imageUrl: widget.controller.gcashQrUrl,
                                     )
                                   : Container(
                                       height: 180,

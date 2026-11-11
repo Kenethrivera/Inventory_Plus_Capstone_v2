@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'models/app_notification.dart';
+import 'helper_notification_panel.dart';
 import 'notification_badge.dart';
 import 'notification_controller.dart';
 import 'notification_page.dart';
@@ -14,6 +15,7 @@ enum NotificationPanelPlacement { besideSidebar, belowBell }
 class NotificationBell extends StatelessWidget {
   final Color iconColor;
   final NotificationPanelPlacement placement;
+  final bool helperMobilePanel;
   final FutureOr<bool> Function(AppNotification notification)?
   onNotificationSelected;
   final bool Function(AppNotification notification) isActionable;
@@ -27,6 +29,7 @@ class NotificationBell extends StatelessWidget {
     super.key,
     this.iconColor = const Color(0xFF0F172A),
     this.placement = NotificationPanelPlacement.belowBell,
+    this.helperMobilePanel = false,
     this.onNotificationSelected,
     this.onValidateNotification,
     required this.isActionable,
@@ -94,6 +97,14 @@ class NotificationBell extends StatelessWidget {
     final isDesktop = screen.width >= 700;
 
     if (!isDesktop) {
+      if (helperMobilePanel) {
+        return _showHelperMobilePanel(
+          context,
+          controller,
+          screen,
+          onInformationalNotificationsShown,
+        );
+      }
       return showModalBottomSheet<AppNotification>(
         context: context,
         isScrollControlled: true,
@@ -132,6 +143,52 @@ class NotificationBell extends StatelessWidget {
       screen,
       onInformationalNotificationsShown,
       onNotificationRemovedFromSession,
+    );
+  }
+
+  Future<AppNotification?> _showHelperMobilePanel(
+    BuildContext context,
+    NotificationController controller,
+    Size screen,
+    ValueChanged<Iterable<String>> onInformationalNotificationsShown,
+  ) {
+    final box = context.findRenderObject() as RenderBox?;
+    final offset = box?.localToGlobal(Offset.zero) ?? Offset.zero;
+    final buttonHeight = box?.size.height ?? 40;
+    final top = (offset.dy + buttonHeight + 2).clamp(8.0, screen.height - 190);
+
+    return showGeneralDialog<AppNotification>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close notifications',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 160),
+      pageBuilder: (context, animation, secondaryAnimation) => Stack(
+        children: [
+          Positioned(
+            top: top,
+            left: 20,
+            right: 20,
+            child: Material(
+              color: Colors.transparent,
+              child: HelperNotificationPanel(
+                controller: controller,
+                isActionable: isActionable,
+                onValidateNotification: onValidateNotification,
+                onInformationalNotificationsShown:
+                    onInformationalNotificationsShown,
+              ),
+            ),
+          ),
+        ],
+      ),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return FadeTransition(opacity: curved, child: child);
+      },
     );
   }
 

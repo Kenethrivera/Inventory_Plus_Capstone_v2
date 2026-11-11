@@ -18,6 +18,8 @@ declare
   v_helper_id public.profiles.id%type;
   v_helper_name public.profiles.name%type;
   v_assigned_at timestamptz;
+  v_auto_assign boolean := true;
+  v_max_active integer := 3;
 begin
   select session_profile.role,
          session_profile.location_id
@@ -27,6 +29,17 @@ begin
   if not found or v_role not in ('admin', 'staff', 'cashier', 'helper') then
     raise exception 'Application session is invalid or expired';
   end if;
+
+  select coalesce(settings.auto_assign_orders, true),
+         coalesce(settings.max_active_orders_per_helper, 3)
+    into v_auto_assign, v_max_active
+    from public.store_settings settings
+   where settings.location_id = v_location_id;
+  if not found then
+    v_auto_assign := true;
+    v_max_active := 3;
+  end if;
+  if not v_auto_assign then return; end if;
 
   -- All clients reconciling the same store serialize behind one transaction
   -- lock. The conditional UPDATE remains the final ownership guard.
@@ -54,7 +67,7 @@ begin
        and profile.location_id = v_location_id
       left join lateral (
         select count(*) filter (
-                 where lower(work.status) = 'pending'
+                 where lower(work.status) in ('pending', 'prepared')
                )::integer as active_count,
                max(work.assigned_at) as last_assigned_at
           from public.orders work
@@ -69,6 +82,7 @@ begin
        and presence.last_seen_at >= clock_timestamp() - interval '2 minutes'
        and lower(presence.user_role) = 'helper'
        and lower(profile.role) = 'helper'
+       and coalesce(workload.active_count, 0) < v_max_active
      order by coalesce(workload.active_count, 0) asc,
               workload.last_assigned_at asc nulls first,
               profile.id asc

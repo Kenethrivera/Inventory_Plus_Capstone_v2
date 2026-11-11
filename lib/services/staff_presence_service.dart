@@ -26,6 +26,7 @@ class StaffPresenceService extends ChangeNotifier {
   bool _refreshQueued = false;
   bool _started = false;
   bool _disposed = false;
+  bool _isOnBreak = false;
 
   StaffPresenceService({
     required this.supabase,
@@ -44,6 +45,8 @@ class StaffPresenceService extends ChangeNotifier {
         activeTimeout: activeTimeout,
       );
   bool get isLoading => _isLoading;
+  bool get isOnBreak => _isOnBreak;
+  bool get isStarted => _started;
 
   void bindRealtimeSync(RealtimeSyncService realtimeSync) {
     unawaited(_realtimeSubscription?.cancel());
@@ -64,6 +67,18 @@ class StaffPresenceService extends ChangeNotifier {
       return;
     }
 
+    // A browser refresh should keep an unfinished break. Explicit logout clears it.
+    if (userRole.toLowerCase() == 'helper') {
+      final existing = await supabase
+          .from('staff_presence')
+          .select('current_module,logged_out_at')
+          .eq('user_id', userId)
+          .maybeSingle();
+      _isOnBreak =
+          existing?['current_module'] == 'On break' &&
+          existing?['logged_out_at'] == null;
+    }
+
     final now = DateTime.now().toUtc().toIso8601String();
 
     await supabase.from('staff_presence').upsert({
@@ -71,14 +86,15 @@ class StaffPresenceService extends ChangeNotifier {
       'user_name': userName,
       'user_role': userRole,
       'location_id': locationId,
-      'is_online': true,
-      'current_module': currentModule,
+      'is_online': !_isOnBreak,
+      'current_module': _isOnBreak ? 'On break' : currentModule,
       'logged_in_at': now,
       'last_seen_at': now,
       'logged_out_at': null,
     }, onConflict: 'user_id');
 
     _started = true;
+    notifyListeners();
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(heartbeatInterval, (_) {
       unawaited(_runHeartbeat());
@@ -99,10 +115,29 @@ class StaffPresenceService extends ChangeNotifier {
       'user_name': userName,
       'user_role': userRole,
       'location_id': locationId,
-      'is_online': true,
-      'current_module': currentModule,
+      'is_online': !_isOnBreak,
+      'current_module': _isOnBreak ? 'On break' : currentModule,
       'last_seen_at': now,
     }, onConflict: 'user_id');
+  }
+
+  Future<void> setOnBreak(bool onBreak) async {
+    if (_disposed || !_started || userRole.toLowerCase() != 'helper') {
+      throw StateError('Helper availability is not ready.');
+    }
+    if (_isOnBreak == onBreak) return;
+
+    _isOnBreak = onBreak;
+    notifyListeners();
+    try {
+      await heartbeat(currentModule: _currentModule);
+      await refreshActiveStaff();
+    } catch (_) {
+      _isOnBreak = !onBreak;
+      notifyListeners();
+      await heartbeat(currentModule: _currentModule);
+      rethrow;
+    }
   }
 
   Future<void> _runHeartbeat() async {
@@ -127,6 +162,8 @@ class StaffPresenceService extends ChangeNotifier {
     _expiryTimer?.cancel();
     _expiryTimer = null;
     _started = false;
+    _isOnBreak = false;
+    if (!_disposed) notifyListeners();
 
     final now = DateTime.now().toUtc().toIso8601String();
 

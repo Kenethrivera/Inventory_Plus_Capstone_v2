@@ -1,5 +1,6 @@
 enum MainSection {
   dashboard('dashboard', <String>{'admin'}),
+  ordersActivity('orders-activity', <String>{'admin'}),
   forecasting('forecasting', <String>{'admin'}),
   pos('pos', <String>{'admin', 'staff', 'cashier'}),
   queue('queue', <String>{'admin', 'helper'}),
@@ -40,6 +41,7 @@ enum MainSection {
       case 'admin':
         return const <MainSection>[
           dashboard,
+          ordersActivity,
           forecasting,
           pos,
           queue,
