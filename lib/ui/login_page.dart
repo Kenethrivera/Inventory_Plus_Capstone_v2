@@ -259,15 +259,21 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showPolicyDialog({required bool isPrivacy}) {
+    final compact = MediaQuery.sizeOf(context).width < 600;
     showDialog<void>(
       context: context,
       barrierColor: const Color(0xCC292420),
       builder: (dialogContext) => Dialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 16,
+          vertical: compact ? 12 : 24,
+        ),
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(compact ? 18 : 24),
+        ),
         child: SizedBox(
           width: 700,
           child: SingleChildScrollView(
@@ -276,12 +282,17 @@ class _LoginPageState extends State<LoginPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(34, 28, 34, 26),
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 20 : 34,
+                    compact ? 20 : 28,
+                    compact ? 20 : 34,
+                    compact ? 18 : 26,
+                  ),
                   child: Row(
                     children: [
                       Container(
-                        width: 54,
-                        height: 54,
+                        width: compact ? 44 : 54,
+                        height: compact ? 44 : 54,
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFEEE5),
                           borderRadius: BorderRadius.circular(14),
@@ -294,13 +305,13 @@ class _LoginPageState extends State<LoginPage> {
                           size: 23,
                         ),
                       ),
-                      const SizedBox(width: 18),
+                      SizedBox(width: compact ? 12 : 18),
                       Expanded(
                         child: Text(
                           isPrivacy ? 'Privacy Policy' : 'Terms of Service',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: Color(0xFF171717),
-                            fontSize: 25,
+                            fontSize: compact ? 20 : 25,
                             fontWeight: FontWeight.w800,
                             fontFamily: 'Outfit',
                           ),
@@ -311,7 +322,7 @@ class _LoginPageState extends State<LoginPage> {
                         onPressed: () => Navigator.pop(dialogContext),
                         style: IconButton.styleFrom(
                           backgroundColor: const Color(0xFFF5F3F1),
-                          fixedSize: const Size(54, 54),
+                          fixedSize: Size.square(compact ? 44 : 54),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(13),
                           ),
@@ -327,7 +338,12 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const Divider(height: 1, color: Color(0xFFEDE8E3)),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(34, 30, 34, 0),
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 20 : 34,
+                    compact ? 24 : 30,
+                    compact ? 20 : 34,
+                    0,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -335,9 +351,9 @@ class _LoginPageState extends State<LoginPage> {
                         isPrivacy
                             ? 'Inventory Plus is committed to protecting your personal information.'
                             : 'By accessing and using Inventory Plus, you accept and agree to be bound by the terms and provisions of this agreement.',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Color(0xFF171717),
-                          fontSize: 20,
+                          fontSize: compact ? 17 : 20,
                           fontWeight: FontWeight.w700,
                           height: 1.5,
                           fontFamily: 'Outfit',
@@ -348,9 +364,9 @@ class _LoginPageState extends State<LoginPage> {
                         isPrivacy
                             ? 'We process your data in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines.'
                             : 'Any participation in this service will constitute acceptance of this agreement.',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Color(0xFF292522),
-                          fontSize: 18,
+                          fontSize: compact ? 15 : 18,
                           height: 1.55,
                           fontFamily: 'Outfit',
                         ),
@@ -358,15 +374,15 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 22),
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(20),
+                        padding: EdgeInsets.all(compact ? 16 : 20),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFBF8F5),
                           border: Border.all(color: const Color(0xFFEDE6DF)),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: isPrivacy
-                            ? const Text.rich(
-                                TextSpan(
+                            ? Text.rich(
+                                const TextSpan(
                                   children: [
                                     TextSpan(
                                       text: 'How we use it: ',
@@ -382,16 +398,16 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                                 style: TextStyle(
                                   color: Color(0xFF292522),
-                                  fontSize: 17,
+                                  fontSize: compact ? 15 : 17,
                                   height: 1.5,
                                   fontFamily: 'Outfit',
                                 ),
                               )
-                            : const Text(
+                            : Text(
                                 'These terms are governed by the laws of the Republic of the Philippines.',
                                 style: TextStyle(
                                   color: Color(0xFF292522),
-                                  fontSize: 17,
+                                  fontSize: compact ? 15 : 17,
                                   height: 1.5,
                                   fontFamily: 'Outfit',
                                 ),
@@ -401,7 +417,12 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(34, 48, 34, 30),
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 20 : 34,
+                    compact ? 32 : 48,
+                    compact ? 20 : 34,
+                    compact ? 20 : 30,
+                  ),
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: SizedBox(
@@ -536,20 +557,27 @@ class _LoginPageState extends State<LoginPage> {
                   fontFamily: 'Outfit',
                 ),
               ),
-              TextButton(
-                onPressed: _showForgotPasswordModal,
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text(
-                  'Forgot password?',
-                  style: TextStyle(
-                    color: _brand,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'Outfit',
+              const SizedBox(width: 8),
+              Flexible(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _showForgotPasswordModal,
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      'Forgot password?',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: _brand,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Outfit',
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -679,7 +707,7 @@ class _LoginPageState extends State<LoginPage> {
                     : Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          SizedBox(height: 280, child: _buildBrandPanel()),
+                          _buildBrandPanel(),
                           _buildLoginFormPanel(form),
                         ],
                       ),
@@ -697,6 +725,7 @@ class _LoginPageState extends State<LoginPage> {
       color: _brandDark,
       padding: EdgeInsets.all(compact ? 24 : 40),
       child: Column(
+        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -723,7 +752,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ],
           ),
-          const Spacer(),
+          if (compact) const SizedBox(height: 48) else const Spacer(),
           Text(
             'Every item, counted.\nEvery sale, tracked.',
             style: TextStyle(
@@ -744,7 +773,7 @@ class _LoginPageState extends State<LoginPage> {
               fontFamily: 'Outfit',
             ),
           ),
-          const Spacer(),
+          if (compact) const SizedBox(height: 36) else const Spacer(),
           const Text(
             'Hardware Management System',
             style: TextStyle(
@@ -758,15 +787,21 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildLoginFormPanel(Widget form) => Container(
-    color: const Color(0xFFF8F7F5),
-    alignment: Alignment.center,
-    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 390),
-      child: form,
-    ),
-  );
+  Widget _buildLoginFormPanel(Widget form) {
+    final compact = MediaQuery.sizeOf(context).width < 380;
+    return Container(
+      color: const Color(0xFFF8F7F5),
+      alignment: Alignment.center,
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 20 : 32,
+        vertical: compact ? 32 : 48,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 390),
+        child: form,
+      ),
+    );
+  }
 
   Widget _buildTextField({
     required TextEditingController controller,
@@ -1629,16 +1664,19 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 960;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final wide = screenWidth >= 960;
 
     return Dialog(
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
-      insetPadding: const EdgeInsets.all(20),
+      insetPadding: EdgeInsets.all(screenWidth < 600 ? 12 : 20),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: wide ? 900 : 400),
+        constraints: BoxConstraints(
+          maxWidth: wide ? 900 : min(560.0, screenWidth - 24),
+        ),
         child: SingleChildScrollView(
           child: wide
               ? IntrinsicHeight(
@@ -1726,15 +1764,17 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Text(
-                    _stepTitles[i],
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: i == _step
-                          ? FontWeight.w700
-                          : FontWeight.w400,
-                      fontFamily: 'Outfit',
+                  Expanded(
+                    child: Text(
+                      _stepTitles[i],
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: i == _step
+                            ? FontWeight.w700
+                            : FontWeight.w400,
+                        fontFamily: 'Outfit',
+                      ),
                     ),
                   ),
                 ],
@@ -1883,13 +1923,23 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(child: _recoveryChannelOption('email', 'Email')),
-                const SizedBox(width: 14),
-                Expanded(child: _recoveryChannelOption('sms', 'SMS')),
-              ],
-            ),
+            if (MediaQuery.sizeOf(context).width < 380)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _recoveryChannelOption('email', 'Email'),
+                  const SizedBox(height: 10),
+                  _recoveryChannelOption('sms', 'SMS'),
+                ],
+              )
+            else
+              Row(
+                children: [
+                  Expanded(child: _recoveryChannelOption('email', 'Email')),
+                  const SizedBox(width: 14),
+                  Expanded(child: _recoveryChannelOption('sms', 'SMS')),
+                ],
+              ),
           ] else if (_step == 1) ...[
             _buildModalField(
               controller: _controller,

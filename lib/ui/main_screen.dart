@@ -2390,6 +2390,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               controller: widget.controller,
               onOpenRegister: () => _selectMainIndex(posIndex),
               onOpenInventory: () => _selectMainIndex(inventoryIndex),
+              approvalChanges: widget.realtimeSync.approvalRequestChanges,
             ),
           );
         }
