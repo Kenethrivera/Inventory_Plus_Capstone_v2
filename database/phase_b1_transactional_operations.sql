@@ -528,6 +528,22 @@ begin
   if v_order.status <> 'prepared' then
     raise exception 'order_not_prepared';
   end if;
+  if jsonb_typeof(v_order.items) is distinct from 'array'
+      or jsonb_array_length(v_order.items) = 0 then
+    raise exception 'order_item_snapshot_invalid';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(v_order.items) item
+    where coalesce(
+        item.value ->> 'product_id', item.value ->> 'productId', '')
+          !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      or coalesce(item.value ->> 'quantity', '')
+          !~ '^[0-9]+([.][0-9]+)?$'
+      or (item.value ->> 'quantity')::numeric <= 0
+  ) then
+    raise exception 'order_item_snapshot_invalid';
+  end if;
 
   v_payment_mode := coalesce(
     nullif(trim(p_payment_mode), ''),

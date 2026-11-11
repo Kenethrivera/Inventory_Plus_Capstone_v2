@@ -65,6 +65,11 @@ CREATE INDEX orders_helper_current_workload_v1_idx ON public.orders USING btree 
 
 CREATE INDEX orders_history_event_idx ON public.orders USING btree (location_id, COALESCE(completed_at, prepared_at, created_at) DESC, id DESC);
 
+CREATE TRIGGER orders_validate_completed_snapshot_v1
+  BEFORE INSERT OR UPDATE OF status, items, completed_at ON public.orders
+  FOR EACH ROW
+  EXECUTE FUNCTION private.assert_completed_order_snapshot_v1();
+
 CREATE TRIGGER orders_sync_order_history_v1
   AFTER INSERT OR UPDATE ON public.orders
   FOR EACH ROW
