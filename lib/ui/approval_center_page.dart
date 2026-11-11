@@ -11,19 +11,37 @@ import 'widgets/app_toast.dart';
 import 'widgets/history_pagination_footer.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
+import '../services/forecasting_api_service.dart';
+import '../services/restock_recommendation_tracking_service.dart';
 
 class ApprovalCenterPage extends StatefulWidget {
   const ApprovalCenterPage({
     super.key,
     required this.controller,
     this.onPendingCountChanged,
+    this.restockTrackingCoordinator,
   });
 
   final InventoryController controller;
   final ValueChanged<int>? onPendingCountChanged;
+  final RestockRecommendationTrackingCoordinator? restockTrackingCoordinator;
 
   @override
   State<ApprovalCenterPage> createState() => _ApprovalCenterPageState();
+}
+
+enum _TrackingDecision { retry, continueWithoutTracking, cancel }
+
+class _RestockApprovalUiResult {
+  const _RestockApprovalUiResult({
+    required this.tracked,
+    required this.receiptMatched,
+    required this.allocationReused,
+  });
+
+  final bool tracked;
+  final bool receiptMatched;
+  final bool allocationReused;
 }
 
 class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
@@ -45,6 +63,16 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   String? _selectedRequestId;
   InventoryApprovalType? _typeFilter;
   final TextEditingController _inlineNote = TextEditingController();
+  RestockRecommendationTrackingCoordinator? _environmentRestockTracking;
+
+  RestockRecommendationTrackingCoordinator _restockTracking() {
+    final injected = widget.restockTrackingCoordinator;
+    if (injected != null) return injected;
+    return _environmentRestockTracking ??=
+        RestockRecommendationTrackingCoordinator(
+          api: ForecastApiClient.fromEnvironment(),
+        );
+  }
 
   @override
   void initState() {
@@ -570,20 +598,51 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     setState(() => _reviewing.add(request.id));
     try {
       if (approve) {
-        await widget.controller.approveInventoryApprovalRequest(
-          request.id,
-          reviewNote: reviewNote,
-        );
+        if (request.type == InventoryApprovalType.restock) {
+          final result = await _approveRestockWithTracking(
+            request,
+            reviewNote: reviewNote,
+          );
+          if (result == null || !mounted) return;
+          if (result.receiptMatched) {
+            AppToast.success(
+              context,
+              result.allocationReused
+                  ? 'Restock approved. Its receipt was already linked to the saved recommendation.'
+                  : 'Restock approved and its exact receipt was linked to the saved recommendation.',
+            );
+          } else {
+            AppToast.error(
+              context,
+              result.tracked
+                  ? 'Restock approved, but receipt matching is pending. Retry from Saved Recommendation Tracking.'
+                  : 'Restock approved without recommendation tracking, as confirmed.',
+            );
+          }
+        } else {
+          await widget.controller.approveInventoryApprovalRequest(
+            request.id,
+            reviewNote: reviewNote,
+          );
+          if (mounted) AppToast.success(context, 'Request approved.');
+        }
       } else {
         await widget.controller.rejectInventoryApprovalRequest(
           request.id,
           reviewNote: reviewNote,
         );
+        if (mounted) AppToast.success(context, 'Request rejected.');
       }
+    } on RestockMutationAfterSnapshotException catch (error, stackTrace) {
+      AppLogger.error(
+        'Restock failed after recommendation snapshot save',
+        error: error.cause,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
-        AppToast.success(
+        AppToast.error(
           context,
-          'Request ${approve ? 'approved' : 'rejected'}.',
+          'Restock failed. The saved recommendation remains PENDING and no receipt was matched.',
         );
       }
     } catch (error, stackTrace) {
@@ -604,6 +663,121 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         await _load(force: true);
       }
     }
+  }
+
+  Future<_RestockApprovalUiResult?> _approveRestockWithTracking(
+    InventoryApprovalRequest request, {
+    required String reviewNote,
+  }) async {
+    final locationId = widget.controller.activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      throw StateError('Restock approval requires an active location.');
+    }
+
+    while (mounted) {
+      try {
+        final result = await _restockTracking().approveAndTrack(
+          request: request,
+          locationId: locationId,
+          sessionToken: widget.controller.currentSessionToken,
+          approveRestock: () =>
+              widget.controller.approveInventoryApprovalRequest(
+                request.id,
+                reviewNote: reviewNote,
+              ),
+        );
+        return _RestockApprovalUiResult(
+          tracked: true,
+          receiptMatched: result.receiptMatched,
+          allocationReused: result.allocationReused,
+        );
+      } on RestockTrackingUnavailableException catch (error) {
+        final decision = await _trackingUnavailableDecision(error.message);
+        if (!mounted ||
+            decision == null ||
+            decision == _TrackingDecision.cancel) {
+          return null;
+        }
+        if (decision == _TrackingDecision.retry) continue;
+
+        await widget.controller.approveInventoryApprovalRequest(
+          request.id,
+          reviewNote: reviewNote,
+        );
+        return const _RestockApprovalUiResult(
+          tracked: false,
+          receiptMatched: false,
+          allocationReused: false,
+        );
+      } on ForecastApiException catch (error) {
+        final decision = await _trackingUnavailableDecision(error.message);
+        if (!mounted ||
+            decision == null ||
+            decision == _TrackingDecision.cancel) {
+          return null;
+        }
+        if (decision == _TrackingDecision.retry) continue;
+
+        await widget.controller.approveInventoryApprovalRequest(
+          request.id,
+          reviewNote: reviewNote,
+        );
+        return const _RestockApprovalUiResult(
+          tracked: false,
+          receiptMatched: false,
+          allocationReused: false,
+        );
+      }
+    }
+    return null;
+  }
+
+  Future<_TrackingDecision?> _trackingUnavailableDecision(String detail) {
+    return showDialog<_TrackingDecision>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.triangleAlert,
+        color: Colors.orange,
+        title: 'Recommendation tracking unavailable',
+        subtitle: 'Inventory has not changed yet',
+        actions: [
+          OutlinedButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _TrackingDecision.cancel),
+            child: const Text('Cancel restock'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              _TrackingDecision.continueWithoutTracking,
+            ),
+            child: const Text('Continue without tracking'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _TrackingDecision.retry),
+            icon: const Icon(LucideIcons.refreshCw, size: 16),
+            label: const Text('Retry'),
+          ),
+        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'A trusted recommendation snapshot could not be saved before this restock.',
+            ),
+            const SizedBox(height: 10),
+            Text(detail, style: const TextStyle(color: Color(0xFF9A3412))),
+            const SizedBox(height: 10),
+            const Text(
+              'Retry tracking, cancel the approval, or explicitly continue without tracking. Continuing still performs the genuine restock but creates no recommendation comparison.',
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _reviewExplanation(

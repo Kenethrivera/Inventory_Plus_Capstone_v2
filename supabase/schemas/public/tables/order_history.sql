@@ -54,6 +54,11 @@ CREATE INDEX order_history_prepared_helper_idx ON public.order_history USING btr
 
 CREATE INDEX order_history_returned_actor_idx ON public.order_history USING btree (location_id, returned_by_id);
 
+CREATE TRIGGER order_history_validate_completed_snapshot_v1
+  BEFORE INSERT OR UPDATE OF status, items, completed_at ON public.order_history
+  FOR EACH ROW
+  EXECUTE FUNCTION private.assert_completed_order_snapshot_v1();
+
 CREATE TRIGGER order_history_signal_realtime_v1
   AFTER INSERT OR DELETE OR UPDATE ON public.order_history
   FOR EACH ROW
