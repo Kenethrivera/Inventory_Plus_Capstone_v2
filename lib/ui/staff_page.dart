@@ -351,29 +351,43 @@ class _StaffPageState extends State<StaffPage> {
               _buildViewTabs(),
               const SizedBox(height: 20),
               LayoutBuilder(
-                builder: (context, limits) => Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(
-                      width: min(400, limits.maxWidth),
-                      height: 44,
-                      child: TextField(
-                        controller: _search,
-                        style: const TextStyle(fontSize: 14),
-                        decoration: _inputDecoration('Search name or email')
-                            .copyWith(
-                              prefixIcon: const Icon(
-                                LucideIcons.search,
-                                size: 18,
-                                color: _muted,
-                              ),
+                builder: (context, limits) {
+                  final search = SizedBox(
+                    height: 44,
+                    child: TextField(
+                      controller: _search,
+                      style: const TextStyle(fontSize: 14),
+                      decoration:
+                          _inputDecoration(
+                            limits.maxWidth < 380
+                                ? 'Search staff'
+                                : 'Search name or email',
+                          ).copyWith(
+                            prefixIcon: const Icon(
+                              LucideIcons.search,
+                              size: 18,
+                              color: _muted,
                             ),
-                      ),
+                          ),
                     ),
-                    _roleFilter(),
-                  ],
-                ),
+                  );
+                  if (limits.maxWidth < 700) {
+                    return Row(
+                      children: [
+                        Expanded(child: search),
+                        const SizedBox(width: 8),
+                        _roleFilter(width: min(150, limits.maxWidth * .42)),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      SizedBox(width: 400, child: search),
+                      const SizedBox(width: 10),
+                      _roleFilter(),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 18),
               if (_loading && _staff.isEmpty)
@@ -408,7 +422,7 @@ class _StaffPageState extends State<StaffPage> {
     );
   }
 
-  Widget _roleFilter() {
+  Widget _roleFilter({double width = 180}) {
     const roles = [
       ('all', 'All roles'),
       ('admin', 'Administrator'),
@@ -418,7 +432,7 @@ class _StaffPageState extends State<StaffPage> {
     final selectedLabel = roles.firstWhere((role) => role.$1 == _role).$2;
 
     return SizedBox(
-      width: 180,
+      width: width,
       height: 44,
       child: PopupMenuButton<String>(
         tooltip: 'Filter staff by role',
@@ -1272,7 +1286,10 @@ class _StaffEditorState extends State<_StaffEditor> {
   Widget build(BuildContext context) {
     final editing = widget.person != null;
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final width = screenWidth >= 1200
+    final mobile = screenWidth < 600;
+    final width = mobile
+        ? screenWidth
+        : screenWidth >= 1200
         ? screenWidth / 3
         : min(520.0, screenWidth * .96);
     return Dialog(
@@ -1284,11 +1301,15 @@ class _StaffEditorState extends State<_StaffEditor> {
       child: SizedBox(
         key: const Key('staff-editor-panel'),
         width: width,
-        height: MediaQuery.sizeOf(context).height,
+        height:
+            MediaQuery.sizeOf(context).height -
+            (mobile ? MediaQuery.viewInsetsOf(context).bottom : 0),
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(28, 22, 18, 20),
+              padding: mobile
+                  ? const EdgeInsets.fromLTRB(16, 12, 8, 10)
+                  : const EdgeInsets.fromLTRB(28, 22, 18, 20),
               child: Row(
                 children: [
                   Expanded(
@@ -1323,24 +1344,46 @@ class _StaffEditorState extends State<_StaffEditor> {
             const Divider(height: 1, color: _line),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(28),
+                padding: mobile
+                    ? const EdgeInsets.fromLTRB(16, 14, 16, 20)
+                    : const EdgeInsets.all(28),
                 child: Form(
                   key: _formKey,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _field('Full name', _name, required: true),
-                      const SizedBox(height: 18),
+                      _field(
+                        'Full name',
+                        _name,
+                        required: true,
+                        compact: mobile,
+                      ),
+                      SizedBox(height: mobile ? 10 : 18),
                       if (!editing) ...[
-                        _field('Username', _username, required: true),
-                        const SizedBox(height: 18),
+                        _field(
+                          'Username',
+                          _username,
+                          required: true,
+                          compact: mobile,
+                        ),
+                        SizedBox(height: mobile ? 10 : 18),
                       ],
-                      _field('Work email', _email, email: true),
-                      const SizedBox(height: 18),
-                      _field('Mobile', _phone),
-                      const SizedBox(height: 18),
-                      _field('Home address', _address),
-                      const SizedBox(height: 22),
+                      _field(
+                        'Work email',
+                        _email,
+                        email: true,
+                        compact: mobile,
+                      ),
+                      SizedBox(height: mobile ? 10 : 18),
+                      _field('Mobile', _phone, phone: true, compact: mobile),
+                      SizedBox(height: mobile ? 10 : 18),
+                      _field(
+                        'Home address',
+                        _address,
+                        compact: mobile,
+                        hint: mobile ? 'Optional' : null,
+                      ),
+                      SizedBox(height: mobile ? 12 : 22),
                       const Text(
                         'Role',
                         style: TextStyle(
@@ -1349,11 +1392,14 @@ class _StaffEditorState extends State<_StaffEditor> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: mobile ? 5 : 8),
                       LayoutBuilder(
                         builder: (context, limits) {
-                          final stacked = limits.maxWidth < 380;
-                          final buttons = _roleButtons(stacked: stacked);
+                          final stacked = !mobile && limits.maxWidth < 380;
+                          final buttons = _roleButtons(
+                            stacked: stacked,
+                            compact: mobile,
+                          );
                           return stacked
                               ? Column(
                                   crossAxisAlignment:
@@ -1368,30 +1414,68 @@ class _StaffEditorState extends State<_StaffEditor> {
                         },
                       ),
                       if (editing) ...[
-                        const SizedBox(height: 28),
+                        SizedBox(height: mobile ? 12 : 28),
                         const Divider(color: _line),
-                        const SizedBox(height: 12),
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text(
-                            'Account active',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                        SizedBox(height: mobile ? 6 : 12),
+                        if (mobile)
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Account active',
+                                      style: TextStyle(
+                                        color: _ink,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Disabled accounts cannot sign in. History is kept.',
+                                      style: TextStyle(
+                                        color: _muted,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch.adaptive(
+                                activeTrackColor: _orange,
+                                value: _active,
+                                onChanged:
+                                    widget.person!['id']?.toString() ==
+                                        widget.controller.currentUserId
+                                    ? null
+                                    : (value) =>
+                                          setState(() => _active = value),
+                              ),
+                            ],
+                          )
+                        else
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text(
+                              'Account active',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
+                            subtitle: const Text(
+                              'Disabled accounts cannot sign in. Their history is kept.',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            activeTrackColor: _orange,
+                            value: _active,
+                            onChanged:
+                                widget.person!['id']?.toString() ==
+                                    widget.controller.currentUserId
+                                ? null
+                                : (value) => setState(() => _active = value),
                           ),
-                          subtitle: const Text(
-                            'Disabled accounts cannot sign in. Their history is kept.',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          activeTrackColor: _orange,
-                          value: _active,
-                          onChanged:
-                              widget.person!['id']?.toString() ==
-                                  widget.controller.currentUserId
-                              ? null
-                              : (value) => setState(() => _active = value),
-                        ),
                       ],
                       if (_saveError != null) ...[
                         const SizedBox(height: 18),
@@ -1407,29 +1491,69 @@ class _StaffEditorState extends State<_StaffEditor> {
             ),
             const Divider(height: 1, color: _line),
             Padding(
-              padding: const EdgeInsets.all(20),
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 10,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton(
-                    onPressed: _saving ? null : () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                  FilledButton(
-                    onPressed: _saving ? null : _save,
-                    style: FilledButton.styleFrom(backgroundColor: _orange),
-                    child: Text(
-                      _saving
-                          ? 'Saving…'
-                          : editing
-                          ? 'Save changes'
-                          : 'Add staff',
+              padding: mobile
+                  ? const EdgeInsets.fromLTRB(16, 10, 16, 14)
+                  : const EdgeInsets.all(20),
+              child: mobile
+                  ? Row(
+                      children: [
+                        SizedBox(
+                          width: 120,
+                          height: 40,
+                          child: OutlinedButton(
+                            onPressed: _saving
+                                ? null
+                                : () => Navigator.pop(context),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: SizedBox(
+                            height: 40,
+                            child: FilledButton(
+                              onPressed: _saving ? null : _save,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _orange,
+                              ),
+                              child: Text(
+                                _saving
+                                    ? 'Saving…'
+                                    : editing
+                                    ? 'Save changes'
+                                    : 'Add staff',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton(
+                          onPressed: _saving
+                              ? null
+                              : () => Navigator.pop(context),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: _saving ? null : _save,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _orange,
+                          ),
+                          child: Text(
+                            _saving
+                                ? 'Saving…'
+                                : editing
+                                ? 'Save changes'
+                                : 'Add staff',
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -1442,6 +1566,9 @@ class _StaffEditorState extends State<_StaffEditor> {
     TextEditingController controller, {
     bool required = false,
     bool email = false,
+    bool phone = false,
+    bool compact = false,
+    String? hint,
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -1453,12 +1580,26 @@ class _StaffEditorState extends State<_StaffEditor> {
           fontWeight: FontWeight.w600,
         ),
       ),
-      const SizedBox(height: 7),
+      SizedBox(height: compact ? 4 : 7),
       TextFormField(
         controller: controller,
         style: const TextStyle(fontSize: 14),
-        keyboardType: email ? TextInputType.emailAddress : TextInputType.text,
-        decoration: _inputDecoration(null),
+        maxLines: 1,
+        keyboardType: email
+            ? TextInputType.emailAddress
+            : phone
+            ? TextInputType.phone
+            : TextInputType.text,
+        decoration: compact
+            ? _inputDecoration(hint).copyWith(
+                isDense: true,
+                constraints: const BoxConstraints(minHeight: 38),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              )
+            : _inputDecoration(hint),
         validator: (value) {
           final text = value?.trim() ?? '';
           if (required && text.isEmpty) return '$label is required.';
@@ -1472,14 +1613,21 @@ class _StaffEditorState extends State<_StaffEditor> {
     ],
   );
 
-  List<Widget> _roleButtons({bool stacked = false}) => [
+  List<Widget> _roleButtons({bool stacked = false, bool compact = false}) => [
     for (final entry in const [
       ('admin', 'Administrator'),
       ('staff', 'Cashier'),
       ('helper', 'Order helper'),
     ])
       Padding(
-        padding: EdgeInsets.only(right: stacked ? 0 : 8, bottom: 8),
+        padding: EdgeInsets.only(
+          right: stacked
+              ? 0
+              : compact
+              ? 6
+              : 8,
+          bottom: compact ? 0 : 8,
+        ),
         child: OutlinedButton(
           onPressed:
               widget.person?['id']?.toString() ==
@@ -1493,13 +1641,20 @@ class _StaffEditorState extends State<_StaffEditor> {
                 : Colors.white,
             foregroundColor: _role == entry.$1 ? _orange : _ink,
             side: BorderSide(color: _role == entry.$1 ? _orange : _line),
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 9),
+            minimumSize: Size(0, compact ? 38 : 48),
+            tapTargetSize: compact
+                ? MaterialTapTargetSize.shrinkWrap
+                : MaterialTapTargetSize.padded,
+            padding: EdgeInsets.symmetric(
+              vertical: compact ? 8 : 14,
+              horizontal: compact ? 3 : 9,
+            ),
           ),
           child: Text(
             entry.$2,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13),
+            style: TextStyle(fontSize: compact ? 11 : 13),
           ),
         ),
       ),
