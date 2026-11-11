@@ -1,0 +1,172 @@
+{
+  "registry_version": "inventory-plus-binan-catalog-v1",
+  "principle": "Classifications describe plausible exposure pathways only. They contain no demand multiplier and do not authorize an automatic replenishment adjustment.",
+  "sources": [
+    {
+      "source_id": "pagasa_climate_philippines",
+      "title": "PAGASA Climate of the Philippines",
+      "url": "https://www.pagasa.dost.gov.ph/information/climate-philippines",
+      "supports": "Philippine dry/rainy climatological context and spatial variation in rainfall distribution.",
+      "limitation": "Does not provide hardware-SKU demand effects."
+    },
+    {
+      "source_id": "pids_rainfall_working_hours",
+      "title": "PIDS: When Rain Falls, Work Slows",
+      "url": "https://pids.gov.ph/publication/discussion-papers/when-rain-falls-work-slows-rainfall-variability-and-working-hours-in-the-philippine-labor-market",
+      "supports": "A Philippine mechanism linking rainfall with reduced working hours in weather-exposed activity.",
+      "limitation": "Does not estimate demand for any Inventory Plus product."
+    },
+    {
+      "source_id": "inventory_plus_catalog",
+      "title": "Inventory Plus inspected active-product catalog, 2026-11-09",
+      "url": "local://supabase/public.products",
+      "supports": "Product identity, intended hardware type, manufacturer, model and size where recorded.",
+      "limitation": "Catalog attributes do not establish seasonal direction or magnitude."
+    }
+  ],
+  "profiles": [
+    {
+      "product_id": "22222222-2222-2222-2222-222222222221",
+      "sku": "SKU-001",
+      "product_name": "Heavy Duty Staple Gun",
+      "seasonal_relevance": "mixed_project_activity",
+      "evidence_level": "provisional_domain_hypothesis",
+      "rationale": "A fastening tool can serve indoor upholstery and weather-exposed construction tasks, so a single rainy/dry direction is not defensible.",
+      "seasonal_guidance": "Monitor project mix around transitions; net seasonal direction remains unknown.",
+      "source_ids": ["pagasa_climate_philippines", "pids_rainfall_working_hours", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "22222222-2222-2222-2222-222222222222",
+      "sku": "SKU-002",
+      "product_name": "Concrete Nails 2-inch",
+      "seasonal_relevance": "construction_activity",
+      "evidence_level": "corroborated_general_mechanism",
+      "rationale": "Concrete nails are consumed in construction work that may be exposed to rainfall-related work disruption; no Philippine SKU effect size was found.",
+      "seasonal_guidance": "Treat construction-weather exposure as a hypothesis and validate direction from local sales.",
+      "source_ids": ["pagasa_climate_philippines", "pids_rainfall_working_hours", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "7019350c-b165-4d15-ae39-b0ab49341387",
+      "sku": "SKU-1004",
+      "product_name": "Claw Hammer",
+      "seasonal_relevance": "mixed_project_activity",
+      "evidence_level": "provisional_domain_hypothesis",
+      "rationale": "The tool supports both indoor repair and construction activity; rainfall exposure varies by project.",
+      "seasonal_guidance": "No directional seasonal adjustment until local evidence separates project types.",
+      "source_ids": ["pagasa_climate_philippines", "pids_rainfall_working_hours", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "082643c4-0215-4a9a-a6aa-b99c070bddb7",
+      "sku": "SKU-1005",
+      "product_name": "Phillips Screwdriver",
+      "seasonal_relevance": "mixed_project_activity",
+      "evidence_level": "provisional_domain_hypothesis",
+      "rationale": "A general hand tool is used across indoor maintenance and construction, making climate sensitivity indirect.",
+      "seasonal_guidance": "Retain a neutral prior and learn only from leakage-safe local observations.",
+      "source_ids": ["pagasa_climate_philippines", "pids_rainfall_working_hours", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "52ab3702-b00b-4969-9fe7-a41f96bd3441",
+      "sku": "SKU-1006",
+      "product_name": "Tape Measure",
+      "seasonal_relevance": "construction_activity",
+      "evidence_level": "provisional_domain_hypothesis",
+      "rationale": "Measuring tools are associated with project activity, but are durable and their purchase timing need not match daily construction output.",
+      "seasonal_guidance": "Potential project-activity relevance; direction and magnitude are unverified.",
+      "source_ids": ["pagasa_climate_philippines", "pids_rainfall_working_hours", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "d9e9be8f-11be-4487-a46e-751d6c26f0ed",
+      "sku": "SKU-1007",
+      "product_name": "Cordless Drill",
+      "seasonal_relevance": "mixed_project_activity",
+      "evidence_level": "provisional_domain_hypothesis",
+      "rationale": "The drill can be used indoors or outdoors and is a durable purchase, so rainfall-related work disruption does not establish sales direction.",
+      "seasonal_guidance": "Use climatology as context only; intermittent local demand dominates certainty.",
+      "source_ids": ["pagasa_climate_philippines", "pids_rainfall_working_hours", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "c9b9ee63-6c49-46b5-97e9-e0227391eda4",
+      "sku": "SKU-1008",
+      "product_name": "PVC Pipe",
+      "seasonal_relevance": "plumbing_installation_and_repair",
+      "evidence_level": "provisional_domain_hypothesis",
+      "rationale": "Plumbing demand may combine planned installation with rain-related repair, which can move in opposite directions.",
+      "seasonal_guidance": "Flag rainy-season repair potential, but keep net direction unknown until validated.",
+      "source_ids": ["pagasa_climate_philippines", "pids_rainfall_working_hours", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "f9bac670-bd17-43c7-8416-78e386239a89",
+      "sku": "SKU-1009",
+      "product_name": "Teflon Tape",
+      "seasonal_relevance": "plumbing_installation_and_repair",
+      "evidence_level": "provisional_domain_hypothesis",
+      "rationale": "Thread-seal tape serves routine installation and leak repair; no product-specific Philippine seasonality estimate is available.",
+      "seasonal_guidance": "Monitor plumbing repair activity; no automatic rainy-season increase is justified.",
+      "source_ids": ["pagasa_climate_philippines", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "fb9f102b-c418-40c1-9e4e-52e4d963d4fa",
+      "sku": "SKU-1010",
+      "product_name": "Safety Goggles",
+      "seasonal_relevance": "construction_activity",
+      "evidence_level": "provisional_domain_hypothesis",
+      "rationale": "Safety equipment demand can follow construction and workshop activity, but compliance and replacement purchases are not determined by rainfall alone.",
+      "seasonal_guidance": "Potential construction-activity exposure; retain an uncommitted numerical prior.",
+      "source_ids": ["pagasa_climate_philippines", "pids_rainfall_working_hours", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "ab0af441-e26b-4d9c-95b3-7b5fd0e42be1",
+      "sku": "SKU-3UWPD0GN",
+      "product_name": "Adjustable wrench",
+      "seasonal_relevance": "mixed_project_activity",
+      "evidence_level": "provisional_domain_hypothesis",
+      "rationale": "The wrench supports indoor maintenance, plumbing and construction; the catalog does not reveal the dominant use case.",
+      "seasonal_guidance": "Treat season as context and require local validation before assigning direction.",
+      "source_ids": ["pagasa_climate_philippines", "pids_rainfall_working_hours", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "90a2f7df-01a5-40a4-abaf-7e1615949f28",
+      "sku": "SKU-4W6D3LVI",
+      "product_name": "realtime_test2",
+      "seasonal_relevance": "unclassified_test_item",
+      "evidence_level": "unknown",
+      "rationale": "The test catalog identity has no defensible commercial use classification.",
+      "seasonal_guidance": "Do not issue product-specific seasonal guidance or numerical adjustment.",
+      "source_ids": ["inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "e1b81338-b56e-46c6-bbfe-fa6eab25f394",
+      "sku": "SKU-69QAUJ4Z",
+      "product_name": "test item",
+      "seasonal_relevance": "unclassified_test_item",
+      "evidence_level": "unknown",
+      "rationale": "The test catalog identity has no defensible commercial use classification.",
+      "seasonal_guidance": "Do not issue product-specific seasonal guidance or numerical adjustment.",
+      "source_ids": ["inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    },
+    {
+      "product_id": "a2df295b-5fbc-4dd3-bd49-f3737627dd00",
+      "sku": "SKU-K1CB7XQV",
+      "product_name": "Concrete Nails 1-inch",
+      "seasonal_relevance": "construction_activity",
+      "evidence_level": "corroborated_general_mechanism",
+      "rationale": "Concrete nails are consumed in construction work that may be exposed to rainfall-related work disruption; no Philippine SKU effect size was found.",
+      "seasonal_guidance": "Treat construction-weather exposure as a hypothesis and validate direction from local sales.",
+      "source_ids": ["pagasa_climate_philippines", "pids_rainfall_working_hours", "inventory_plus_catalog"],
+      "numerical_adjustment_allowed": false
+    }
+  ]
+}

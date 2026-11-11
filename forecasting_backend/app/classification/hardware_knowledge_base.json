@@ -1,0 +1,95 @@
+{
+  "version": "hardware-seasonal-knowledge-v2",
+  "sources": {
+    "pagasa_climate": {
+      "title": "PAGASA Climate of the Philippines",
+      "url": "https://www.pagasa.dost.gov.ph/information/climate-philippines",
+      "scope": "Philippine dry/rainy climatological context; not product demand magnitude."
+    },
+    "pids_rainfall_work": {
+      "title": "PIDS: When Rain Falls, Work Slows",
+      "url": "https://pids.gov.ph/publication/discussion-papers/when-rain-falls-work-slows-rainfall-variability-and-working-hours-in-the-philippine-labor-market",
+      "scope": "General Philippine rainfall/work-exposure mechanism; not SKU demand evidence."
+    },
+    "pids_rainfall_construction": {
+      "title": "PIDS: Routine rainfall cuts Filipino work hours",
+      "url": "https://www.pids.gov.ph/details/news/press-releases/heavy-rains-linked-to-shorter-workweeks-pids-study-finds",
+      "scope": "Identifies Philippine construction labor among outdoor occupations vulnerable to rainfall-related reductions in working hours; does not establish hardware-product sales magnitude."
+    }
+  },
+  "industry_activity_groups": {
+    "outdoor_weather_exposed_construction": {
+      "label": "Outdoor/weather-exposed construction",
+      "seasonal_relevance": "dry",
+      "evidence_level": "inherited_industry_evidence",
+      "seasonal_explanation": "PAGASA identifies the Philippine rainy and dry seasons, and PIDS identifies construction labor among outdoor occupations vulnerable to rainfall-related work-hour reductions. Products tied specifically to weather-exposed construction therefore receive only potential dry-season relevance inherited from that activity; this is not product-sales proof.",
+      "source_ids": ["pagasa_climate", "pids_rainfall_construction"]
+    },
+    "mixed_indoor_outdoor_maintenance": {
+      "label": "Mixed indoor/outdoor maintenance",
+      "seasonal_relevance": "unknown",
+      "evidence_level": "insufficient",
+      "seasonal_explanation": "The activity spans indoor and outdoor work, so no single Philippine seasonal demand direction is supported.",
+      "source_ids": []
+    }
+  },
+  "intended_use_groups": {
+    "masonry_construction": {
+      "label": "Masonry construction",
+      "industry_activity_id": "outdoor_weather_exposed_construction",
+      "explanation": "The product is a consumed masonry building material whose normal use can occur in weather-exposed construction."
+    },
+    "cementitious_construction": {
+      "label": "Concrete, mortar, and cementitious construction",
+      "industry_activity_id": "outdoor_weather_exposed_construction",
+      "explanation": "The product is consumed in concrete, mortar, plaster, or related construction work that can be weather exposed."
+    },
+    "roof_installation": {
+      "label": "Roof installation or replacement",
+      "industry_activity_id": "outdoor_weather_exposed_construction",
+      "explanation": "Roof installation and replacement are intrinsically weather-exposed construction activities."
+    },
+    "general_purpose_tool_use": {
+      "label": "General-purpose assembly and maintenance",
+      "industry_activity_id": "mixed_indoor_outdoor_maintenance",
+      "explanation": "The tool can be used across indoor and outdoor assembly, repair, and maintenance."
+    },
+    "lightweight_fencing_and_enclosures": {
+      "label": "Lightweight fencing, guards, and enclosures",
+      "industry_activity_id": "mixed_indoor_outdoor_maintenance",
+      "explanation": "Wire mesh can serve outdoor enclosures or non-seasonal guards and reinforcement, so use alone does not establish demand direction."
+    }
+  },
+  "product_group_links": {
+    "concrete_hollow_block": "masonry_construction",
+    "portland_cement": "cementitious_construction",
+    "sand_aggregate": "cementitious_construction",
+    "gravel_aggregate": "cementitious_construction",
+    "rebar": "cementitious_construction",
+    "roofing_sheet": "roof_installation",
+    "screwdriver": "general_purpose_tool_use",
+    "phillips_screwdriver": "general_purpose_tool_use",
+    "poultry_netting": "lightweight_fencing_and_enclosures"
+  },
+  "rules": [
+    {"product_type":"claw_hammer","label":"Claw hammer","aliases":["claw hammer"],"category_hints":["hand tools","hammer"],"intended_use":"Driving and removing nails in construction and repair work.","seasonal_relevance":"neutral","evidence_level":"insufficient","seasonal_explanation":"No product-specific evidence establishes higher claw-hammer demand in either Philippine season.","source_ids":[]},
+    {"product_type":"hammer","label":"Hammer","aliases":["ball peen hammer","sledge hammer","mallet","hammer"],"category_hints":["hand tools","hammer"],"intended_use":"Striking, shaping, demolition, or general repair work depending on the hammer type.","seasonal_relevance":"neutral","evidence_level":"insufficient","seasonal_explanation":"General tool use alone does not establish seasonal demand direction.","source_ids":[]},
+    {"product_type":"phillips_screwdriver","label":"Phillips screwdriver","aliases":["phillips screwdriver","cross head screwdriver"],"category_hints":["hand tools","screwdriver"],"intended_use":"Driving and removing Phillips-head screws in assembly and repair work.","seasonal_relevance":"neutral","evidence_level":"insufficient","seasonal_explanation":"No product-specific Philippine seasonal demand evidence is available.","source_ids":[]},
+    {"product_type":"screwdriver","label":"Screwdriver","aliases":["flat screwdriver","slotted screwdriver","screwdriver"],"category_hints":["hand tools","screwdriver"],"intended_use":"Driving and removing screws in general assembly and maintenance.","seasonal_relevance":"unknown","evidence_level":"insufficient","seasonal_explanation":"General-purpose hand tools have no established seasonal demand direction here.","source_ids":[]},
+    {"product_type":"tape_measure","label":"Tape measure","aliases":["tape measure","measuring tape"],"category_hints":["measuring tools"],"intended_use":"Measuring length and distance for construction, installation, and household projects.","seasonal_relevance":"neutral","evidence_level":"insufficient","seasonal_explanation":"Project relevance does not prove a dry- or rainy-season sales effect.","source_ids":[]},
+    {"product_type":"cordless_drill","label":"Cordless drill/driver","aliases":["cordless drill","drill driver","battery drill"],"category_hints":["power tools"],"intended_use":"Drilling holes and driving fasteners in construction, installation, and repair work.","seasonal_relevance":"neutral","evidence_level":"insufficient","seasonal_explanation":"Indoor and outdoor uses are mixed and no product-specific seasonal direction is established.","source_ids":[]},
+    {"product_type":"staple_gun","label":"Staple gun","aliases":["staple gun","tacker gun"],"category_hints":["hand tools","fastening tools"],"intended_use":"Fastening fabric, insulation, sheeting, and light materials with staples.","seasonal_relevance":"neutral","evidence_level":"insufficient","seasonal_explanation":"Mixed indoor and outdoor uses do not establish seasonal demand.","source_ids":[]},
+    {"product_type":"adjustable_wrench","label":"Adjustable wrench","aliases":["adjustable wrench","crescent wrench"],"category_hints":["wrench","hand tools"],"intended_use":"Turning nuts, bolts, and fittings of varying sizes in repair and installation work.","seasonal_relevance":"neutral","evidence_level":"insufficient","seasonal_explanation":"The tool spans plumbing, maintenance, and construction, so direction is unknown.","source_ids":[]},
+    {"product_type":"concrete_nails","label":"Concrete nails","aliases":["concrete nails","concrete nail","masonry nails","masonry nail"],"category_hints":["nails","fasteners"],"intended_use":"Fastening wood or fixtures to concrete, masonry, or other hard substrates.","seasonal_relevance":"dry","evidence_level":"provisional_general_mechanism","seasonal_explanation":"Concrete-work activity may be weather exposed, and Philippine rainfall can slow exposed work; this is provisional and not SKU demand proof.","source_ids":["pagasa_climate","pids_rainfall_work"]},
+    {"product_type":"safety_goggles","label":"Safety goggles","aliases":["safety goggles","safety glasses","protective eyewear"],"category_hints":["safety equipment","ppe"],"intended_use":"Protecting the eyes from dust, debris, splashes, and impact during work.","seasonal_relevance":"neutral","evidence_level":"insufficient","seasonal_explanation":"PPE use is activity-related, but no seasonal sales direction is established.","source_ids":[]},
+    {"product_type":"pvc_pipe","label":"PVC pipe","aliases":["pvc pipe","upvc pipe"],"category_hints":["plumbing","pipe"],"intended_use":"Conveying water or drainage in plumbing installations and repairs.","seasonal_relevance":"unknown","evidence_level":"provisional_conflicting_mechanisms","seasonal_explanation":"Planned installation may slow in wet conditions while leak and drainage repairs may rise; the net demand direction is unknown.","source_ids":["pagasa_climate","pids_rainfall_work"]},
+    {"product_type":"thread_seal_tape","label":"Thread-seal tape","aliases":["teflon tape","ptfe tape","thread seal tape"],"category_hints":["plumbing"],"intended_use":"Sealing threaded plumbing connections to help prevent leaks.","seasonal_relevance":"unknown","evidence_level":"insufficient","seasonal_explanation":"Routine installation and leak repair can have different timing; no net seasonal direction is established.","source_ids":[]},
+    {"product_type":"portland_cement","label":"Portland cement","aliases":["portland cement","ordinary portland cement","opc cement"],"category_hints":["cement","construction materials","building materials"],"intended_use":"Binding aggregate and sand in concrete, mortar, plaster, and masonry construction.","seasonal_relevance":"dry","evidence_level":"provisional_general_mechanism","seasonal_explanation":"Mixing, placing, and curing work can be weather exposed; rainfall-work evidence supports only a provisional dry-season relevance, not a sales uplift.","source_ids":["pagasa_climate","pids_rainfall_work"]},
+    {"product_type":"waterproofing_sealant","label":"Waterproofing sealant","aliases":["waterproofing sealant","waterproof sealant","leak sealant","waterproofing compound"],"category_hints":["waterproofing","sealants"],"intended_use":"Sealing joints, cracks, and surfaces against water ingress and leaks.","seasonal_relevance":"rainy","evidence_level":"provisional_domain_assumption","seasonal_explanation":"Rain can reveal leaks and motivate waterproofing repair, but no Philippine SKU sales magnitude is verified.","source_ids":["pagasa_climate"]},
+    {"product_type":"roofing_sealant","label":"Roofing repair sealant","aliases":["roofing sealant","roof sealant","roof leak sealant","roof patch sealant"],"category_hints":["roofing","sealants","waterproofing"],"intended_use":"Repairing and sealing roof joints, flashing, cracks, and leak points; it is not a roofing-installation material classification.","seasonal_relevance":"rainy","evidence_level":"provisional_domain_assumption","seasonal_explanation":"Rain can expose roof leaks and prompt repair, but product-specific demand evidence remains provisional.","source_ids":["pagasa_climate"]},
+    {"product_type":"exterior_paint","label":"Exterior paint/coating","aliases":["exterior paint","outdoor paint","masonry paint","exterior coating"],"category_hints":["paint","coatings"],"intended_use":"Protecting and finishing exterior walls and other weather-exposed surfaces.","seasonal_relevance":"dry","evidence_level":"provisional_general_mechanism","seasonal_explanation":"Exterior application is weather exposed, so dry conditions are potentially relevant; no sales multiplier is established.","source_ids":["pagasa_climate","pids_rainfall_work"]},
+    {"product_type":"roofing_sheet","label":"Roofing sheet","aliases":["roofing sheet","corrugated roof","gi roofing","metal roofing"],"category_hints":["roofing","building materials"],"intended_use":"Installing or replacing roof covering and weather protection.","seasonal_relevance":"dry","evidence_level":"provisional_general_mechanism","seasonal_explanation":"Roof installation is weather exposed, supporting provisional dry-season relevance only.","source_ids":["pagasa_climate","pids_rainfall_work"]},
+    {"product_type":"rain_gutter","label":"Rain gutter/drainage component","aliases":["rain gutter","roof gutter","gutter downspout","downspout"],"category_hints":["roofing","drainage","plumbing"],"intended_use":"Collecting and directing roof runoff away from buildings.","seasonal_relevance":"rainy","evidence_level":"provisional_domain_assumption","seasonal_explanation":"Rainfall exposes drainage failures and can prompt repair, but product-specific sales evidence is not verified.","source_ids":["pagasa_climate"]}
+  ],
+  "unsupported_terms": ["laptop", "smartphone", "phone charger", "food", "shirt", "cosmetics", "software license", "medicine"]
+}
