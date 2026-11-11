@@ -29,6 +29,9 @@ void main() {
     'lib/notifications/notification_repository.dart',
   ).readAsStringSync();
   final requesterUi = File('lib/ui/item_detail_page.dart').readAsStringSync();
+  final restockRequesterUi = File(
+    'lib/ui/widgets/restock_request_dialog.dart',
+  ).readAsStringSync();
   final approvalUi = File(
     'lib/ui/approval_center_page.dart',
   ).readAsStringSync();
@@ -52,7 +55,7 @@ void main() {
     expect(create, contains("v_type not in ('restock', 'write_off')"));
     expect(create, isNot(contains('update public.products')));
     expect(create, isNot(contains('insert into public.transaction_history')));
-    expect(requesterUi, contains('InventoryApprovalType.restock'));
+    expect(restockRequesterUi, contains('InventoryApprovalType.restock'));
   });
 
   test('Cashier creates Write-off request without changing quantity', () {
