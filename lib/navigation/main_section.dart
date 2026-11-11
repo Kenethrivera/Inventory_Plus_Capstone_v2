@@ -3,6 +3,7 @@ enum MainSection {
   ordersActivity('orders-activity', <String>{'admin'}),
   forecasting('forecasting', <String>{'admin'}),
   pos('pos', <String>{'admin', 'staff', 'cashier'}),
+  cashierRequests('requests', <String>{'staff', 'cashier'}),
   queue('queue', <String>{'admin', 'helper'}),
   inventory('inventory', <String>{'admin', 'staff', 'cashier', 'helper'}),
   approvals('approvals', <String>{'admin'}),
@@ -56,7 +57,7 @@ enum MainSection {
         return const <MainSection>[queue, inventory, history];
       case 'staff':
       case 'cashier':
-        return const <MainSection>[pos, inventory, history];
+        return const <MainSection>[pos, cashierRequests, inventory, history];
       default:
         return const <MainSection>[inventory];
     }

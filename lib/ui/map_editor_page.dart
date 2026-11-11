@@ -726,31 +726,35 @@ class _MapEditorPageState extends State<MapEditorPage> {
         ],
       ),
     );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            spacing: 10,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [_buildModeTabs(), viewToggle],
-          ),
-        ),
-        const SizedBox(height: 10),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minWidth: constraints.maxWidth),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              if (_mode == MapMode.manage) editingTools,
-              if (_mode == MapMode.manage) const SizedBox(width: 10),
-              zoomControls,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_mode == MapMode.manage) editingTools,
+                  if (_mode == MapMode.manage) const SizedBox(width: 10),
+                  zoomControls,
+                  const SizedBox(width: 20),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildModeTabs(),
+                  const SizedBox(width: 10),
+                  viewToggle,
+                ],
+              ),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 

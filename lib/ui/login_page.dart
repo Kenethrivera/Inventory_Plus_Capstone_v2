@@ -21,6 +21,8 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  static const _brand = Color(0xFFC83D08);
+  static const _brandDark = Color(0xFF9D320F);
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -256,43 +258,499 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  void _showPolicyDialog(String title, String content) {
-    showDialog(
+  void _showPolicyDialog({required bool isPrivacy}) {
+    showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      barrierColor: const Color(0xCC292420),
+      builder: (dialogContext) => Dialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          title,
-          style: const TextStyle(
-            color: Color(0xFF0F172A),
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            fontFamily: 'Outfit',
-          ),
-        ),
-        content: SingleChildScrollView(
-          child: Text(
-            content,
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 13,
-              height: 1.5,
-              fontFamily: 'Outfit',
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: SizedBox(
+          width: 700,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(34, 28, 34, 26),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFEEE5),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(
+                          isPrivacy
+                              ? LucideIcons.shieldCheck
+                              : LucideIcons.fileText,
+                          color: _brand,
+                          size: 23,
+                        ),
+                      ),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        child: Text(
+                          isPrivacy ? 'Privacy Policy' : 'Terms of Service',
+                          style: const TextStyle(
+                            color: Color(0xFF171717),
+                            fontSize: 25,
+                            fontWeight: FontWeight.w800,
+                            fontFamily: 'Outfit',
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.pop(dialogContext),
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFFF5F3F1),
+                          fixedSize: const Size(54, 54),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(13),
+                          ),
+                        ),
+                        icon: const Icon(
+                          LucideIcons.x,
+                          color: Color(0xFF292522),
+                          size: 19,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: Color(0xFFEDE8E3)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(34, 30, 34, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isPrivacy
+                            ? 'Inventory Plus is committed to protecting your personal information.'
+                            : 'By accessing and using Inventory Plus, you accept and agree to be bound by the terms and provisions of this agreement.',
+                        style: const TextStyle(
+                          color: Color(0xFF171717),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          height: 1.5,
+                          fontFamily: 'Outfit',
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Text(
+                        isPrivacy
+                            ? 'We process your data in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines.'
+                            : 'Any participation in this service will constitute acceptance of this agreement.',
+                        style: const TextStyle(
+                          color: Color(0xFF292522),
+                          fontSize: 18,
+                          height: 1.55,
+                          fontFamily: 'Outfit',
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFBF8F5),
+                          border: Border.all(color: const Color(0xFFEDE6DF)),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: isPrivacy
+                            ? const Text.rich(
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: 'How we use it: ',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text:
+                                          'We collect, use, and store your data solely for inventory management and system authentication purposes.',
+                                    ),
+                                  ],
+                                ),
+                                style: TextStyle(
+                                  color: Color(0xFF292522),
+                                  fontSize: 17,
+                                  height: 1.5,
+                                  fontFamily: 'Outfit',
+                                ),
+                              )
+                            : const Text(
+                                'These terms are governed by the laws of the Republic of the Philippines.',
+                                style: TextStyle(
+                                  color: Color(0xFF292522),
+                                  fontSize: 17,
+                                  height: 1.5,
+                                  fontFamily: 'Outfit',
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(34, 48, 34, 30),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: SizedBox(
+                      width: 120,
+                      height: 56,
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _brand,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text(
+                          'Close',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Outfit',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              "Close",
-              style: TextStyle(
-                color: Color(0xFF2563EB),
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Outfit',
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final form = Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Welcome back',
+            style: TextStyle(
+              color: Color(0xFF171717),
+              fontSize: 27,
+              fontWeight: FontWeight.w800,
+              fontFamily: 'Outfit',
+            ),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Sign in to manage your store.',
+            style: TextStyle(
+              color: Color(0xFF756F69),
+              fontSize: 13,
+              fontFamily: 'Outfit',
+            ),
+          ),
+          const SizedBox(height: 28),
+
+          if (_loginError != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                border: Border.all(color: const Color(0xFFFECACA)),
+                borderRadius: BorderRadius.circular(10),
               ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 1),
+                    child: Icon(
+                      LucideIcons.circleAlert,
+                      color: Color(0xFFDC2626),
+                      size: 17,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      _loginError!,
+                      style: const TextStyle(
+                        color: Color(0xFF991B1B),
+                        fontSize: 12.5,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Outfit',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          const Text(
+            "Username",
+            style: TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'Outfit',
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildTextField(
+            controller: _usernameController,
+            hint: "Enter your username",
+            icon: LucideIcons.user,
+            isPassword: false,
+            focusNode: _usernameFocusNode,
+            onSubmitted: (_) =>
+                FocusScope.of(context).requestFocus(_passwordFocusNode),
+          ),
+
+          const SizedBox(height: 20),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Password',
+                style: TextStyle(
+                  color: Color(0xFF171717),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Outfit',
+                ),
+              ),
+              TextButton(
+                onPressed: _showForgotPasswordModal,
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'Forgot password?',
+                  style: TextStyle(
+                    color: _brand,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Outfit',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildTextField(
+            controller: _passwordController,
+            hint: "Enter your password",
+            icon: LucideIcons.lock,
+            isPassword: true,
+            focusNode: _passwordFocusNode,
+            onSubmitted: _isLoginLimited ? null : (_) => _handleLogin(),
+            suffix: IconButton(
+              icon: Icon(
+                _isPasswordVisible ? LucideIcons.eyeOff : LucideIcons.eye,
+                color: Colors.grey.shade500,
+                size: 18,
+              ),
+              onPressed: () =>
+                  setState(() => _isPasswordVisible = !_isPasswordVisible),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _isLoading || _isLoginLimited ? null : _handleLogin,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _brand,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text(
+                      'Sign in',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Outfit',
+                      ),
+                    ),
+            ),
+          ),
+
+          const SizedBox(height: 32),
+          Divider(color: Colors.grey.shade200, height: 1),
+          const SizedBox(height: 24),
+
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => _showPolicyDialog(isPrivacy: false),
+                child: Text(
+                  "Terms of Service",
+                  style: TextStyle(
+                    color: Colors.grey.shade500,
+                    fontSize: 12,
+                    fontFamily: 'Outfit',
+                  ),
+                ),
+              ),
+              Text(
+                "   •   ",
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => _showPolicyDialog(isPrivacy: true),
+                child: Text(
+                  "Privacy Policy",
+                  style: TextStyle(
+                    color: Colors.grey.shade500,
+                    fontSize: 12,
+                    fontFamily: 'Outfit',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F7F5),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 800;
+            return SingleChildScrollView(
+              child: SizedBox(
+                width: constraints.maxWidth,
+                height: wide ? max(620.0, constraints.maxHeight) : null,
+                child: wide
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(child: _buildBrandPanel()),
+                          Expanded(child: _buildLoginFormPanel(form)),
+                        ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(height: 280, child: _buildBrandPanel()),
+                          _buildLoginFormPanel(form),
+                        ],
+                      ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrandPanel() {
+    final compact = MediaQuery.sizeOf(context).width < 800;
+    return Container(
+      color: _brandDark,
+      padding: EdgeInsets.all(compact ? 24 : 40),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Icon(LucideIcons.box, color: _brand, size: 17),
+              ),
+              const SizedBox(width: 9),
+              const Text(
+                'Inventory Plus',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Outfit',
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Text(
+            'Every item, counted.\nEvery sale, tracked.',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 25 : 34,
+              fontWeight: FontWeight.w800,
+              height: 1.08,
+              fontFamily: 'Outfit',
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Stock, orders and payments for your hardware store\nin one place.',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 12 : 14,
+              height: 1.45,
+              fontFamily: 'Outfit',
+            ),
+          ),
+          const Spacer(),
+          const Text(
+            'Hardware Management System',
+            style: TextStyle(
+              color: Color(0xFFFFE7DA),
+              fontSize: 11,
+              fontFamily: 'Outfit',
             ),
           ),
         ],
@@ -300,305 +758,15 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F8), // Light gray background
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 420),
-              margin: const EdgeInsets.symmetric(horizontal: 24),
-              padding: const EdgeInsets.all(40),
-              decoration: BoxDecoration(
-                color: Colors.white, // White rounded card
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color:
-                              Colors.blue.shade50, // Light blue rounded square
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        // Note: Used a blue icon to perfectly match your screenshot reference!
-                        child: Icon(
-                          LucideIcons.package,
-                          color: Colors.blue.shade600,
-                          size: 40,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Center(
-                      child: Text(
-                        "Inventory Plus",
-                        style: TextStyle(
-                          color: Color(0xFF0F172A),
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          fontFamily: 'Outfit',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Center(
-                      child: Text(
-                        "Hardware Management System",
-                        style: TextStyle(
-                          color: Colors.grey.shade500,
-                          fontSize: 13,
-                          fontFamily: 'Outfit',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-
-                    if (_loginError != null) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
-                          border: Border.all(color: const Color(0xFFFECACA)),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.only(top: 1),
-                              child: Icon(
-                                LucideIcons.circleAlert,
-                                color: Color(0xFFDC2626),
-                                size: 17,
-                              ),
-                            ),
-                            const SizedBox(width: 9),
-                            Expanded(
-                              child: Text(
-                                _loginError!,
-                                style: const TextStyle(
-                                  color: Color(0xFF991B1B),
-                                  fontSize: 12.5,
-                                  height: 1.35,
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily: 'Outfit',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-
-                    const Text(
-                      "Username",
-                      style: TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Outfit',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildTextField(
-                      controller: _usernameController,
-                      hint: "Enter your username",
-                      icon: LucideIcons.user,
-                      isPassword: false,
-                      focusNode: _usernameFocusNode,
-                      onSubmitted: (_) => FocusScope.of(
-                        context,
-                      ).requestFocus(_passwordFocusNode),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    const Text(
-                      "Password",
-                      style: TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Outfit',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildTextField(
-                      controller: _passwordController,
-                      hint: "Enter your password",
-                      icon: LucideIcons.lock,
-                      isPassword: true,
-                      focusNode: _passwordFocusNode,
-                      onSubmitted: _isLoginLimited
-                          ? null
-                          : (_) => _handleLogin(),
-                      suffix: IconButton(
-                        icon: Icon(
-                          _isPasswordVisible
-                              ? LucideIcons.eyeOff
-                              : LucideIcons.eye,
-                          color: Colors.grey.shade500,
-                          size: 18,
-                        ),
-                        onPressed: () => setState(
-                          () => _isPasswordVisible = !_isPasswordVisible,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _showForgotPasswordModal,
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text(
-                          "Forgot password?",
-                          style: TextStyle(
-                            color: Color(0xFF2563EB),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: 'Outfit',
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: _isLoading || _isLoginLimited
-                            ? null
-                            : _handleLogin,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(
-                            0xFF2563EB,
-                          ), // Solid blue
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    "Sign In",
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      fontFamily: 'Outfit',
-                                    ),
-                                  ),
-                                  SizedBox(width: 8),
-                                  Icon(LucideIcons.arrowRight, size: 18),
-                                ],
-                              ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 32),
-                    Divider(color: Colors.grey.shade200, height: 1),
-                    const SizedBox(height: 24),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        TextButton(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          onPressed: () => _showPolicyDialog(
-                            "Terms of Service",
-                            "By accessing and using Inventory Plus, you accept and agree to be bound by the terms and provisions of this agreement.\n\nAny participation in this service will constitute acceptance of this agreement. These terms are governed by the laws of the Republic of the Philippines.",
-                          ),
-                          child: Text(
-                            "Terms of Service",
-                            style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 12,
-                              fontFamily: 'Outfit',
-                            ),
-                          ),
-                        ),
-                        Text(
-                          "   •   ",
-                          style: TextStyle(
-                            color: Colors.grey.shade400,
-                            fontSize: 12,
-                          ),
-                        ),
-                        TextButton(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          onPressed: () => _showPolicyDialog(
-                            "Privacy Policy",
-                            "Inventory Plus is committed to protecting your personal information. \n\nWe process your data in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines. We collect, use, and store your data solely for inventory management and system authentication purposes.",
-                          ),
-                          child: Text(
-                            "Privacy Policy",
-                            style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 12,
-                              fontFamily: 'Outfit',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildLoginFormPanel(Widget form) => Container(
+    color: const Color(0xFFF8F7F5),
+    alignment: Alignment.center,
+    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 390),
+      child: form,
+    ),
+  );
 
   Widget _buildTextField({
     required TextEditingController controller,
@@ -609,8 +777,6 @@ class _LoginPageState extends State<LoginPage> {
     ValueChanged<String>? onSubmitted,
     Widget? suffix,
   }) {
-    final isFocused = focusNode.hasFocus;
-
     return TextFormField(
       controller: controller,
       obscureText: isPassword && !_isPasswordVisible,
@@ -640,7 +806,7 @@ class _LoginPageState extends State<LoginPage> {
         prefixIcon: Icon(icon, color: Colors.grey.shade400, size: 18),
         suffixIcon: suffix,
         filled: true,
-        fillColor: isFocused ? Colors.white : Colors.grey.shade50,
+        fillColor: Colors.white,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: Colors.grey.shade200),
@@ -651,7 +817,7 @@ class _LoginPageState extends State<LoginPage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+          borderSide: const BorderSide(color: _brand, width: 1.5),
         ),
         errorStyle: const TextStyle(
           color: Colors.redAccent,
@@ -1067,7 +1233,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
 
-  static const _blue = Color(0xFF2563EB);
+  static const _blue = Color(0xFFC83D08);
   static const _otpLifetime = Duration(minutes: 10);
   static const _resendCooldown = Duration(minutes: 1);
 
@@ -1148,16 +1314,10 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     }
   }
 
-  final _stepTitles = ["Reset password", "Enter OTP", "New password"];
-  final _stepSubtitles = [
-    "Enter your admin username and choose how to receive a code.",
-    "If this account is eligible for password recovery, further instructions will be provided.",
-    "Pick a strong password to keep your account secure.",
-  ];
-  final _stepIcons = [
-    LucideIcons.user,
-    LucideIcons.shieldCheck,
-    LucideIcons.keyRound,
+  final _stepTitles = [
+    'Find your account',
+    'Enter the code',
+    'Set new password',
   ];
 
   // ── Password rules (only meaningful on step 2) ──
@@ -1469,7 +1629,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.of(context).size.width >= 640;
+    final wide = MediaQuery.sizeOf(context).width >= 960;
 
     return Dialog(
       backgroundColor: Colors.white,
@@ -1478,97 +1638,116 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: wide ? 660 : 400),
+        constraints: BoxConstraints(maxWidth: wide ? 900 : 400),
         child: SingleChildScrollView(
           child: wide
               ? IntrinsicHeight(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(width: 260, child: _buildInfoPanel()),
+                      SizedBox(width: 375, child: _buildInfoPanel()),
                       Expanded(child: _buildFormPanel()),
                     ],
                   ),
                 )
               : Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: [_buildInfoPanel(), _buildFormPanel()],
+                  children: [
+                    _buildInfoPanel(compact: true),
+                    _buildFormPanel(compact: true),
+                  ],
                 ),
         ),
       ),
     );
   }
 
-  Widget _buildInfoPanel() {
+  Widget _buildInfoPanel({bool compact = false}) {
     return Container(
-      color: _blue,
-      padding: const EdgeInsets.all(28),
+      color: const Color(0xFF9D320F),
+      padding: EdgeInsets.all(compact ? 24 : 40),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.18),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(_stepIcons[_step], color: Colors.white, size: 22),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _stepTitles[_step],
-            style: const TextStyle(
               color: Colors.white,
-              fontSize: 22,
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: const Icon(LucideIcons.lockKeyhole, color: _blue, size: 23),
+          ),
+          SizedBox(height: compact ? 16 : 30),
+          Text(
+            'Reset password',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 24 : 30,
               fontWeight: FontWeight.w800,
               fontFamily: 'Outfit',
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: compact ? 8 : 14),
           Text(
-            _stepSubtitles[_step],
+            "We'll send a code to verify it's you, then you can choose a new password.",
             style: TextStyle(
-              color: Colors.white.withOpacity(0.8),
-              fontSize: 13,
-              height: 1.4,
+              color: Colors.white,
+              fontSize: compact ? 13 : 16,
+              height: 1.55,
               fontFamily: 'Outfit',
             ),
           ),
-          const SizedBox(height: 22),
-          Text(
-            "STEP ${_step + 1} OF 3",
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.7),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1,
-              fontFamily: 'Outfit',
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: List.generate(3, (i) {
-              return Expanded(
-                child: Container(
-                  margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: i <= _step
-                        ? Colors.white
-                        : Colors.white.withOpacity(0.25),
-                    borderRadius: BorderRadius.circular(2),
+          if (!compact) ...[
+            const SizedBox(height: 50),
+            for (var i = 0; i < _stepTitles.length; i++) ...[
+              Row(
+                children: [
+                  Container(
+                    width: 31,
+                    height: 31,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: i == _step ? Colors.white : Colors.transparent,
+                      border: Border.all(color: Colors.white),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '${i + 1}',
+                      style: TextStyle(
+                        color: i == _step
+                            ? const Color(0xFF9D320F)
+                            : Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Outfit',
+                      ),
+                    ),
                   ),
-                ),
-              );
-            }),
-          ),
-          if (_step == 2) ...[
-            const SizedBox(height: 28),
+                  const SizedBox(width: 12),
+                  Text(
+                    _stepTitles[i],
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: i == _step
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                      fontFamily: 'Outfit',
+                    ),
+                  ),
+                ],
+              ),
+              if (i < _stepTitles.length - 1) const SizedBox(height: 16),
+            ],
+          ],
+          if (_step == 2 && !compact) ...[
+            const SizedBox(height: 24),
             Text(
               "YOUR PASSWORD NEEDS",
               style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
+                color: Colors.white.withValues(alpha: 0.8),
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1,
@@ -1595,14 +1774,14 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
           Icon(
             met ? Icons.check_circle : Icons.circle_outlined,
             size: 15,
-            color: met ? Colors.white : Colors.white.withOpacity(0.55),
+            color: met ? Colors.white : Colors.white.withValues(alpha: 0.55),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               label,
               style: TextStyle(
-                color: Colors.white.withOpacity(met ? 1 : 0.75),
+                color: Colors.white.withValues(alpha: met ? 1 : 0.75),
                 fontSize: 12,
                 fontWeight: met ? FontWeight.w700 : FontWeight.w400,
                 fontFamily: 'Outfit',
@@ -1614,9 +1793,38 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     );
   }
 
-  Widget _buildFormPanel() {
+  Widget _compactRequirementRow(String label, bool met) => Padding(
+    padding: const EdgeInsets.only(top: 5),
+    child: Row(
+      children: [
+        Icon(
+          met ? Icons.check_circle : Icons.circle_outlined,
+          size: 14,
+          color: met ? const Color(0xFF15803D) : const Color(0xFF817A75),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF675A52),
+              fontSize: 11,
+              fontFamily: 'Outfit',
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildFormPanel({bool compact = false}) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 24 : 50,
+        24,
+        compact ? 24 : 50,
+        42,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1625,44 +1833,61 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
             alignment: Alignment.centerRight,
             child: IconButton(
               onPressed: _isLoading ? null : () => Navigator.pop(context),
-              icon: Icon(LucideIcons.x, size: 16, color: Colors.blue.shade600),
+              icon: const Icon(
+                LucideIcons.x,
+                size: 18,
+                color: Color(0xFF292522),
+              ),
               style: IconButton.styleFrom(
-                backgroundColor: Colors.blue.shade50,
+                backgroundColor: const Color(0xFFF4F1EE),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
               ),
             ),
           ),
+          const SizedBox(height: 6),
+          Text(
+            'STEP ${_step + 1} OF 3',
+            style: const TextStyle(
+              color: Color(0xFF675A52),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1,
+              fontFamily: 'Outfit',
+            ),
+          ),
           const SizedBox(height: 8),
+          Text(
+            _stepTitles[_step],
+            style: const TextStyle(
+              color: Color(0xFF171717),
+              fontSize: 25,
+              fontWeight: FontWeight.w800,
+              fontFamily: 'Outfit',
+            ),
+          ),
+          const SizedBox(height: 30),
 
           if (_step == 0) ...[
             _buildModalField(
               controller: _controller,
               focusNode: _focusNode1,
-              label: "Username",
+              label: "Admin username",
               hint: "Enter admin username",
               icon: LucideIcons.user,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 26),
             const Text(
               'Send code by',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
+            const SizedBox(height: 10),
+            Row(
               children: [
-                ChoiceChip(
-                  label: const Text('Email'),
-                  selected: _recoveryChannel == 'email',
-                  onSelected: (_) => setState(() => _recoveryChannel = 'email'),
-                ),
-                ChoiceChip(
-                  label: const Text('SMS'),
-                  selected: _recoveryChannel == 'sms',
-                  onSelected: (_) => setState(() => _recoveryChannel = 'sms'),
-                ),
+                Expanded(child: _recoveryChannelOption('email', 'Email')),
+                const SizedBox(width: 14),
+                Expanded(child: _recoveryChannelOption('sms', 'SMS')),
               ],
             ),
           ] else if (_step == 1) ...[
@@ -1746,6 +1971,18 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
             ),
             const SizedBox(height: 10),
             _buildStrengthMeter(),
+            if (compact) ...[
+              const SizedBox(height: 10),
+              _compactRequirementRow('At least 8 characters', _hasMinLength),
+              _compactRequirementRow(
+                'Uppercase and lowercase letters',
+                _hasUppercase && _hasLowercase,
+              ),
+              _compactRequirementRow(
+                'One number and one symbol',
+                _hasDigit && _hasSymbol,
+              ),
+            ],
             const SizedBox(height: 18),
             _buildModalField(
               controller: _confirmPasswordController,
@@ -1766,65 +2003,113 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
             ),
           ],
 
-          const SizedBox(height: 28),
+          const SizedBox(height: 40),
 
-          Row(
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 14,
+            runSpacing: 10,
             children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _isLoading ? null : _goBackOrCancel,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _blue,
-                    side: BorderSide(color: Colors.blue.shade200),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+              OutlinedButton(
+                onPressed: _isLoading ? null : _goBackOrCancel,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF171717),
+                  side: const BorderSide(color: Color(0xFFD8D0C9)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text(
-                    _step == 0 ? "Cancel" : "Back",
-                    style: const TextStyle(
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w600,
-                    ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
+                  ),
+                ),
+                child: Text(
+                  _step == 0 ? "Cancel" : "Back",
+                  style: const TextStyle(
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _nextStep,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _blue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+              ElevatedButton(
+                onPressed: _isLoading ? null : _nextStep,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _blue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : Text(
-                          _step == 2 ? "Update password" : "Continue",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'Outfit',
-                          ),
-                        ),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 30,
+                    vertical: 16,
+                  ),
                 ),
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text(
+                        _step == 0
+                            ? 'Send code'
+                            : _step == 1
+                            ? 'Verify code'
+                            : 'Update password',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Outfit',
+                        ),
+                      ),
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _recoveryChannelOption(String channel, String label) {
+    final selected = _recoveryChannel == channel;
+    return InkWell(
+      onTap: _isLoading
+          ? null
+          : () => setState(() => _recoveryChannel = channel),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 68,
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFFFF1E8) : Colors.white,
+          border: Border.all(
+            color: selected ? _blue : const Color(0xFFE5DED8),
+            width: selected ? 2 : 1.5,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              size: 17,
+              color: selected ? _blue : const Color(0xFF817A75),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF171717),
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Outfit',
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1843,7 +2128,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                   margin: EdgeInsets.only(right: i < 4 ? 4 : 0),
                   height: 4,
                   decoration: BoxDecoration(
-                    color: i < met ? _blue : Colors.blue.shade50,
+                    color: i < met ? _blue : const Color(0xFFF1EAE4),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1881,8 +2166,6 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     List<TextInputFormatter>? inputFormatters,
     ValueChanged<String>? onChanged,
   }) {
-    final isFocused = focusNode.hasFocus;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1915,19 +2198,17 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
               color: Colors.grey.shade400,
               fontFamily: 'Outfit',
             ),
-            prefixIcon: Icon(icon, color: Colors.blue.shade300, size: 18),
+            prefixIcon: Icon(icon, color: const Color(0xFF817A75), size: 18),
             suffixIcon: suffix,
             filled: true,
-            fillColor: isFocused
-                ? Colors.white
-                : Colors.blue.shade50.withOpacity(0.4),
+            fillColor: Colors.white,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.blue.shade50),
+              borderSide: const BorderSide(color: Color(0xFFD8D0C9)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.blue.shade50),
+              borderSide: const BorderSide(color: Color(0xFFD8D0C9)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),

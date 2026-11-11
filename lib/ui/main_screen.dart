@@ -16,6 +16,7 @@ import '../data/inventory.dart';
 import '../data/ai_insights_service.dart';
 import '../logic/inventory_controller.dart';
 import '../logic/helper_assignment.dart';
+import '../logic/inventory_approval.dart';
 import '../logic/staff_management.dart';
 import '../navigation/main_section.dart';
 import '../services/debug_clock.dart';
@@ -36,6 +37,7 @@ import 'profile_info_page.dart';
 import 'system_settings_page.dart';
 import 'transaction_history_page.dart';
 import 'cash_monitor_table_page.dart';
+import 'cashier_requests_page.dart';
 import 'queue_monitor_table_page.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
@@ -2280,6 +2282,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         final int posIndex = (isCashier || isAdmin) ? pageIndex++ : -1;
 
+        final int cashierRequestsIndex = isCashier ? pageIndex++ : -1;
+
         final int orderQueueIndex = (isHelper || isAdmin) ? pageIndex++ : -1;
 
         final int inventoryIndex = pageIndex++;
@@ -2379,6 +2383,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   setState(() => _targetPosOrderId = null);
                 }
               },
+            ),
+          );
+          pages.add(
+            CashierRequestsPage(
+              controller: widget.controller,
+              onOpenRegister: () => _selectMainIndex(posIndex),
+              onOpenInventory: () => _selectMainIndex(inventoryIndex),
             ),
           );
         }
@@ -2493,6 +2504,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   isHelper: isHelper,
                   orderQueueIndex: orderQueueIndex,
                   posIndex: posIndex,
+                  cashierRequestsIndex: cashierRequestsIndex,
                   transactionIndex: transactionIndex,
                   inventoryIndex: inventoryIndex,
                   staffHistoryIndex: staffHistoryIndex,
@@ -3075,6 +3087,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               selectedIcon: Icon(LucideIcons.shoppingCart, color: _primaryBlue),
               label: 'POS',
             ),
+          if (isCashier)
+            const NavigationDestination(
+              icon: Icon(LucideIcons.clipboardList, color: _inactiveText),
+              selectedIcon: Icon(LucideIcons.clipboardList, color: _primaryBlue),
+              label: 'Requests',
+            ),
           if (isHelper)
             const NavigationDestination(
               icon: Icon(LucideIcons.fileText, color: _inactiveText),
@@ -3308,10 +3326,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     required bool isHelper,
     required int orderQueueIndex,
     required int posIndex,
+    required int cashierRequestsIndex,
     required int transactionIndex,
     required int inventoryIndex,
     required int staffHistoryIndex,
   }) {
+    if (!isHelper) {
+      return _buildCashierTopNavBar(
+        posIndex: posIndex,
+        requestsIndex: cashierRequestsIndex,
+        historyIndex: staffHistoryIndex,
+        orderQueueIndex: orderQueueIndex,
+        transactionIndex: transactionIndex,
+        inventoryIndex: inventoryIndex,
+      );
+    }
     return Container(
       height: 60,
       decoration: BoxDecoration(
@@ -3428,6 +3457,236 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       ),
     );
   }
+
+  Widget _buildCashierTopNavBar({
+    required int posIndex,
+    required int requestsIndex,
+    required int historyIndex,
+    required int orderQueueIndex,
+    required int transactionIndex,
+    required int inventoryIndex,
+  }) => LayoutBuilder(
+    builder: (context, constraints) {
+      final showDetails = constraints.maxWidth >= 1100;
+      final window = _scheduledStoreAccessWindow;
+      final now = DateTime.now();
+      final isOpen = window != null &&
+          !now.isBefore(window.opening) &&
+          now.isBefore(window.shiftEnd);
+      final nextOpening = window != null && now.isAfter(window.shiftEnd)
+          ? window.opening.add(const Duration(days: 1))
+          : window?.opening;
+      final storeStatus = window == null
+          ? 'Store hours unavailable'
+          : isOpen
+          ? 'Open · closes ${_dashboardTime(window.shiftEnd)}'
+          : 'Closed · opens ${_dashboardTime(nextOpening!)}';
+      final name = widget.controller.currentUserName?.trim();
+      final displayName = name == null || name.isEmpty ? 'Cashier' : name;
+      final parts = displayName.split(RegExp(r'\s+'));
+      final initials = parts.length > 1
+          ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
+          : displayName.substring(0, displayName.length < 2 ? 1 : 2).toUpperCase();
+
+      return Container(
+        height: 66,
+        padding: EdgeInsets.symmetric(horizontal: showDetails ? 32 : 16),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(bottom: BorderSide(color: Color(0xFFE8E3DF))),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFC83D08),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                'I+',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _cashierHeaderTab(
+                      label: 'Register',
+                      selected: _currentIndex == posIndex,
+                      onTap: () => _selectMainIndex(posIndex),
+                    ),
+                    const SizedBox(width: 10),
+                    StreamBuilder<List<CustomerOrder>>(
+                      stream: widget.controller.streamOrders(),
+                      builder: (context, snapshot) {
+                        final userId = widget.controller.currentUserId;
+                        final activeCount = userId == null
+                            ? 0
+                            : (snapshot.data ?? const <CustomerOrder>[])
+                                .where((order) =>
+                                    order.createdById == userId &&
+                                    (order.status == 'pending' ||
+                                        order.status == 'prepared'))
+                                .length;
+                        return _cashierHeaderTab(
+                          label: 'My orders',
+                          selected: _currentIndex == historyIndex,
+                          badgeCount: activeCount,
+                          onTap: () => _selectMainIndex(historyIndex),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 10),
+                    StreamBuilder<InventoryApprovalRequest?>(
+                      stream: widget.controller.streamDiscountApproval(),
+                      builder: (context, snapshot) => _cashierHeaderTab(
+                        label: 'Requests',
+                        selected: _currentIndex == requestsIndex,
+                        badgeCount: snapshot.data?.status ==
+                                InventoryApprovalStatus.pending
+                            ? 1
+                            : 0,
+                        onTap: () => _selectMainIndex(requestsIndex),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (showDetails) ...[
+              const SizedBox(width: 18),
+              Icon(
+                Icons.circle,
+                size: 10,
+                color: isOpen
+                    ? const Color(0xFF15803D)
+                    : const Color(0xFF9A8B80),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                storeStatus,
+                style: const TextStyle(
+                  color: Color(0xFF171717),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 18),
+            ],
+            _buildNotificationControls(
+              orderQueueIndex: orderQueueIndex,
+              posIndex: posIndex,
+              transactionIndex: transactionIndex,
+              inventoryIndex: inventoryIndex,
+            ),
+            const SizedBox(width: 14),
+            InkWell(
+              onTap: _showProfileDialog,
+              borderRadius: BorderRadius.circular(20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: const Color(0xFFFFF0E7),
+                    child: Text(
+                      initials,
+                      style: const TextStyle(
+                        color: Color(0xFFC83D08),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (showDetails) ...[
+                    const SizedBox(width: 12),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 170),
+                      child: Text(
+                        displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF171717),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            IconButton(
+              tooltip: 'Log out',
+              onPressed: _handleLogout,
+              icon: const Icon(LucideIcons.logOut, size: 19),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  Widget _cashierHeaderTab({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    int badgeCount = 0,
+  }) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(10),
+    child: Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 15),
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFF1B1B1B) : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : const Color(0xFF282522),
+              fontSize: 14,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+          if (badgeCount > 0) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF15803D),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                '$badgeCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
 
   Widget _buildTopNavTabItem({
     required int index,
