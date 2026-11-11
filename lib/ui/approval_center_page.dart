@@ -518,6 +518,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     InventoryApprovalRequest request, {
     required bool approve,
     String? inlineNote,
+    VoidCallback? onSuccess,
   }) async {
     if (!_viewedRequests.contains(request.id)) {
       await _details(request);
@@ -633,6 +634,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         );
         if (mounted) AppToast.success(context, 'Request rejected.');
       }
+      if (mounted) onSuccess?.call();
     } on RestockMutationAfterSnapshotException catch (error, stackTrace) {
       AppLogger.error(
         'Restock failed after recommendation snapshot save',
@@ -1081,13 +1083,14 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
             (request) => request.id == _selectedRequestId,
             orElse: () => records.first,
           );
-    if (selected != null) _viewedRequests.add(selected.id);
     return ColoredBox(
       color: const Color(0xFFF7F5F3),
       child: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 1150;
+            final mobile = constraints.maxWidth < 700;
+            if (!mobile && selected != null) _viewedRequests.add(selected.id);
             final horizontalPadding = compact ? 16.0 : 32.0;
             return SingleChildScrollView(
               padding: EdgeInsets.fromLTRB(
@@ -1118,7 +1121,9 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
                     ),
                   ),
                   const SizedBox(height: 28),
-                  if (compact)
+                  if (mobile)
+                    _approvalList(records, snapshot, mobile: true)
+                  else if (compact)
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1154,8 +1159,9 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
 
   Widget _approvalList(
     List<InventoryApprovalRequest> records,
-    InventoryApprovalPage? snapshot,
-  ) => Column(
+    InventoryApprovalPage? snapshot, {
+    bool mobile = false,
+  }) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Row(
@@ -1234,10 +1240,14 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
                       const Divider(height: 1, color: Color(0xFFE8E2DC)),
                     _approvalListItem(
                       records[index],
-                      records[index].id ==
-                          (records.any((item) => item.id == _selectedRequestId)
-                              ? _selectedRequestId
-                              : records.first.id),
+                      !mobile &&
+                          records[index].id ==
+                              (records.any(
+                                    (item) => item.id == _selectedRequestId,
+                                  )
+                                  ? _selectedRequestId
+                                  : records.first.id),
+                      mobile: mobile,
                     ),
                   ],
                 ],
@@ -1309,18 +1319,24 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     borderRadius: BorderRadius.circular(12),
   );
 
-  Widget _approvalListItem(InventoryApprovalRequest request, bool selected) {
+  Widget _approvalListItem(
+    InventoryApprovalRequest request,
+    bool selected, {
+    bool mobile = false,
+  }) {
     final title = request.isDiscount
         ? '${request.discountDisplay} off ${_money(request.subtotalAmount)} cart'
         : '${request.productName} · ${_qty(request.quantity)} ${request.unit}';
     return Material(
       color: selected ? const Color(0xFFFFF0E8) : Colors.white,
       child: InkWell(
-        onTap: () => setState(() {
-          _selectedRequestId = request.id;
-          _inlineNote.clear();
-          _viewedRequests.add(request.id);
-        }),
+        onTap: mobile
+            ? () => _openMobileApproval(request)
+            : () => setState(() {
+                _selectedRequestId = request.id;
+                _inlineNote.clear();
+                _viewedRequests.add(request.id);
+              }),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
@@ -1430,6 +1446,334 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     if (delta.inHours < 24) return '${delta.inHours} hours ago';
     return '${delta.inDays} days ago';
   }
+
+  Future<void> _openMobileApproval(InventoryApprovalRequest request) async {
+    setState(() => _viewedRequests.add(request.id));
+    _inlineNote.clear();
+    final note = _inlineNote;
+    var submitting = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFFF7F5F3),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          Future<void> submit(bool approve) async {
+            if (!approve && note.text.trim().isEmpty) {
+              AppToast.error(
+                sheetContext,
+                'Add a note before rejecting this request.',
+              );
+              return;
+            }
+            setSheetState(() => submitting = true);
+            await _review(
+              request,
+              approve: approve,
+              inlineNote: note.text.trim(),
+              onSuccess: () {
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
+              },
+            );
+            if (sheetContext.mounted) {
+              setSheetState(() => submitting = false);
+            }
+          }
+
+          final keyboard = MediaQuery.viewInsetsOf(sheetContext).bottom;
+          final maxHeight =
+              (MediaQuery.sizeOf(sheetContext).height * .9 - keyboard)
+                  .clamp(200.0, double.infinity)
+                  .toDouble();
+          return Padding(
+            padding: EdgeInsets.only(bottom: keyboard),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 12, 12, 12),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Close approval',
+                          onPressed: () => Navigator.pop(sheetContext),
+                          icon: const Icon(LucideIcons.chevronLeft, size: 19),
+                        ),
+                        _requestAvatar(request.requestedByName),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                request.requestedByName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                '${_roleLabel(request.requestedByRole)} · ${_when(request.requestedAt)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF827872),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _typeBadge(request.type, request.type.label),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: request.isDiscount
+                          ? Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: _outlineDecoration(),
+                              child: _discountApprovalBody(request),
+                            )
+                          : _mobileInventoryApprovalCard(request),
+                    ),
+                  ),
+                  if (request.status == InventoryApprovalStatus.pending)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        border: Border(
+                          top: BorderSide(color: Color(0xFFE8E2DC)),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            height: 42,
+                            child: TextField(
+                              controller: note,
+                              style: const TextStyle(fontSize: 13),
+                              decoration: InputDecoration(
+                                hintText:
+                                    'Note to ${request.requestedByName.split(' ').first} (required to reject)',
+                                hintStyle: const TextStyle(
+                                  color: Color(0xFF827872),
+                                  fontSize: 12,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(9),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFFE8E2DC),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: SizedBox(
+                                  height: 42,
+                                  child: OutlinedButton(
+                                    onPressed: submitting
+                                        ? null
+                                        : () => submit(false),
+                                    child: const Text('Reject'),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 3,
+                                child: SizedBox(
+                                  height: 42,
+                                  child: FilledButton(
+                                    onPressed:
+                                        submitting || request.hasStockConflict
+                                        ? null
+                                        : () => submit(true),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFFC83D08),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      switch (request.type) {
+                                        InventoryApprovalType.discount =>
+                                          'Approve discount',
+                                        InventoryApprovalType.restock =>
+                                          'Approve & add stock',
+                                        InventoryApprovalType.writeOff =>
+                                          'Approve & write off',
+                                      },
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _mobileInventoryApprovalCard(
+    InventoryApprovalRequest request,
+  ) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: _outlineDecoration(),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _productImage(_productImageUrl(request.productId), size: 48),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    request.productName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    request.productSku,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF827872),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _mobileProofThumb(request),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F5F3),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(
+            children: [
+              Expanded(child: _metric('On hand', _qty(request.currentStock))),
+              Expanded(
+                child: _metric(
+                  request.type == InventoryApprovalType.restock
+                      ? 'Add'
+                      : 'Remove',
+                  '${request.type == InventoryApprovalType.restock ? '+' : '−'}${_qty(request.quantity)}',
+                  valueColor: request.type == InventoryApprovalType.restock
+                      ? const Color(0xFF078443)
+                      : const Color(0xFFD11A1A),
+                ),
+              ),
+              Expanded(child: _metric('After', _stockAfterLabel(request))),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _textDetail(
+          'Reason',
+          request.reason?.isNotEmpty == true ? request.reason! : '—',
+        ),
+        if (request.note?.isNotEmpty == true) ...[
+          const SizedBox(height: 8),
+          _textDetail('Notes', request.note!),
+        ],
+        if (request.hasStockConflict) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'This write-off exceeds available stock.',
+            style: TextStyle(color: Color(0xFFD11A1A), fontSize: 12),
+          ),
+        ],
+        if (request.status != InventoryApprovalStatus.pending) ...[
+          const SizedBox(height: 12),
+          _decisionBanner(request),
+        ],
+      ],
+    ),
+  );
+
+  Widget _mobileProofThumb(InventoryApprovalRequest request) => SizedBox(
+    width: 48,
+    child: Column(
+      children: [
+        SizedBox(
+          width: 42,
+          height: 42,
+          child: request.hasProof
+              ? FutureBuilder<String?>(
+                  future: _proofUrl(request),
+                  builder: (context, snapshot) => InkWell(
+                    onTap: snapshot.data == null
+                        ? null
+                        : () => _openProof(request),
+                    child: snapshot.data == null
+                        ? const Icon(LucideIcons.image, size: 20)
+                        : Image.network(
+                            snapshot.data!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) =>
+                                const Icon(LucideIcons.imageOff, size: 20),
+                          ),
+                  ),
+                )
+              : const Icon(
+                  LucideIcons.imageOff,
+                  size: 20,
+                  color: Color(0xFFAAA19B),
+                ),
+        ),
+        Text(
+          request.hasProof ? 'Photo' : 'No image',
+          maxLines: 1,
+          style: const TextStyle(color: Color(0xFF827872), fontSize: 9),
+        ),
+      ],
+    ),
+  );
 
   Widget _emptyDetail() => Container(
     padding: const EdgeInsets.all(36),
