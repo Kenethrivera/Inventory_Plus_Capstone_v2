@@ -1,0 +1,145 @@
+{
+  "version": "stage29a1-intermittent-demand-v1",
+  "frozen_before_final_evaluation": true,
+  "source_product_manifest": "expanded_seasonal_assumptions.json",
+  "history_start": "2021-01-01",
+  "history_end": "2024-12-31",
+  "development_validation_start": "2024-01-01",
+  "development_validation_end": "2024-12-31",
+  "independent_final_start": "2024-01-01",
+  "independent_final_end": "2024-12-31",
+  "maximum_history_days": 1095,
+  "forecast_horizon_days": 28,
+  "origin_step_days": 28,
+  "additional_origins_mm_dd": [
+    "02-15",
+    "04-15",
+    "04-30",
+    "05-15",
+    "10-15",
+    "10-31"
+  ],
+  "development_seed": 29010101,
+  "independent_final_seed": 29019991,
+  "development_and_final_are_separate_realizations": true,
+  "generator": {
+    "weekly_noise_half_range": 0.15,
+    "daily_noise_scale": 1.15,
+    "base_shock_probability": 0.018,
+    "shock_minimum_fraction": 0.25,
+    "shock_additional_fraction": 0.75,
+    "annual_strength_minimum": 0.88,
+    "annual_strength_range": 0.24
+  },
+  "scenario_variants": {
+    "reference": {
+      "baseline_scale": 1.0,
+      "occurrence_scale": 1.0,
+      "noise_scale": 1.0,
+      "shock_probability_scale": 1.0
+    },
+    "sparser": {
+      "baseline_scale": 1.0,
+      "occurrence_scale": 0.75,
+      "noise_scale": 1.1,
+      "shock_probability_scale": 1.0
+    },
+    "denser": {
+      "baseline_scale": 0.95,
+      "occurrence_scale": 1.15,
+      "noise_scale": 0.9,
+      "shock_probability_scale": 1.0
+    },
+    "volatile": {
+      "baseline_scale": 1.0,
+      "occurrence_scale": 1.0,
+      "noise_scale": 1.35,
+      "shock_probability_scale": 1.65
+    }
+  },
+  "scenario_by_sku": {
+    "SIM-SUM-001": "reference",
+    "SIM-SUM-002": "volatile",
+    "SIM-SUM-003": "sparser",
+    "SIM-SUM-004": "denser",
+    "SIM-SUM-005": "volatile",
+    "SIM-SUM-006": "reference",
+    "SIM-SUM-007": "denser",
+    "SIM-SUM-008": "sparser",
+    "SIM-RAIN-001": "volatile",
+    "SIM-RAIN-002": "sparser",
+    "SIM-RAIN-003": "denser",
+    "SIM-RAIN-004": "reference",
+    "SIM-RAIN-005": "volatile",
+    "SIM-RAIN-006": "denser",
+    "SIM-RAIN-007": "sparser",
+    "SIM-RAIN-008": "reference",
+    "SIM-NEU-001": "denser",
+    "SIM-NEU-002": "volatile",
+    "SIM-NEU-003": "reference",
+    "SIM-NEU-004": "sparser",
+    "SIM-NEU-005": "volatile",
+    "SIM-NEU-006": "denser",
+    "SIM-NEU-007": "sparser",
+    "SIM-NEU-008": "reference"
+  },
+  "two_stage_hyperparameter_candidates": {
+    "compact": {
+      "n_estimators": 80,
+      "learning_rate": 0.04,
+      "num_leaves": 7,
+      "min_child_samples": 20
+    },
+    "conservative": {
+      "n_estimators": 120,
+      "learning_rate": 0.03,
+      "num_leaves": 10,
+      "min_child_samples": 30
+    }
+  },
+  "simple_intermittent_baseline": {
+    "method": "TSB",
+    "occurrence_smoothing": 0.1,
+    "quantity_smoothing": 0.1,
+    "citation": "Teunter, Syntetos and Babai intermittent-demand probability updating"
+  },
+  "development_selection": {
+    "primary_metric": "intermittent_daily_wape",
+    "eligibility": [
+      "intermittent daily WAPE lower than Seasonal LightGBM",
+      "overall 28-day quantity-total WAPE no worse than Seasonal LightGBM",
+      "regular-product daily WAPE no worse than Seasonal LightGBM",
+      "never-sold control remains exactly zero"
+    ],
+    "fallback_if_none_eligible": "lowest intermittent daily WAPE, reported as guardrail failure"
+  },
+  "product_specific_policy": {
+    "candidate_models": [
+      "seasonal_lightgbm",
+      "two_stage_occurrence_quantity"
+    ],
+    "selection_data": "development validation origins only",
+    "select_two_stage_when": "paired origin-bootstrap 95% lower bound is above zero for both daily absolute-error improvement and 28-day quantity-total absolute-error improvement",
+    "bootstrap_repetitions": 2000,
+    "bootstrap_seed": 29012000
+  },
+  "independent_final_access": {
+    "evaluate_once": true,
+    "candidate_and_policy_frozen_from_development": true,
+    "stage26_period_reused": false,
+    "final_seed_not_used_for_selection": true
+  },
+  "acceptance": {
+    "intermittent_daily_error_requires_positive_95pct_improvement_bound": true,
+    "intermittent_28_day_total_error_requires_positive_95pct_improvement_bound": true,
+    "overall_28_day_total_wape_must_not_worsen": true,
+    "regular_daily_wape_must_not_worsen": true,
+    "no_seasonal_group_daily_wape_may_worsen": true,
+    "never_sold_control_must_remain_zero": true
+  },
+  "limitations": [
+    "This is an independently seeded synthetic experiment, not real-store evidence.",
+    "Frozen seasonal groups are simulation hypotheses used only for evaluation.",
+    "Generator parameters and future random streams are unavailable to forecast models."
+  ]
+}
