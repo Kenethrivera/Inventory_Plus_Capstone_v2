@@ -14,10 +14,10 @@ import 'dart:async';
 import 'package:inventory_plus/services/app_error_mapper.dart';
 import 'package:inventory_plus/services/app_logger.dart';
 
-const Color _blue = Color(0xFF2563EB);
-const Color _ink = Color(0xFF172033);
-const Color _slate = Color(0xFF64748B);
-const Color _border = Color(0xFFE6EBF2);
+const Color _accent = Color(0xFFC83D08);
+const Color _ink = Color(0xFF211F1D);
+const Color _slate = Color(0xFF756D67);
+const Color _border = Color(0xFFE3DED7);
 
 class AddItemPage extends StatefulWidget {
   final InventoryController controller;
@@ -102,7 +102,7 @@ class _AddItemPageState extends State<AddItemPage> {
       context: context,
       builder: (dialogContext) => AppDialog(
         icon: LucideIcons.imagePlus,
-        color: _blue,
+        color: _accent,
         title: "Product Photo",
         subtitle: "Choose how to add an image",
         child: Column(
@@ -210,7 +210,7 @@ class _AddItemPageState extends State<AddItemPage> {
     required String title,
     required String description,
     required VoidCallback onTap,
-    Color color = _blue,
+    Color color = _accent,
   }) {
     return Material(
       color: Colors.transparent,
@@ -244,7 +244,7 @@ class _AddItemPageState extends State<AddItemPage> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: color == _blue ? const Color(0xFF0F172A) : color,
+                        color: color == _accent ? _ink : color,
                       ),
                     ),
                     Text(
@@ -287,7 +287,7 @@ class _AddItemPageState extends State<AddItemPage> {
       context: context,
       builder: (dialogContext) => AppDialog(
         icon: LucideIcons.link,
-        color: _blue,
+        color: _accent,
         title: "Image URL",
         subtitle: "Use an image hosted online",
         child: TextField(
@@ -337,7 +337,7 @@ class _AddItemPageState extends State<AddItemPage> {
               AppToast.success(context, "Image URL added");
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: _blue,
+              backgroundColor: _accent,
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -451,13 +451,13 @@ class _AddItemPageState extends State<AddItemPage> {
           ),
         ),
         leading: IconButton(
-          icon: const Icon(LucideIcons.chevronLeft, color: _blue),
+          icon: const Icon(LucideIcons.chevronLeft, color: _accent),
           onPressed: () => Navigator.pop(context),
         ),
         centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _blue))
+          ? const Center(child: CircularProgressIndicator(color: _accent))
           : SingleChildScrollView(
               child: Column(
                 children: [
@@ -599,13 +599,13 @@ class _AddItemPageState extends State<AddItemPage> {
         value: _addNewValue,
         child: Row(
           children: [
-            Icon(LucideIcons.plus, size: 16, color: _blue),
+            Icon(LucideIcons.plus, size: 16, color: _accent),
             SizedBox(width: 8),
             Text(
               'Add new unit...',
               style: TextStyle(
                 fontSize: 14,
-                color: _blue,
+                color: _accent,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -627,7 +627,7 @@ class _AddItemPageState extends State<AddItemPage> {
           color: Colors.grey.shade600,
           fontStyle: FontStyle.italic,
         ),
-        prefixIcon: const Icon(LucideIcons.scale, size: 18, color: _blue),
+        prefixIcon: const Icon(LucideIcons.scale, size: 18, color: _accent),
         filled: true,
         fillColor: Colors.white,
         contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
@@ -641,7 +641,7 @@ class _AddItemPageState extends State<AddItemPage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _blue, width: 2),
+          borderSide: const BorderSide(color: _accent, width: 2),
         ),
       ),
       items: items,
@@ -713,7 +713,7 @@ class _AddItemPageState extends State<AddItemPage> {
 
           return AppDialog(
             icon: LucideIcons.scale,
-            color: _blue,
+            color: _accent,
             title: "Add New Unit",
             subtitle: "Saved to your measurement units",
             child: Column(
@@ -758,7 +758,7 @@ class _AddItemPageState extends State<AddItemPage> {
               ElevatedButton(
                 onPressed: saving ? null : save,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _blue,
+                  backgroundColor: _accent,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -811,7 +811,7 @@ class _AddItemPageState extends State<AddItemPage> {
             ),
           ),
           const Expanded(
-            child: Divider(indent: 10, color: _blue, thickness: 0.5),
+            child: Divider(indent: 10, color: _accent, thickness: 0.5),
           ),
         ],
       ),
@@ -824,7 +824,7 @@ class _AddItemPageState extends State<AddItemPage> {
       child: Container(
         width: double.infinity,
         height: 180,
-        color: const Color(0xFFF1F5F9),
+        color: const Color(0xFFF7F6F4),
         child: _imageUrl != null
             ? ((kIsWeb || _imageUrl!.startsWith('http'))
                   ? Image.network(_imageUrl!, fit: BoxFit.cover)
@@ -832,7 +832,7 @@ class _AddItemPageState extends State<AddItemPage> {
             : Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(LucideIcons.imagePlus, color: _blue, size: 40),
+                  Icon(LucideIcons.imagePlus, color: _accent, size: 40),
                   const SizedBox(height: 8),
                   Text(
                     "Tap to Add Product Photo",
@@ -851,7 +851,7 @@ class _AddItemPageState extends State<AddItemPage> {
       child: ElevatedButton(
         onPressed: _isLoading ? null : _submitData,
         style: ElevatedButton.styleFrom(
-          backgroundColor: _blue,
+          backgroundColor: _accent,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -898,7 +898,7 @@ class _AddItemPageState extends State<AddItemPage> {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-        prefixIcon: Icon(icon, size: 18, color: _blue),
+        prefixIcon: Icon(icon, size: 18, color: _accent),
         filled: true,
         fillColor: Colors.white,
         contentPadding: const EdgeInsets.symmetric(
@@ -915,7 +915,7 @@ class _AddItemPageState extends State<AddItemPage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _blue, width: 2),
+          borderSide: const BorderSide(color: _accent, width: 2),
         ),
         errorStyle: const TextStyle(color: Colors.redAccent),
       ),

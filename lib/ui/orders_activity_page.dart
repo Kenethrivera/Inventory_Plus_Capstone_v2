@@ -304,6 +304,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
 
   Widget _filters(List<String> staff) => LayoutBuilder(
     builder: (context, size) {
+      final compact = size.maxWidth < 950;
       final search = TextField(
         controller: _searchController,
         style: const TextStyle(fontSize: 13),
@@ -347,7 +348,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
           _status = value;
           _page = 1;
         }),
-        150,
+        compact ? null : 150,
       );
       final movementType = _dropdown(
         _movementFilter,
@@ -363,7 +364,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
           _movementFilter = value;
           _page = 1;
         }),
-        220,
+        compact ? null : 220,
       );
       final staffFilter = _dropdown(
         _staff,
@@ -372,7 +373,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
           _staff = value;
           _page = 1;
         }),
-        175,
+        compact ? null : 175,
       );
       final time = _dropdown(
         _time,
@@ -381,19 +382,28 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
           _time = value;
           _page = 1;
         }),
-        140,
+        compact ? null : 140,
       );
-      if (size.maxWidth < 950) {
+      if (compact) {
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             search,
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            Row(
               children: _tab == 'Stock movements'
-                  ? [movementType, time]
-                  : [status, staffFilter, time],
+                  ? [
+                      Expanded(flex: 3, child: movementType),
+                      const SizedBox(width: 8),
+                      Expanded(flex: 2, child: time),
+                    ]
+                  : [
+                      Expanded(flex: 3, child: status),
+                      const SizedBox(width: 8),
+                      Expanded(flex: 4, child: staffFilter),
+                      const SizedBox(width: 8),
+                      Expanded(flex: 3, child: time),
+                    ],
             ),
           ],
         );
@@ -420,18 +430,20 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
     String value,
     List<String> values,
     ValueChanged<String> change,
-    double width,
+    double? width,
   ) => SizedBox(
     width: width,
     height: 46,
     child: AppStyledDropdown<String>(
       key: ValueKey('filter-$width-$value'),
       initialValue: values.contains(value) ? value : values.first,
-      style: const TextStyle(fontSize: 13, color: _ink),
+      style: TextStyle(fontSize: width == null ? 12 : 13, color: _ink),
       decoration: InputDecoration(
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: width == null ? 8 : 12,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(9),
           borderSide: const BorderSide(color: _line),
@@ -655,6 +667,9 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
     final rows = _tab == 'Stock movements' ? stock.length : orders.length;
     return LayoutBuilder(
       builder: (context, constraints) {
+        if (constraints.maxWidth < 600) {
+          return _mobileRecords(orders, stock);
+        }
         final baseTotal = baseWidths.fold<double>(
           0,
           (sum, width) => sum + width,
@@ -709,6 +724,211 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
     );
   }
 
+  Widget _mobileRecords(
+    List<CustomerOrder> orders,
+    List<Map<String, dynamic>> stock,
+  ) {
+    final count = _tab == 'Stock movements' ? stock.length : orders.length;
+    if (count == 0) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: _line),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Center(
+          child: Text(
+            'No records match these filters.',
+            style: TextStyle(color: _muted, fontSize: 13),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (var i = 0; i < count; i++) ...[
+          if (i > 0) const SizedBox(height: 10),
+          _tab == 'Stock movements'
+              ? _mobileStockCard(stock[i])
+              : _mobileOrderCard(orders[i]),
+        ],
+      ],
+    );
+  }
+
+  Widget _mobileOrderCard(CustomerOrder order) {
+    final status = _orderStatus(order);
+    final statusColor = _statusColor(status);
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: _line),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openOrderDetails(order),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _shortId(order.id),
+                      style: const TextStyle(
+                        color: _ink,
+                        fontFamily: 'monospace',
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  _mobileBadge(status, statusColor),
+                ],
+              ),
+              const SizedBox(height: 5),
+              Text(
+                _date(order.createdAt),
+                style: const TextStyle(color: _muted, fontSize: 12),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 13),
+                child: Divider(height: 1, color: _line),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: _mobileField('Items', '${order.items.length}'),
+                  ),
+                  Expanded(
+                    child: _mobileField('Total', _money(order.totalAmount)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 11),
+              Row(
+                children: [
+                  Expanded(
+                    child: _mobileField('Payment', order.paymentMode ?? '—'),
+                  ),
+                  Expanded(
+                    child: _mobileField(
+                      _tab == 'Payments' ? 'Reference / change' : 'Cashier',
+                      _tab == 'Payments'
+                          ? _paymentDetail(order)
+                          : order.createdByName ?? '—',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileStockCard(Map<String, dynamic> row) {
+    final product = row['products'] as Map<String, dynamic>?;
+    final change = (row['quantity_change'] as num?)?.toDouble() ?? 0;
+    final when = DateTime.tryParse(
+      row['created_at']?.toString() ?? '',
+    )?.toLocal();
+    final type = _movement(row['transaction_type']?.toString() ?? '');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: _line),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  product?['product_name']?.toString() ?? 'Unknown product',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _mobileBadge(type, _movementColor(type)),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            when == null ? '—' : _date(when),
+            style: const TextStyle(color: _muted, fontSize: 12),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 13),
+            child: Divider(height: 1, color: _line),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: _mobileField(
+                  'Change',
+                  '${change > 0 ? '+' : ''}${_quantity(change)}',
+                ),
+              ),
+              Expanded(
+                child: _mobileField(
+                  'Balance',
+                  _quantity((row['new_quantity'] as num?)?.toDouble() ?? 0),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 11),
+          _mobileField('By', _actor(row).isEmpty ? '—' : _actor(row)),
+          if (_stockNote(row) != '—') ...[
+            const SizedBox(height: 11),
+            _mobileField('Note', _stockNote(row)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileField(String label, String value) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: const TextStyle(color: _muted, fontSize: 11)),
+      const SizedBox(height: 3),
+      Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: _ink, fontSize: 13),
+      ),
+    ],
+  );
+
+  Widget _mobileBadge(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.08),
+      border: Border.all(color: color.withValues(alpha: 0.22)),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(label, style: TextStyle(color: color, fontSize: 12)),
+  );
+
   Widget _orderRow(CustomerOrder order, List<double> widths) {
     final cells = _tab == 'Payments'
         ? <Widget>[
@@ -746,37 +966,35 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
             ),
           ];
     return InkWell(
-      onTap: () => OrderDetailsDrawer.show(
-        context,
-        order: order,
-        inventory: widget.controller.allItems,
-        onOpenQueue: () => widget.onOpenQueue(order.id),
-        orderUpdates: widget.controller.orderSnapshots,
-        loadHelpers: _loadHelpers,
-        onAssignHelper: (current, helperId) async {
-          await widget.controller.assignOrderToHelper(
-            orderId: current.id,
-            helperId: helperId,
-            expectedHelperId: current.assignedHelperId,
-          );
-          if (mounted) {
-            setState(
-              () => _ordersFuture = widget.controller.loadActivityOrders(),
-            );
-          }
-        },
-        onCancelOrder: (current) async {
-          await widget.controller.cancelOrder(current);
-          if (mounted) {
-            setState(
-              () => _ordersFuture = widget.controller.loadActivityOrders(),
-            );
-          }
-        },
-      ),
+      onTap: () => _openOrderDetails(order),
       child: SizedBox(height: 58, child: Row(children: cells)),
     );
   }
+
+  void _openOrderDetails(CustomerOrder order) => OrderDetailsDrawer.show(
+    context,
+    order: order,
+    inventory: widget.controller.allItems,
+    onOpenQueue: () => widget.onOpenQueue(order.id),
+    orderUpdates: widget.controller.orderSnapshots,
+    loadHelpers: _loadHelpers,
+    onAssignHelper: (current, helperId) async {
+      await widget.controller.assignOrderToHelper(
+        orderId: current.id,
+        helperId: helperId,
+        expectedHelperId: current.assignedHelperId,
+      );
+      if (mounted) {
+        setState(() => _ordersFuture = widget.controller.loadActivityOrders());
+      }
+    },
+    onCancelOrder: (current) async {
+      await widget.controller.cancelOrder(current);
+      if (mounted) {
+        setState(() => _ordersFuture = widget.controller.loadActivityOrders());
+      }
+    },
+  );
 
   Future<List<({String id, String name})>> _loadHelpers() async {
     final staff = await widget.controller.fetchStaff();
@@ -865,12 +1083,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
 
   Widget _movementCell(String rawType, double width) {
     final type = _movement(rawType);
-    final color = switch (type) {
-      'Sale' => const Color(0xFF2556DB),
-      'Restock' || 'Return' => const Color(0xFF15803D),
-      'Write-off' => const Color(0xFFDC2626),
-      _ => _ink,
-    };
+    final color = _movementColor(type);
     return SizedBox(
       width: width,
       child: Padding(
@@ -923,13 +1136,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
 
   Widget _statusCell(CustomerOrder order, double width) {
     final label = _orderStatus(order);
-    final color = switch (label) {
-      'Waiting' => const Color(0xFFB45309),
-      'Assigned' || 'Preparing' => const Color(0xFF2556DB),
-      'Ready' => const Color(0xFF15803D),
-      'Cancelled' || 'Returned' => const Color(0xFFDC2626),
-      _ => _ink,
-    };
+    final color = _statusColor(label);
     return SizedBox(
       width: width,
       child: Padding(
@@ -977,6 +1184,21 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
       ),
     );
   }
+
+  static Color _statusColor(String label) => switch (label) {
+    'Waiting' => const Color(0xFFB45309),
+    'Assigned' || 'Preparing' => _orange,
+    'Ready' => const Color(0xFF15803D),
+    'Cancelled' || 'Returned' => const Color(0xFFDC2626),
+    _ => _ink,
+  };
+
+  static Color _movementColor(String type) => switch (type) {
+    'Sale' => _orange,
+    'Restock' || 'Return' => const Color(0xFF15803D),
+    'Write-off' => const Color(0xFFDC2626),
+    _ => _ink,
+  };
 
   Future<void> _export(
     List<CustomerOrder> orders,

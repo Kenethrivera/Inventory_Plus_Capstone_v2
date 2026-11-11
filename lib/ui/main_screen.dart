@@ -125,10 +125,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   BuildContext? _storeLogoutDialogContext;
   StateSetter? _storeLogoutDialogSetState;
 
-  static const Color _primaryBlue = Color(0xFF2563EB);
-  static const Color _mainBg = Color(0xFFF4F6F8);
-  static const Color _darkText = Color(0xFF0F172A);
-  static const Color _inactiveText = Color(0xFF64748B);
+  static const Color _accent = Color(0xFFC83D08);
+  static const Color _mainBg = Color(0xFFF7F6F4);
+  static const Color _darkText = Color(0xFF211F1D);
+  static const Color _inactiveText = Color(0xFF756D67);
   static const String _fontFam = 'Hellix';
 
   Future<void> _startRealtimeSync() async {
@@ -930,12 +930,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: _primaryBlue.withValues(alpha: 0.1),
+                            color: _accent.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: const Icon(
                             LucideIcons.clockAlert,
-                            color: _primaryBlue,
+                            color: _accent,
                             size: 22,
                           ),
                         ),
@@ -984,7 +984,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                               _storeLogoutRemainingSeconds,
                             ),
                             style: const TextStyle(
-                              color: _primaryBlue,
+                              color: _accent,
                               fontSize: 44,
                               fontWeight: FontWeight.w900,
                               fontFamily: _fontFam,
@@ -999,7 +999,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                               minHeight: 7,
                               backgroundColor: const Color(0xFFE5E7EB),
                               valueColor: const AlwaysStoppedAnimation<Color>(
-                                _primaryBlue,
+                                _accent,
                               ),
                             ),
                           ),
@@ -1049,7 +1049,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           child: ElevatedButton(
                             onPressed: _completeForcedStoreLogout,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _primaryBlue,
+                              backgroundColor: _accent,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -1996,7 +1996,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         const SizedBox(height: 12),
         FloatingActionButton.small(
           heroTag: 'testNotificationFab',
-          backgroundColor: _primaryBlue,
+          backgroundColor: _accent,
           onPressed: _createTestNotification,
           child: const Icon(LucideIcons.bellPlus, color: Colors.white),
         ),
@@ -2581,6 +2581,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         return Scaffold(
           backgroundColor: Colors.white,
+          drawer: isAdmin ? _buildAdminMobileDrawer() : null,
           appBar: isHelper
               ? _buildHelperMobileAppBar(
                   orderQueueIndex: orderQueueIndex,
@@ -2589,6 +2590,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   inventoryIndex: inventoryIndex,
                 )
               : _buildMobileAppBar(
+                  isAdmin: isAdmin,
                   orderQueueIndex: orderQueueIndex,
                   posIndex: posIndex,
                   transactionIndex: transactionIndex,
@@ -2949,13 +2951,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   PreferredSizeWidget _buildMobileAppBar({
+    required bool isAdmin,
     required int orderQueueIndex,
     required int posIndex,
     required int transactionIndex,
     required int inventoryIndex,
   }) {
     return AppBar(
-      automaticallyImplyLeading: false,
+      automaticallyImplyLeading: isAdmin,
       backgroundColor: Colors.white,
       toolbarHeight: 64,
       elevation: 0,
@@ -2967,7 +2970,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: _primaryBlue,
+              color: _accent,
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(
@@ -3014,31 +3017,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     required bool isHelper,
     required bool isCashier,
   }) {
-    final visibleSections = isAdmin
-        ? const <MainSection>[
-            MainSection.dashboard,
-            MainSection.ordersActivity,
-            MainSection.forecasting,
-            MainSection.inventory,
-            MainSection.approvals,
-            MainSection.performance,
-            MainSection.storeMap,
-            MainSection.systemSettings,
-          ]
-        : _mainSections;
+    if (isAdmin) return _buildAdminMobileNavigationBar();
+    final visibleSections = _mainSections;
     final visibleIndexes = [
       for (final section in visibleSections) _mainSections.indexOf(section),
     ];
     final selectedIndex = visibleIndexes.indexOf(_currentIndex!);
     return NavigationBarTheme(
       data: NavigationBarThemeData(
-        indicatorColor: _primaryBlue.withOpacity(0.1),
+        indicatorColor: _accent.withOpacity(0.1),
         labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((
           Set<WidgetState> states,
         ) {
           if (states.contains(WidgetState.selected)) {
             return const TextStyle(
-              color: _primaryBlue,
+              color: _accent,
               fontWeight: FontWeight.bold,
               fontSize: 11,
               fontFamily: _fontFam,
@@ -3056,92 +3049,171 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         height: 66,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
-        selectedIndex: selectedIndex >= 0 ? selectedIndex : 1,
+        selectedIndex: selectedIndex >= 0 ? selectedIndex : 0,
         labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
         onDestinationSelected: (index) =>
             _selectMainIndex(visibleIndexes[index]),
         destinations: [
-          if (isAdmin)
-            const NavigationDestination(
-              icon: Icon(LucideIcons.layoutDashboard, color: _inactiveText),
-              selectedIcon: Icon(
-                LucideIcons.layoutDashboard,
-                color: _primaryBlue,
-              ),
-              label: 'Home',
-            ),
-          if (isAdmin)
-            const NavigationDestination(
-              icon: Icon(LucideIcons.receiptText, color: _inactiveText),
-              selectedIcon: Icon(LucideIcons.receiptText, color: _primaryBlue),
-              label: 'Orders',
-            ),
-          if (isAdmin)
-            const NavigationDestination(
-              icon: Icon(LucideIcons.trendingUp, color: _inactiveText),
-              selectedIcon: Icon(LucideIcons.trendingUp, color: _primaryBlue),
-              label: 'Forecast',
-            ),
           if (isCashier)
             const NavigationDestination(
               icon: Icon(LucideIcons.shoppingCart, color: _inactiveText),
-              selectedIcon: Icon(LucideIcons.shoppingCart, color: _primaryBlue),
+              selectedIcon: Icon(LucideIcons.shoppingCart, color: _accent),
               label: 'POS',
             ),
           if (isCashier)
             const NavigationDestination(
               icon: Icon(LucideIcons.clipboardList, color: _inactiveText),
-              selectedIcon: Icon(LucideIcons.clipboardList, color: _primaryBlue),
+              selectedIcon: Icon(LucideIcons.clipboardList, color: _accent),
               label: 'Requests',
             ),
           if (isHelper)
             const NavigationDestination(
               icon: Icon(LucideIcons.fileText, color: _inactiveText),
-              selectedIcon: Icon(LucideIcons.fileText, color: _primaryBlue),
+              selectedIcon: Icon(LucideIcons.fileText, color: _accent),
               label: 'Queue',
             ),
           const NavigationDestination(
             icon: Icon(LucideIcons.box, color: _inactiveText),
-            selectedIcon: Icon(LucideIcons.box, color: _primaryBlue),
+            selectedIcon: Icon(LucideIcons.box, color: _accent),
             label: 'Inventory',
           ),
-          if (isAdmin)
-            const NavigationDestination(
-              icon: Icon(LucideIcons.clipboardCheck, color: _inactiveText),
-              selectedIcon: Icon(
-                LucideIcons.clipboardCheck,
-                color: _primaryBlue,
-              ),
-              label: 'Approvals',
-            ),
           if (isHelper || isCashier)
             const NavigationDestination(
               icon: Icon(LucideIcons.history, color: _inactiveText),
-              selectedIcon: Icon(LucideIcons.history, color: _primaryBlue),
+              selectedIcon: Icon(LucideIcons.history, color: _accent),
               label: 'History',
-            ),
-          if (isAdmin)
-            const NavigationDestination(
-              icon: Icon(LucideIcons.barChart2, color: _inactiveText),
-              selectedIcon: Icon(LucideIcons.barChart2, color: _primaryBlue),
-              label: 'Performance',
-            ),
-          if (isAdmin)
-            const NavigationDestination(
-              icon: Icon(LucideIcons.map, color: _inactiveText),
-              selectedIcon: Icon(LucideIcons.map, color: _primaryBlue),
-              label: 'Map',
-            ),
-          if (isAdmin)
-            const NavigationDestination(
-              icon: Icon(LucideIcons.settings, color: _inactiveText),
-              selectedIcon: Icon(LucideIcons.settings, color: _primaryBlue),
-              label: 'Settings',
             ),
         ],
       ),
     );
   }
+
+  Widget _buildAdminMobileNavigationBar() {
+    const destinations = <({MainSection section, IconData icon, String label})>[
+      (section: MainSection.dashboard, icon: LucideIcons.layoutDashboard, label: 'Home'),
+      (section: MainSection.ordersActivity, icon: LucideIcons.receiptText, label: 'Orders'),
+      (section: MainSection.inventory, icon: LucideIcons.box, label: 'Inventory'),
+      (section: MainSection.approvals, icon: LucideIcons.clipboardCheck, label: 'Approvals'),
+    ];
+    return SafeArea(
+      top: false,
+      child: Container(
+        height: 66,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+        ),
+        child: Row(
+          children: [
+            for (final destination in destinations)
+              Expanded(
+                child: InkWell(
+                  onTap: () => _selectMainIndex(
+                    _mainSections.indexOf(destination.section),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: _currentMainSection == destination.section
+                              ? _accent.withValues(alpha: .1)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Icon(
+                          destination.icon,
+                          size: 21,
+                          color: _currentMainSection == destination.section
+                              ? _accent
+                              : _inactiveText,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        destination.label,
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: _currentMainSection == destination.section
+                              ? _accent
+                              : _inactiveText,
+                          fontSize: 11,
+                          fontWeight: _currentMainSection == destination.section
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                          fontFamily: _fontFam,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdminMobileDrawer() => Drawer(
+    backgroundColor: Colors.white,
+    child: SafeArea(
+      child: Builder(
+        builder: (drawerContext) => ListView(
+          padding: const EdgeInsets.fromLTRB(12, 18, 12, 24),
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 14),
+              child: Text('Menu', style: TextStyle(
+                fontSize: 20, fontWeight: FontWeight.w700, color: _darkText,
+              )),
+            ),
+            _adminDrawerHeading('Main'),
+            _adminDrawerItem(drawerContext, MainSection.dashboard, LucideIcons.layoutDashboard, 'Home'),
+            _adminDrawerItem(drawerContext, MainSection.ordersActivity, LucideIcons.receiptText, 'Orders'),
+            _adminDrawerItem(drawerContext, MainSection.inventory, LucideIcons.box, 'Inventory'),
+            _adminDrawerItem(drawerContext, MainSection.approvals, LucideIcons.clipboardCheck, 'Approvals'),
+            const Divider(height: 28),
+            _adminDrawerHeading('More'),
+            _adminDrawerItem(drawerContext, MainSection.forecasting, LucideIcons.trendingUp, 'Forecast'),
+            _adminDrawerItem(drawerContext, MainSection.performance, LucideIcons.barChart2, 'Performance'),
+            _adminDrawerItem(drawerContext, MainSection.storeMap, LucideIcons.map, 'Store map'),
+            _adminDrawerItem(drawerContext, MainSection.pos, LucideIcons.shoppingCart, 'POS system'),
+            _adminDrawerItem(drawerContext, MainSection.queue, LucideIcons.listChecks, 'Order queue'),
+            _adminDrawerItem(drawerContext, MainSection.transactions, LucideIcons.history, 'Transactions'),
+            _adminDrawerItem(drawerContext, MainSection.systemSettings, LucideIcons.settings, 'Settings'),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _adminDrawerHeading(String label) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+    child: Text(label, style: const TextStyle(
+      color: _inactiveText, fontSize: 12, fontWeight: FontWeight.w700,
+    )),
+  );
+
+  Widget _adminDrawerItem(
+    BuildContext drawerContext,
+    MainSection section,
+    IconData icon,
+    String label,
+  ) => ListTile(
+    leading: Icon(icon, size: 21),
+    title: Text(label),
+    selected: _currentMainSection == section,
+    selectedColor: _accent,
+    selectedTileColor: _accent.withValues(alpha: .08),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    onTap: () {
+      Scaffold.of(drawerContext).closeDrawer();
+      if (_currentMainSection != section) {
+        _selectMainIndex(_mainSections.indexOf(section));
+      }
+    },
+  );
 
   Widget _buildDashboardTopBar({
     required int orderQueueIndex,
@@ -3357,7 +3429,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: _primaryBlue,
+                  color: _accent,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
@@ -3704,7 +3776,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: isSelected
-              ? const Border(bottom: BorderSide(color: _primaryBlue, width: 3))
+              ? const Border(bottom: BorderSide(color: _accent, width: 3))
               : null,
         ),
         child: Row(
@@ -3712,7 +3784,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             Icon(
               icon,
               size: 18,
-              color: isSelected ? _primaryBlue : _inactiveText,
+              color: isSelected ? _accent : _inactiveText,
             ),
             const SizedBox(width: 8),
             Text(
@@ -3721,7 +3793,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 fontFamily: _fontFam,
                 fontSize: 14,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                color: isSelected ? _primaryBlue : _inactiveText,
+                color: isSelected ? _accent : _inactiveText,
               ),
             ),
             if (badgeCount != null && badgeCount > 0) ...[
@@ -3729,7 +3801,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: _primaryBlue,
+                  color: _accent,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -3779,7 +3851,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             value: 'profile',
             child: Row(
               children: [
-                Icon(LucideIcons.user, size: 18, color: _primaryBlue),
+                Icon(LucideIcons.user, size: 18, color: _accent),
                 SizedBox(width: 12),
                 Text('Profile'),
               ],
@@ -3798,11 +3870,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         ],
         child: CircleAvatar(
           radius: 17,
-          backgroundColor: _primaryBlue.withOpacity(0.12),
+          backgroundColor: _accent.withOpacity(0.12),
           child: Text(
             initial,
             style: const TextStyle(
-              color: _primaryBlue,
+              color: _accent,
               fontWeight: FontWeight.w900,
               fontSize: 13,
               fontFamily: _fontFam,
@@ -3830,7 +3902,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           children: [
             CircleAvatar(
               radius: 16,
-              backgroundColor: _primaryBlue,
+              backgroundColor: _accent,
               child: Text(
                 initial,
                 style: const TextStyle(
@@ -4006,11 +4078,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             children: [
               CircleAvatar(
                 radius: 16,
-                backgroundColor: const Color(0xFFEAF0FF),
+                backgroundColor: const Color(0xFFFFF1E9),
                 child: Text(
                   initial,
                   style: const TextStyle(
-                    color: Color(0xFF2556DB),
+                    color: _accent,
                     fontWeight: FontWeight.bold,
                     fontFamily: _fontFam,
                   ),

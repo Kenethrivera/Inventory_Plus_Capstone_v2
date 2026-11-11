@@ -194,6 +194,7 @@ class _StaffPageState extends State<StaffPage> {
 
   Widget _buildPageHeader(int online) => LayoutBuilder(
     builder: (context, limits) {
+      final compact = limits.maxWidth < 620;
       final heading = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -217,22 +218,23 @@ class _StaffPageState extends State<StaffPage> {
         style: FilledButton.styleFrom(
           backgroundColor: _orange,
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 12 : 18,
+            vertical: compact ? 11 : 14,
+          ),
+          textStyle: TextStyle(fontSize: compact ? 12 : 14),
         ),
-        icon: const Icon(LucideIcons.userRoundPlus, size: 17),
+        icon: Icon(LucideIcons.userRoundPlus, size: compact ? 16 : 17),
         label: const Text('Add staff'),
       );
-      return limits.maxWidth < 620
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [heading, const SizedBox(height: 16), add],
-            )
-          : Row(
-              children: [
-                Expanded(child: heading),
-                add,
-              ],
-            );
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: heading),
+          SizedBox(width: compact ? 8 : 16),
+          add,
+        ],
+      );
     },
   );
 
@@ -292,6 +294,9 @@ class _StaffPageState extends State<StaffPage> {
 
   @override
   Widget build(BuildContext context) {
+    final horizontalPadding = MediaQuery.sizeOf(context).width < 600
+        ? 16.0
+        : 32.0;
     final online = widget.presence?.activeStaff.length ?? 0;
     final rows = _filtered;
     if (_showPerformance) {
@@ -301,7 +306,12 @@ class _StaffPageState extends State<StaffPage> {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(32, 32, 32, 0),
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  32,
+                  horizontalPadding,
+                  0,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -327,7 +337,12 @@ class _StaffPageState extends State<StaffPage> {
       color: _background,
       child: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(32, 32, 32, 48),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            32,
+            horizontalPadding,
+            48,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -596,44 +611,126 @@ class _StaffPageState extends State<StaffPage> {
     ),
   );
 
-  Widget _mobileCard(Map<String, dynamic> person) => Container(
-    width: double.infinity,
-    margin: const EdgeInsets.only(bottom: 10),
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border.all(color: _line),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _identity(person),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(
-              _roleLabel(person['role']?.toString()),
-              style: const TextStyle(fontSize: 13),
+  Widget _mobileCard(Map<String, dynamic> person) {
+    final name = person['name']?.toString() ?? 'Staff';
+    final email = person['email']?.toString().isNotEmpty == true
+        ? person['email'].toString()
+        : person['username']?.toString() ?? '';
+    final address = _homeAddress(person);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: _line),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: const Color(0xFFFFF1E8),
+                child: Text(
+                  _initials(name),
+                  style: const TextStyle(
+                    color: _orange,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: _muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              _actions(person, compact: true),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                _roleLabel(person['role']?.toString()),
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              _availability(person),
+              _status(person),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: _mobileTodaySummary(person)),
+                if (address != '—') ...[
+                  const TextSpan(text: '  ·  '),
+                  const WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: Icon(LucideIcons.mapPin, size: 12, color: _red),
+                  ),
+                  TextSpan(text: ' $address'),
+                ],
+              ],
             ),
-            _availability(person),
-            _status(person),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _homeAddress(person),
-          style: const TextStyle(fontSize: 12, color: _muted),
-        ),
-        const SizedBox(height: 10),
-        _today(person),
-        Align(alignment: Alignment.centerRight, child: _actions(person)),
-      ],
-    ),
-  );
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: _muted, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _mobileTodaySummary(Map<String, dynamic> person) {
+    final role = person['role']?.toString();
+    if (role == 'admin') return 'Administrator';
+    final record = _findRecord(
+      role == 'helper' ? _helperToday : _cashierToday,
+      person['id']?.toString() ?? '',
+    );
+    if (record == null) {
+      return role == 'helper'
+          ? '0 handled  ·  — avg  ·  0 active'
+          : '0 orders  ·  — avg  ·  ₱0.00 sales';
+    }
+    final average = record.averageMinutes == null
+        ? '—'
+        : '${record.averageMinutes!.round()} min';
+    return role == 'helper'
+        ? '${record.completedCount} handled  ·  $average avg  ·  ${record.currentWorkload} active'
+        : '${record.completedCount} orders  ·  $average avg  ·  ${_money(record.salesHandled)} sales';
+  }
 
   Widget _identity(Map<String, dynamic> person) {
     final name = person['name']?.toString() ?? 'Staff';
@@ -698,7 +795,7 @@ class _StaffPageState extends State<StaffPage> {
         : 'Offline';
     final color = online
         ? busy
-              ? const Color(0xFF1D4ED8)
+              ? _orange
               : _green
         : _muted;
     return _pill(label, color);
@@ -755,20 +852,32 @@ class _StaffPageState extends State<StaffPage> {
     return _pill(active ? 'Active' : 'Disabled', active ? _green : _red);
   }
 
-  Widget _actions(Map<String, dynamic> person) => Row(
+  Widget _actions(Map<String, dynamic> person, {bool compact = false}) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
       IconButton(
+        constraints: compact
+            ? const BoxConstraints.tightFor(width: 32, height: 32)
+            : null,
+        padding: compact ? EdgeInsets.zero : null,
         tooltip: 'Edit ${person['name']}',
         onPressed: () => _openEditor(person),
         icon: const Icon(LucideIcons.pencil, size: 17, color: _ink),
       ),
       IconButton(
+        constraints: compact
+            ? const BoxConstraints.tightFor(width: 32, height: 32)
+            : null,
+        padding: compact ? EdgeInsets.zero : null,
         tooltip: 'Reset password for ${person['name']}',
         onPressed: () => _resetPassword(person),
         icon: const Icon(LucideIcons.keyRound, size: 17, color: _ink),
       ),
       IconButton(
+        constraints: compact
+            ? const BoxConstraints.tightFor(width: 32, height: 32)
+            : null,
+        padding: compact ? EdgeInsets.zero : null,
         tooltip: person['is_active'] == false
             ? 'Enable ${person['name']}'
             : 'Disable ${person['name']}',

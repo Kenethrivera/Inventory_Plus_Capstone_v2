@@ -174,11 +174,19 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
     final records = snapshot?.records ?? const <StaffPerformanceRecord>[];
+    final horizontalPadding = MediaQuery.sizeOf(context).width < 600
+        ? 16.0
+        : 32.0;
     return ColoredBox(
       color: _surface,
       child: SafeArea(
         child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(32, widget.embedded ? 28 : 32, 32, 48),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            widget.embedded ? 28 : 32,
+            horizontalPadding,
+            48,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -245,37 +253,100 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
   }
 
   Widget _buildControls() {
-    return Wrap(
-      spacing: 16,
-      runSpacing: 12,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        _ChoiceGroup<StaffPerformanceRole>(
-          values: StaffPerformanceRole.values,
-          selected: _role,
-          label: (value) => value.label,
-          onSelected: _changeRole,
-        ),
-        _ChoiceGroup<HistoryPeriodMode>(
-          values: HistoryPeriodMode.values,
-          selected: _period.mode,
-          label: (value) => value.label,
-          onSelected: (mode) => _changePeriod(_period.withMode(mode)),
-        ),
-        HistoryPeriodControls(
-          selection: _period,
-          onChanged: _changePeriod,
-          warmPalette: true,
-        ),
-        if (widget.embedded)
-          IconButton(
-            tooltip: 'How performance is calculated',
-            onPressed: _showFormula,
-            icon: const Icon(Icons.info_outline, color: _accent),
-          ),
-      ],
+    final roles = _ChoiceGroup<StaffPerformanceRole>(
+      values: StaffPerformanceRole.values,
+      selected: _role,
+      label: (value) => value.label,
+      onSelected: _changeRole,
+    );
+    final modes = _ChoiceGroup<HistoryPeriodMode>(
+      values: HistoryPeriodMode.values,
+      selected: _period.mode,
+      label: (value) => value.label,
+      onSelected: (mode) => _changePeriod(_period.withMode(mode)),
+    );
+    final period = HistoryPeriodControls(
+      selection: _period,
+      onChanged: _changePeriod,
+      warmPalette: true,
+    );
+    final info = IconButton(
+      tooltip: 'How performance is calculated',
+      onPressed: _showFormula,
+      icon: const Icon(Icons.info_outline, color: _accent),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 600) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  roles,
+                  Row(mainAxisSize: MainAxisSize.min, children: [period, info]),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _mobilePeriodModes(),
+            ],
+          );
+        }
+        return Wrap(
+          spacing: 16,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [roles, modes, period, if (widget.embedded) info],
+        );
+      },
     );
   }
+
+  Widget _mobilePeriodModes() => Container(
+    padding: const EdgeInsets.all(3),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: _border),
+      borderRadius: BorderRadius.circular(9),
+    ),
+    child: Row(
+      children: [
+        for (final mode in HistoryPeriodMode.values)
+          Expanded(
+            child: InkWell(
+              onTap: mode == _period.mode
+                  ? null
+                  : () => _changePeriod(_period.withMode(mode)),
+              borderRadius: BorderRadius.circular(7),
+              child: Container(
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: mode == _period.mode
+                      ? const Color(0xFFFFEDE5)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  mode.label,
+                  style: TextStyle(
+                    color: mode == _period.mode ? _accent : _muted,
+                    fontSize: 12,
+                    fontWeight: mode == _period.mode
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
 
   Widget _buildSummary(StaffPerformanceSnapshot snapshot) {
     final records = snapshot.records;
@@ -292,9 +363,10 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final compact = constraints.maxWidth < 600;
         final width = constraints.maxWidth >= 900
             ? (constraints.maxWidth - 36) / 4
-            : constraints.maxWidth >= 520
+            : constraints.maxWidth >= 270
             ? (constraints.maxWidth - 12) / 2
             : constraints.maxWidth;
         return Wrap(
@@ -303,33 +375,43 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
           children: [
             _MetricCard(
               width: width,
+              compact: compact,
               icon: Icons.receipt_long_outlined,
               label: helper ? 'Total Orders' : 'Completed Orders',
               value: '${snapshot.totalStoreOrders}',
             ),
             _MetricCard(
               width: width,
+              compact: compact,
               icon: Icons.task_alt,
-              label: helper
-                  ? 'Helper-Handled Orders'
-                  : 'Cashier-Handled Checkouts',
+              label: compact
+                  ? (helper ? 'Helper-Handled' : 'Cashier-Handled')
+                  : (helper
+                        ? 'Helper-Handled Orders'
+                        : 'Cashier-Handled Checkouts'),
               value: '${snapshot.totalRoleHandledOrders}',
             ),
             _MetricCard(
               width: width,
+              compact: compact,
               icon: Icons.scale_outlined,
-              label: helper
-                  ? 'Total Workload Points'
-                  : 'Total Checkout Workload',
+              label: compact
+                  ? 'Workload Points'
+                  : (helper
+                        ? 'Total Workload Points'
+                        : 'Total Checkout Workload'),
               value:
                   '${snapshot.totalRoleWorkloadPoints.toStringAsFixed(2)} pts',
             ),
             _MetricCard(
               width: width,
+              compact: compact,
               icon: Icons.schedule,
-              label: helper
-                  ? 'Average On-Time Rate'
-                  : 'Average Payment On-Time',
+              label: compact
+                  ? 'Avg On-Time'
+                  : (helper
+                        ? 'Average On-Time Rate'
+                        : 'Average Payment On-Time'),
               value: '${weightedOnTime.toStringAsFixed(1)}%',
             ),
           ],
@@ -345,7 +427,7 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
     final rankedRecords = rankStaffPerformanceRecords(records);
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 760) {
+        if (constraints.maxWidth < 900) {
           return Column(
             children: [
               for (final ranked in rankedRecords) ...[
@@ -494,12 +576,14 @@ class _ChoiceGroup<T> extends StatelessWidget {
 class _MetricCard extends StatelessWidget {
   const _MetricCard({
     required this.width,
+    required this.compact,
     required this.icon,
     required this.label,
     required this.value,
   });
 
   final double width;
+  final bool compact;
   final IconData icon;
   final String label;
   final String value;
@@ -508,6 +592,7 @@ class _MetricCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
+      height: compact ? 78 : null,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -515,35 +600,40 @@ class _MetricCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(compact ? 12 : 16),
           child: Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: compact ? 30 : 40,
+                height: compact ? 30 : 40,
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFF1E8),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: _accent, size: 20),
+                child: Icon(icon, color: _accent, size: compact ? 16 : 20),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: compact ? 8 : 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       label,
-                      maxLines: 1,
+                      maxLines: compact ? 2 : 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: _muted, fontSize: 12),
+                      style: TextStyle(
+                        color: _muted,
+                        fontSize: compact ? 11 : 12,
+                      ),
                     ),
                     const SizedBox(height: 3),
                     Text(
                       value,
-                      style: const TextStyle(
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
                         color: _ink,
-                        fontSize: 18,
+                        fontSize: compact ? 15 : 18,
                         fontWeight: FontWeight.w700,
                       ),
                     ),

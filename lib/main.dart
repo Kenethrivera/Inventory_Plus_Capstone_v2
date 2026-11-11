@@ -96,7 +96,9 @@ class InventoryApp extends StatelessWidget {
         );
       },
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.orange),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFC83D08),
+        ),
         useMaterial3: true,
       ),
       initialRoute: '/',

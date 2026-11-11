@@ -13,15 +13,15 @@ import 'widgets/write_off_request_dialog.dart';
 import '../services/app_error_mapper.dart';
 import 'store_map.dart';
 
-const _blue = Color(0xFF2563EB);
-const _ink = Color(0xFF172033);
-const _slate = Color(0xFF64748B);
-const _border = Color(0xFFE6EBF2);
+const _accent = Color(0xFFC83D08);
+const _ink = Color(0xFF211F1D);
+const _slate = Color(0xFF756D67);
+const _border = Color(0xFFE3DED7);
 const _font = 'Hellix';
 const _warmBackground = Color(0xFFF7F6F4);
 const _warmBorder = Color(0xFFE6E1DC);
 const _warmMuted = Color(0xFF817A75);
-const _warmOrange = Color(0xFFC83D08);
+const _warmOrange = _accent;
 const _warmRed = Color(0xFFDC2626);
 
 String _qty(double value) => value == value.roundToDouble()
@@ -336,7 +336,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                       vertical: 19,
                     ),
                     decoration: const BoxDecoration(
-                      color: Color(0xFFF8FAFC),
+                      color: Color(0xFFF8F7F5),
                       border: Border(top: BorderSide(color: _border)),
                     ),
                     child: Row(
@@ -384,7 +384,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                             'status': draftStatus,
                           }),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _blue,
+                            backgroundColor: _accent,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(
@@ -431,10 +431,10 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 19, vertical: 12),
           decoration: BoxDecoration(
-            color: selected ? const Color(0xFFEFF6FF) : Colors.white,
+            color: selected ? const Color(0xFFFFF1E9) : Colors.white,
             borderRadius: BorderRadius.circular(100),
             border: Border.all(
-              color: selected ? _blue : const Color(0xFFCBD5E1),
+              color: selected ? _accent : const Color(0xFFE3DED7),
             ),
           ),
           child: Text(
@@ -443,7 +443,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
               fontFamily: _font,
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: selected ? _blue : const Color(0xFF334155),
+              color: selected ? _accent : const Color(0xFF211F1D),
             ),
           ),
         ),
@@ -453,7 +453,9 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
 
   bool _matchesStatusFilter(InventoryItem item, String filter) {
     if (filter == 'all') return true;
-    if (widget.controller.isDisabled(item.id)) return false;
+    final disabled = widget.controller.isDisabled(item.id);
+    if (filter == 'inactive') return disabled;
+    if (disabled) return false;
     final status = widget.controller.stockStatusFor(item);
     switch (filter) {
       case 'ok':
@@ -513,19 +515,27 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
     }.where((c) => c.toLowerCase() != 'unassigned').toList()..sort();
     final categories = <String>['All', ...categoryNames];
     final selectedCategory = categories.contains(_category) ? _category : 'All';
-    final source = <InventoryItem>[...active, if (_showDisabled) ...disabled];
+    final source = <InventoryItem>[
+      ...active,
+      if (_showDisabled || _stockFilter == 'inactive') ...disabled,
+    ];
     final query = _search.text.trim().toLowerCase();
-    final filtered = source.where((item) {
-      final matchesCategory =
-          selectedCategory == 'All' || item.category == selectedCategory;
-      final matchesSearch =
-          query.isEmpty ||
-          item.name.toLowerCase().contains(query) ||
-          item.sku.toLowerCase().contains(query) ||
-          item.category.toLowerCase().contains(query);
-      return matchesCategory && matchesSearch && _matchesStockFilter(item);
-    }).toList();
-    if (_sortBy != 'none') filtered.sort(_compareItems);
+    List<InventoryItem> filterItems(List<InventoryItem> candidates) {
+      final matches = candidates.where((item) {
+        final matchesCategory =
+            selectedCategory == 'All' || item.category == selectedCategory;
+        final matchesSearch =
+            query.isEmpty ||
+            item.name.toLowerCase().contains(query) ||
+            item.sku.toLowerCase().contains(query) ||
+            item.category.toLowerCase().contains(query);
+        return matchesCategory && matchesSearch && _matchesStockFilter(item);
+      }).toList();
+      if (_sortBy != 'none') matches.sort(_compareItems);
+      return matches;
+    }
+
+    final filtered = filterItems(source);
 
     final pages = filtered.isEmpty
         ? 1
@@ -546,13 +556,14 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
         .length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FB),
+      backgroundColor: _warmBackground,
       body: LayoutBuilder(
         builder: (context, constraints) {
-          if (constraints.maxWidth < 600) {
+          if (constraints.maxWidth < 720) {
+            final mobileSource = <InventoryItem>[...active, ...disabled];
             return _buildMobileView(
-              items: filtered,
-              source: source,
+              items: filterItems(mobileSource),
+              source: mobileSource,
               categories: categories,
               selectedCategory: selectedCategory,
             );
@@ -624,7 +635,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                           icon: const Icon(LucideIcons.plus, size: 16),
                           label: const Text('New item'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _blue,
+                            backgroundColor: _accent,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
@@ -668,8 +679,8 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                             'Total items',
                             '${active.length}',
                             LucideIcons.package,
-                            const Color(0xFF2563EB),
-                            const Color(0xFFEFF6FF),
+                            const Color(0xFFC83D08),
+                            const Color(0xFFFFF1E9),
                           ),
                         ),
                         SizedBox(
@@ -688,7 +699,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                             'Out of stock',
                             '$out',
                             LucideIcons.packageX,
-                            const Color(0xFF64748B),
+                            const Color(0xFF756D67),
                             const Color(0xFFF1F5F9),
                           ),
                         ),
@@ -747,7 +758,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                                     color: _slate,
                                   ),
                                   filled: true,
-                                  fillColor: const Color(0xFFF8FAFC),
+                                  fillColor: const Color(0xFFF8F7F5),
                                   contentPadding: EdgeInsets.zero,
                                   enabledBorder: OutlineInputBorder(
                                     borderSide: const BorderSide(
@@ -756,7 +767,9 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   focusedBorder: OutlineInputBorder(
-                                    borderSide: const BorderSide(color: _blue),
+                                    borderSide: const BorderSide(
+                                      color: _accent,
+                                    ),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                 ),
@@ -806,7 +819,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                                     label: const Text('Filter & sort'),
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: _ink,
-                                      backgroundColor: const Color(0xFFF8FAFC),
+                                      backgroundColor: const Color(0xFFF8F7F5),
                                       side: const BorderSide(color: _border),
                                       textStyle: const TextStyle(
                                         fontFamily: _font,
@@ -840,13 +853,15 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                                     ),
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: _showDisabled
-                                          ? _blue
+                                          ? _accent
                                           : _slate,
                                       backgroundColor: _showDisabled
-                                          ? const Color(0xFFEFF6FF)
-                                          : const Color(0xFFF8FAFC),
+                                          ? const Color(0xFFFFF1E9)
+                                          : const Color(0xFFF8F7F5),
                                       side: BorderSide(
-                                        color: _showDisabled ? _blue : _border,
+                                        color: _showDisabled
+                                            ? _accent
+                                            : _border,
                                       ),
                                       textStyle: const TextStyle(
                                         fontFamily: _font,
@@ -931,14 +946,14 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                                       height: 38,
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFEFF6FF),
+                                        color: const Color(0xFFFFF1E9),
                                         borderRadius: BorderRadius.circular(9),
                                       ),
                                       child: Text(
                                         '${page + 1}',
                                         style: const TextStyle(
                                           fontFamily: _font,
-                                          color: _blue,
+                                          color: _accent,
                                           fontSize: 13,
                                           fontWeight: FontWeight.w700,
                                         ),
@@ -1360,7 +1375,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
             ? const Icon(LucideIcons.package, size: 19, color: _warmMuted)
             : Image.network(
                 item.imageUrl,
-                 fit: BoxFit.contain,
+                fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const Icon(
                   LucideIcons.package,
                   size: 19,
@@ -1530,6 +1545,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
       'low': 'Low stock',
       'critical': 'Critical',
       'out': 'Out of stock',
+      'inactive': 'Inactive',
     };
     final hasActiveFilters = _stockFilter != 'all' || selectedCategory != 'All';
     final activeFilters = [
@@ -1562,13 +1578,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                           ),
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Inventory actions',
-                        icon: const Icon(LucideIcons.ellipsis, color: _ink),
-                        onPressed: _openMobileActionsSheet,
-                      ),
                       if (widget.controller.isAdmin) ...[
-                        const SizedBox(width: 4),
                         SizedBox(
                           height: 40,
                           child: FilledButton.icon(
@@ -1576,7 +1586,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                             icon: const Icon(LucideIcons.plus, size: 16),
                             label: const Text('Add item'),
                             style: FilledButton.styleFrom(
-                              backgroundColor: _blue,
+                              backgroundColor: _accent,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
                               ),
@@ -1600,6 +1610,46 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                       fontSize: 12,
                     ),
                   ),
+                  if (widget.controller.isAdmin) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 40,
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                FocusManager.instance.primaryFocus?.unfocus();
+                                widget.onQrLabels(null);
+                              },
+                              icon: const Icon(LucideIcons.qrCode, size: 16),
+                              label: const Text('QR labels'),
+                              style: _outlineStyle,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SizedBox(
+                            height: 40,
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                FocusManager.instance.primaryFocus?.unfocus();
+                                widget.onExport();
+                              },
+                              icon: Icon(
+                                LucideIcons.download,
+                                size: 16,
+                                color: widget.exportDue ? Colors.red : _ink,
+                              ),
+                              label: const Text('Export report'),
+                              style: _outlineStyle,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -1647,12 +1697,12 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                           label: const Text('Filter'),
                           style: OutlinedButton.styleFrom(
                             backgroundColor: hasActiveFilters
-                                ? const Color(0xFFEFF6FF)
+                                ? const Color(0xFFFFF1E9)
                                 : Colors.white,
-                            foregroundColor: hasActiveFilters ? _blue : _ink,
+                            foregroundColor: hasActiveFilters ? _accent : _ink,
                             padding: const EdgeInsets.symmetric(horizontal: 9),
                             side: BorderSide(
-                              color: hasActiveFilters ? _blue : _border,
+                              color: hasActiveFilters ? _accent : _border,
                             ),
                             textStyle: const TextStyle(
                               fontFamily: _font,
@@ -1663,24 +1713,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 46,
-                        height: 46,
-                        child: OutlinedButton(
-                          onPressed: _openMobileSortSheet,
-                          style: OutlinedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: _ink,
-                            padding: EdgeInsets.zero,
-                            side: const BorderSide(color: _border),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: const Icon(Icons.sort, size: 20),
                         ),
                       ),
                     ],
@@ -1696,7 +1728,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontFamily: _font,
-                              color: _blue,
+                              color: _accent,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),
@@ -1754,7 +1786,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
     final disabled = widget.controller.isDisabled(item.id);
     final status = widget.controller.stockStatusFor(item);
     final statusColor = disabled ? _slate : _statusColor(status);
-    final statusText = disabled ? 'Disabled' : _statusLabel(status);
+    final statusText = disabled ? 'Inactive' : _statusLabel(status);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
@@ -1770,104 +1802,133 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
               border: Border.all(color: _border),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(9),
-                  child: SizedBox(
-                    width: 56,
-                    height: 56,
-                    child: item.imageUrl.trim().isEmpty
-                        ? const ColoredBox(
-                            color: Color(0xFFEFF6FF),
-                            child: Icon(LucideIcons.package, color: _blue),
-                          )
-                        : Image.network(
-                            item.imageUrl,
-                             fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const ColoredBox(
-                                  color: Color(0xFFEFF6FF),
-                                  child: Icon(
-                                    LucideIcons.package,
-                                    color: _blue,
-                                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(9),
+                      child: SizedBox(
+                        width: 56,
+                        height: 56,
+                        child: item.imageUrl.trim().isEmpty
+                            ? const ColoredBox(
+                                color: Color(0xFFFFF1E9),
+                                child: Icon(
+                                  LucideIcons.package,
+                                  color: _accent,
                                 ),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                              )
+                            : Image.network(
+                                item.imageUrl,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const ColoredBox(
+                                      color: Color(0xFFFFF1E9),
+                                      child: Icon(
+                                        LucideIcons.package,
+                                        color: _accent,
+                                      ),
+                                    ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              item.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: _font,
-                                fontSize: 13,
-                                color: _ink,
-                                fontWeight: FontWeight.w800,
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  item.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontFamily: _font,
+                                    fontSize: 13,
+                                    color: _ink,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
                               ),
+                              const SizedBox(width: 5),
+                              _badge(statusText, statusColor),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            item.sku,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: _font,
+                              fontSize: 10,
+                              color: _slate,
                             ),
                           ),
-                          const SizedBox(width: 5),
-                          _badge(statusText, statusColor),
+                          const SizedBox(height: 7),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  _money(item.price),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontFamily: _font,
+                                    fontSize: 12,
+                                    color: _ink,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  '${_qty(item.quantity)} ${item.unit}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: _font,
+                                    fontSize: 11,
+                                    color: status == StockStatus.ok
+                                        ? _slate
+                                        : statusColor,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        item.sku,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: _font,
-                          fontSize: 10,
-                          color: _slate,
-                        ),
+                    ),
+                  ],
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 10),
+                  child: Divider(height: 1, color: _border),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _mobileItemDetail(
+                        'Category',
+                        item.category.isEmpty ? '—' : item.category,
                       ),
-                      const SizedBox(height: 7),
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              _money(item.price),
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: _font,
-                                fontSize: 12,
-                                color: _ink,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              '${_qty(item.quantity)} ${item.unit}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: _font,
-                                fontSize: 11,
-                                color: status == StockStatus.ok
-                                    ? _slate
-                                    : statusColor,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _mobileItemDetail(
+                        'Location',
+                        _inventoryLocation(item),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1876,6 +1937,23 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
       ),
     );
   }
+
+  Widget _mobileItemDetail(String label, String value) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(fontFamily: _font, fontSize: 10, color: _slate),
+      ),
+      const SizedBox(height: 2),
+      Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontFamily: _font, fontSize: 11, color: _ink),
+      ),
+    ],
+  );
 
   Widget _mobileSheetHeader({
     required String title,
@@ -1891,10 +1969,10 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
+              color: const Color(0xFFFFF1E9),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: _blue, size: 20),
+            child: Icon(icon, color: _accent, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1942,10 +2020,10 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Material(
         key: key,
-        color: selected ? const Color(0xFFEFF6FF) : Colors.white,
+        color: selected ? const Color(0xFFFFF1E9) : Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
-          side: BorderSide(color: selected ? const Color(0xFFBFDBFE) : _border),
+          side: BorderSide(color: selected ? const Color(0xFFF6C5AE) : _border),
         ),
         child: InkWell(
           onTap: onTap,
@@ -1960,7 +2038,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                     style: TextStyle(
                       fontFamily: _font,
                       fontSize: 14,
-                      color: selected ? _blue : _ink,
+                      color: selected ? _accent : _ink,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),
@@ -1978,7 +2056,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                 ],
                 Icon(
                   selected ? Icons.check_circle_rounded : Icons.circle_outlined,
-                  color: selected ? _blue : const Color(0xFF94A3B8),
+                  color: selected ? _accent : const Color(0xFF8D827C),
                   size: 20,
                 ),
               ],
@@ -2003,6 +2081,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
       ('low', 'Low stock'),
       ('critical', 'Critical'),
       ('out', 'Out of stock'),
+      ('inactive', 'Inactive'),
     ];
 
     int matchingCount(String status, String category) => source.where((item) {
@@ -2100,7 +2179,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                         draftStatus = 'all';
                         draftCategory = 'All';
                       }),
-                      style: TextButton.styleFrom(foregroundColor: _blue),
+                      style: TextButton.styleFrom(foregroundColor: _accent),
                       child: const Text(
                         'Reset',
                         style: TextStyle(fontFamily: _font),
@@ -2114,7 +2193,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                           draftCategory,
                         )),
                         style: FilledButton.styleFrom(
-                          backgroundColor: _blue,
+                          backgroundColor: _accent,
                           minimumSize: const Size.fromHeight(48),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -2144,113 +2223,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
       _category = result.$2;
       _page = 0;
     });
-  }
-
-  Future<void> _openMobileSortSheet() async {
-    const options = <(String, String)>[
-      ('nameAsc', 'Name: A to Z'),
-      ('nameDesc', 'Name: Z to A'),
-      ('priceAsc', 'Price: low to high'),
-      ('priceDesc', 'Price: high to low'),
-      ('stockAsc', 'Stock: low to high'),
-      ('stockDesc', 'Stock: high to low'),
-      ('none', 'Default order'),
-    ];
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: math.min(440, MediaQuery.sizeOf(sheetContext).height * 0.7),
-          child: Column(
-            children: [
-              _mobileSheetHeader(
-                title: 'Sort inventory',
-                subtitle: 'Choose the order of items',
-                icon: Icons.sort_rounded,
-                onClose: () => Navigator.pop(sheetContext),
-              ),
-              const Divider(height: 1, color: _border),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.only(top: 12, bottom: 8),
-                  itemCount: options.length,
-                  itemBuilder: (context, index) {
-                    final (value, label) = options[index];
-                    return _mobileSheetOption(
-                      label: label,
-                      selected: _sortBy == value,
-                      onTap: () => Navigator.pop(sheetContext, value),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (!mounted || selected == null) return;
-    setState(() {
-      _sortBy = selected;
-      _page = 0;
-    });
-  }
-
-  void _openMobileActionsSheet() {
-    FocusManager.instance.primaryFocus?.unfocus();
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.controller.isAdmin) ...[
-              ListTile(
-                leading: const Icon(LucideIcons.download),
-                title: const Text('Export report'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) widget.onExport();
-                  });
-                },
-              ),
-              ListTile(
-                leading: const Icon(LucideIcons.qrCode),
-                title: const Text('QR labels'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) widget.onQrLabels(null);
-                  });
-                },
-              ),
-            ],
-            ListTile(
-              leading: Icon(
-                _showDisabled ? LucideIcons.eyeOff : LucideIcons.eye,
-              ),
-              title: Text(
-                _showDisabled ? 'Hide disabled items' : 'Show disabled items',
-              ),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                setState(() {
-                  _showDisabled = !_showDisabled;
-                  _page = 0;
-                });
-              },
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   ButtonStyle get _outlineStyle => OutlinedButton.styleFrom(
@@ -2289,7 +2261,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
         decoration: InputDecoration(
           isDense: true,
           filled: true,
-          fillColor: const Color(0xFFF8FAFC),
+          fillColor: const Color(0xFFF8F7F5),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 10,
             vertical: 11,
@@ -2304,7 +2276,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
             borderRadius: BorderRadius.circular(8),
           ),
           focusedBorder: OutlineInputBorder(
-            borderSide: const BorderSide(color: _blue),
+            borderSide: const BorderSide(color: _accent),
             borderRadius: BorderRadius.circular(8),
           ),
         ),
@@ -2388,7 +2360,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
     );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: const Color(0xFFF8FAFC),
+      color: const Color(0xFFF8F7F5),
       child: Row(
         children: [
           heading('Item', 4),
@@ -2924,8 +2896,13 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         builder: (context, setDialogState) => Dialog(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: SingleChildScrollView(
@@ -3005,8 +2982,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                           final uri = Uri.tryParse(value);
                           if (uri == null ||
                               !uri.hasAuthority ||
-                              (uri.scheme != 'https' &&
-                                  uri.scheme != 'http')) {
+                              (uri.scheme != 'https' && uri.scheme != 'http')) {
                             setDialogState(
                               () => validationError =
                                   'Enter a valid http(s) image URL.',
@@ -3246,7 +3222,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                           spacing: 6,
                           runSpacing: 5,
                           children: [
-                            _badge(item.category, _blue),
+                            _badge(item.category, _accent),
                             _badge(
                               disabled ? 'Disabled' : _statusLabel(status),
                               disabled ? _slate : _statusColor(status),
@@ -3384,7 +3360,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                               ),
                               style: ElevatedButton.styleFrom(
                                 foregroundColor: Colors.white,
-                                backgroundColor: _blue,
+                                backgroundColor: _accent,
                               ),
                             ),
                           ),
@@ -3405,7 +3381,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                                 icon: const Icon(LucideIcons.plus, size: 14),
                                 label: const Text('Restock'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _blue,
+                                  backgroundColor: _accent,
                                   foregroundColor: Colors.white,
                                   elevation: 0,
                                   textStyle: const TextStyle(
@@ -3722,12 +3698,12 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
       ),
       clipBehavior: Clip.antiAlias,
       child: _chosenImageBytes != null
-           ? Image.memory(_chosenImageBytes!, fit: BoxFit.contain)
+          ? Image.memory(_chosenImageBytes!, fit: BoxFit.contain)
           : imageUrl.isEmpty
           ? const Icon(LucideIcons.package, color: _warmMuted, size: 32)
           : Image.network(
               imageUrl,
-               fit: BoxFit.contain,
+              fit: BoxFit.contain,
               errorBuilder: (_, __, ___) =>
                   const Icon(LucideIcons.package, color: _warmMuted, size: 32),
             ),
@@ -4372,7 +4348,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
           icon: const Icon(LucideIcons.imagePlus, size: 16),
           label: const Text('Replace image'),
           style: OutlinedButton.styleFrom(
-            foregroundColor: _blue,
+            foregroundColor: _accent,
             side: const BorderSide(color: _border),
           ),
         ),
@@ -4433,7 +4409,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
           decoration: InputDecoration(
             isDense: true,
             filled: true,
-            fillColor: readOnly ? const Color(0xFFF8FAFC) : Colors.white,
+            fillColor: readOnly ? const Color(0xFFF8F7F5) : Colors.white,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
               vertical: 13,
@@ -4444,7 +4420,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _blue, width: 1.5),
+              borderSide: const BorderSide(color: _accent, width: 1.5),
             ),
           ),
         ),
@@ -4471,7 +4447,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(LucideIcons.package, size: 55, color: Color(0xFF94A3B8)),
+        const Icon(LucideIcons.package, size: 55, color: Color(0xFF8D827C)),
         const SizedBox(height: 9),
         const Text(
           'No image uploaded',
@@ -4526,7 +4502,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: const BoxDecoration(
-            color: Color(0xFFF8FAFC),
+            color: Color(0xFFF8F7F5),
             borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
           ),
           child: Text(
@@ -4559,7 +4535,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                 children: [
                   Row(
                     children: [
-                      const Icon(LucideIcons.mapPin, color: _blue, size: 15),
+                      const Icon(LucideIcons.mapPin, color: _accent, size: 15),
                       const SizedBox(width: 6),
                       const Expanded(
                         child: Text(
@@ -4576,7 +4552,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                         icon: const Icon(LucideIcons.maximize, size: 13),
                         label: const Text('Expand'),
                         style: TextButton.styleFrom(
-                          foregroundColor: _blue,
+                          foregroundColor: _accent,
                           textStyle: const TextStyle(
                             fontFamily: _font,
                             fontSize: 11,
@@ -4596,8 +4572,8 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                       child: StoreMap(
                         controller: widget.controller,
                         mode: MapMode.view,
-                         highlightId: _locationValue,
-                         showItemPopup: false,
+                        highlightId: _locationValue,
+                        showItemPopup: false,
                         fitEntireMap: true,
                         compactZoomControls: true,
                         showMobileToolbar: false,
@@ -4636,10 +4612,10 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   height: 54,
-                  color: const Color(0xFFF8FAFC),
+                  color: const Color(0xFFF8F7F5),
                   child: Row(
                     children: [
-                      const Icon(LucideIcons.mapPin, size: 17, color: _blue),
+                      const Icon(LucideIcons.mapPin, size: 17, color: _accent),
                       const SizedBox(width: 9),
                       Expanded(
                         child: Text(
@@ -4666,8 +4642,8 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                   child: StoreMap(
                     controller: widget.controller,
                     mode: MapMode.view,
-                     highlightId: _locationValue,
-                     showItemPopup: false,
+                    highlightId: _locationValue,
+                    showItemPopup: false,
                     fitEntireMap: true,
                   ),
                 ),
@@ -4741,7 +4717,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                     icon: const Icon(LucideIcons.chevronRight, size: 14),
                     label: Text('View all ${_history.length} transactions'),
                     style: TextButton.styleFrom(
-                      foregroundColor: _blue,
+                      foregroundColor: _accent,
                       textStyle: const TextStyle(
                         fontFamily: _font,
                         fontSize: 11,

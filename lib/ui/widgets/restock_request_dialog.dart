@@ -11,7 +11,7 @@ import 'app_dialog.dart';
 import 'app_toast.dart';
 import 'approval_proof_picker.dart';
 
-const Color _primaryBlue = Color(0xFF2563EB);
+const Color _accent = Color(0xFFC83D08);
 const String _fontFam = 'Hellix';
 
 String _formatStockQuantity(double value) => value == value.roundToDouble()
@@ -188,7 +188,7 @@ Future<void> showRestockRequestDialog({
 
         return AppDialog(
           icon: LucideIcons.packagePlus,
-          color: _primaryBlue,
+          color: _accent,
           title: 'Request restock',
           subtitle: currentItem.name,
           actions: [
@@ -210,7 +210,7 @@ Future<void> showRestockRequestDialog({
             ElevatedButton(
               onPressed: canSubmit ? submit : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryBlue,
+                backgroundColor: _accent,
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -243,7 +243,7 @@ Future<void> showRestockRequestDialog({
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: const Color(0xFFF8F7F5),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.grey.shade200),
                 ),
@@ -267,7 +267,7 @@ Future<void> showRestockRequestDialog({
                         newQty == null
                             ? '—'
                             : '${_formatStockQuantity(newQty)} $unit',
-                        newQty == null ? Colors.grey : _primaryBlue,
+                        newQty == null ? Colors.grey : _accent,
                         alignEnd: true,
                       ),
                     ),
@@ -348,7 +348,7 @@ Future<void> showRestockRequestDialog({
                     error != null ? Colors.red : Colors.grey.shade300,
                   ),
                   focusedBorder: border(
-                    error != null ? Colors.red : _primaryBlue,
+                    error != null ? Colors.red : _accent,
                     1.5,
                   ),
                 ),
@@ -365,7 +365,7 @@ Future<void> showRestockRequestDialog({
                           fontWeight: FontWeight.w600,
                           fontFamily: _fontFam,
                         ),
-                        backgroundColor: _primaryBlue.withValues(alpha: 0.1),
+                        backgroundColor: _accent.withValues(alpha: 0.1),
                         side: BorderSide.none,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
