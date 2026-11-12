@@ -9,10 +9,9 @@ typedef _DashboardExtrasBaseline = ({
   bool gcashEnabled,
   String gcashAccountName,
   String gcashNumber,
-  Map<String, String> cashierLimits,
 });
 
-enum _SettingsSection { stock, hours, discounts, assignment, gcash }
+enum _SettingsSection { stock, hours, pos }
 
 extension _SettingsDashboard on _SystemSettingsPageState {
   static const _ink = Color(0xFF171717);
@@ -20,18 +19,17 @@ extension _SettingsDashboard on _SystemSettingsPageState {
   static const _line = Color(0xFFE9E2DC);
   static const _orange = Color(0xFFC94008);
 
-  void _captureDashboardExtrasBaseline() {
+  void _captureDashboardExtrasBaseline({
+    required bool autoAssignOrders,
+    required String maxHelperOrders,
+  }) {
     _dashboardExtrasBaseline = (
-      autoAssignOrders: _autoAssignOrders,
-      maxHelperOrders: _maxHelperOrdersCtrl.text.trim(),
+      autoAssignOrders: autoAssignOrders,
+      maxHelperOrders: maxHelperOrders,
       maxApprovedDiscount: _maxApprovedDiscountCtrl.text.trim(),
       gcashEnabled: _gcashEnabled,
       gcashAccountName: _gcashAccountCtrl.text.trim(),
       gcashNumber: _gcashNumberCtrl.text.trim(),
-      cashierLimits: Map<String, String>.unmodifiable({
-        for (final entry in _cashierLimitCtrls.entries)
-          entry.key: entry.value.text.trim(),
-      }),
     );
   }
 
@@ -40,23 +38,17 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     return switch (_selectedSettingsSection) {
       _SettingsSection.stock => _thresholdDraftDirty,
       _SettingsSection.hours => _storeAccessDraftDirty,
-      _SettingsSection.discounts =>
-        baseline != null &&
-            (_discountLimitDraftDirty ||
-                _maxApprovedDiscountCtrl.text.trim() !=
-                    baseline.maxApprovedDiscount ||
-                _cashierLimitCtrls.entries.any(
-                  (entry) =>
-                      entry.value.text.trim() !=
-                      (baseline.cashierLimits[entry.key] ?? ''),
-                )),
-      _SettingsSection.assignment =>
-        baseline != null &&
-            (_autoAssignOrders != baseline.autoAssignOrders ||
-                _maxHelperOrdersCtrl.text.trim() != baseline.maxHelperOrders),
-      _SettingsSection.gcash =>
-        _gcashDetailsDirty || _pendingGcashQrBytes != null,
+      _SettingsSection.pos => _posDetailsDirty || _pendingGcashQrBytes != null,
     };
+  }
+
+  bool get _posDetailsDirty {
+    final baseline = _dashboardExtrasBaseline;
+    return baseline != null &&
+        (_discountLimitDraftDirty ||
+            _maxApprovedDiscountCtrl.text.trim() !=
+                baseline.maxApprovedDiscount ||
+            _gcashDetailsDirty);
   }
 
   bool get _gcashDetailsDirty {
@@ -90,36 +82,19 @@ extension _SettingsDashboard on _SystemSettingsPageState {
           )
           .eq('location_id', locationId)
           .maybeSingle();
-      final cashiers = await widget.controller.supabase
-          .from('profiles')
-          .select('id, cashier_discount_limit_pct')
-          .eq('location_id', locationId)
-          .inFilter('role', ['staff', 'cashier']);
       if (!mounted || widget.controller.activeLocationId != locationId) return;
       setState(() {
-        _autoAssignOrders = row?['auto_assign_orders'] != false;
-        _maxHelperOrdersCtrl.text =
-            '${(row?['max_active_orders_per_helper'] as num?)?.toInt() ?? 3}';
         _maxApprovedDiscountCtrl.text = _formatPct(
           (row?['max_approved_discount_pct'] as num?)?.toDouble() ?? 25,
         );
         _gcashEnabled = row?['gcash_enabled'] != false;
         _gcashAccountCtrl.text = row?['gcash_account_name']?.toString() ?? '';
         _gcashNumberCtrl.text = row?['gcash_number']?.toString() ?? '';
-        final currentIds = cashiers
-            .map((item) => item['id'].toString())
-            .toSet();
-        for (final id in _cashierLimitCtrls.keys.toList()) {
-          if (!currentIds.contains(id)) {
-            _cashierLimitCtrls.remove(id)?.dispose();
-          }
-        }
-        for (final item in cashiers) {
-          final id = item['id'].toString();
-          _cashierLimitCtrls.putIfAbsent(id, TextEditingController.new).text =
-              (item['cashier_discount_limit_pct'] as num?)?.toString() ?? '';
-        }
-        _captureDashboardExtrasBaseline();
+        _captureDashboardExtrasBaseline(
+          autoAssignOrders: row?['auto_assign_orders'] != false,
+          maxHelperOrders:
+              '${(row?['max_active_orders_per_helper'] as num?)?.toInt() ?? 3}',
+        );
         _isLoadingDashboardExtras = false;
         _dashboardError = null;
       });
@@ -132,25 +107,13 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     }
   }
 
-  Future<bool> _saveDashboardExtras(_SettingsSection section) async {
+  Future<bool> _saveDashboardExtras() async {
     final baseline = _dashboardExtrasBaseline;
     if (baseline == null) return false;
-    final savingDiscounts = section == _SettingsSection.discounts;
-    final savingAssignment = section == _SettingsSection.assignment;
-    final savingGcash = section == _SettingsSection.gcash;
-    final defaultLimit = savingDiscounts
-        ? double.tryParse(_discountLimitCtrl.text.trim())
-        : _discountLimitBaseline ??
-              widget.controller.cashierAutoApprovedDiscountLimitPct;
-    final maxHelperOrders = int.tryParse(
-      savingAssignment
-          ? _maxHelperOrdersCtrl.text.trim()
-          : baseline.maxHelperOrders,
-    );
+    final defaultLimit = double.tryParse(_discountLimitCtrl.text.trim());
+    final maxHelperOrders = int.tryParse(baseline.maxHelperOrders);
     final maxApprovedDiscount = double.tryParse(
-      savingDiscounts
-          ? _maxApprovedDiscountCtrl.text.trim()
-          : baseline.maxApprovedDiscount,
+      _maxApprovedDiscountCtrl.text.trim(),
     );
     if (maxHelperOrders == null ||
         maxHelperOrders < 1 ||
@@ -166,69 +129,30 @@ extension _SettingsDashboard on _SystemSettingsPageState {
       setState(() => _dashboardError = 'Review the order and discount limits.');
       return false;
     }
-    final limits = <String, double>{};
-    final limitTexts = savingDiscounts
-        ? {
-            for (final entry in _cashierLimitCtrls.entries)
-              entry.key: entry.value.text.trim(),
-          }
-        : baseline.cashierLimits;
-    for (final entry in limitTexts.entries) {
-      if (entry.value.isEmpty) continue;
-      final value = double.tryParse(entry.value);
-      if (value == null ||
-          !value.isFinite ||
-          value < 0 ||
-          value > maxApprovedDiscount) {
-        setState(
-          () => _dashboardError = 'Cashier limits must be valid percentages.',
-        );
-        return false;
-      }
-      limits[entry.key] = value;
-    }
     setState(() {
       _isSavingDashboard = true;
       _dashboardError = null;
     });
     try {
       await widget.controller.saveSettingsDashboardExtras(
-        autoAssignOrders: savingAssignment
-            ? _autoAssignOrders
-            : baseline.autoAssignOrders,
+        autoAssignOrders: baseline.autoAssignOrders,
         maxHelperOrders: maxHelperOrders,
         maxApprovedDiscount: maxApprovedDiscount,
         defaultCashierLimit: defaultLimit,
-        acceptGcash: savingGcash ? _gcashEnabled : baseline.gcashEnabled,
-        gcashAccountName: savingGcash
-            ? _gcashAccountCtrl.text
-            : baseline.gcashAccountName,
-        gcashNumber: savingGcash ? _gcashNumberCtrl.text : baseline.gcashNumber,
-        cashierLimits: limits,
+        acceptGcash: _gcashEnabled,
+        gcashAccountName: _gcashAccountCtrl.text,
+        gcashNumber: _gcashNumberCtrl.text,
       );
       if (!mounted) return false;
       setState(() {
-        if (savingDiscounts) _discountLimitBaseline = defaultLimit;
+        _discountLimitBaseline = defaultLimit;
         _dashboardExtrasBaseline = (
-          autoAssignOrders: savingAssignment
-              ? _autoAssignOrders
-              : baseline.autoAssignOrders,
-          maxHelperOrders: savingAssignment
-              ? _maxHelperOrdersCtrl.text.trim()
-              : baseline.maxHelperOrders,
-          maxApprovedDiscount: savingDiscounts
-              ? _maxApprovedDiscountCtrl.text.trim()
-              : baseline.maxApprovedDiscount,
-          gcashEnabled: savingGcash ? _gcashEnabled : baseline.gcashEnabled,
-          gcashAccountName: savingGcash
-              ? _gcashAccountCtrl.text.trim()
-              : baseline.gcashAccountName,
-          gcashNumber: savingGcash
-              ? _gcashNumberCtrl.text.trim()
-              : baseline.gcashNumber,
-          cashierLimits: savingDiscounts
-              ? Map<String, String>.unmodifiable(limitTexts)
-              : baseline.cashierLimits,
+          autoAssignOrders: baseline.autoAssignOrders,
+          maxHelperOrders: baseline.maxHelperOrders,
+          maxApprovedDiscount: _maxApprovedDiscountCtrl.text.trim(),
+          gcashEnabled: _gcashEnabled,
+          gcashAccountName: _gcashAccountCtrl.text.trim(),
+          gcashNumber: _gcashNumberCtrl.text.trim(),
         );
       });
       _showToast('Settings saved');
@@ -262,15 +186,8 @@ extension _SettingsDashboard on _SystemSettingsPageState {
       case _SettingsSection.hours:
         await _saveStoreAccessSettings();
         return;
-      case _SettingsSection.discounts:
-        await _saveDashboardExtras(_SettingsSection.discounts);
-        return;
-      case _SettingsSection.assignment:
-        await _saveDashboardExtras(_SettingsSection.assignment);
-        return;
-      case _SettingsSection.gcash:
-        if (_gcashDetailsDirty &&
-            !await _saveDashboardExtras(_SettingsSection.gcash)) {
+      case _SettingsSection.pos:
+        if (_posDetailsDirty && !await _saveDashboardExtras()) {
           return;
         }
         await _savePendingGcashQr();
@@ -291,25 +208,13 @@ extension _SettingsDashboard on _SystemSettingsPageState {
         final value = _storeAccessBaseline;
         if (value != null) _applyStoreAccessToForm(value);
         break;
-      case _SettingsSection.discounts:
+      case _SettingsSection.pos:
         final value = _discountLimitBaseline;
         if (value != null) _discountLimitCtrl.text = _formatPct(value);
         final baseline = _dashboardExtrasBaseline;
         if (baseline != null) {
           _maxApprovedDiscountCtrl.text = baseline.maxApprovedDiscount;
-          for (final entry in _cashierLimitCtrls.entries) {
-            entry.value.text = baseline.cashierLimits[entry.key] ?? '';
-          }
         }
-        break;
-      case _SettingsSection.assignment:
-        final assignment = _dashboardExtrasBaseline;
-        if (assignment != null) {
-          _autoAssignOrders = assignment.autoAssignOrders;
-          _maxHelperOrdersCtrl.text = assignment.maxHelperOrders;
-        }
-        break;
-      case _SettingsSection.gcash:
         final gcash = _dashboardExtrasBaseline;
         if (gcash != null) {
           _gcashEnabled = gcash.gcashEnabled;
@@ -402,77 +307,95 @@ extension _SettingsDashboard on _SystemSettingsPageState {
   }
 
   Widget _buildSettingsDashboard(BuildContext context) {
+    final mobile = MediaQuery.sizeOf(context).width < 720;
     final busy =
         _isLoadingSettings ||
         _isLoadingStoreAccess ||
         _isLoadingDashboardExtras;
     return Scaffold(
       backgroundColor: const Color(0xFFF7F5F3),
+      bottomNavigationBar: mobile && !busy ? _mobileSettingsActions() : null,
       body: busy
           ? const Center(child: CircularProgressIndicator(color: _orange))
           : SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(36, 40, 36, 60),
+              padding: mobile
+                  ? const EdgeInsets.fromLTRB(12, 10, 12, 24)
+                  : const EdgeInsets.fromLTRB(36, 40, 36, 60),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'Settings',
                         style: TextStyle(
                           fontFamily: _fontFam,
-                          fontSize: 27,
+                          fontSize: mobile ? 22 : 27,
                           fontWeight: FontWeight.w700,
                           color: _ink,
                         ),
                       ),
-                      SizedBox(height: 5),
-                      Text(
-                        'Store-wide rules and preferences.',
-                        style: TextStyle(
-                          fontFamily: _fontFam,
-                          fontSize: 15,
-                          color: _muted,
+                      if (!mobile) ...[
+                        const SizedBox(height: 5),
+                        const Text(
+                          'Store-wide rules and preferences.',
+                          style: TextStyle(
+                            fontFamily: _fontFam,
+                            fontSize: 15,
+                            color: _muted,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 30),
+                  SizedBox(height: mobile ? 10 : 30),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final narrow = constraints.maxWidth < 720;
-                      final nav = SizedBox(
-                        width: narrow ? double.infinity : 270,
-                        child: Column(
-                          children: [
-                            _sectionButton(
-                              'Stock & units',
-                              _SettingsSection.stock,
-                            ),
-                            _sectionButton(
-                              'Store hours & access',
-                              _SettingsSection.hours,
-                            ),
-                            _sectionButton(
-                              'Discounts',
-                              _SettingsSection.discounts,
-                            ),
-                            _sectionButton(
-                              'Order assignment',
-                              _SettingsSection.assignment,
-                            ),
-                            _sectionButton(
-                              'GCash payments',
-                              _SettingsSection.gcash,
-                            ),
-                          ],
-                        ),
-                      );
-                      final card = _settingsCard();
+                      final nav = narrow
+                          ? SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  _mobileSectionTab(
+                                    'Stock & units',
+                                    _SettingsSection.stock,
+                                  ),
+                                  _mobileSectionTab(
+                                    'Store hours & access',
+                                    _SettingsSection.hours,
+                                  ),
+                                  _mobileSectionTab(
+                                    'POS settings',
+                                    _SettingsSection.pos,
+                                  ),
+                                ],
+                              ),
+                            )
+                          : SizedBox(
+                              width: 270,
+                              child: Column(
+                                children: [
+                                  _sectionButton(
+                                    'Stock & units',
+                                    _SettingsSection.stock,
+                                  ),
+                                  _sectionButton(
+                                    'Store hours & access',
+                                    _SettingsSection.hours,
+                                  ),
+                                  _sectionButton(
+                                    'POS settings',
+                                    _SettingsSection.pos,
+                                  ),
+                                ],
+                              ),
+                            );
+                      final card = _settingsCard(mobile: narrow);
                       return narrow
                           ? Column(
-                              children: [nav, const SizedBox(height: 16), card],
+                              children: [nav, const SizedBox(height: 8), card],
                             )
                           : Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -489,6 +412,66 @@ extension _SettingsDashboard on _SystemSettingsPageState {
             ),
     );
   }
+
+  Widget _mobileSectionTab(String label, _SettingsSection section) {
+    final selected = _selectedSettingsSection == section;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: OutlinedButton(
+        onPressed: () => setState(() => _selectedSettingsSection = section),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: selected ? _orange : _muted,
+          backgroundColor: selected ? const Color(0xFFFFF0E8) : Colors.white,
+          side: BorderSide(color: selected ? _orange : _line),
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          visualDensity: VisualDensity.compact,
+        ),
+        child: Text(label, style: const TextStyle(fontSize: 13)),
+      ),
+    );
+  }
+
+  Widget _mobileSettingsActions() => SafeArea(
+    top: false,
+    child: Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: _line)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _dashboardSectionDirty && !_dashboardSaving
+                  ? _discardDashboardSection
+                  : null,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 46),
+                shape: const StadiumBorder(),
+              ),
+              child: const Text('Discard'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: FilledButton(
+              onPressed: _dashboardSectionDirty && !_dashboardSaving
+                  ? _saveDashboardSection
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: _orange,
+                minimumSize: const Size(0, 46),
+                shape: const StadiumBorder(),
+              ),
+              child: Text(_dashboardSaving ? 'Saving…' : 'Save changes'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget _sectionButton(String label, _SettingsSection section) {
     final selected = _selectedSettingsSection == section;
@@ -523,30 +506,46 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     );
   }
 
-  Widget _settingsCard() {
+  Widget _settingsCard({bool mobile = false}) {
     final title = switch (_selectedSettingsSection) {
       _SettingsSection.stock => 'Stock & units',
       _SettingsSection.hours => 'Store hours & access',
-      _SettingsSection.discounts => 'Discounts',
-      _SettingsSection.assignment => 'Order assignment',
-      _SettingsSection.gcash => 'GCash payments',
+      _SettingsSection.pos => 'POS settings',
     };
     final subtitle = switch (_selectedSettingsSection) {
       _SettingsSection.stock =>
         'Stock alerts and the units products can be sold in.',
       _SettingsSection.hours => 'When the store is open and staff may sign in.',
-      _SettingsSection.discounts =>
-        'How much cashiers may discount before approval.',
-      _SettingsSection.assignment => 'How new orders reach helpers.',
-      _SettingsSection.gcash =>
-        'The merchant account customers pay at checkout.',
+      _SettingsSection.pos => 'Discount rules and GCash checkout details.',
     };
     final body = switch (_selectedSettingsSection) {
       _SettingsSection.stock => _stockSection(),
-      _SettingsSection.hours => _hoursSection(),
-      _SettingsSection.discounts => _discountSection(),
-      _SettingsSection.assignment => _assignmentSection(),
-      _SettingsSection.gcash => _gcashSection(),
+      _SettingsSection.hours => _hoursSection(mobile: mobile),
+      _SettingsSection.pos => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Discounts',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'How much cashiers may discount before approval.',
+            style: TextStyle(color: _muted, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          _discountSection(),
+          const SizedBox(height: 24),
+          const Divider(color: _line),
+          const SizedBox(height: 20),
+          const Text(
+            'GCash payments',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 16),
+          _gcashSection(),
+        ],
+      ),
     };
     return Container(
       clipBehavior: Clip.antiAlias,
@@ -559,7 +558,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.all(26),
+            padding: EdgeInsets.all(mobile ? 12 : 26),
             child: LayoutBuilder(
               builder: (context, limits) {
                 final heading = Column(
@@ -579,7 +578,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                             color: _ink,
                           ),
                         ),
-                        if (_selectedSettingsSection == _SettingsSection.gcash)
+                        if (_selectedSettingsSection == _SettingsSection.pos)
                           _gcashStatusBadge(),
                       ],
                     ),
@@ -594,7 +593,26 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                     ),
                   ],
                 );
-                if (_selectedSettingsSection != _SettingsSection.gcash) {
+                if (_selectedSettingsSection != _SettingsSection.pos) {
+                  if (mobile &&
+                      _selectedSettingsSection == _SettingsSection.hours) {
+                    return Row(
+                      children: [
+                        Expanded(child: heading),
+                        TextButton(
+                          onPressed: _copyMondayToAll,
+                          style: TextButton.styleFrom(
+                            foregroundColor: _orange,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                          ),
+                          child: const Text(
+                            'Copy Mon to all',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    );
+                  }
                   return heading;
                 }
                 if (limits.maxWidth < 420) {
@@ -618,7 +636,16 @@ extension _SettingsDashboard on _SystemSettingsPageState {
             ),
           ),
           const Divider(height: 1, color: _line),
-          Padding(padding: const EdgeInsets.all(26), child: body),
+          Padding(
+            padding: EdgeInsets.all(
+              mobile && _selectedSettingsSection == _SettingsSection.hours
+                  ? 0
+                  : mobile
+                  ? 16
+                  : 26,
+            ),
+            child: body,
+          ),
           if (_dashboardError != null ||
               (_selectedSettingsSection == _SettingsSection.stock &&
                   _thresholdError != null))
@@ -629,35 +656,38 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                 style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 13),
               ),
             ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
-            decoration: const BoxDecoration(
-              color: Color(0xFFFAF8F6),
-              border: Border(top: BorderSide(color: _line)),
-            ),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton(
-                    onPressed: _dashboardSectionDirty && !_dashboardSaving
-                        ? _discardDashboardSection
-                        : null,
-                    child: const Text('Discard changes'),
-                  ),
-                  FilledButton(
-                    onPressed: _dashboardSectionDirty && !_dashboardSaving
-                        ? _saveDashboardSection
-                        : null,
-                    style: FilledButton.styleFrom(backgroundColor: _orange),
-                    child: Text(_dashboardSaving ? 'Saving…' : 'Save changes'),
-                  ),
-                ],
+          if (!mobile)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFAF8F6),
+                border: Border(top: BorderSide(color: _line)),
+              ),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton(
+                      onPressed: _dashboardSectionDirty && !_dashboardSaving
+                          ? _discardDashboardSection
+                          : null,
+                      child: const Text('Discard changes'),
+                    ),
+                    FilledButton(
+                      onPressed: _dashboardSectionDirty && !_dashboardSaving
+                          ? _saveDashboardSection
+                          : null,
+                      style: FilledButton.styleFrom(backgroundColor: _orange),
+                      child: Text(
+                        _dashboardSaving ? 'Saving…' : 'Save changes',
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -703,8 +733,9 @@ extension _SettingsDashboard on _SystemSettingsPageState {
   Widget _numberField(
     String label,
     TextEditingController controller, {
-    double width = 260,
+    double? width = 260,
     String? hint,
+    bool compact = false,
   }) => SizedBox(
     width: width,
     child: TextField(
@@ -713,6 +744,10 @@ extension _SettingsDashboard on _SystemSettingsPageState {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
+        labelStyle: compact ? const TextStyle(fontSize: 12) : null,
+        contentPadding: compact
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 12)
+            : null,
         border: const OutlineInputBorder(),
       ),
       onChanged: (_) => setState(() {}),
@@ -722,13 +757,37 @@ extension _SettingsDashboard on _SystemSettingsPageState {
   Widget _stockSection() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Wrap(
-        spacing: 16,
-        runSpacing: 12,
-        children: [
-          _numberField('Critical at (% of max)', _criticalPercentCtrl),
-          _numberField('Low stock at (% of max)', _lowPercentCtrl),
-        ],
+      LayoutBuilder(
+        builder: (context, constraints) => constraints.maxWidth < 600
+            ? Row(
+                children: [
+                  Expanded(
+                    child: _numberField(
+                      'Critical at (% of max)',
+                      _criticalPercentCtrl,
+                      width: double.infinity,
+                      compact: true,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _numberField(
+                      'Low stock at (% of max)',
+                      _lowPercentCtrl,
+                      width: double.infinity,
+                      compact: true,
+                    ),
+                  ),
+                ],
+              )
+            : Wrap(
+                spacing: 16,
+                runSpacing: 12,
+                children: [
+                  _numberField('Critical at (% of max)', _criticalPercentCtrl),
+                  _numberField('Low stock at (% of max)', _lowPercentCtrl),
+                ],
+              ),
       ),
       const SizedBox(height: 20),
       StockThresholdPreview(
@@ -783,7 +842,26 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     ],
   );
 
-  Widget _hoursSection() {
+  void _copyMondayToAll() {
+    final monday =
+        _weeklyHoursDraft[1] ??
+        StoreDayHours(
+          openingTime: _formatClockTime(_openingTime),
+          closingTime: _formatClockTime(_closingTime),
+        );
+    setState(() {
+      for (var day = 2; day <= 7; day++) {
+        _weeklyHoursDraft[day] = StoreDayHours(
+          openingTime: monday.openingTime,
+          closingTime: monday.closingTime,
+          closed: monday.closed,
+        );
+      }
+    });
+  }
+
+  Widget _hoursSection({bool mobile = false}) {
+    if (mobile) return _mobileHoursSection();
     const names = [
       'Monday',
       'Tuesday',
@@ -826,11 +904,10 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                       onPressed: schedule.closed
                           ? null
                           : () async {
-                              final value = await showTimePicker(
-                                context: context,
-                                initialTime: _parseClockTime(
-                                  schedule.openingTime,
-                                ),
+                              final value = await _pickDashboardTime(
+                                context,
+                                _parseClockTime(schedule.openingTime),
+                                'Opening time',
                               );
                               if (value == null || !mounted) return;
                               setState(
@@ -850,11 +927,10 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                       onPressed: schedule.closed
                           ? null
                           : () async {
-                              final value = await showTimePicker(
-                                context: context,
-                                initialTime: _parseClockTime(
-                                  schedule.closingTime,
-                                ),
+                              final value = await _pickDashboardTime(
+                                context,
+                                _parseClockTime(schedule.closingTime),
+                                'Closing time',
                               );
                               if (value == null || !mounted) return;
                               setState(
@@ -926,92 +1002,286 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     );
   }
 
-  Widget _discountSection() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Wrap(
-        spacing: 16,
-        runSpacing: 12,
-        children: [
-          _numberField('Default cashier limit (%)', _discountLimitCtrl),
-          SizedBox(
-            width: 260,
-            child: TextField(
-              controller: _maxApprovedDiscountCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Maximum with approval (%)',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
+  Widget _mobileHoursSection() {
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return Column(
+      children: [
+        for (var day = 1; day <= 7; day++)
+          _mobileDayRow(
+            day,
+            names[day - 1],
+            _weeklyHoursDraft[day] ??
+                StoreDayHours(
+                  openingTime: _formatClockTime(_openingTime),
+                  closingTime: _formatClockTime(_closingTime),
+                ),
           ),
-        ],
-      ),
-      const SizedBox(height: 27),
-      const Text(
-        'Per-cashier limits',
-        style: TextStyle(fontWeight: FontWeight.w600),
-      ),
-      const SizedBox(height: 5),
-      const Text(
-        'Leave blank to use the default.',
-        style: TextStyle(color: _muted),
-      ),
-      const SizedBox(height: 12),
-      for (final staff in _staffList.where(
-        (row) => [
-          'staff',
-          'cashier',
-        ].contains(row['role']?.toString().toLowerCase()),
-      ))
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          title: const Text(
+            'Limit staff sign-in to store hours',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          subtitle: const Text(
+            'Cashiers and helpers are blocked outside the schedule.',
+            style: TextStyle(fontSize: 12, color: _muted),
+          ),
+          value: _restrictStaffLogin,
+          activeTrackColor: _orange,
+          onChanged: (value) => setState(() => _restrictStaffLogin = value),
+        ),
+        const Divider(height: 1, color: _line),
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          title: const Text(
+            'Administrators are exempt',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          value: _allowAdminAnytime,
+          activeTrackColor: _orange,
+          onChanged: (value) => setState(() => _allowAdminAnytime = value),
+        ),
         Padding(
-          padding: const EdgeInsets.only(bottom: 9),
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 16),
           child: Row(
             children: [
-              Expanded(child: Text(staff['name']?.toString() ?? 'Cashier')),
-              _numberField(
-                'Limit %',
-                _cashierLimitCtrls.putIfAbsent(
-                  staff['id'].toString(),
-                  TextEditingController.new,
+              Expanded(
+                child: _mobileGraceField(
+                  'Grace before opening (min)',
+                  _beforeMinutesCtrl,
                 ),
-                width: 125,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _mobileGraceField(
+                  'Grace after closing (min)',
+                  _afterMinutesCtrl,
+                ),
               ),
             ],
           ),
         ),
-      if (_discountLimitError != null)
-        Text(_discountLimitError!, style: const TextStyle(color: Colors.red)),
-    ],
+        if (_storeAccessError != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+            child: Text(
+              _storeAccessError!,
+              style: const TextStyle(color: Colors.red),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _mobileDayRow(int day, String name, StoreDayHours schedule) =>
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: _line)),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 36,
+              child: Text(
+                name,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Expanded(child: _mobileTimeButton(day, schedule, true)),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4),
+              child: Text('–', style: TextStyle(color: _muted)),
+            ),
+            Expanded(child: _mobileTimeButton(day, schedule, false)),
+            const SizedBox(width: 4),
+            SizedBox(
+              width: 72,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Checkbox(
+                      value: schedule.closed,
+                      visualDensity: VisualDensity.compact,
+                      onChanged: (value) => setState(() {
+                        _weeklyHoursDraft[day] = StoreDayHours(
+                          openingTime: schedule.openingTime,
+                          closingTime: schedule.closingTime,
+                          closed: value ?? false,
+                        );
+                      }),
+                    ),
+                  ),
+                  const Flexible(
+                    child: Text(
+                      'Closed',
+                      style: TextStyle(fontSize: 11, color: _muted),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _mobileTimeButton(int day, StoreDayHours schedule, bool opening) =>
+      OutlinedButton(
+        onPressed: schedule.closed
+            ? null
+            : () async {
+                final value = await _pickDashboardTime(
+                  context,
+                  _parseClockTime(
+                    opening ? schedule.openingTime : schedule.closingTime,
+                  ),
+                  opening ? 'Opening time' : 'Closing time',
+                );
+                if (value == null || !mounted) return;
+                setState(() {
+                  _weeklyHoursDraft[day] = StoreDayHours(
+                    openingTime: opening
+                        ? _formatClockTime(value)
+                        : schedule.openingTime,
+                    closingTime: opening
+                        ? schedule.closingTime
+                        : _formatClockTime(value),
+                    closed: schedule.closed,
+                  );
+                });
+              },
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _orange,
+          side: const BorderSide(color: _orange),
+          minimumSize: const Size(0, 44),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          padding: EdgeInsets.zero,
+          shape: const StadiumBorder(),
+        ),
+        child: Text(
+          _formatDisplayTime(
+            _parseClockTime(
+              opening ? schedule.openingTime : schedule.closingTime,
+            ),
+          ),
+          maxLines: 1,
+          style: const TextStyle(fontSize: 12),
+        ),
+      );
+
+  Widget _mobileGraceField(String label, TextEditingController controller) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: _muted),
+          ),
+          const SizedBox(height: 5),
+          TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 11,
+                vertical: 12,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ],
+      );
+
+  Future<TimeOfDay?> _pickDashboardTime(
+    BuildContext context,
+    TimeOfDay initialTime,
+    String title,
+  ) => showTimePicker(
+    context: context,
+    initialTime: initialTime,
+    helpText: title,
+    confirmText: 'Apply',
+    builder: (dialogContext, child) => Theme(
+      data: Theme.of(dialogContext).copyWith(
+        colorScheme: const ColorScheme.light(
+          primary: _orange,
+          onPrimary: Colors.white,
+          surface: Colors.white,
+          onSurface: _ink,
+        ),
+        timePickerTheme: TimePickerThemeData(
+          backgroundColor: Colors.white,
+          dialBackgroundColor: const Color(0xFFF7F5F3),
+          dialHandColor: _orange,
+          hourMinuteColor: const Color(0xFFFFF0E8),
+          hourMinuteTextColor: _ink,
+          entryModeIconColor: _orange,
+          dayPeriodColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? _orange
+                : const Color(0xFFF7F5F3),
+          ),
+          dayPeriodTextColor: WidgetStateColor.resolveWith(
+            (states) =>
+                states.contains(WidgetState.selected) ? Colors.white : _ink,
+          ),
+          hourMinuteShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          helpTextStyle: const TextStyle(
+            color: _ink,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(foregroundColor: _orange),
+        ),
+      ),
+      child: child!,
+    ),
   );
 
-  Widget _assignmentSection() => Column(
+  Widget _discountSection() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Assign new orders automatically'),
-        subtitle: const Text(
-          'Selects the available helper with the fewest active orders.',
-        ),
-        value: _autoAssignOrders,
-        onChanged: (value) => setState(() => _autoAssignOrders = value),
-      ),
-      const Divider(color: _line),
       Row(
         children: [
-          const Expanded(child: Text('Most active orders per helper')),
-          SizedBox(
-            width: 95,
-            child: TextField(
-              controller: _maxHelperOrdersCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              onChanged: (_) => setState(() {}),
+          Expanded(
+            child: _numberField(
+              'Auto-approval limit (%)',
+              _discountLimitCtrl,
+              width: null,
+              compact: true,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _numberField(
+              'Max with approval (%)',
+              _maxApprovedDiscountCtrl,
+              width: null,
+              compact: true,
             ),
           ),
         ],
       ),
+      if (_discountLimitError != null)
+        Text(_discountLimitError!, style: const TextStyle(color: Colors.red)),
     ],
   );
 
@@ -1155,11 +1425,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.qr_code_2_rounded,
-                          size: 62,
-                          color: _muted,
-                        ),
+                        Icon(Icons.qr_code_2_rounded, size: 62, color: _muted),
                         SizedBox(height: 8),
                         Text(
                           'No QR image yet',

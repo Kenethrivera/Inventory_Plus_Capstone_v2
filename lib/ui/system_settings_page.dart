@@ -46,13 +46,10 @@ class SystemSettingsPage extends StatefulWidget {
 class _SystemSettingsPageState extends State<SystemSettingsPage> {
   _SettingsSection _selectedSettingsSection = _SettingsSection.stock;
   Map<int, StoreDayHours> _weeklyHoursDraft = {};
-  bool _autoAssignOrders = true;
-  final _maxHelperOrdersCtrl = TextEditingController(text: '3');
   final _maxApprovedDiscountCtrl = TextEditingController(text: '25');
   bool _gcashEnabled = true;
   final _gcashAccountCtrl = TextEditingController();
   final _gcashNumberCtrl = TextEditingController();
-  final Map<String, TextEditingController> _cashierLimitCtrls = {};
   _DashboardExtrasBaseline? _dashboardExtrasBaseline;
   bool _isLoadingDashboardExtras = true;
   bool _isSavingDashboard = false;
@@ -169,13 +166,9 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     _lowPercentCtrl.dispose();
     _criticalPercentCtrl.dispose();
     _discountLimitCtrl.dispose();
-    _maxHelperOrdersCtrl.dispose();
     _maxApprovedDiscountCtrl.dispose();
     _gcashAccountCtrl.dispose();
     _gcashNumberCtrl.dispose();
-    for (final controller in _cashierLimitCtrls.values) {
-      controller.dispose();
-    }
     super.dispose();
   }
 

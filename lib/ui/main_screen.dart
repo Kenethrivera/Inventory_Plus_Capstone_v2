@@ -2019,9 +2019,41 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         DateTime picked = DebugClock.now();
 
         return StatefulBuilder(
-          builder: (ctx, setD) => AlertDialog(
-            title: const Text('Debug clock'),
-            content: Column(
+          builder: (ctx, setD) => AppDialog(
+            icon: LucideIcons.clockAlert,
+            color: _accent,
+            title: 'Debug clock',
+            actions: [
+              OutlinedButton(
+                onPressed: () {
+                  DebugClock.set(null);
+                  Navigator.pop(dialogContext);
+                  setState(() {});
+                  _rerunReminderScans();
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF201D1A),
+                  side: const BorderSide(color: Color(0xFFE7E1DB)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Reset to real time'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  DebugClock.set(picked);
+                  Navigator.pop(dialogContext);
+                  setState(() {});
+                  _rerunReminderScans();
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: _accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Apply'),
+              ),
+            ],
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -2107,26 +2139,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  DebugClock.set(null);
-                  Navigator.pop(dialogContext);
-                  setState(() {});
-                  _rerunReminderScans();
-                },
-                child: const Text('Reset to real time'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  DebugClock.set(picked);
-                  Navigator.pop(dialogContext);
-                  setState(() {});
-                  _rerunReminderScans();
-                },
-                child: const Text('Apply'),
-              ),
-            ],
           ),
         );
       },
@@ -3168,19 +3180,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 fontSize: 20, fontWeight: FontWeight.w700, color: _darkText,
               )),
             ),
-            _adminDrawerHeading('Main'),
-            _adminDrawerItem(drawerContext, MainSection.dashboard, LucideIcons.layoutDashboard, 'Home'),
-            _adminDrawerItem(drawerContext, MainSection.ordersActivity, LucideIcons.receiptText, 'Orders'),
-            _adminDrawerItem(drawerContext, MainSection.inventory, LucideIcons.box, 'Inventory'),
+            _adminDrawerHeading('Operations'),
+            _adminDrawerItem(drawerContext, MainSection.dashboard, LucideIcons.layoutDashboard, 'Overview'),
+            _adminDrawerItem(drawerContext, MainSection.ordersActivity, LucideIcons.receiptText, 'Orders & activity'),
             _adminDrawerItem(drawerContext, MainSection.approvals, LucideIcons.clipboardCheck, 'Approvals'),
-            const Divider(height: 28),
-            _adminDrawerHeading('More'),
-            _adminDrawerItem(drawerContext, MainSection.forecasting, LucideIcons.trendingUp, 'Forecast'),
-            _adminDrawerItem(drawerContext, MainSection.performance, LucideIcons.barChart2, 'Performance'),
             _adminDrawerItem(drawerContext, MainSection.storeMap, LucideIcons.map, 'Store map'),
-            _adminDrawerItem(drawerContext, MainSection.pos, LucideIcons.shoppingCart, 'POS system'),
-            _adminDrawerItem(drawerContext, MainSection.queue, LucideIcons.listChecks, 'Order queue'),
-            _adminDrawerItem(drawerContext, MainSection.transactions, LucideIcons.history, 'Transactions'),
+            const SizedBox(height: 16),
+            _adminDrawerHeading('Catalog'),
+            _adminDrawerItem(drawerContext, MainSection.inventory, LucideIcons.package, 'Inventory'),
+            _adminDrawerItem(drawerContext, MainSection.forecasting, LucideIcons.trendingUp, 'Analytics'),
+            const SizedBox(height: 16),
+            _adminDrawerHeading('Administration'),
+            _adminDrawerItem(drawerContext, MainSection.performance, LucideIcons.users, 'Staff'),
             _adminDrawerItem(drawerContext, MainSection.systemSettings, LucideIcons.settings, 'Settings'),
           ],
         ),
@@ -3300,30 +3311,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     Row(
                       children: [
                         Container(
-                          width: 36,
-                          height: 36,
+                          width: 42,
+                          height: 42,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFC83D08),
-                            borderRadius: BorderRadius.circular(11),
+                            color: _accent,
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Center(
-                            child: Text(
-                              'I+',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                          child: const Icon(
+                            LucideIcons.package,
+                            color: Colors.white,
+                            size: 24,
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 12),
                         const Expanded(
                           child: Text(
                             'Inventory Plus',
                             style: TextStyle(
                               color: Color(0xFF171717),
-                              fontSize: 16,
+                              fontSize: 22,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -3426,16 +3432,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
                   color: _accent,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
                   LucideIcons.package,
                   color: Colors.white,
-                  size: 18,
+                  size: 24,
                 ),
               ),
               const SizedBox(width: 12),
@@ -3444,7 +3450,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 style: TextStyle(
                   color: _darkText,
                   fontWeight: FontWeight.w900,
-                  fontSize: 20,
+                  fontSize: 22,
                   fontFamily: _fontFam,
                 ),
               ),

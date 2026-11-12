@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_styled_dropdown.dart';
 import 'widgets/restock_request_dialog.dart';
@@ -4221,23 +4222,36 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   Future<void> _toggleReferenceStatus(InventoryItem item, bool disabled) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(disabled ? 'Restore product?' : 'Disable product?'),
-        content: Text(
-          disabled
-              ? 'This product will return to the active inventory.'
-              : 'This product will be hidden from active inventory.',
-        ),
+      builder: (dialogContext) => AppDialog(
+        icon: disabled ? LucideIcons.rotateCcw : LucideIcons.packageX,
+        color: disabled ? _accent : _warmRed,
+        title: disabled ? 'Restore product?' : 'Disable product?',
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _ink,
+              side: const BorderSide(color: _border),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: disabled ? _accent : _warmRed,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
             child: Text(disabled ? 'Restore' : 'Disable'),
           ),
         ],
+        child: Text(
+          disabled
+              ? 'This product will return to the active inventory.'
+              : 'This product will be hidden from active inventory.',
+          style: const TextStyle(color: _slate, fontSize: 14, height: 1.5),
+        ),
       ),
     );
     if (confirmed != true || !mounted) return;

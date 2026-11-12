@@ -12,6 +12,11 @@ import 'widgets/app_styled_dropdown.dart';
 const Color _primaryBlue = Color(0xFFC83D08);
 const Color _lightBg = Color(0xFFF7F5F3);
 const String _fontFam = 'Hellix'; // Or 'Outline'
+const Color _mobileBg = Color(0xFFF7F5F3);
+const Color _mobilePanel = Colors.white;
+const Color _mobileLine = Color(0xFFE7E1DB);
+const Color _mobileMuted = Color(0xFF827872);
+const Color _mobileOrange = Color(0xFFC83D08);
 
 class MapEditorPage extends StatefulWidget {
   final InventoryController controller;
@@ -25,6 +30,7 @@ class MapEditorPage extends StatefulWidget {
 class _MapEditorPageState extends State<MapEditorPage> {
   final GlobalKey<StoreMapState> _storeMapKey = GlobalKey<StoreMapState>();
   MapElement? _manageSelected;
+  String? _mobileWidthControlsId;
   MapMode _mode = MapMode.manage;
   MapViewStyle _viewStyle = MapViewStyle.twoD;
   ElementType? _placementType;
@@ -490,6 +496,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
             body: LayoutBuilder(
               builder: (context, constraints) {
                 final desktop = constraints.maxWidth >= 920;
+                if (!desktop) return _buildMobileEditor(constraints);
                 final horizontal = desktop ? 32.0 : 16.0;
                 return SingleChildScrollView(
                   padding: EdgeInsets.fromLTRB(horizontal, 32, horizontal, 28),
@@ -591,6 +598,276 @@ class _MapEditorPageState extends State<MapEditorPage> {
     );
   }
 
+  Widget _buildMobileEditor(BoxConstraints constraints) {
+    final compact = constraints.maxWidth < 390;
+    return ColoredBox(
+      color: _mobileBg,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 10, 8, 6),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Store map',
+                        style: TextStyle(
+                          color: Color(0xFF201D1A),
+                          fontFamily: _fontFam,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    OutlinedButton(
+                      onPressed: _hasDirtyDraft && !_isSaving
+                          ? _discardDraft
+                          : null,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF201D1A),
+                        disabledForegroundColor: _mobileMuted,
+                        side: const BorderSide(color: _mobileLine),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: compact ? 9 : 14,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text('Discard'),
+                    ),
+                    const SizedBox(width: 7),
+                    FilledButton(
+                      onPressed: _hasDirtyDraft && !_isSaving
+                          ? () => unawaited(_saveDraft())
+                          : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _primaryBlue,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: const Color(0xFFEDEAE6),
+                        disabledForegroundColor: _mobileMuted,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: compact ? 9 : 14,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: Text(_isSaving ? 'Saving…' : 'Save map'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: _mobilePanelDecoration(),
+                      child: Row(
+                        children: [
+                          _mobileModeTab(
+                            MapMode.manage,
+                            'Manage layout',
+                            LucideIcons.pencil,
+                          ),
+                          _mobileModeTab(
+                            MapMode.selection,
+                            'Assign items',
+                            LucideIcons.link,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: _mobilePanelDecoration(),
+                    child: Row(
+                      children: [
+                        _mobileViewTab(MapViewStyle.twoD, 'Floor'),
+                        _mobileViewTab(MapViewStyle.threeD, '3D'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_mode == MapMode.manage) ...[
+                _buildMobilePlacementToolbar(),
+                const SizedBox(height: 8),
+              ],
+              if (_remoteChangePending) _buildRemoteChangeBanner(),
+              Expanded(child: _buildMapCanvas(mobile: true)),
+              const SizedBox(height: 8),
+              Text(
+                _mode == MapMode.manage
+                    ? '${_draftLayout.length} elements · Drag to move · Use zoom buttons to zoom'
+                    : '$_assignedCount of ${widget.controller.allItems.length} products assigned',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: _mobileMuted, fontSize: 11),
+              ),
+              if (_mode == MapMode.selection) ...[
+                const SizedBox(height: 8),
+                SizedBox(height: 240, child: _buildAssignmentPanel()),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  BoxDecoration _mobilePanelDecoration() => BoxDecoration(
+    color: _mobilePanel,
+    borderRadius: BorderRadius.circular(14),
+    border: Border.all(color: _mobileLine),
+  );
+
+  Widget _mobileModeTab(MapMode mode, String label, IconData icon) {
+    final selected = _mode == mode;
+    return Expanded(
+      child: Material(
+        color: selected ? const Color(0xFFFFF0E8) : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: () => _switchMode(mode),
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            height: 36,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 15,
+                  color: selected ? _mobileOrange : _mobileMuted,
+                ),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: selected ? _mobileOrange : _mobileMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileViewTab(MapViewStyle style, String label) {
+    final selected = _viewStyle == style;
+    return TextButton(
+      onPressed: () => setState(() {
+        _viewStyle = style;
+        if (style == MapViewStyle.threeD) _placementType = null;
+      }),
+      style: TextButton.styleFrom(
+        foregroundColor: selected ? _mobileOrange : _mobileMuted,
+        backgroundColor: selected
+            ? const Color(0xFFFFF0E8)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 9),
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Text(label, style: const TextStyle(fontSize: 12)),
+    );
+  }
+
+  Widget _buildMobilePlacementToolbar() => Row(
+    children: [
+      Expanded(
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.all(3),
+          decoration: _mobilePanelDecoration(),
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _mobilePlacementTool('Select', null),
+              for (final type in const [
+                ElementType.door,
+                ElementType.rack,
+                ElementType.shelf,
+                ElementType.cashier,
+                ElementType.wall,
+              ])
+                _mobilePlacementTool(_elementLabel(type), type),
+              TextButton(
+                onPressed: _draftLayout.isEmpty || _isSaving
+                    ? null
+                    : _confirmClearDraft,
+                style: TextButton.styleFrom(foregroundColor: _mobileOrange),
+                child: const Text('Clear'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: _mobilePanelDecoration(),
+        child: Row(
+          children: [
+            _mobileHistoryButton(
+              'Undo',
+              LucideIcons.undo2,
+              _undoStack.isEmpty ? null : _undo,
+            ),
+            _mobileHistoryButton(
+              'Redo',
+              LucideIcons.redo2,
+              _redoStack.isEmpty ? null : _redo,
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+
+  Widget _mobilePlacementTool(String label, ElementType? type) {
+    final selected = _placementType == type;
+    final enabled = _viewStyle == MapViewStyle.twoD || type == null;
+    return TextButton(
+      onPressed: enabled ? () => setState(() => _placementType = type) : null,
+      style: TextButton.styleFrom(
+        foregroundColor: selected ? _mobileOrange : _mobileMuted,
+        backgroundColor: selected
+            ? const Color(0xFFFFF0E8)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 11),
+      ),
+      child: Text(label, style: const TextStyle(fontSize: 13)),
+    );
+  }
+
+  Widget _mobileHistoryButton(
+    String tooltip,
+    IconData icon,
+    VoidCallback? action,
+  ) => IconButton(
+    tooltip: tooltip,
+    onPressed: action,
+    constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+    padding: EdgeInsets.zero,
+    icon: Icon(
+      icon,
+      size: 17,
+      color: action == null ? _mobileMuted : const Color(0xFF201D1A),
+    ),
+  );
+
   void _switchMode(MapMode mode) {
     if (_mode == mode) return;
     _storeMapKey.currentState?.clearManageSelection();
@@ -598,6 +875,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
       _mode = mode;
       _placementType = null;
       _manageSelected = null;
+      _mobileWidthControlsId = null;
       _selectedItemId = null;
       _productToAssignId = null;
     });
@@ -828,93 +1106,652 @@ class _MapEditorPageState extends State<MapEditorPage> {
     ElementType.cashier => LucideIcons.rectangleHorizontal,
   };
 
-  Widget _buildMapCanvas() => Container(
-    height: 640,
-    decoration: _mapPanelDecoration(),
-    clipBehavior: Clip.antiAlias,
-    child: Column(
-      children: [
-        if (_placementType != null && _viewStyle == MapViewStyle.twoD)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: const Color(0xFFFFF0E8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Click anywhere on the grid to place a ${_elementLabel(_placementType!).toLowerCase()}.',
-                    style: const TextStyle(color: _primaryBlue, fontSize: 12),
+  Widget _buildMapCanvas({bool mobile = false}) {
+    final matches = _draftLayout.where(
+      (element) => element.id == _manageSelected?.id,
+    );
+    final selected = matches.isEmpty ? null : matches.first;
+    final panelAtTop = selected != null && _mobileSelectionNearBottom(selected);
+    return Container(
+      height: mobile ? null : 640,
+      decoration: mobile ? _mobilePanelDecoration() : _mapPanelDecoration(),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Column(
+            children: [
+              if (_placementType != null && _viewStyle == MapViewStyle.twoD)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  color: const Color(0xFFFFF0E8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${mobile ? 'Tap' : 'Click'} anywhere on the grid to place a ${_elementLabel(_placementType!).toLowerCase()}.',
+                          style: TextStyle(
+                            color: mobile ? _mobileOrange : _primaryBlue,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => setState(() => _placementType = null),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: mobile ? _mobileOrange : _primaryBlue,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                TextButton(
-                  onPressed: () => setState(() => _placementType = null),
-                  child: const Text('Cancel'),
+              if (_mode == MapMode.selection)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  color: const Color(0xFFFFF0E8),
+                  child: Text(
+                    _hasDirtyDraft || _remoteChangePending
+                        ? 'Save or reload the map before assigning products.'
+                        : _selectedItemId == null
+                        ? 'Select a product from the list, then tap a rack or shelf on the map.'
+                        : 'Tap a rack or shelf to place the selected product.',
+                    style: TextStyle(
+                      color: mobile ? _mobileOrange : _primaryBlue,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
-              ],
+              Expanded(
+                child: StoreMap(
+                  key: _storeMapKey,
+                  controller: widget.controller,
+                  layout: _draftLayout,
+                  mode: _mode,
+                  viewStyle: _viewStyle,
+                  hideWalls: _hideWalls,
+                  fitEntireMap: true,
+                  showZoomControls: false,
+                  showMobileToolbar: false,
+                  placementType: _mode == MapMode.manage
+                      ? _placementType
+                      : null,
+                  selectedItemId: _mode == MapMode.selection
+                      ? _selectedItemId
+                      : null,
+                  highlightId: _mode == MapMode.selection
+                      ? _selectedAssignmentTargetId
+                      : null,
+                  itemAssignmentEnabled:
+                      !_hasDirtyDraft && !_remoteChangePending && !_isSaving,
+                  onSelectionAssigned: () =>
+                      setState(() => _selectedItemId = null),
+                  onPlacementCompleted: () => setState(() {}),
+                  onManageSelectionChanged: (element) {
+                    if (mounted) {
+                      setState(() {
+                        if (_manageSelected?.id != element?.id) {
+                          _mobileWidthControlsId = null;
+                        }
+                        _manageSelected = element;
+                        _productToAssignId = null;
+                      });
+                    }
+                  },
+                  onLayoutEdited: _recordLayoutEdit,
+                ),
+              ),
+              if (!mobile)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(top: BorderSide(color: Color(0xFFE7E1DB))),
+                  ),
+                  child: Text(
+                    _mode == MapMode.selection
+                        ? '$_assignedCount of ${widget.controller.allItems.length} products assigned'
+                        : '${_draftLayout.length} elements    Drag to move · corner handle to resize · Delete to remove',
+                    style: const TextStyle(
+                      color: Color(0xFF827872),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (mobile)
+            Positioned(
+              right: 8,
+              top: 0,
+              bottom: 0,
+              child: Center(child: _buildMobileZoomControls()),
             ),
-          ),
-        if (_mode == MapMode.selection)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: const Color(0xFFFFF0E8),
-            child: Text(
-              _hasDirtyDraft || _remoteChangePending
-                  ? 'Save or reload the map before assigning products.'
-                  : _selectedItemId == null
-                  ? 'Select a product from the list, then tap a rack or shelf on the map.'
-                  : 'Tap a rack or shelf to place the selected product.',
-              style: const TextStyle(color: _primaryBlue, fontSize: 12),
+          if (mobile && _mode == MapMode.manage && selected != null)
+            Positioned(
+              left: 10,
+              right: 10,
+              top: panelAtTop ? 10 : null,
+              bottom: panelAtTop ? null : 10,
+              child: _buildMobileSelectedPanel(selected),
             ),
-          ),
-        Expanded(
-          child: StoreMap(
-            key: _storeMapKey,
-            controller: widget.controller,
-            layout: _draftLayout,
-            mode: _mode,
-            viewStyle: _viewStyle,
-            hideWalls: _hideWalls,
-            fitEntireMap: true,
-            showZoomControls: false,
-            showMobileToolbar: false,
-            placementType: _mode == MapMode.manage ? _placementType : null,
-            selectedItemId: _mode == MapMode.selection ? _selectedItemId : null,
-            highlightId: _mode == MapMode.selection
-                ? _selectedAssignmentTargetId
-                : null,
-            itemAssignmentEnabled:
-                !_hasDirtyDraft && !_remoteChangePending && !_isSaving,
-            onSelectionAssigned: () => setState(() => _selectedItemId = null),
-            onPlacementCompleted: () => setState(() {}),
-            onManageSelectionChanged: (element) {
-              if (mounted)
-                setState(() {
-                  _manageSelected = element;
-                  _productToAssignId = null;
-                });
-            },
-            onLayoutEdited: _recordLayoutEdit,
-          ),
+        ],
+      ),
+    );
+  }
+
+  bool _mobileSelectionNearBottom(MapElement selected) {
+    if (_draftLayout.isEmpty) return false;
+    var minY = double.infinity;
+    var maxY = -double.infinity;
+    for (final element in _draftLayout) {
+      if (element.position.dy < minY) minY = element.position.dy;
+      final bottom = element.position.dy + element.size.height;
+      if (bottom > maxY) maxY = bottom;
+    }
+    return selected.position.dy + selected.size.height / 2 > (minY + maxY) / 2;
+  }
+
+  Widget _buildMobileZoomControls() => Container(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    decoration: _mobilePanelDecoration(),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _mobileZoomButton(
+          'Zoom in',
+          LucideIcons.plus,
+          () => _storeMapKey.currentState?.zoomIn(),
         ),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0xFFE7E1DB))),
-          ),
-          child: Text(
-            _mode == MapMode.selection
-                ? '$_assignedCount of ${widget.controller.allItems.length} products assigned'
-                : '${_draftLayout.length} elements    Drag to move · corner handle to resize · Delete to remove',
-            style: const TextStyle(color: Color(0xFF827872), fontSize: 11),
-          ),
+        _mobileZoomButton(
+          'Zoom out',
+          LucideIcons.minus,
+          () => _storeMapKey.currentState?.zoomOut(),
+        ),
+        _mobileZoomButton(
+          'Center map',
+          LucideIcons.focus,
+          () => _storeMapKey.currentState?.recenterMap(),
         ),
       ],
     ),
   );
+
+  Widget _mobileZoomButton(
+    String tooltip,
+    IconData icon,
+    VoidCallback action,
+  ) => IconButton(
+    tooltip: tooltip,
+    onPressed: action,
+    constraints: const BoxConstraints.tightFor(width: 38, height: 38),
+    padding: EdgeInsets.zero,
+    icon: Icon(icon, color: const Color(0xFF201D1A), size: 18),
+  );
+
+  Widget _buildMobileSelectedPanel(MapElement element) {
+    final type = _elementLabel(element.type);
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: _mobilePanelDecoration(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: element.label.trim().isEmpty
+                      ? type
+                      : element.label.trim(),
+                  style: const TextStyle(
+                    color: Color(0xFF201D1A),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                TextSpan(
+                  text: '  ${type.toUpperCase()}',
+                  style: const TextStyle(color: _mobileMuted, fontSize: 12),
+                ),
+              ],
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          if (_mobileWidthControlsId == element.id)
+            _buildMobileWidthControls(element)
+          else
+            SizedBox(
+              height: 52,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final action in <Widget>[
+                      _mobileActionTile(
+                        'Label',
+                        LucideIcons.pencil,
+                        () => _editMobileLabel(element),
+                      ),
+                      _mobileActionTile(
+                        'Move',
+                        LucideIcons.move,
+                        _showMobileMoveControls,
+                      ),
+                      _mobileActionTile(
+                        'Rotate',
+                        LucideIcons.rotateCw,
+                        () => _storeMapKey.currentState?.applySidebarAction(
+                          MapSidebarAction.rotate,
+                        ),
+                      ),
+                      _mobileActionTile(
+                        'Increase',
+                        LucideIcons.moveHorizontal,
+                        canResizeMapElementWidth(element, grow: true) ||
+                                canResizeMapElementWidth(element, grow: false)
+                            ? () => setState(
+                                () => _mobileWidthControlsId = element.id,
+                              )
+                            : null,
+                      ),
+                      if (element.type == ElementType.wall)
+                        _mobileActionTile(
+                          'Auto-align',
+                          LucideIcons.magnet,
+                          () => _storeMapKey.currentState?.applySidebarAction(
+                            MapSidebarAction.autoAlignWall,
+                          ),
+                          color: const Color(0xFFFF568C),
+                        ),
+                      if (element.type == ElementType.rack ||
+                          element.type == ElementType.shelf)
+                        _mobileActionTile(
+                          'Products',
+                          LucideIcons.package,
+                          () => _showMobileProducts(element),
+                          color: _mobileOrange,
+                        ),
+                      if (element.type == ElementType.door)
+                        _mobileActionTile(
+                          'Door type',
+                          LucideIcons.doorOpen,
+                          _showMobileDoorTypes,
+                          color: _mobileOrange,
+                        ),
+                      _mobileActionTile(
+                        'Copy',
+                        LucideIcons.copy,
+                        () => _storeMapKey.currentState?.applySidebarAction(
+                          MapSidebarAction.duplicate,
+                        ),
+                      ),
+                      _mobileActionTile(
+                        'Delete',
+                        LucideIcons.trash2,
+                        () => _storeMapKey.currentState?.applySidebarAction(
+                          MapSidebarAction.delete,
+                        ),
+                        color: const Color(0xFFEF3333),
+                      ),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: SizedBox(width: 56, height: 52, child: action),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileWidthControls(MapElement element) {
+    final canShrink = canResizeMapElementWidth(element, grow: false);
+    final canGrow = canResizeMapElementWidth(element, grow: true);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            _mobileWidthButton(
+              '◀ L−',
+              'Decrease from left',
+              MapSidebarAction.widthLeftMinus,
+              canShrink,
+            ),
+            const SizedBox(width: 5),
+            _mobileWidthButton(
+              'L+ ▶',
+              'Increase from left',
+              MapSidebarAction.widthLeftPlus,
+              canGrow,
+            ),
+            const SizedBox(width: 5),
+            _mobileWidthButton(
+              '◀ R−',
+              'Decrease from right',
+              MapSidebarAction.widthRightMinus,
+              canShrink,
+            ),
+            const SizedBox(width: 5),
+            _mobileWidthButton(
+              'R+ ▶',
+              'Increase from right',
+              MapSidebarAction.widthRightPlus,
+              canGrow,
+            ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        SizedBox(
+          width: double.infinity,
+          height: 38,
+          child: FilledButton.icon(
+            onPressed: () => setState(() => _mobileWidthControlsId = null),
+            style: FilledButton.styleFrom(
+              backgroundColor: _mobileOrange,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            icon: const Icon(LucideIcons.check, size: 17),
+            label: const Text('Done'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _mobileWidthButton(
+    String label,
+    String tooltip,
+    MapSidebarAction action,
+    bool enabled,
+  ) => Expanded(
+    child: Tooltip(
+      message: tooltip,
+      child: OutlinedButton(
+        onPressed: enabled
+            ? () => _storeMapKey.currentState?.applySidebarAction(action)
+            : null,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF201D1A),
+          disabledForegroundColor: _mobileMuted,
+          backgroundColor: _mobileBg,
+          side: const BorderSide(color: _mobileLine),
+          minimumSize: const Size(0, 52),
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ),
+    ),
+  );
+
+  Widget _mobileActionTile(
+    String label,
+    IconData icon,
+    VoidCallback? action, {
+    Color color = const Color(0xFF201D1A),
+  }) => Material(
+    color: const Color(0xFFF7F5F3),
+    borderRadius: BorderRadius.circular(12),
+    child: InkWell(
+      onTap: action,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: _mobileLine),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: action == null ? _mobileMuted : color),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                color: action == null ? _mobileMuted : color,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Future<void> _editMobileLabel(MapElement element) async {
+    final controller = TextEditingController(text: element.label);
+    final label = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.pencil,
+        color: _primaryBlue,
+        title: 'Edit label',
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            style: FilledButton.styleFrom(backgroundColor: _primaryBlue),
+            child: const Text('Save'),
+          ),
+        ],
+        child: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Fixture label',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
+        ),
+      ),
+    );
+    controller.dispose();
+    if (label == null || !mounted) return;
+    _updateSelectedElement(element, element.copyWith(label: label));
+  }
+
+  void _showMobileMoveControls() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _mobilePanel,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Move fixture',
+                style: TextStyle(
+                  color: Color(0xFF201D1A),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Drag on the map or nudge one grid step.',
+                style: TextStyle(color: _mobileMuted),
+              ),
+              const SizedBox(height: 12),
+              _mobileMoveButton(LucideIcons.arrowUp, 'Up', MapSidebarAction.up),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _mobileMoveButton(
+                    LucideIcons.arrowLeft,
+                    'Left',
+                    MapSidebarAction.left,
+                  ),
+                  const SizedBox(width: 42),
+                  _mobileMoveButton(
+                    LucideIcons.arrowRight,
+                    'Right',
+                    MapSidebarAction.right,
+                  ),
+                ],
+              ),
+              _mobileMoveButton(
+                LucideIcons.arrowDown,
+                'Down',
+                MapSidebarAction.down,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileMoveButton(
+    IconData icon,
+    String label,
+    MapSidebarAction action,
+  ) => IconButton(
+    tooltip: label,
+    onPressed: () => _storeMapKey.currentState?.applySidebarAction(action),
+    icon: Icon(icon, color: const Color(0xFF201D1A)),
+  );
+
+  void _showMobileDoorTypes() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _mobilePanel,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Door type',
+                style: TextStyle(
+                  color: Color(0xFF201D1A),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              for (final style in DoorStyle.values)
+                ListTile(
+                  title: Text(
+                    style.label,
+                    style: const TextStyle(color: Color(0xFF201D1A)),
+                  ),
+                  onTap: () {
+                    _storeMapKey.currentState?.setSelectedDoorStyle(style);
+                    Navigator.pop(sheetContext);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMobileProducts(MapElement element) {
+    final products = widget.controller.allItems
+        .where((item) => item.locationId == element.id)
+        .toList();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _mobilePanel,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * 0.55,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Text(
+                  'Products · ${products.length}',
+                  style: const TextStyle(
+                    color: Color(0xFF201D1A),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: products.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No products assigned yet.',
+                            style: TextStyle(color: _mobileMuted),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: products.length,
+                          itemBuilder: (context, index) {
+                            final product = products[index];
+                            return ListTile(
+                              dense: true,
+                              title: Text(
+                                product.name,
+                                style: const TextStyle(
+                                  color: Color(0xFF201D1A),
+                                ),
+                              ),
+                              subtitle: Text(
+                                product.sku,
+                                style: const TextStyle(color: _mobileMuted),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                const SizedBox(height: 10),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    _switchMode(MapMode.selection);
+                  },
+                  style: FilledButton.styleFrom(backgroundColor: _primaryBlue),
+                  child: const Text('Assign items'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   void _discardDraft() {
     _storeMapKey.currentState?.clearManageSelection();
@@ -929,21 +1766,34 @@ class _MapEditorPageState extends State<MapEditorPage> {
   Future<void> _confirmClearDraft() async {
     final clear = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Clear the floor plan?'),
-        content: const Text(
-          'All fixtures will be removed from this draft. You can undo before saving.',
-        ),
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.triangleAlert,
+        color: const Color(0xFFDC2626),
+        title: 'Clear the floor plan?',
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.pop(dialogContext, false),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF201D1A),
+              side: const BorderSide(color: Color(0xFFE7E1DB)),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
             child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
             child: const Text('Clear'),
           ),
         ],
+        child: const Text(
+          'All fixtures will be removed from this draft. You can undo before saving.',
+          style: TextStyle(color: Color(0xFF827872), fontSize: 14, height: 1.5),
+        ),
       ),
     );
     if (clear != true || !mounted) return;

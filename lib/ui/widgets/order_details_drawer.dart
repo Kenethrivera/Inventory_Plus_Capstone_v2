@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../data/inventory.dart';
+import 'app_dialog.dart';
 import 'app_styled_dropdown.dart';
 
 /// Read-only details for a dashboard order card.
@@ -772,21 +773,40 @@ class _OrderActionsState extends State<_OrderActions> {
   Future<void> _cancel() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancel this order?'),
-        content: const Text(
-          'The order will be cancelled and its stock returned.',
-        ),
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.triangleAlert,
+        color: const Color(0xFFDC2626),
+        title: 'Cancel this order?',
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF201D1A),
+              side: const BorderSide(color: Color(0xFFE7E1DB)),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
             child: const Text('Keep order'),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
             child: const Text('Cancel order'),
           ),
         ],
+        child: const Text(
+          'The order will be cancelled and its stock returned.',
+          style: TextStyle(color: Color(0xFF625B55), fontSize: 14, height: 1.5),
+        ),
       ),
     );
     if (confirmed != true || !mounted) return;

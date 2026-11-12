@@ -92,13 +92,11 @@ begin
     raise exception 'Cart pricing changed. Review the discount and try again';
   end if;
 
-  select coalesce(cashier.cashier_discount_limit_pct,
-                  settings.cashier_auto_approved_discount_limit_pct, 10),
+  select coalesce(settings.cashier_auto_approved_discount_limit_pct, 10),
          coalesce(settings.max_approved_discount_pct, 25),
          coalesce(settings.gcash_enabled, true)
     into v_limit, v_max_approved, v_gcash_enabled
     from public.store_settings settings
-    left join public.profiles cashier on cashier.id = v_profile.profile_id
    where settings.location_id = v_profile.location_id;
   v_limit := coalesce(v_limit, 10);
   v_max_approved := coalesce(v_max_approved, 25);

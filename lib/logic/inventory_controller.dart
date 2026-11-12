@@ -525,7 +525,6 @@ class InventoryController {
     required bool acceptGcash,
     required String gcashAccountName,
     required String gcashNumber,
-    required Map<String, double> cashierLimits,
   }) async {
     await supabase.rpc(
       'update_settings_dashboard_v1',
@@ -538,7 +537,7 @@ class InventoryController {
         'p_gcash_enabled': acceptGcash,
         'p_gcash_account_name': gcashAccountName.trim(),
         'p_gcash_number': gcashNumber.trim(),
-        'p_cashier_limits': cashierLimits,
+        'p_cashier_limits': <String, double>{},
       },
     );
     gcashEnabled = acceptGcash;
@@ -867,28 +866,12 @@ class InventoryController {
             .eq('location_id', locationId)
             .maybeSingle();
       }
-      double? cashierOverride;
-      if (accountId != null) {
-        try {
-          final profile = await supabase
-              .from('profiles')
-              .select('cashier_discount_limit_pct')
-              .eq('id', accountId)
-              .eq('location_id', locationId)
-              .maybeSingle();
-          cashierOverride = (profile?['cashier_discount_limit_pct'] as num?)
-              ?.toDouble();
-        } catch (_) {
-          // Older databases have no per-cashier override column yet.
-        }
-      }
       if (activeLocationId != locationId || currentUserNumericId != accountId) {
         return;
       }
       gcashQrUrl = response?['gcash_qr_url']?.toString() ?? '';
       gcashEnabled = response?['gcash_enabled'] != false;
       cashierAutoApprovedDiscountLimitPct =
-          cashierOverride ??
           (response?['cashier_auto_approved_discount_limit_pct'] as num?)
               ?.toDouble() ??
           10.0;
