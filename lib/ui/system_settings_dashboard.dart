@@ -34,7 +34,6 @@ extension _SettingsDashboard on _SystemSettingsPageState {
   }
 
   bool get _dashboardSectionDirty {
-    final baseline = _dashboardExtrasBaseline;
     return switch (_selectedSettingsSection) {
       _SettingsSection.stock => _thresholdDraftDirty,
       _SettingsSection.hours => _storeAccessDraftDirty,

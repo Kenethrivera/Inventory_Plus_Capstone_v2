@@ -18,7 +18,7 @@ import '../services/app_logger.dart';
 
 part 'system_settings_dashboard.dart';
 
-const Color _primaryBlue = Color(0xFF2563EB);
+const Color _accentOrange = Color(0xFFC94008);
 const String _fontFam = 'Hellix';
 
 // Data Models
@@ -602,7 +602,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                     suffixText: '%',
                     errorText: _discountLimitError,
                     filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
+                    fillColor: const Color(0xFFFAF8F6),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -615,7 +615,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 child: ElevatedButton(
                   onPressed: _isSavingDiscountLimit ? null : _saveDiscountLimit,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryBlue,
+                    backgroundColor: _accentOrange,
                     foregroundColor: Colors.white,
                   ),
                   child: _isSavingDiscountLimit
@@ -700,25 +700,25 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.blue,
+                        color: Colors.deepOrange,
                       ),
                     )
                   : const Icon(
                       LucideIcons.uploadCloud,
                       size: 18,
-                      color: Colors.blue,
+                      color: Colors.deepOrange,
                     ),
               label: Text(
                 _isUploadingQr ? "Uploading..." : "Upload GCash QR",
                 style: const TextStyle(
                   fontFamily: 'Hellix',
                   fontWeight: FontWeight.bold,
-                  color: Colors.blue,
+                  color: Colors.deepOrange,
                 ),
               ),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                side: BorderSide(color: Colors.blue.shade100),
+                side: BorderSide(color: Colors.deepOrange.shade100),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -898,7 +898,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: _primaryBlue,
+              primary: _accentOrange,
               onPrimary: Colors.white,
               surface: Colors.white,
               onSurface: Color(0xFF0F172A),
@@ -914,16 +914,16 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               hourMinuteShape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
-              hourMinuteColor: const Color(0xFFF8FAFC),
+              hourMinuteColor: const Color(0xFFFAF8F6),
               hourMinuteTextColor: const Color(0xFF0F172A),
-              dialHandColor: _primaryBlue,
+              dialHandColor: _accentOrange,
               dialBackgroundColor: const Color(0xFFF1F5F9),
-              entryModeIconColor: _primaryBlue,
+              entryModeIconColor: _accentOrange,
               dayPeriodColor: WidgetStateColor.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
-                  return _primaryBlue;
+                  return _accentOrange;
                 }
-                return const Color(0xFFF8FAFC);
+                return const Color(0xFFFAF8F6);
               }),
               dayPeriodTextColor: WidgetStateColor.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
@@ -943,7 +943,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
-                foregroundColor: _primaryBlue,
+                foregroundColor: _accentOrange,
                 textStyle: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontFamily: _fontFam,
@@ -1089,7 +1089,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             const Center(
               child: Padding(
                 padding: EdgeInsets.all(24.0),
-                child: CircularProgressIndicator(color: _primaryBlue),
+                child: CircularProgressIndicator(color: _accentOrange),
               ),
             )
           else ...[
@@ -1187,7 +1187,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               width: double.infinity,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: const Color(0xFFFAF8F6),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: Colors.grey.shade200),
               ),
@@ -1204,7 +1204,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             SwitchListTile.adaptive(
               value: _restrictStaffLogin,
               contentPadding: EdgeInsets.zero,
-              activeColor: _primaryBlue,
+              activeColor: _accentOrange,
               title: const Text(
                 'Restrict staff/helper login to store hours',
                 style: TextStyle(
@@ -1224,7 +1224,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             SwitchListTile.adaptive(
               value: _allowAdminAnytime,
               contentPadding: EdgeInsets.zero,
-              activeColor: _primaryBlue,
+              activeColor: _accentOrange,
               title: const Text(
                 'Allow admin login anytime',
                 style: TextStyle(
@@ -1271,7 +1271,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryBlue,
+                  backgroundColor: _accentOrange,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -1319,7 +1319,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: const Color(0xFFFAF8F6),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: Colors.grey.shade300),
             ),
@@ -1374,7 +1374,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             hintText: hint,
             suffixText: 'minutes',
             filled: true,
-            fillColor: const Color(0xFFF8FAFC),
+            fillColor: const Color(0xFFFAF8F6),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(color: Colors.grey.shade300),
@@ -1615,7 +1615,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             errorText: error,
             errorStyle: const TextStyle(fontFamily: _fontFam),
             filled: true,
-            fillColor: const Color(0xFFF8FAFC),
+            fillColor: const Color(0xFFFAF8F6),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(color: Colors.grey.shade300),
@@ -1626,13 +1626,13 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _primaryBlue, width: 2),
+              borderSide: const BorderSide(color: _accentOrange, width: 2),
             ),
           );
 
           return AppDialog(
             icon: LucideIcons.ruler,
-            color: _primaryBlue,
+            color: _accentOrange,
             title: existing == null ? "Add Measurement" : "Edit Measurement",
             subtitle: existing?.name,
             child: Column(
@@ -1670,7 +1670,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               ElevatedButton(
                 onPressed: saving ? null : validateAndSave,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryBlue,
+                  backgroundColor: _accentOrange,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -1832,7 +1832,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             ),
             prefixIcon: Icon(icon, color: const Color(0xFF8892A4), size: 16),
             filled: true,
-            fillColor: const Color(0xFFF8FAFC),
+            fillColor: const Color(0xFFFAF8F6),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(color: Colors.grey.shade300),
@@ -1843,7 +1843,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _primaryBlue, width: 2),
+              borderSide: const BorderSide(color: _accentOrange, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(vertical: 14),
           ),
@@ -1893,7 +1893,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
           return AppDialog(
             icon: LucideIcons.userPlus,
-            color: _primaryBlue,
+            color: _accentOrange,
             title: "Add New Staff",
             subtitle: "Fill in the details to create an account",
             child: Column(
@@ -1964,7 +1964,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                           size: 16,
                         ),
                         filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
+                        fillColor: const Color(0xFFFAF8F6),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(color: Colors.grey.shade300),
@@ -1976,7 +1976,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                           borderSide: const BorderSide(
-                            color: _primaryBlue,
+                            color: _accentOrange,
                             width: 2,
                           ),
                         ),
@@ -2127,7 +2127,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                         }
                       },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryBlue,
+                  backgroundColor: _accentOrange,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -2170,7 +2170,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         builder: (context, setModalState) {
           return AppDialog(
             icon: LucideIcons.shield,
-            color: _primaryBlue,
+            color: _accentOrange,
             title: "Change Role",
             subtitle: staff['name'],
             child: AppStyledDropdown<String>(
@@ -2185,7 +2185,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 labelText: "Role",
                 labelStyle: const TextStyle(fontFamily: _fontFam),
                 filled: true,
-                fillColor: const Color(0xFFF8FAFC),
+                fillColor: const Color(0xFFFAF8F6),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: Colors.grey.shade300),
@@ -2196,7 +2196,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: _primaryBlue, width: 2),
+                  borderSide: const BorderSide(color: _accentOrange, width: 2),
                 ),
                 prefixIcon: const Icon(LucideIcons.shield),
               ),
@@ -2320,7 +2320,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                         }
                       },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryBlue,
+                  backgroundColor: _accentOrange,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -2356,7 +2356,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       context: context,
       builder: (ctx) => AppDialog(
         icon: LucideIcons.refreshCw,
-        color: _primaryBlue,
+        color: _accentOrange,
         title: "Reset Password",
         subtitle: staff['name'],
         child: Text.rich(
@@ -2379,7 +2379,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 text: newPass,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: _primaryBlue,
+                  color: _accentOrange,
                   fontSize: 16,
                   fontFamily: _fontFam,
                 ),
@@ -2438,7 +2438,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryBlue,
+              backgroundColor: _accentOrange,
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -2559,7 +2559,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                           IconButton(
                             icon: const Icon(
                               LucideIcons.x,
-                              color: _primaryBlue,
+                              color: _accentOrange,
                             ),
                             onPressed: () => Navigator.pop(context),
                             splashRadius: 20,
@@ -2570,7 +2570,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: _primaryBlue,
+                              color: _accentOrange,
                               fontFamily: _fontFam,
                             ),
                           ),
@@ -2589,14 +2589,14 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                 Container(
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
+                                    color: Colors.deepOrange.shade50,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Row(
                                     children: [
                                       CircleAvatar(
                                         radius: 24,
-                                        backgroundColor: _primaryBlue,
+                                        backgroundColor: _accentOrange,
                                         child: Text(
                                           _getInitials(staff['name']),
                                           style: const TextStyle(
@@ -2634,7 +2634,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                                         vertical: 4,
                                                       ),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.blue
+                                                    color: Colors.deepOrange
                                                         .withOpacity(0.1),
                                                     borderRadius:
                                                         BorderRadius.circular(
@@ -2647,7 +2647,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                                         .toUpperCase(),
                                                     style: const TextStyle(
                                                       fontSize: 10,
-                                                      color: Colors.blue,
+                                                      color: Colors.deepOrange,
                                                       fontWeight:
                                                           FontWeight.bold,
                                                       fontFamily: _fontFam,
@@ -2778,7 +2778,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             child: Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: Colors.blue.shade50,
+                                color: Colors.deepOrange.shade50,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Column(
@@ -2789,7 +2789,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                       Icon(
                                         LucideIcons.shieldAlert,
                                         size: 16,
-                                        color: _primaryBlue,
+                                        color: _accentOrange,
                                       ),
                                       SizedBox(width: 8),
                                       Text(
@@ -2811,7 +2811,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                         _showEditStaffRole(staff);
                                       },
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: _primaryBlue,
+                                        backgroundColor: _accentOrange,
                                         foregroundColor: Colors.white,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
@@ -2923,7 +2923,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       width: fullWidth ? double.infinity : 217,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: Colors.deepOrange.shade50,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -2970,7 +2970,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),
       body: (_isLoadingSettings)
-          ? const Center(child: CircularProgressIndicator(color: _primaryBlue))
+          ? const Center(child: CircularProgressIndicator(color: _accentOrange))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
               child: Column(
@@ -3068,7 +3068,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                   tooltip: 'Add Staff',
                                   onPressed: () => _showAddStaffDialog(),
                                   style: IconButton.styleFrom(
-                                    backgroundColor: _primaryBlue,
+                                    backgroundColor: _accentOrange,
                                     foregroundColor: Colors.white,
                                   ),
                                   icon: const Icon(LucideIcons.userPlus, size: 18),
@@ -3089,7 +3089,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                   ),
                                 ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _primaryBlue,
+                                  backgroundColor: _accentOrange,
                                   elevation: 0,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
@@ -3112,7 +3112,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             padding: EdgeInsets.all(40.0),
                             child: Center(
                               child: CircularProgressIndicator(
-                                color: _primaryBlue,
+                                color: _accentOrange,
                               ),
                             ),
                           )
@@ -3173,15 +3173,15 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                     CircleAvatar(
                                       radius: 20,
                                       backgroundColor: isAdmin
-                                          ? _primaryBlue.withOpacity(0.1)
-                                          : Colors.blue.withOpacity(0.1),
+                                          ? _accentOrange.withOpacity(0.1)
+                                          : Colors.deepOrange.withOpacity(0.1),
                                       child: Icon(
                                         isAdmin
                                             ? LucideIcons.shieldCheck
                                             : LucideIcons.user,
                                         color: isAdmin
-                                            ? _primaryBlue
-                                            : Colors.blue,
+                                            ? _accentOrange
+                                            : Colors.deepOrange,
                                         size: 20,
                                       ),
                                     ),
@@ -3221,7 +3221,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                           icon: const Icon(
                                             LucideIcons.eye,
                                             size: 18,
-                                            color: Colors.blue,
+                                            color: Colors.deepOrange,
                                           ),
                                           onPressed: () =>
                                               _showStaffDetailsModal(staff),
@@ -3365,7 +3365,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                     decoration: InputDecoration(
                                       suffixText: '%',
                                       filled: true,
-                                      fillColor: const Color(0xFFF8FAFC),
+                                      fillColor: const Color(0xFFFAF8F6),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
                                         borderSide: BorderSide(
@@ -3411,7 +3411,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                     decoration: InputDecoration(
                                       suffixText: '%',
                                       filled: true,
-                                      fillColor: const Color(0xFFF8FAFC),
+                                      fillColor: const Color(0xFFFAF8F6),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
                                         borderSide: BorderSide(
@@ -3501,12 +3501,12 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                   Container(
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
-                                      color: Colors.blue.shade50,
+                                      color: Colors.deepOrange.shade50,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Icon(
                                       LucideIcons.ruler,
-                                      color: Colors.blue.shade600,
+                                      color: Colors.deepOrange.shade600,
                                       size: 20,
                                     ),
                                   ),
@@ -3542,7 +3542,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                   tooltip: 'Add Unit',
                                   onPressed: () => _showMeasurementModal(),
                                   style: IconButton.styleFrom(
-                                    backgroundColor: _primaryBlue,
+                                    backgroundColor: _accentOrange,
                                     foregroundColor: Colors.white,
                                   ),
                                   icon: const Icon(LucideIcons.plus, size: 18),
@@ -3563,7 +3563,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                   ),
                                 ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _primaryBlue,
+                                  backgroundColor: _accentOrange,
                                   elevation: 0,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),

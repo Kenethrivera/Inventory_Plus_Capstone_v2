@@ -2894,6 +2894,62 @@ class InventoryController {
     });
   }
 
+  Future<Map<String, dynamic>> loadAnalyticsSummary({
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required DateTime previousStart,
+    required DateTime monthStart,
+  }) async {
+    final locationId = activeLocationId;
+    if (locationId == null) return const <String, dynamic>{};
+    final response = await supabase.rpc(
+      'analytics_summary_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_period_start': periodStart.toUtc().toIso8601String(),
+        'p_period_end': periodEnd.toUtc().toIso8601String(),
+        'p_previous_start': previousStart.toUtc().toIso8601String(),
+        'p_month_start': monthStart.toUtc().toIso8601String(),
+      },
+    );
+    if (activeLocationId != locationId) {
+      throw StateError('Analytics location changed while loading.');
+    }
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<List<CustomerOrder>> loadAnalyticsSalesExport({
+    required DateTime start,
+    required DateTime endExclusive,
+  }) async {
+    final locationId = activeLocationId;
+    if (locationId == null) return const <CustomerOrder>[];
+    const pageSize = 500;
+    final orders = <CustomerOrder>[];
+    for (var offset = 0; ; offset += pageSize) {
+      final rows = await supabase
+          .from('orders')
+          .select()
+          .eq('location_id', locationId)
+          .inFilter('status', [
+            'completed',
+            'prepared',
+            'pending',
+            'solo_picking',
+          ])
+          .gte('created_at', start.toUtc().toIso8601String())
+          .lt('created_at', endExclusive.toUtc().toIso8601String())
+          .order('created_at', ascending: false)
+          .range(offset, offset + pageSize - 1);
+      if (activeLocationId != locationId) {
+        throw StateError('Analytics location changed while exporting.');
+      }
+      orders.addAll(rows.map(CustomerOrder.fromJson));
+      if (rows.length < pageSize) break;
+    }
+    return List<CustomerOrder>.unmodifiable(orders);
+  }
+
   Future<List<Map<String, dynamic>>> fetchAllTransactionHistory() async {
     try {
       return await loadAllTransactionHistory();

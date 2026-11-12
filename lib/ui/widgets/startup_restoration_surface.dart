@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 class StartupRestorationSurface extends StatelessWidget {
   const StartupRestorationSurface({super.key});
 
   @override
   Widget build(BuildContext context) => const Scaffold(
-    backgroundColor: Color(0xFFF4F6F8),
+    backgroundColor: Color(0xFFF6F5F2),
     body: Center(
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -19,7 +20,7 @@ class StartupRestorationSurface extends StatelessWidget {
               Text(
                 'Inventory Plus',
                 style: TextStyle(
-                  color: Color(0xFF0F172A),
+                  color: Color(0xFF171717),
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                 ),
@@ -27,7 +28,7 @@ class StartupRestorationSurface extends StatelessWidget {
               SizedBox(height: 3),
               Text(
                 'Restoring your session\u2026',
-                style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                style: TextStyle(color: Color(0xFF83776F), fontSize: 13),
               ),
             ],
           ),
@@ -46,23 +47,16 @@ class _StartupMark extends StatelessWidget {
     height: 42,
     alignment: Alignment.center,
     decoration: const BoxDecoration(
-      color: Color(0xFF2563EB),
+      color: Color(0xFFC94008),
       borderRadius: BorderRadius.all(Radius.circular(12)),
       boxShadow: [
         BoxShadow(
-          color: Color(0x382563EB),
+          color: Color(0x33C94008),
           blurRadius: 24,
           offset: Offset(0, 8),
         ),
       ],
     ),
-    child: const Text(
-      'I+',
-      style: TextStyle(
-        color: Colors.white,
-        fontSize: 22,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
+    child: const Icon(LucideIcons.package, color: Colors.white, size: 24),
   );
 }

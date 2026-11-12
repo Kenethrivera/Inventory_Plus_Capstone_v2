@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../logic/helper_assignment.dart';
+import '../logic/staff_availability.dart';
 import 'realtime/realtime_sync_service.dart';
 
 class StaffPresenceService extends ChangeNotifier {
@@ -21,6 +22,7 @@ class StaffPresenceService extends ChangeNotifier {
   StreamSubscription<void>? _realtimeSubscription;
   String _currentModule = 'Main Screen';
   List<Map<String, dynamic>> _activeStaff = const [];
+  List<Map<String, dynamic>> _presentStaff = const [];
   bool _isLoading = true;
   bool _refreshInFlight = false;
   bool _refreshQueued = false;
@@ -37,6 +39,12 @@ class StaffPresenceService extends ChangeNotifier {
   });
 
   List<Map<String, dynamic>> get activeStaff => _activeStaff;
+  bool isUserOnBreak(String id) => _presentStaff.any(
+    (row) =>
+        row['user_id']?.toString() == id &&
+        row['is_online'] == false &&
+        row['current_module'] == 'On break',
+  );
   List<HelperAssignmentCandidate> get eligibleHelpersForAssignment =>
       eligibleHelpersFromPresence(
         presenceRows: _activeStaff,
@@ -195,15 +203,18 @@ class StaffPresenceService extends ChangeNotifier {
       _refreshQueued = false;
 
       try {
-        final rows = await fetchActiveStaff(
+        final rows = await fetchPresentStaff(
           supabase: supabase,
           locationId: locationId,
         );
 
         if (_disposed) return;
 
-        _activeStaff = List<Map<String, dynamic>>.unmodifiable(
+        _presentStaff = List<Map<String, dynamic>>.unmodifiable(
           rows.map((row) => Map<String, dynamic>.unmodifiable(row)),
+        );
+        _activeStaff = List<Map<String, dynamic>>.unmodifiable(
+          _presentStaff.where((row) => row['is_online'] == true),
         );
         _isLoading = false;
         _scheduleNextExpiry();
@@ -233,7 +244,7 @@ class StaffPresenceService extends ChangeNotifier {
     _expiryTimer = null;
 
     DateTime? nextExpiry;
-    for (final staff in _activeStaff) {
+    for (final staff in _presentStaff) {
       final lastSeen = _parseTimestamp(staff['last_seen_at']);
       if (lastSeen == null) continue;
 
@@ -257,20 +268,25 @@ class StaffPresenceService extends ChangeNotifier {
   void _expireStaleStaff() {
     if (_disposed) return;
 
-    final fresh = _activeStaff.where(_isActivePresence).toList();
-    if (fresh.length != _activeStaff.length) {
-      _activeStaff = List<Map<String, dynamic>>.unmodifiable(fresh);
+    final now = DateTime.now().toUtc();
+    final fresh = _presentStaff
+        .where(
+          (row) => isCurrentStaffPresence(
+            row,
+            now: now,
+            activeTimeout: activeTimeout,
+          ),
+        )
+        .toList();
+    if (fresh.length != _presentStaff.length) {
+      _presentStaff = List<Map<String, dynamic>>.unmodifiable(fresh);
+      _activeStaff = List<Map<String, dynamic>>.unmodifiable(
+        fresh.where((row) => row['is_online'] == true),
+      );
       notifyListeners();
     }
 
     _scheduleNextExpiry();
-  }
-
-  bool _isActivePresence(Map<String, dynamic> row) {
-    if (row['is_online'] != true) return false;
-    final lastSeen = _parseTimestamp(row['last_seen_at']);
-    if (lastSeen == null) return false;
-    return DateTime.now().toUtc().difference(lastSeen) < activeTimeout;
   }
 
   DateTime? _parseTimestamp(dynamic value) {
@@ -279,12 +295,15 @@ class StaffPresenceService extends ChangeNotifier {
   }
 
   void _removeUserFromSnapshot(String id) {
-    final remaining = _activeStaff
+    final remaining = _presentStaff
         .where((staff) => staff['user_id']?.toString() != id)
         .toList();
-    if (remaining.length == _activeStaff.length) return;
+    if (remaining.length == _presentStaff.length) return;
 
-    _activeStaff = List<Map<String, dynamic>>.unmodifiable(remaining);
+    _presentStaff = List<Map<String, dynamic>>.unmodifiable(remaining);
+    _activeStaff = List<Map<String, dynamic>>.unmodifiable(
+      remaining.where((row) => row['is_online'] == true),
+    );
     if (!_disposed) notifyListeners();
   }
 
@@ -325,6 +344,33 @@ class StaffPresenceService extends ChangeNotifier {
         .order('last_seen_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(response);
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchPresentStaff({
+    required SupabaseClient supabase,
+    required String locationId,
+  }) async {
+    final cutoff = DateTime.now()
+        .toUtc()
+        .subtract(activeTimeout)
+        .toIso8601String();
+    final response = await supabase
+        .from('staff_presence')
+        .select()
+        .eq('location_id', locationId)
+        .isFilter('logged_out_at', null)
+        .gte('last_seen_at', cutoff)
+        .order('last_seen_at', ascending: false);
+    final now = DateTime.now().toUtc();
+    return List<Map<String, dynamic>>.from(response)
+        .where(
+          (row) => isCurrentStaffPresence(
+            row,
+            now: now,
+            activeTimeout: activeTimeout,
+          ),
+        )
+        .toList(growable: false);
   }
 
   @override

@@ -17,6 +17,7 @@ import '../logic/inventory_controller.dart';
 import '../logic/helper_assignment.dart';
 import '../logic/inventory_approval.dart';
 import '../logic/staff_management.dart';
+import '../logic/staff_availability.dart';
 import '../navigation/main_section.dart';
 import '../services/debug_clock.dart';
 import '../services/export_period.dart';
@@ -2922,46 +2923,70 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           AnimatedBuilder(
             animation: presence,
             builder: (context, _) {
-              final onBreak = presence.isOnBreak;
-              return Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: ActionChip(
-                  tooltip: onBreak
-                      ? 'Switch to Available'
-                      : 'Switch to On break',
-                  onPressed: _changingHelperBreak || !presence.isStarted
-                      ? null
-                      : _toggleHelperBreak,
-                  backgroundColor: onBreak
-                      ? const Color(0xFF45413E)
-                      : const Color(0xFF168047),
-                  disabledColor: const Color(0xFF45413E),
-                  side: BorderSide.none,
-                  shape: const StadiumBorder(),
-                  label: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
+              return StreamBuilder<List<CustomerOrder>>(
+                stream: widget.controller.streamOrders(),
+                initialData: widget.controller.currentOrders,
+                builder: (context, snapshot) {
+                  final activeOrders = activePreparationWorkloads(
+                    snapshot.data ?? widget.controller.currentOrders,
+                  )[widget.controller.currentUserId] ?? 0;
+                  final availability = resolveStaffAvailability(
+                    isOnline: presence.isStarted,
+                    isOnBreak: presence.isOnBreak,
+                    isHelper: true,
+                    activeOrders: activeOrders,
+                  );
+                  final onBreak = availability == StaffAvailability.onBreak;
+                  final label = switch (availability) {
+                    StaffAvailability.offline => 'Offline',
+                    StaffAvailability.onBreak => 'On break',
+                    StaffAvailability.busy => 'Busy',
+                    StaffAvailability.available => 'Available',
+                  };
+                  final backgroundColor = switch (availability) {
+                    StaffAvailability.busy => const Color(0xFFC83D08),
+                    StaffAvailability.available => const Color(0xFF168047),
+                    _ => const Color(0xFF45413E),
+                  };
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: ActionChip(
+                      tooltip: onBreak
+                          ? 'Switch to Available'
+                          : 'Switch to On break',
+                      onPressed: _changingHelperBreak || !presence.isStarted
+                          ? null
+                          : _toggleHelperBreak,
+                      backgroundColor: backgroundColor,
+                      disabledColor: const Color(0xFF45413E),
+                      side: BorderSide.none,
+                      shape: const StadiumBorder(),
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: _fontFam,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 7),
-                      Text(
-                        onBreak ? 'On break' : 'Available',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: _fontFam,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -3833,7 +3858,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 15),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFF1B1B1B) : Colors.transparent,
+        color: selected ? _accent : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -3852,13 +3877,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
-                color: const Color(0xFF15803D),
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.22)
+                    : const Color(0xFFFFF0E8),
                 borderRadius: BorderRadius.circular(5),
               ),
               child: Text(
                 '$badgeCount',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: selected ? Colors.white : _accent,
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                 ),

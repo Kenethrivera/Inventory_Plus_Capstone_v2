@@ -6,7 +6,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../logic/helper_assignment.dart';
 
-const Color _primaryBlue = Color(0xFF2563EB);
+const Color _accent = Color(0xFFC83D08);
+const Color _tint = Color(0xFFFFF1E9);
+const Color _border = Color(0xFFE3DED7);
+const Color _ink = Color(0xFF211F1D);
+const Color _muted = Color(0xFF756D67);
 const String _fontFamily = 'Hellix';
 
 class HelperAssignmentSelector extends StatefulWidget {
@@ -197,7 +201,7 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFD7E0EC)),
+                border: Border.all(color: _border),
                 boxShadow: const [
                   BoxShadow(
                     color: Color(0x1A0F172A),
@@ -250,7 +254,7 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
         const Text(
           'Helper packs',
           style: TextStyle(
-            color: Color(0xFF475569),
+            color: _muted,
             fontSize: 12,
             fontWeight: FontWeight.w700,
             fontFamily: _fontFamily,
@@ -286,21 +290,17 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
                       onTap: widget.enabled ? _toggleMenu : null,
                       borderRadius: BorderRadius.circular(9),
                       hoverColor: Colors.transparent,
-                      splashColor: const Color(0x142563EB),
+                      splashColor: const Color(0x1AC83D08),
                       child: AnimatedContainer(
                         key: const Key('helper-assignment-trigger'),
                         duration: const Duration(milliseconds: 120),
                         height: 44,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         decoration: BoxDecoration(
-                          color: highlighted
-                              ? const Color(0xFFF3F7FF)
-                              : const Color(0xFFF8FAFC),
+                          color: highlighted ? _tint : Colors.white,
                           borderRadius: BorderRadius.circular(9),
                           border: Border.all(
-                            color: highlighted
-                                ? _primaryBlue
-                                : const Color(0xFFD7E0EC),
+                            color: highlighted ? _accent : _border,
                             width: highlighted ? 1.25 : 1,
                           ),
                         ),
@@ -311,7 +311,7 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
                               height: 28,
                               decoration: BoxDecoration(
                                 color: highlighted
-                                    ? const Color(0xFFE3EDFF)
+                                    ? const Color(0xFFFBE2D4)
                                     : Colors.white,
                                 borderRadius: BorderRadius.circular(7),
                               ),
@@ -320,7 +320,7 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
                                     ? LucideIcons.zap
                                     : LucideIcons.userRound,
                                 size: 15,
-                                color: _primaryBlue,
+                                color: _accent,
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -332,7 +332,7 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
                                           '${_activeOrderLabel(selectedCount)}',
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  color: Color(0xFF0F172A),
+                                  color: _ink,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
                                   fontFamily: _fontFamily,
@@ -346,7 +346,7 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
                               child: const Icon(
                                 LucideIcons.chevronDown,
                                 size: 17,
-                                color: Color(0xFF64748B),
+                                color: _muted,
                               ),
                             ),
                           ],
@@ -383,17 +383,17 @@ class _HelperMenuOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? const Color(0xFFEFF6FF) : Colors.transparent,
+      color: selected ? _tint : Colors.transparent,
       borderRadius: BorderRadius.circular(7),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(7),
-        hoverColor: const Color(0xFFF1F5F9),
+        hoverColor: _tint,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
             children: [
-              Icon(icon, size: 16, color: _primaryBlue),
+              Icon(icon, size: 16, color: _accent),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -404,7 +404,7 @@ class _HelperMenuOption extends StatelessWidget {
                       title,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: const Color(0xFF0F172A),
+                        color: _ink,
                         fontSize: 13,
                         fontWeight: selected
                             ? FontWeight.w800
@@ -417,7 +417,7 @@ class _HelperMenuOption extends StatelessWidget {
                       subtitle,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Color(0xFF64748B),
+                        color: _muted,
                         fontSize: 11,
                         fontWeight: FontWeight.w500,
                         fontFamily: _fontFamily,
@@ -428,7 +428,7 @@ class _HelperMenuOption extends StatelessWidget {
               ),
               if (selected) ...[
                 const SizedBox(width: 8),
-                const Icon(LucideIcons.check, size: 16, color: _primaryBlue),
+                const Icon(LucideIcons.check, size: 16, color: _accent),
               ],
             ],
           ),

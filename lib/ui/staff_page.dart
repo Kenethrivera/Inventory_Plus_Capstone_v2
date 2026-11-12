@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/helper_assignment.dart';
+import '../logic/staff_availability.dart';
 import '../logic/staff_management.dart';
 import '../logic/staff_performance.dart';
 import '../services/app_error_mapper.dart';
@@ -48,7 +51,9 @@ class _StaffPageState extends State<StaffPage> {
   StaffPerformanceSnapshot? _cashierToday;
   StaffPerformanceSnapshot? _helperToday;
   StreamSubscription<List<Map<String, dynamic>>>? _staffSubscription;
+  StreamSubscription<List<CustomerOrder>>? _ordersSubscription;
   StreamSubscription<void>? _performanceSubscription;
+  Map<String, int> _activeOrderCounts = const {};
   int _metricsGeneration = 0;
 
   @override
@@ -61,6 +66,11 @@ class _StaffPageState extends State<StaffPage> {
   }
 
   void _bind() {
+    _activeOrderCounts = activePreparationWorkloads(widget.controller.currentOrders);
+    _ordersSubscription = widget.controller.streamOrders().listen((orders) {
+      if (!mounted) return;
+      setState(() => _activeOrderCounts = activePreparationWorkloads(orders));
+    });
     _staffSubscription = widget.controller.streamStaffConfiguration().listen(
       (rows) {
         if (!mounted) return;
@@ -96,6 +106,7 @@ class _StaffPageState extends State<StaffPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       unawaited(_staffSubscription?.cancel());
+      unawaited(_ordersSubscription?.cancel());
       unawaited(_performanceSubscription?.cancel());
       _staff = const [];
       _loading = true;
@@ -159,6 +170,7 @@ class _StaffPageState extends State<StaffPage> {
   void dispose() {
     _metricsGeneration++;
     unawaited(_staffSubscription?.cancel());
+    unawaited(_ordersSubscription?.cancel());
     unawaited(_performanceSubscription?.cancel());
     widget.presence?.removeListener(_rebuild);
     _search.removeListener(_rebuild);
@@ -794,24 +806,31 @@ class _StaffPageState extends State<StaffPage> {
 
   Widget _availability(Map<String, dynamic> person) {
     final id = person['id']?.toString() ?? '';
+    final presence = widget.presence;
     final online =
-        widget.presence?.activeStaff.any(
+        presence?.activeStaff.any(
           (row) => row['user_id']?.toString() == id,
         ) ??
         false;
     final helper = person['role']?.toString() == 'helper';
-    final record = _findRecord(_helperToday, id);
-    final busy = online && helper && (record?.currentWorkload ?? 0) > 0;
-    final label = online
-        ? busy
-              ? 'Busy'
-              : 'Available'
-        : 'Offline';
-    final color = online
-        ? busy
-              ? _orange
-              : _green
-        : _muted;
+    final availability = resolveStaffAvailability(
+      isOnline: online,
+      isOnBreak: helper && (presence?.isUserOnBreak(id) ?? false),
+      isHelper: helper,
+      activeOrders: _activeOrderCounts[id] ?? 0,
+    );
+    final label = switch (availability) {
+      StaffAvailability.offline => 'Offline',
+      StaffAvailability.onBreak => 'On break',
+      StaffAvailability.busy => 'Busy',
+      StaffAvailability.available => 'Available',
+    };
+    final color = switch (availability) {
+      StaffAvailability.offline => _muted,
+      StaffAvailability.onBreak => const Color(0xFF9A5B00),
+      StaffAvailability.busy => _orange,
+      StaffAvailability.available => _green,
+    };
     return _pill(label, color);
   }
 

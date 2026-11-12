@@ -28,7 +28,10 @@ import '../services/app_logger.dart';
 
 const double _kSnapFull = 0.75;
 const double _kBaseChromeHeight = 320.0;
-const Color _primaryBlue = Color(0xFF2563EB); // Centralized theme color
+const Color _cashierAccent = Color(0xFFC83D08);
+const Color _cashierTint = Color(0xFFFFF1E9);
+const Color _cashierBorder = Color(0xFFE3DED7);
+const Color _cashierInk = Color(0xFF211F1D);
 
 class _CompletedPayment {
   const _CompletedPayment({
@@ -230,7 +233,7 @@ class _PosCartPageState extends State<PosCartPage>
           content: Text(
             'Cannot add more of ${item.name}. Stock limit reached.',
           ),
-          backgroundColor: _primaryBlue,
+          backgroundColor: _cashierAccent,
         ),
       );
       return false;
@@ -252,7 +255,7 @@ class _PosCartPageState extends State<PosCartPage>
             content: Text(
               'Cannot set quantity to $qty. Only ${item.quantity} in stock.',
             ),
-            backgroundColor: _primaryBlue,
+            backgroundColor: _cashierAccent,
           ),
         );
         qty = item.quantity;
@@ -845,7 +848,7 @@ class _PosCartPageState extends State<PosCartPage>
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF0F172A),
+                            color: _cashierInk,
                           ),
                         ),
                         IconButton(
@@ -987,7 +990,7 @@ class _PosCartPageState extends State<PosCartPage>
                         prefixText: isPercent ? null : "₱ ",
                         suffixText: isPercent ? "%" : null,
                         prefixStyle: const TextStyle(
-                          color: _primaryBlue,
+                          color: _cashierAccent,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
@@ -1005,7 +1008,7 @@ class _PosCartPageState extends State<PosCartPage>
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: _primaryBlue),
+                          borderSide: const BorderSide(color: _cashierAccent),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -1043,7 +1046,7 @@ class _PosCartPageState extends State<PosCartPage>
                       height: 48,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryBlue,
+                          backgroundColor: _cashierAccent,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -1122,9 +1125,9 @@ class _PosCartPageState extends State<PosCartPage>
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
-                    color: isSelected ? Colors.blue.shade50 : Colors.white,
+                    color: isSelected ? _cashierTint : Colors.white,
                     border: Border.all(
-                      color: isSelected ? _primaryBlue : Colors.grey.shade300,
+                      color: isSelected ? _cashierAccent : Colors.grey.shade300,
                     ),
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1132,7 +1135,7 @@ class _PosCartPageState extends State<PosCartPage>
                     children: [
                       Icon(
                         icon,
-                        color: isSelected ? _primaryBlue : Colors.grey.shade400,
+                        color: isSelected ? _cashierAccent : Colors.grey.shade400,
                         size: 20,
                       ),
                       const SizedBox(height: 4),
@@ -1140,7 +1143,7 @@ class _PosCartPageState extends State<PosCartPage>
                         title,
                         style: TextStyle(
                           color: isSelected
-                              ? _primaryBlue
+                              ? _cashierAccent
                               : Colors.grey.shade600,
                           fontSize: 12,
                           fontWeight: isSelected
@@ -1273,7 +1276,7 @@ class _PosCartPageState extends State<PosCartPage>
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF0F172A),
+                          color: _cashierInk,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -1444,7 +1447,7 @@ class _PosCartPageState extends State<PosCartPage>
                                     borderSide: BorderSide(
                                       color: hasError
                                           ? Colors.red
-                                          : _primaryBlue,
+                                          : _cashierAccent,
                                       width: 2,
                                     ),
                                   ),
@@ -1521,9 +1524,9 @@ class _PosCartPageState extends State<PosCartPage>
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
+                            color: _cashierTint,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.blue.shade100),
+                            border: Border.all(color: const Color(0xFFF2D4C4)),
                           ),
                           child: Column(
                             children: [
@@ -1532,7 +1535,7 @@ class _PosCartPageState extends State<PosCartPage>
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.bold,
-                                  color: _primaryBlue,
+                                  color: _cashierAccent,
                                 ),
                               ),
                               const SizedBox(height: 12),
@@ -1574,7 +1577,7 @@ class _PosCartPageState extends State<PosCartPage>
                                 "Please wait for the customer to confirm transfer.",
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: _primaryBlue,
+                                  color: _cashierAccent,
                                 ),
                               ),
                               const SizedBox(height: 16),
@@ -1585,7 +1588,7 @@ class _PosCartPageState extends State<PosCartPage>
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: _primaryBlue,
+                                    color: _cashierAccent,
                                   ),
                                 ),
                               ),
@@ -1619,7 +1622,7 @@ class _PosCartPageState extends State<PosCartPage>
                                   prefixIcon: const Icon(
                                     LucideIcons.hash,
                                     size: 16,
-                                    color: _primaryBlue,
+                                    color: _cashierAccent,
                                   ),
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 12,
@@ -1628,19 +1631,19 @@ class _PosCartPageState extends State<PosCartPage>
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
                                     borderSide: BorderSide(
-                                      color: Colors.blue.shade200,
+                                      color: const Color(0xFFE6B7A2),
                                     ),
                                   ),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
                                     borderSide: BorderSide(
-                                      color: Colors.blue.shade200,
+                                      color: const Color(0xFFE6B7A2),
                                     ),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
                                     borderSide: const BorderSide(
-                                      color: _primaryBlue,
+                                      color: _cashierAccent,
                                       width: 2,
                                     ),
                                   ),
@@ -2243,7 +2246,7 @@ class _PosCartPageState extends State<PosCartPage>
   //                         ),
   //                       ),
   //                       style: ElevatedButton.styleFrom(
-  //                         backgroundColor: const Color(0xFF0F172A),
+  //                         backgroundColor: _cashierInk,
   //                         shape: RoundedRectangleBorder(
   //                           borderRadius: BorderRadius.circular(8),
   //                         ),
@@ -2582,7 +2585,7 @@ class _PosCartPageState extends State<PosCartPage>
           child: Container(
             width: 550, // Wider for the booklet look
             decoration: BoxDecoration(
-              color: const Color(0xFFFDFBF7), // Slight off-white paper color
+              color: const Color(0xFFF7F6F4), // Slight off-white paper color
               borderRadius: BorderRadius.circular(4),
               boxShadow: const [
                 BoxShadow(
@@ -3009,7 +3012,7 @@ class _PosCartPageState extends State<PosCartPage>
                 height: 48,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryBlue,
+                    backgroundColor: _cashierAccent,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -3062,7 +3065,7 @@ class _PosCartPageState extends State<PosCartPage>
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF0F172A),
+                          color: _cashierInk,
                         ),
                       ),
                       Container(
@@ -3091,7 +3094,7 @@ class _PosCartPageState extends State<PosCartPage>
                     builder: (context, snapshot) {
                       if (!snapshot.hasData) {
                         return const Center(
-                          child: CircularProgressIndicator(color: _primaryBlue),
+                          child: CircularProgressIndicator(color: _cashierAccent),
                         );
                       }
                       final pendingOrders = snapshot.data!
@@ -3154,10 +3157,10 @@ class _PosCartPageState extends State<PosCartPage>
                           final isReady = o.status == 'prepared';
                           final mainColor = isReady
                               ? Colors.green
-                              : _primaryBlue;
+                              : _cashierAccent;
                           final bgColor = isReady
                               ? Colors.green.shade50
-                              : Colors.blue.shade50;
+                              : _cashierTint;
                           final iconData = isReady
                               ? LucideIcons.check
                               : LucideIcons.clock;
@@ -3216,7 +3219,7 @@ class _PosCartPageState extends State<PosCartPage>
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 14,
-                                            color: Color(0xFF0F172A),
+                                            color: _cashierInk,
                                           ),
                                         ),
                                         subtitle: Text(
@@ -3286,7 +3289,7 @@ class _PosCartPageState extends State<PosCartPage>
                                                     'Qty: ${item.quantity.truncateToDouble() == item.quantity ? item.quantity.toInt() : item.quantity}',
                                                     style: const TextStyle(
                                                       fontSize: 13,
-                                                      color: Color(0xFF0F172A),
+                                                      color: _cashierInk,
                                                     ),
                                                   ),
                                                 ],
@@ -3447,7 +3450,7 @@ class _PosCartPageState extends State<PosCartPage>
 
   Widget _buildPosView(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFDFBF7),
+      backgroundColor: const Color(0xFFF7F6F4),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final isDesktop = constraints.maxWidth >= 800;
@@ -3457,7 +3460,7 @@ class _PosCartPageState extends State<PosCartPage>
             return Row(
               children: [
                 Expanded(flex: 2, child: _buildItemList()),
-                const VerticalDivider(width: 1, color: Colors.grey),
+                const VerticalDivider(width: 1, color: _cashierBorder),
                 Expanded(flex: 1, child: _buildCartPanel()),
               ],
             );
@@ -3532,12 +3535,12 @@ class _PosCartPageState extends State<PosCartPage>
     int? badgeCount,
     bool emphasized = false,
   }) {
-    final foregroundColor = emphasized ? Colors.white : _primaryBlue;
-    final backgroundColor = emphasized ? _primaryBlue : const Color(0xFFEFF6FF);
+    final foregroundColor = emphasized ? Colors.white : _cashierAccent;
+    final backgroundColor = emphasized ? _cashierAccent : _cashierTint;
 
     final borderColor = emphasized
-        ? _primaryBlue
-        : _primaryBlue.withOpacity(0.28);
+        ? _cashierAccent
+        : _cashierAccent.withOpacity(0.28);
 
     return SizedBox(
       height: 48,
@@ -3580,7 +3583,7 @@ class _PosCartPageState extends State<PosCartPage>
                       horizontal: badgeCount > 9 ? 7 : 0,
                     ),
                     decoration: BoxDecoration(
-                      color: emphasized ? Colors.white : _primaryBlue,
+                      color: emphasized ? Colors.white : _cashierAccent,
                       shape: badgeCount < 10
                           ? BoxShape.circle
                           : BoxShape.rectangle,
@@ -3593,7 +3596,7 @@ class _PosCartPageState extends State<PosCartPage>
                       badgeCount > 99 ? '99+' : '$badgeCount',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: emphasized ? _primaryBlue : Colors.white,
+                        color: emphasized ? _cashierAccent : Colors.white,
                         fontSize: 11,
                         height: 1,
                         fontWeight: FontWeight.w900,
@@ -3614,7 +3617,7 @@ class _PosCartPageState extends State<PosCartPage>
       height: 48,
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _cashierBorder),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -3631,7 +3634,7 @@ class _PosCartPageState extends State<PosCartPage>
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: !_isGridView!
-                    ? const Color(0xFFF1F5F9)
+                    ? _cashierTint
                     : Colors.transparent,
                 borderRadius: const BorderRadius.horizontal(
                   left: Radius.circular(10),
@@ -3640,11 +3643,11 @@ class _PosCartPageState extends State<PosCartPage>
               child: Icon(
                 LucideIcons.list,
                 size: 18,
-                color: !_isGridView! ? _primaryBlue : Colors.grey.shade500,
+                color: !_isGridView! ? _cashierAccent : Colors.grey.shade500,
               ),
             ),
           ),
-          Container(width: 1, height: 24, color: const Color(0xFFE2E8F0)),
+          Container(width: 1, height: 24, color: _cashierBorder),
           InkWell(
             onTap: () => setState(() => _isGridView = true),
             borderRadius: const BorderRadius.horizontal(
@@ -3656,7 +3659,7 @@ class _PosCartPageState extends State<PosCartPage>
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: _isGridView!
-                    ? const Color(0xFFF1F5F9)
+                    ? _cashierTint
                     : Colors.transparent,
                 borderRadius: const BorderRadius.horizontal(
                   right: Radius.circular(10),
@@ -3665,7 +3668,7 @@ class _PosCartPageState extends State<PosCartPage>
               child: Icon(
                 LucideIcons.layoutGrid,
                 size: 18,
-                color: _isGridView! ? _primaryBlue : Colors.grey.shade500,
+                color: _isGridView! ? _cashierAccent : Colors.grey.shade500,
               ),
             ),
           ),
@@ -3707,16 +3710,16 @@ class _PosCartPageState extends State<PosCartPage>
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      borderSide: const BorderSide(color: _cashierBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      borderSide: const BorderSide(color: _cashierBorder),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(
-                        color: _primaryBlue,
+                        color: _cashierAccent,
                         width: 1.5,
                       ),
                     ),
@@ -3860,10 +3863,10 @@ class _PosCartPageState extends State<PosCartPage>
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
-                      color: isSelected ? _primaryBlue : Colors.white,
+                      color: isSelected ? _cashierAccent : Colors.white,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: isSelected ? _primaryBlue : Colors.grey.shade300,
+                        color: isSelected ? _cashierAccent : Colors.grey.shade300,
                       ),
                     ),
                     child: Center(
@@ -3939,7 +3942,7 @@ class _PosCartPageState extends State<PosCartPage>
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w700,
                                         fontSize: 14,
-                                        color: Color(0xFF0F172A),
+                                        color: _cashierInk,
                                       ),
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
@@ -3971,7 +3974,7 @@ class _PosCartPageState extends State<PosCartPage>
                                         Text(
                                           "₱${item.price.toStringAsFixed(2)}",
                                           style: const TextStyle(
-                                            color: _primaryBlue,
+                                            color: _cashierAccent,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,
                                             fontFamily: 'Hellix',
@@ -3985,7 +3988,7 @@ class _PosCartPageState extends State<PosCartPage>
                                             padding: const EdgeInsets.all(6),
                                             decoration: BoxDecoration(
                                               color: availableStock > 0
-                                                  ? _primaryBlue
+                                                  ? _cashierAccent
                                                   : Colors.grey.shade300,
                                               borderRadius:
                                                   BorderRadius.circular(8),
@@ -4048,7 +4051,7 @@ class _PosCartPageState extends State<PosCartPage>
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 15,
-                                      color: Color(0xFF0F172A),
+                                      color: _cashierInk,
                                     ),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
@@ -4087,7 +4090,7 @@ class _PosCartPageState extends State<PosCartPage>
                                 Text(
                                   "₱${item.price.toStringAsFixed(2)}",
                                   style: const TextStyle(
-                                    color: _primaryBlue,
+                                    color: _cashierAccent,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 18,
                                     fontFamily: 'Hellix',
@@ -4102,7 +4105,7 @@ class _PosCartPageState extends State<PosCartPage>
                                     padding: const EdgeInsets.all(8),
                                     decoration: BoxDecoration(
                                       color: availableStock > 0
-                                          ? _primaryBlue
+                                          ? _cashierAccent
                                           : Colors.grey.shade300,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
@@ -4151,7 +4154,7 @@ class _PosCartPageState extends State<PosCartPage>
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              color: _primaryBlue,
+              color: _cashierAccent,
               width: double.infinity,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -4307,7 +4310,7 @@ class _PosCartPageState extends State<PosCartPage>
                                                       fontWeight:
                                                           FontWeight.bold,
                                                       fontSize: 14,
-                                                      color: Color(0xFF0F172A),
+                                                      color: _cashierInk,
                                                     ),
                                                   ),
                                                   if (isFractional)
@@ -4319,7 +4322,7 @@ class _PosCartPageState extends State<PosCartPage>
                                                           ),
                                                       decoration: BoxDecoration(
                                                         color:
-                                                            Colors.blue.shade50,
+                                                            _cashierTint,
                                                         borderRadius:
                                                             BorderRadius.circular(
                                                               4,
@@ -4331,7 +4334,7 @@ class _PosCartPageState extends State<PosCartPage>
                                                           fontSize: 9,
                                                           fontWeight:
                                                               FontWeight.bold,
-                                                          color: _primaryBlue,
+                                                          color: _cashierAccent,
                                                         ),
                                                       ),
                                                     ),
@@ -4341,7 +4344,7 @@ class _PosCartPageState extends State<PosCartPage>
                                             Text(
                                               "₱${(item.price * qty).toStringAsFixed(2)}",
                                               style: const TextStyle(
-                                                color: _primaryBlue,
+                                                color: _cashierAccent,
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 14,
                                                 fontFamily: 'Hellix',
@@ -4428,9 +4431,9 @@ class _PosCartPageState extends State<PosCartPage>
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
+                        color: _cashierTint,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue.shade100),
+                        border: Border.all(color: const Color(0xFFF2D4C4)),
                       ),
                       child: Row(
                         children: [
@@ -4443,7 +4446,7 @@ class _PosCartPageState extends State<PosCartPage>
                                       ? "${_discountValue.toStringAsFixed(_discountValue.truncateToDouble() == _discountValue ? 0 : 2)}% ${_discountReason.isEmpty ? 'Discount' : _discountReason}"
                                       : "₱${_discountValue.toStringAsFixed(_discountValue.truncateToDouble() == _discountValue ? 0 : 2)} ${_discountReason.isEmpty ? 'Discount' : _discountReason}",
                                   style: const TextStyle(
-                                    color: _primaryBlue,
+                                    color: _cashierAccent,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
                                   ),
@@ -4462,7 +4465,7 @@ class _PosCartPageState extends State<PosCartPage>
                           Text(
                             "-₱${discountAmt.toStringAsFixed(2)}",
                             style: const TextStyle(
-                              color: _primaryBlue,
+                              color: _cashierAccent,
                               fontWeight: FontWeight.bold,
                               fontSize: 14,
                               fontFamily: 'Hellix',
@@ -4482,12 +4485,12 @@ class _PosCartPageState extends State<PosCartPage>
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.blue.shade100),
+                                border: Border.all(color: const Color(0xFFF2D4C4)),
                               ),
                               child: const Icon(
                                 LucideIcons.x,
                                 size: 14,
-                                color: _primaryBlue,
+                                color: _cashierAccent,
                               ),
                             ),
                           ),
@@ -4572,7 +4575,7 @@ class _PosCartPageState extends State<PosCartPage>
                         const Text(
                           "Discount",
                           style: TextStyle(
-                            color: _primaryBlue,
+                            color: _cashierAccent,
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
@@ -4580,7 +4583,7 @@ class _PosCartPageState extends State<PosCartPage>
                         Text(
                           "-₱${discountAmt.toStringAsFixed(2)}",
                           style: const TextStyle(
-                            color: _primaryBlue,
+                            color: _cashierAccent,
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
                             fontFamily: 'Hellix',
@@ -4605,7 +4608,7 @@ class _PosCartPageState extends State<PosCartPage>
                       Text(
                         "₱${totalDue.toStringAsFixed(2)}",
                         style: const TextStyle(
-                          color: _primaryBlue,
+                          color: _cashierAccent,
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
                           fontFamily: 'Hellix',
@@ -4654,7 +4657,7 @@ class _PosCartPageState extends State<PosCartPage>
                               size: 20,
                             ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryBlue,
+                        backgroundColor: _cashierAccent,
                         disabledBackgroundColor: Colors.grey.shade300,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
