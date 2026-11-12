@@ -1,7 +1,9 @@
 enum MainSection {
   dashboard('dashboard', <String>{'admin'}),
   ordersActivity('orders-activity', <String>{'admin'}),
+  analytics('analytics', <String>{'admin'}),
   forecasting('forecasting', <String>{'admin'}),
+  classificationTest('classification-test', <String>{'admin'}),
   pos('pos', <String>{'admin', 'staff', 'cashier'}),
   cashierRequests('requests', <String>{'staff', 'cashier'}),
   queue('queue', <String>{'admin', 'helper'}),
@@ -18,7 +20,10 @@ enum MainSection {
   final String slug;
   final Set<String> allowedRoles;
 
-  String get routePath => '/main/$slug';
+  String get routePath => switch (this) {
+    classificationTest => '/classification_test',
+    _ => '/main/$slug',
+  };
 
   bool allowsRole(String role) => allowedRoles.contains(role.toLowerCase());
 
@@ -29,6 +34,7 @@ enum MainSection {
     final queryIndex = normalized.indexOf('?');
     if (queryIndex >= 0) normalized = normalized.substring(0, queryIndex);
     normalized = normalized.replaceAll(RegExp(r'/+$'), '');
+    if (normalized == '/classification_test') return classificationTest;
     if (!normalized.startsWith('/main/')) return null;
     final slug = normalized.substring('/main/'.length);
     for (final section in MainSection.values) {
@@ -43,7 +49,9 @@ enum MainSection {
         return const <MainSection>[
           dashboard,
           ordersActivity,
+          analytics,
           forecasting,
+          classificationTest,
           pos,
           queue,
           inventory,

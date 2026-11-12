@@ -1,0 +1,4680 @@
+{
+  "actual_model_counts": {
+    "existing_lightgbm": {
+      "lightgbm": 432
+    },
+    "matched_nonseasonal_ablation": {
+      "product_specific_nonseasonal_ablation_experimental": 432
+    },
+    "mean28": {
+      "mean28": 432
+    },
+    "product_specific_seasonal_lightgbm": {
+      "product_specific_seasonal_lightgbm_experimental": 432
+    }
+  },
+  "database_verification": {
+    "actual_rows": 35064,
+    "database_verified": true,
+    "expected_rows": 35064,
+    "metadata_mismatches": 0,
+    "missing_product_date_rows": 0,
+    "quantity_mismatches": 0,
+    "sample_metadata_mismatches": [],
+    "sample_missing_product_dates": [],
+    "sample_quantity_mismatches": [],
+    "sample_unexpected_product_dates": [],
+    "source_path": "C:\\inventory_plus_capstone_v2\\Inventory_Plus_Capstone_v2\\database\\stage26_live_history.csv",
+    "source_sha256": "8b75a4c30b41ed9cbb9ce34adecbe9960f5d19431e07cc8701e0a26af13bc4c1",
+    "status": "PASS",
+    "unexpected_product_date_rows": 0
+  },
+  "decision": "PASS",
+  "evaluation_contract": {
+    "evaluation_source": "verified_live_export",
+    "history_end": "2026-11-09",
+    "history_start": "2022-11-10",
+    "history_window_days": 1095,
+    "horizons_days": [
+      7,
+      28
+    ],
+    "leakage_controls": [
+      "every training dataset ends exactly at its forecast origin",
+      "no training observation may be later than the origin",
+      "every target date is strictly later than the origin",
+      "actual target quantities are joined only after forecasts are frozen",
+      "all models use identical origins, targets and maximum history",
+      "season and transition features are deterministic future-known calendar context",
+      "simulation amplitudes, random streams and future quantities are not model inputs",
+      "Stage 2.3 hyperparameters and 1095-day window are frozen without Stage 2.6 retuning"
+    ],
+    "manifest_sha256": "f6f5d9773384ea5a468ccdd3d61e0a09800e980a75ee3d711bdc59e3f4b5dc72",
+    "manifest_version": "expanded-ph-seasonal-simulation-v1",
+    "models": [
+      "mean28",
+      "existing_lightgbm",
+      "matched_nonseasonal_ablation",
+      "product_specific_seasonal_lightgbm"
+    ],
+    "original_products_in_metrics": 0,
+    "original_products_preserved_separately": true,
+    "origins": [
+      "2025-11-09",
+      "2025-12-07",
+      "2026-01-04",
+      "2026-02-01",
+      "2026-02-15",
+      "2026-03-01",
+      "2026-03-29",
+      "2026-04-15",
+      "2026-04-26",
+      "2026-04-30",
+      "2026-05-15",
+      "2026-05-24",
+      "2026-06-21",
+      "2026-07-19",
+      "2026-08-16",
+      "2026-09-13",
+      "2026-10-11",
+      "2026-10-12"
+    ],
+    "products": 24
+  },
+  "frozen_dataset_verification": {
+    "actual_products": 24,
+    "actual_rows": 35064,
+    "expected_products": 24,
+    "expected_rows": 35064,
+    "generator_quantity_mismatches": 0,
+    "history_end": "2026-11-09",
+    "history_start": "2022-11-10",
+    "metadata_mismatches": 0,
+    "missing_product_date_rows": 0,
+    "positive_demand_rows": 26606,
+    "sample_mismatches": [],
+    "sample_missing_product_dates": [],
+    "sample_unexpected_product_dates": [],
+    "source_path": "C:\\inventory_plus_capstone_v2\\Inventory_Plus_Capstone_v2\\forecasting_backend\\simulation_reports\\expanded_seasonal_daily_demand.csv",
+    "source_sha256": "7dcc1e61a4a5e727c876a657ccf516d4d4df4564348b3261cfac0afabd23ee1d",
+    "status": "PASS",
+    "unexpected_product_date_rows": 0,
+    "zero_demand_rows": 8458
+  },
+  "historical_replay": {
+    "interpretation": "Each next forecast is refit with seven newly revealed sales days. No previous error is subtracted and no residual calibration exists.",
+    "largest_observed_overprediction": {
+      "absolute_error": 10.9042456981,
+      "absolute_error_change_from_previous_period": -5.5823663321,
+      "actual_total": 115.0,
+      "demand_pattern": "summer",
+      "explicit_error_correction_applied": false,
+      "forecast_change_from_previous_period": 6.3908577283,
+      "forecast_end": "2026-05-19",
+      "forecast_start": "2026-05-13",
+      "forecast_total": 125.9042456981,
+      "origin": "2026-05-12",
+      "period": 7,
+      "product_name": "Concrete Hollow Blocks 4-inch",
+      "seasonal_group": "SUMMER",
+      "signed_error_predicted_minus_actual": 10.9042456981,
+      "sku": "SIM-SUM-001",
+      "training_end": "2026-05-12"
+    },
+    "period_to_period_absolute_error_improved": 16,
+    "period_to_period_absolute_error_worsened": 19,
+    "periods_per_product": 10,
+    "representative_skus": [
+      "SIM-SUM-001",
+      "SIM-RAIN-006",
+      "SIM-NEU-002",
+      "SIM-RAIN-007"
+    ],
+    "rows": [
+      {
+        "absolute_error": 5.7055715756,
+        "absolute_error_change_from_previous_period": null,
+        "actual_total": 108.0,
+        "demand_pattern": "summer",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": null,
+        "forecast_end": "2026-04-07",
+        "forecast_start": "2026-04-01",
+        "forecast_total": 113.7055715756,
+        "origin": "2026-03-31",
+        "period": 1,
+        "product_name": "Concrete Hollow Blocks 4-inch",
+        "seasonal_group": "SUMMER",
+        "signed_error_predicted_minus_actual": 5.7055715756,
+        "sku": "SIM-SUM-001",
+        "training_end": "2026-03-31"
+      },
+      {
+        "absolute_error": 10.4762890841,
+        "absolute_error_change_from_previous_period": 4.7707175085,
+        "actual_total": 123.0,
+        "demand_pattern": "summer",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -1.1818606597,
+        "forecast_end": "2026-04-14",
+        "forecast_start": "2026-04-08",
+        "forecast_total": 112.5237109159,
+        "origin": "2026-04-07",
+        "period": 2,
+        "product_name": "Concrete Hollow Blocks 4-inch",
+        "seasonal_group": "SUMMER",
+        "signed_error_predicted_minus_actual": -10.4762890841,
+        "sku": "SIM-SUM-001",
+        "training_end": "2026-04-07"
+      },
+      {
+        "absolute_error": 11.2631126965,
+        "absolute_error_change_from_previous_period": 0.7868236124,
+        "actual_total": 125.0,
+        "demand_pattern": "summer",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 1.2131763876,
+        "forecast_end": "2026-04-21",
+        "forecast_start": "2026-04-15",
+        "forecast_total": 113.7368873035,
+        "origin": "2026-04-14",
+        "period": 3,
+        "product_name": "Concrete Hollow Blocks 4-inch",
+        "seasonal_group": "SUMMER",
+        "signed_error_predicted_minus_actual": -11.2631126965,
+        "sku": "SIM-SUM-001",
+        "training_end": "2026-04-14"
+      },
+      {
+        "absolute_error": 9.3944832931,
+        "absolute_error_change_from_previous_period": -1.8686294034,
+        "actual_total": 125.0,
+        "demand_pattern": "summer",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 1.8686294034,
+        "forecast_end": "2026-04-28",
+        "forecast_start": "2026-04-22",
+        "forecast_total": 115.6055167069,
+        "origin": "2026-04-21",
+        "period": 4,
+        "product_name": "Concrete Hollow Blocks 4-inch",
+        "seasonal_group": "SUMMER",
+        "signed_error_predicted_minus_actual": -9.3944832931,
+        "sku": "SIM-SUM-001",
+        "training_end": "2026-04-21"
+      },
+      {
+        "absolute_error": 2.0207613325,
+        "absolute_error_change_from_previous_period": -7.3737219606,
+        "actual_total": 118.0,
+        "demand_pattern": "summer",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 4.4152446256,
+        "forecast_end": "2026-05-05",
+        "forecast_start": "2026-04-29",
+        "forecast_total": 120.0207613325,
+        "origin": "2026-04-28",
+        "period": 5,
+        "product_name": "Concrete Hollow Blocks 4-inch",
+        "seasonal_group": "SUMMER",
+        "signed_error_predicted_minus_actual": 2.0207613325,
+        "sku": "SIM-SUM-001",
+        "training_end": "2026-04-28"
+      },
+      {
+        "absolute_error": 16.4866120302,
+        "absolute_error_change_from_previous_period": 14.4658506977,
+        "actual_total": 136.0,
+        "demand_pattern": "summer",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -0.5073733627,
+        "forecast_end": "2026-05-12",
+        "forecast_start": "2026-05-06",
+        "forecast_total": 119.5133879698,
+        "origin": "2026-05-05",
+        "period": 6,
+        "product_name": "Concrete Hollow Blocks 4-inch",
+        "seasonal_group": "SUMMER",
+        "signed_error_predicted_minus_actual": -16.4866120302,
+        "sku": "SIM-SUM-001",
+        "training_end": "2026-05-05"
+      },
+      {
+        "absolute_error": 10.9042456981,
+        "absolute_error_change_from_previous_period": -5.5823663321,
+        "actual_total": 115.0,
+        "demand_pattern": "summer",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 6.3908577283,
+        "forecast_end": "2026-05-19",
+        "forecast_start": "2026-05-13",
+        "forecast_total": 125.9042456981,
+        "origin": "2026-05-12",
+        "period": 7,
+        "product_name": "Concrete Hollow Blocks 4-inch",
+        "seasonal_group": "SUMMER",
+        "signed_error_predicted_minus_actual": 10.9042456981,
+        "sku": "SIM-SUM-001",
+        "training_end": "2026-05-12"
+      },
+      {
+        "absolute_error": 2.8089264583,
+        "absolute_error_change_from_previous_period": -8.0953192398,
+        "actual_total": 117.0,
+        "demand_pattern": "summer",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -11.7131721564,
+        "forecast_end": "2026-05-26",
+        "forecast_start": "2026-05-20",
+        "forecast_total": 114.1910735417,
+        "origin": "2026-05-19",
+        "period": 8,
+        "product_name": "Concrete Hollow Blocks 4-inch",
+        "seasonal_group": "SUMMER",
+        "signed_error_predicted_minus_actual": -2.8089264583,
+        "sku": "SIM-SUM-001",
+        "training_end": "2026-05-19"
+      },
+      {
+        "absolute_error": 0.4350104814,
+        "absolute_error_change_from_previous_period": -2.3739159769,
+        "actual_total": 115.0,
+        "demand_pattern": "summer",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 1.2439369397,
+        "forecast_end": "2026-06-02",
+        "forecast_start": "2026-05-27",
+        "forecast_total": 115.4350104814,
+        "origin": "2026-05-26",
+        "period": 9,
+        "product_name": "Concrete Hollow Blocks 4-inch",
+        "seasonal_group": "SUMMER",
+        "signed_error_predicted_minus_actual": 0.4350104814,
+        "sku": "SIM-SUM-001",
+        "training_end": "2026-05-26"
+      },
+      {
+        "absolute_error": 8.8510392554,
+        "absolute_error_change_from_previous_period": 8.416028774,
+        "actual_total": 105.0,
+        "demand_pattern": "summer",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -1.583971226,
+        "forecast_end": "2026-06-09",
+        "forecast_start": "2026-06-03",
+        "forecast_total": 113.8510392554,
+        "origin": "2026-06-02",
+        "period": 10,
+        "product_name": "Concrete Hollow Blocks 4-inch",
+        "seasonal_group": "SUMMER",
+        "signed_error_predicted_minus_actual": 8.8510392554,
+        "sku": "SIM-SUM-001",
+        "training_end": "2026-06-02"
+      },
+      {
+        "absolute_error": 0.51187452071,
+        "absolute_error_change_from_previous_period": null,
+        "actual_total": 20.0,
+        "demand_pattern": "rainy",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": null,
+        "forecast_end": "2026-04-07",
+        "forecast_start": "2026-04-01",
+        "forecast_total": 20.51187452071,
+        "origin": "2026-03-31",
+        "period": 1,
+        "product_name": "Heavy-Duty Tarpaulin 4x6m",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 0.51187452071,
+        "sku": "SIM-RAIN-006",
+        "training_end": "2026-03-31"
+      },
+      {
+        "absolute_error": 3.21732211729,
+        "absolute_error_change_from_previous_period": 2.70544759658,
+        "actual_total": 18.0,
+        "demand_pattern": "rainy",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.70544759658,
+        "forecast_end": "2026-04-14",
+        "forecast_start": "2026-04-08",
+        "forecast_total": 21.21732211729,
+        "origin": "2026-04-07",
+        "period": 2,
+        "product_name": "Heavy-Duty Tarpaulin 4x6m",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 3.21732211729,
+        "sku": "SIM-RAIN-006",
+        "training_end": "2026-04-07"
+      },
+      {
+        "absolute_error": 1.93243390962,
+        "absolute_error_change_from_previous_period": -1.28488820767,
+        "actual_total": 19.0,
+        "demand_pattern": "rainy",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -0.28488820767,
+        "forecast_end": "2026-04-21",
+        "forecast_start": "2026-04-15",
+        "forecast_total": 20.93243390962,
+        "origin": "2026-04-14",
+        "period": 3,
+        "product_name": "Heavy-Duty Tarpaulin 4x6m",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 1.93243390962,
+        "sku": "SIM-RAIN-006",
+        "training_end": "2026-04-14"
+      },
+      {
+        "absolute_error": 0.40622931572,
+        "absolute_error_change_from_previous_period": -1.5262045939,
+        "actual_total": 20.0,
+        "demand_pattern": "rainy",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -0.5262045939,
+        "forecast_end": "2026-04-28",
+        "forecast_start": "2026-04-22",
+        "forecast_total": 20.40622931572,
+        "origin": "2026-04-21",
+        "period": 4,
+        "product_name": "Heavy-Duty Tarpaulin 4x6m",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 0.40622931572,
+        "sku": "SIM-RAIN-006",
+        "training_end": "2026-04-21"
+      },
+      {
+        "absolute_error": 0.89330006067,
+        "absolute_error_change_from_previous_period": 0.48707074495,
+        "actual_total": 21.0,
+        "demand_pattern": "rainy",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 1.48707074495,
+        "forecast_end": "2026-05-05",
+        "forecast_start": "2026-04-29",
+        "forecast_total": 21.89330006067,
+        "origin": "2026-04-28",
+        "period": 5,
+        "product_name": "Heavy-Duty Tarpaulin 4x6m",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 0.89330006067,
+        "sku": "SIM-RAIN-006",
+        "training_end": "2026-04-28"
+      },
+      {
+        "absolute_error": 1.79747652122,
+        "absolute_error_change_from_previous_period": 0.90417646055,
+        "actual_total": 23.0,
+        "demand_pattern": "rainy",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -0.69077658189,
+        "forecast_end": "2026-05-12",
+        "forecast_start": "2026-05-06",
+        "forecast_total": 21.20252347878,
+        "origin": "2026-05-05",
+        "period": 6,
+        "product_name": "Heavy-Duty Tarpaulin 4x6m",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": -1.79747652122,
+        "sku": "SIM-RAIN-006",
+        "training_end": "2026-05-05"
+      },
+      {
+        "absolute_error": 4.01401773788,
+        "absolute_error_change_from_previous_period": 2.21654121666,
+        "actual_total": 21.0,
+        "demand_pattern": "rainy",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 3.8114942591,
+        "forecast_end": "2026-05-19",
+        "forecast_start": "2026-05-13",
+        "forecast_total": 25.01401773788,
+        "origin": "2026-05-12",
+        "period": 7,
+        "product_name": "Heavy-Duty Tarpaulin 4x6m",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 4.01401773788,
+        "sku": "SIM-RAIN-006",
+        "training_end": "2026-05-12"
+      },
+      {
+        "absolute_error": 3.43231416386,
+        "absolute_error_change_from_previous_period": -0.58170357402,
+        "actual_total": 26.0,
+        "demand_pattern": "rainy",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 4.41829642598,
+        "forecast_end": "2026-05-26",
+        "forecast_start": "2026-05-20",
+        "forecast_total": 29.43231416386,
+        "origin": "2026-05-19",
+        "period": 8,
+        "product_name": "Heavy-Duty Tarpaulin 4x6m",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 3.43231416386,
+        "sku": "SIM-RAIN-006",
+        "training_end": "2026-05-19"
+      },
+      {
+        "absolute_error": 1.90681242983,
+        "absolute_error_change_from_previous_period": -1.52550173403,
+        "actual_total": 27.0,
+        "demand_pattern": "rainy",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -0.52550173403,
+        "forecast_end": "2026-06-02",
+        "forecast_start": "2026-05-27",
+        "forecast_total": 28.90681242983,
+        "origin": "2026-05-26",
+        "period": 9,
+        "product_name": "Heavy-Duty Tarpaulin 4x6m",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 1.90681242983,
+        "sku": "SIM-RAIN-006",
+        "training_end": "2026-05-26"
+      },
+      {
+        "absolute_error": 3.28361398264,
+        "absolute_error_change_from_previous_period": 1.37680155281,
+        "actual_total": 25.0,
+        "demand_pattern": "rainy",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -0.62319844719,
+        "forecast_end": "2026-06-09",
+        "forecast_start": "2026-06-03",
+        "forecast_total": 28.28361398264,
+        "origin": "2026-06-02",
+        "period": 10,
+        "product_name": "Heavy-Duty Tarpaulin 4x6m",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 3.28361398264,
+        "sku": "SIM-RAIN-006",
+        "training_end": "2026-06-02"
+      },
+      {
+        "absolute_error": 0.10906005737,
+        "absolute_error_change_from_previous_period": null,
+        "actual_total": 42.0,
+        "demand_pattern": "neutral",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": null,
+        "forecast_end": "2026-04-07",
+        "forecast_start": "2026-04-01",
+        "forecast_total": 42.10906005737,
+        "origin": "2026-03-31",
+        "period": 1,
+        "product_name": "Hex Bolts M8 Box",
+        "seasonal_group": "NEUTRAL",
+        "signed_error_predicted_minus_actual": 0.10906005737,
+        "sku": "SIM-NEU-002",
+        "training_end": "2026-03-31"
+      },
+      {
+        "absolute_error": 1.25762405214,
+        "absolute_error_change_from_previous_period": 1.14856399477,
+        "actual_total": 40.0,
+        "demand_pattern": "neutral",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -0.85143600523,
+        "forecast_end": "2026-04-14",
+        "forecast_start": "2026-04-08",
+        "forecast_total": 41.25762405214,
+        "origin": "2026-04-07",
+        "period": 2,
+        "product_name": "Hex Bolts M8 Box",
+        "seasonal_group": "NEUTRAL",
+        "signed_error_predicted_minus_actual": 1.25762405214,
+        "sku": "SIM-NEU-002",
+        "training_end": "2026-04-07"
+      },
+      {
+        "absolute_error": 5.54622841498,
+        "absolute_error_change_from_previous_period": 4.28860436284,
+        "actual_total": 46.0,
+        "demand_pattern": "neutral",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -0.80385246712,
+        "forecast_end": "2026-04-21",
+        "forecast_start": "2026-04-15",
+        "forecast_total": 40.45377158502,
+        "origin": "2026-04-14",
+        "period": 3,
+        "product_name": "Hex Bolts M8 Box",
+        "seasonal_group": "NEUTRAL",
+        "signed_error_predicted_minus_actual": -5.54622841498,
+        "sku": "SIM-NEU-002",
+        "training_end": "2026-04-14"
+      },
+      {
+        "absolute_error": 5.30783073094,
+        "absolute_error_change_from_previous_period": -0.23839768404,
+        "actual_total": 36.0,
+        "demand_pattern": "neutral",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.85405914592,
+        "forecast_end": "2026-04-28",
+        "forecast_start": "2026-04-22",
+        "forecast_total": 41.30783073094,
+        "origin": "2026-04-21",
+        "period": 4,
+        "product_name": "Hex Bolts M8 Box",
+        "seasonal_group": "NEUTRAL",
+        "signed_error_predicted_minus_actual": 5.30783073094,
+        "sku": "SIM-NEU-002",
+        "training_end": "2026-04-21"
+      },
+      {
+        "absolute_error": 3.54405595895,
+        "absolute_error_change_from_previous_period": -1.76377477199,
+        "actual_total": 34.0,
+        "demand_pattern": "neutral",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -3.76377477199,
+        "forecast_end": "2026-05-05",
+        "forecast_start": "2026-04-29",
+        "forecast_total": 37.54405595895,
+        "origin": "2026-04-28",
+        "period": 5,
+        "product_name": "Hex Bolts M8 Box",
+        "seasonal_group": "NEUTRAL",
+        "signed_error_predicted_minus_actual": 3.54405595895,
+        "sku": "SIM-NEU-002",
+        "training_end": "2026-04-28"
+      },
+      {
+        "absolute_error": 5.83004083038,
+        "absolute_error_change_from_previous_period": 2.28598487143,
+        "actual_total": 46.0,
+        "demand_pattern": "neutral",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 2.62590321067,
+        "forecast_end": "2026-05-12",
+        "forecast_start": "2026-05-06",
+        "forecast_total": 40.16995916962,
+        "origin": "2026-05-05",
+        "period": 6,
+        "product_name": "Hex Bolts M8 Box",
+        "seasonal_group": "NEUTRAL",
+        "signed_error_predicted_minus_actual": -5.83004083038,
+        "sku": "SIM-NEU-002",
+        "training_end": "2026-05-05"
+      },
+      {
+        "absolute_error": 5.53228670497,
+        "absolute_error_change_from_previous_period": -0.29775412541,
+        "actual_total": 46.0,
+        "demand_pattern": "neutral",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.29775412541,
+        "forecast_end": "2026-05-19",
+        "forecast_start": "2026-05-13",
+        "forecast_total": 40.46771329503,
+        "origin": "2026-05-12",
+        "period": 7,
+        "product_name": "Hex Bolts M8 Box",
+        "seasonal_group": "NEUTRAL",
+        "signed_error_predicted_minus_actual": -5.53228670497,
+        "sku": "SIM-NEU-002",
+        "training_end": "2026-05-12"
+      },
+      {
+        "absolute_error": 5.85383998113,
+        "absolute_error_change_from_previous_period": 0.32155327616,
+        "actual_total": 36.0,
+        "demand_pattern": "neutral",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 1.3861266861,
+        "forecast_end": "2026-05-26",
+        "forecast_start": "2026-05-20",
+        "forecast_total": 41.85383998113,
+        "origin": "2026-05-19",
+        "period": 8,
+        "product_name": "Hex Bolts M8 Box",
+        "seasonal_group": "NEUTRAL",
+        "signed_error_predicted_minus_actual": 5.85383998113,
+        "sku": "SIM-NEU-002",
+        "training_end": "2026-05-19"
+      },
+      {
+        "absolute_error": 2.90872109701,
+        "absolute_error_change_from_previous_period": -2.94511888412,
+        "actual_total": 38.0,
+        "demand_pattern": "neutral",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": -0.94511888412,
+        "forecast_end": "2026-06-02",
+        "forecast_start": "2026-05-27",
+        "forecast_total": 40.90872109701,
+        "origin": "2026-05-26",
+        "period": 9,
+        "product_name": "Hex Bolts M8 Box",
+        "seasonal_group": "NEUTRAL",
+        "signed_error_predicted_minus_actual": 2.90872109701,
+        "sku": "SIM-NEU-002",
+        "training_end": "2026-05-26"
+      },
+      {
+        "absolute_error": 6.31763775883,
+        "absolute_error_change_from_previous_period": 3.40891666182,
+        "actual_total": 48.0,
+        "demand_pattern": "neutral",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.77364114416,
+        "forecast_end": "2026-06-09",
+        "forecast_start": "2026-06-03",
+        "forecast_total": 41.68236224117,
+        "origin": "2026-06-02",
+        "period": 10,
+        "product_name": "Hex Bolts M8 Box",
+        "seasonal_group": "NEUTRAL",
+        "signed_error_predicted_minus_actual": -6.31763775883,
+        "sku": "SIM-NEU-002",
+        "training_end": "2026-06-02"
+      },
+      {
+        "absolute_error": 0.0,
+        "absolute_error_change_from_previous_period": null,
+        "actual_total": 0.0,
+        "demand_pattern": "intermittent_low",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": null,
+        "forecast_end": "2026-04-07",
+        "forecast_start": "2026-04-01",
+        "forecast_total": 0.0,
+        "origin": "2026-03-31",
+        "period": 1,
+        "product_name": "Drainage Sump Pump 1HP",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 0.0,
+        "sku": "SIM-RAIN-007",
+        "training_end": "2026-03-31"
+      },
+      {
+        "absolute_error": 1.0,
+        "absolute_error_change_from_previous_period": 1.0,
+        "actual_total": 1.0,
+        "demand_pattern": "intermittent_low",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.0,
+        "forecast_end": "2026-04-14",
+        "forecast_start": "2026-04-08",
+        "forecast_total": 0.0,
+        "origin": "2026-04-07",
+        "period": 2,
+        "product_name": "Drainage Sump Pump 1HP",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": -1.0,
+        "sku": "SIM-RAIN-007",
+        "training_end": "2026-04-07"
+      },
+      {
+        "absolute_error": 2.0,
+        "absolute_error_change_from_previous_period": 1.0,
+        "actual_total": 2.0,
+        "demand_pattern": "intermittent_low",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.0,
+        "forecast_end": "2026-04-21",
+        "forecast_start": "2026-04-15",
+        "forecast_total": 0.0,
+        "origin": "2026-04-14",
+        "period": 3,
+        "product_name": "Drainage Sump Pump 1HP",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": -2.0,
+        "sku": "SIM-RAIN-007",
+        "training_end": "2026-04-14"
+      },
+      {
+        "absolute_error": 1.0,
+        "absolute_error_change_from_previous_period": -1.0,
+        "actual_total": 1.0,
+        "demand_pattern": "intermittent_low",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.0,
+        "forecast_end": "2026-04-28",
+        "forecast_start": "2026-04-22",
+        "forecast_total": 0.0,
+        "origin": "2026-04-21",
+        "period": 4,
+        "product_name": "Drainage Sump Pump 1HP",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": -1.0,
+        "sku": "SIM-RAIN-007",
+        "training_end": "2026-04-21"
+      },
+      {
+        "absolute_error": 0.0,
+        "absolute_error_change_from_previous_period": -1.0,
+        "actual_total": 0.0,
+        "demand_pattern": "intermittent_low",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.0,
+        "forecast_end": "2026-05-05",
+        "forecast_start": "2026-04-29",
+        "forecast_total": 0.0,
+        "origin": "2026-04-28",
+        "period": 5,
+        "product_name": "Drainage Sump Pump 1HP",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": 0.0,
+        "sku": "SIM-RAIN-007",
+        "training_end": "2026-04-28"
+      },
+      {
+        "absolute_error": 1.0,
+        "absolute_error_change_from_previous_period": 1.0,
+        "actual_total": 1.0,
+        "demand_pattern": "intermittent_low",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.0,
+        "forecast_end": "2026-05-12",
+        "forecast_start": "2026-05-06",
+        "forecast_total": 0.0,
+        "origin": "2026-05-05",
+        "period": 6,
+        "product_name": "Drainage Sump Pump 1HP",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": -1.0,
+        "sku": "SIM-RAIN-007",
+        "training_end": "2026-05-05"
+      },
+      {
+        "absolute_error": 2.0,
+        "absolute_error_change_from_previous_period": 1.0,
+        "actual_total": 2.0,
+        "demand_pattern": "intermittent_low",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.0,
+        "forecast_end": "2026-05-19",
+        "forecast_start": "2026-05-13",
+        "forecast_total": 0.0,
+        "origin": "2026-05-12",
+        "period": 7,
+        "product_name": "Drainage Sump Pump 1HP",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": -2.0,
+        "sku": "SIM-RAIN-007",
+        "training_end": "2026-05-12"
+      },
+      {
+        "absolute_error": 1.0,
+        "absolute_error_change_from_previous_period": -1.0,
+        "actual_total": 1.0,
+        "demand_pattern": "intermittent_low",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.0,
+        "forecast_end": "2026-05-26",
+        "forecast_start": "2026-05-20",
+        "forecast_total": 0.0,
+        "origin": "2026-05-19",
+        "period": 8,
+        "product_name": "Drainage Sump Pump 1HP",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": -1.0,
+        "sku": "SIM-RAIN-007",
+        "training_end": "2026-05-19"
+      },
+      {
+        "absolute_error": 1.0,
+        "absolute_error_change_from_previous_period": 0.0,
+        "actual_total": 1.0,
+        "demand_pattern": "intermittent_low",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.0,
+        "forecast_end": "2026-06-02",
+        "forecast_start": "2026-05-27",
+        "forecast_total": 0.0,
+        "origin": "2026-05-26",
+        "period": 9,
+        "product_name": "Drainage Sump Pump 1HP",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": -1.0,
+        "sku": "SIM-RAIN-007",
+        "training_end": "2026-05-26"
+      },
+      {
+        "absolute_error": 2.0,
+        "absolute_error_change_from_previous_period": 1.0,
+        "actual_total": 2.0,
+        "demand_pattern": "intermittent_low",
+        "explicit_error_correction_applied": false,
+        "forecast_change_from_previous_period": 0.0,
+        "forecast_end": "2026-06-09",
+        "forecast_start": "2026-06-03",
+        "forecast_total": 0.0,
+        "origin": "2026-06-02",
+        "period": 10,
+        "product_name": "Drainage Sump Pump 1HP",
+        "seasonal_group": "RAINY",
+        "signed_error_predicted_minus_actual": -2.0,
+        "sku": "SIM-RAIN-007",
+        "training_end": "2026-06-02"
+      }
+    ]
+  },
+  "illustrative_hammer_overprediction": {
+    "absolute_error": 15,
+    "actual_units": 5,
+    "forecast_units": 20,
+    "next_forecast_units": null,
+    "note": "No next forecast is invented. The real replay below retrains only from newly revealed sales and applies no explicit error subtraction.",
+    "product": "Illustrative Claw Hammer",
+    "signed_error_predicted_minus_actual": 15,
+    "status": "constructed_arithmetic_example_not_model_output"
+  },
+  "limitations": [
+    "Synthetic results do not establish real Philippine hardware retail effects.",
+    "Frozen SUMMER/RAINY/NEUTRAL labels are supplied context, not independently discovered labels.",
+    "The candidate relearns from appended sales; explicit residual/error calibration is not implemented.",
+    "A later forecast is not guaranteed to improve after every prior error.",
+    "The live export matched the frozen fixture exactly."
+  ],
+  "metrics": {
+    "28": {
+      "by_compatible_unit": {
+        "existing_lightgbm": {
+          "bag": {
+            "actual_total": 9002.0,
+            "mae": 1.5227667235305689,
+            "observations": 1512,
+            "predicted_total": 8802.97498870332,
+            "signed_bias": -0.022108977038067096,
+            "wape": 0.25576797222597425
+          },
+          "box": {
+            "actual_total": 4970.0,
+            "mae": 1.2632482951201787,
+            "observations": 1008,
+            "predicted_total": 5000.52334338746,
+            "signed_bias": 0.006141517784197183,
+            "wape": 0.2562081049257827
+          },
+          "cu.m.": {
+            "actual_total": 1292.5,
+            "mae": 0.8666886524723646,
+            "observations": 1008,
+            "predicted_total": 1241.8198506978574,
+            "signed_bias": -0.03921094723570019,
+            "wape": 0.6759165661061072
+          },
+          "pail": {
+            "actual_total": 1290.0,
+            "mae": 1.0820555142810833,
+            "observations": 504,
+            "predicted_total": 1293.613692264904,
+            "signed_bias": 0.002801311833258915,
+            "wape": 0.42275657302144654
+          },
+          "pcs": {
+            "actual_total": 17974.0,
+            "mae": 1.0174473599380216,
+            "observations": 5040,
+            "predicted_total": 18049.4784971889,
+            "signed_bias": 0.004199315521803672,
+            "wape": 0.2852973569649287
+          },
+          "roll": {
+            "actual_total": 3369.0,
+            "mae": 1.0085274304898135,
+            "observations": 1512,
+            "predicted_total": 3273.939943721965,
+            "signed_bias": -0.028216104564569605,
+            "wape": 0.45262495544689757
+          },
+          "set": {
+            "actual_total": 237.0,
+            "mae": 0.4979065815618808,
+            "observations": 504,
+            "predicted_total": 42.86436041848896,
+            "signed_bias": -0.8191377197532111,
+            "wape": 1.0588393126885567
+          },
+          "sheet": {
+            "actual_total": 637.0,
+            "mae": 0.9964029426454206,
+            "observations": 504,
+            "predicted_total": 639.396600228328,
+            "signed_bias": 0.0037623237493375197,
+            "wape": 0.7883627678073658
+          },
+          "tube": {
+            "actual_total": 1761.0,
+            "mae": 1.0634921781531745,
+            "observations": 504,
+            "predicted_total": 1751.22020942928,
+            "signed_bias": -0.005553543765315162,
+            "wape": 0.3043725484322544
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "bag": {
+            "actual_total": 9002.0,
+            "mae": 1.5278465446374867,
+            "observations": 1512,
+            "predicted_total": 8768.7176064187,
+            "signed_bias": -0.025914507174105754,
+            "wape": 0.2566211925674161
+          },
+          "box": {
+            "actual_total": 4970.0,
+            "mae": 1.25047802342251,
+            "observations": 1008,
+            "predicted_total": 5010.06733648835,
+            "signed_bias": 0.008061838327635814,
+            "wape": 0.2536180779899175
+          },
+          "cu.m.": {
+            "actual_total": 1292.5,
+            "mae": 0.8594011228624105,
+            "observations": 1008,
+            "predicted_total": 1261.7977141995277,
+            "signed_bias": -0.023754186305974624,
+            "wape": 0.6702331387584602
+          },
+          "pail": {
+            "actual_total": 1290.0,
+            "mae": 1.091618874603869,
+            "observations": 504,
+            "predicted_total": 1280.16934199321,
+            "signed_bias": -0.007620665121542636,
+            "wape": 0.42649295565918605
+          },
+          "pcs": {
+            "actual_total": 17974.0,
+            "mae": 1.013596968596508,
+            "observations": 5040,
+            "predicted_total": 17966.096033844035,
+            "signed_bias": -0.00043974441726753085,
+            "wape": 0.284217687867275
+          },
+          "roll": {
+            "actual_total": 3369.0,
+            "mae": 0.9986408759514377,
+            "observations": 1512,
+            "predicted_total": 3258.402838054072,
+            "signed_bias": -0.03282789015907622,
+            "wape": 0.44818789089895333
+          },
+          "set": {
+            "actual_total": 237.0,
+            "mae": 0.47351543983578936,
+            "observations": 504,
+            "predicted_total": 5.739763017471656,
+            "signed_bias": -0.9757815906435795,
+            "wape": 1.0069695429419319
+          },
+          "sheet": {
+            "actual_total": 637.0,
+            "mae": 0.9968256544691091,
+            "observations": 504,
+            "predicted_total": 621.171883858571,
+            "signed_bias": -0.024847906030500785,
+            "wape": 0.788697221118416
+          },
+          "tube": {
+            "actual_total": 1761.0,
+            "mae": 1.0355311048039881,
+            "observations": 504,
+            "predicted_total": 1698.16061420065,
+            "signed_bias": -0.03568392152149347,
+            "wape": 0.29637006065940374
+          }
+        },
+        "mean28": {
+          "bag": {
+            "actual_total": 9002.0,
+            "mae": 1.5754440665154952,
+            "observations": 1512,
+            "predicted_total": 9041.0,
+            "signed_bias": 0.004332370584314597,
+            "wape": 0.26461579966356685
+          },
+          "box": {
+            "actual_total": 4970.0,
+            "mae": 1.300453514739229,
+            "observations": 1008,
+            "predicted_total": 4910.0,
+            "signed_bias": -0.012072434607645875,
+            "wape": 0.2637539522851394
+          },
+          "cu.m.": {
+            "actual_total": 1292.5,
+            "mae": 0.8533871882086168,
+            "observations": 1008,
+            "predicted_total": 1233.5,
+            "signed_bias": -0.045647969052224374,
+            "wape": 0.6655429676706273
+          },
+          "pail": {
+            "actual_total": 1290.0,
+            "mae": 1.1343537414965987,
+            "observations": 504,
+            "predicted_total": 1271.0,
+            "signed_bias": -0.014728682170542635,
+            "wape": 0.44318936877076415
+          },
+          "pcs": {
+            "actual_total": 17974.0,
+            "mae": 1.0604591836734694,
+            "observations": 5040,
+            "predicted_total": 17909.0,
+            "signed_bias": -0.0036163347056859907,
+            "wape": 0.2973580886677582
+          },
+          "roll": {
+            "actual_total": 3369.0,
+            "mae": 1.0178099017384732,
+            "observations": 1512,
+            "predicted_total": 3326.0,
+            "signed_bias": -0.012763431285247848,
+            "wape": 0.4567909087054234
+          },
+          "set": {
+            "actual_total": 237.0,
+            "mae": 0.596655328798186,
+            "observations": 504,
+            "predicted_total": 225.0,
+            "signed_bias": -0.05063291139240506,
+            "wape": 1.268836648583484
+          },
+          "sheet": {
+            "actual_total": 637.0,
+            "mae": 0.9784580498866213,
+            "observations": 504,
+            "predicted_total": 658.0,
+            "signed_bias": 0.03296703296703297,
+            "wape": 0.7741646108993048
+          },
+          "tube": {
+            "actual_total": 1761.0,
+            "mae": 1.0429421768707483,
+            "observations": 504,
+            "predicted_total": 1705.0,
+            "signed_bias": -0.03180011357183418,
+            "wape": 0.29849111706011194
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "bag": {
+            "actual_total": 9002.0,
+            "mae": 1.5172910600944378,
+            "observations": 1512,
+            "predicted_total": 8790.66717809315,
+            "signed_bias": -0.023476207721267496,
+            "wape": 0.25484826514805486
+          },
+          "box": {
+            "actual_total": 4970.0,
+            "mae": 1.2491569969558431,
+            "observations": 1008,
+            "predicted_total": 4958.96726232049,
+            "signed_bias": -0.0022198667363199196,
+            "wape": 0.2533501514952696
+          },
+          "cu.m.": {
+            "actual_total": 1292.5,
+            "mae": 0.862675079749217,
+            "observations": 1008,
+            "predicted_total": 1254.6670615605726,
+            "signed_bias": -0.029271132254876053,
+            "wape": 0.6727864451738574
+          },
+          "pail": {
+            "actual_total": 1290.0,
+            "mae": 1.0611859709937301,
+            "observations": 504,
+            "predicted_total": 1293.79539563268,
+            "signed_bias": 0.002942167157116279,
+            "wape": 0.4146028909928992
+          },
+          "pcs": {
+            "actual_total": 17974.0,
+            "mae": 1.0088497548074293,
+            "observations": 5040,
+            "predicted_total": 17892.0036805174,
+            "signed_bias": -0.004561940552053021,
+            "wape": 0.28288654524476714
+          },
+          "roll": {
+            "actual_total": 3369.0,
+            "mae": 1.009891393542538,
+            "observations": 1512,
+            "predicted_total": 3181.4190651617555,
+            "signed_bias": -0.05567852028442992,
+            "wape": 0.4532370991499904
+          },
+          "set": {
+            "actual_total": 237.0,
+            "mae": 0.4739940570263394,
+            "observations": 504,
+            "predicted_total": 12.949126458545555,
+            "signed_bias": -0.9453623356179512,
+            "wape": 1.007987361777532
+          },
+          "sheet": {
+            "actual_total": 637.0,
+            "mae": 0.9844814185583036,
+            "observations": 504,
+            "predicted_total": 622.587006069863,
+            "signed_bias": -0.02262636409754631,
+            "wape": 0.7789303531450315
+          },
+          "tube": {
+            "actual_total": 1761.0,
+            "mae": 1.0278691797739286,
+            "observations": 504,
+            "predicted_total": 1685.1731144808,
+            "signed_bias": -0.043058992344804085,
+            "wape": 0.2941772098841908
+          }
+        }
+      },
+      "by_demand_pattern": {
+        "existing_lightgbm": {
+          "intermittent": {
+            "actual_total": 3477.5,
+            "mae": 0.8866589505936188,
+            "observations": 3024,
+            "predicted_total": 3313.2825843987307,
+            "signed_bias": -0.04722283698095451,
+            "wape": 0.7710299544486278
+          },
+          "intermittent_low": {
+            "actual_total": 293.0,
+            "mae": 0.30450884633649594,
+            "observations": 1008,
+            "predicted_total": 42.86436041848896,
+            "signed_bias": -0.8537052545444063,
+            "wape": 1.0475935737446687
+          },
+          "neutral": {
+            "actual_total": 9964.0,
+            "mae": 1.168662685769377,
+            "observations": 2520,
+            "predicted_total": 10004.40725283813,
+            "signed_bias": 0.004055324451839623,
+            "wape": 0.2955670381512274
+          },
+          "no_sales": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "rainy": {
+            "actual_total": 5719.0,
+            "mae": 1.0768448491283575,
+            "observations": 2016,
+            "predicted_total": 5870.032369445189,
+            "signed_bias": 0.026408877329111558,
+            "wape": 0.3795976946743782
+          },
+          "summer": {
+            "actual_total": 21079.0,
+            "mae": 1.598070491945498,
+            "observations": 3024,
+            "predicted_total": 20865.244918939963,
+            "signed_bias": -0.010140665167229754,
+            "wape": 0.2292596976916925
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "intermittent": {
+            "actual_total": 3477.5,
+            "mae": 0.8782901191899919,
+            "observations": 3024,
+            "predicted_total": 3308.4160620278844,
+            "signed_bias": -0.048622268288171275,
+            "wape": 0.7637525004832597
+          },
+          "intermittent_low": {
+            "actual_total": 293.0,
+            "mae": 0.29231327547345026,
+            "observations": 1008,
+            "predicted_total": 5.739763017471656,
+            "signed_bias": -0.9804103651280831,
+            "wape": 1.0056374801270915
+          },
+          "neutral": {
+            "actual_total": 9964.0,
+            "mae": 1.1555548329712382,
+            "observations": 2520,
+            "predicted_total": 10026.92530352078,
+            "signed_bias": 0.006315265307183862,
+            "wape": 0.2922519248381694
+          },
+          "no_sales": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "rainy": {
+            "actual_total": 5719.0,
+            "mae": 1.0804124994327133,
+            "observations": 2016,
+            "predicted_total": 5773.62343380109,
+            "signed_bias": 0.009551221157735618,
+            "wape": 0.3808553241574314
+          },
+          "summer": {
+            "actual_total": 21079.0,
+            "mae": 1.5964816475567594,
+            "observations": 3024,
+            "predicted_total": 20755.61856970736,
+            "signed_bias": -0.015341402831853503,
+            "wape": 0.22903176157368185
+          }
+        },
+        "mean28": {
+          "intermittent": {
+            "actual_total": 3477.5,
+            "mae": 0.8732284580498866,
+            "observations": 3024,
+            "predicted_total": 3462.5,
+            "signed_bias": -0.004313443565780014,
+            "wape": 0.7593509294443874
+          },
+          "intermittent_low": {
+            "actual_total": 293.0,
+            "mae": 0.3933531746031746,
+            "observations": 1008,
+            "predicted_total": 274.0,
+            "signed_bias": -0.06484641638225255,
+            "wape": 1.3532423208191127
+          },
+          "neutral": {
+            "actual_total": 9964.0,
+            "mae": 1.1984410430839003,
+            "observations": 2520,
+            "predicted_total": 9814.0,
+            "signed_bias": -0.015054195102368526,
+            "wape": 0.30309829672535415
+          },
+          "no_sales": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "rainy": {
+            "actual_total": 5719.0,
+            "mae": 1.0885062358276645,
+            "observations": 2016,
+            "predicted_total": 5604.0,
+            "signed_bias": -0.020108410561286937,
+            "wape": 0.38370844053655734
+          },
+          "summer": {
+            "actual_total": 21079.0,
+            "mae": 1.6786895313681027,
+            "observations": 3024,
+            "predicted_total": 21124.0,
+            "signed_bias": 0.0021348261302718344,
+            "wape": 0.2408253305591889
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "intermittent": {
+            "actual_total": 3477.5,
+            "mae": 0.8807865106576355,
+            "observations": 3024,
+            "predicted_total": 3277.1602133066363,
+            "signed_bias": -0.05761029092548201,
+            "wape": 0.7659233380959567
+          },
+          "intermittent_low": {
+            "actual_total": 293.0,
+            "mae": 0.29255258406872525,
+            "observations": 1008,
+            "predicted_total": 12.949126458545555,
+            "signed_bias": -0.9558050291517216,
+            "wape": 1.0064607670350685
+          },
+          "neutral": {
+            "actual_total": 9964.0,
+            "mae": 1.157472601387004,
+            "observations": 2520,
+            "predicted_total": 9898.83862504437,
+            "signed_bias": -0.006539680344804295,
+            "wape": 0.29273694856435667
+          },
+          "no_sales": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "rainy": {
+            "actual_total": 5719.0,
+            "mae": 1.0702034402230545,
+            "observations": 2016,
+            "predicted_total": 5734.944373255224,
+            "signed_bias": 0.0027879652483343243,
+            "wape": 0.37725653706761286
+          },
+          "summer": {
+            "actual_total": 21079.0,
+            "mae": 1.5838731148061904,
+            "observations": 3024,
+            "predicted_total": 20768.33655223048,
+            "signed_bias": -0.014738054355971347,
+            "wape": 0.22722293748156555
+          }
+        }
+      },
+      "by_philippine_season": {
+        "existing_lightgbm": {
+          "dry": {
+            "actual_total": 15680.0,
+            "mae": 1.022117988579783,
+            "observations": 4656,
+            "predicted_total": 15213.414403571247,
+            "signed_bias": -0.029756734466119403,
+            "wape": 0.3035064639558336
+          },
+          "rainy": {
+            "actual_total": 14405.0,
+            "mae": 1.110448549309027,
+            "observations": 4416,
+            "predicted_total": 14432.928579374833,
+            "signed_bias": 0.001938811480377214,
+            "wape": 0.34041935395686657
+          },
+          "transition": {
+            "actual_total": 10447.5,
+            "mae": 1.0826699030261053,
+            "observations": 3024,
+            "predicted_total": 10449.48850309442,
+            "signed_bias": 0.00019033291164595876,
+            "wape": 0.3133758111271541
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "dry": {
+            "actual_total": 15680.0,
+            "mae": 1.0108783173561882,
+            "observations": 4656,
+            "predicted_total": 15233.502228811849,
+            "signed_bias": -0.028475623162509636,
+            "wape": 0.300168969745562
+          },
+          "rainy": {
+            "actual_total": 14405.0,
+            "mae": 1.1049485737077123,
+            "observations": 4416,
+            "predicted_total": 14297.927638660549,
+            "signed_bias": -0.007432999745883416,
+            "wape": 0.338733280214735
+          },
+          "transition": {
+            "actual_total": 10447.5,
+            "mae": 1.0854394957538407,
+            "observations": 3024,
+            "predicted_total": 10338.893264602188,
+            "signed_bias": -0.01039547598926176,
+            "wape": 0.3141774620875438
+          }
+        },
+        "mean28": {
+          "dry": {
+            "actual_total": 15680.0,
+            "mae": 1.0632517182130585,
+            "observations": 4656,
+            "predicted_total": 15010.92857142857,
+            "signed_bias": -0.04267037172011662,
+            "wape": 0.3157206632653061
+          },
+          "rainy": {
+            "actual_total": 14405.0,
+            "mae": 1.1440217391304348,
+            "observations": 4416,
+            "predicted_total": 14836.392857142857,
+            "signed_bias": 0.02994743888530768,
+            "wape": 0.3507115584866366
+          },
+          "transition": {
+            "actual_total": 10447.5,
+            "mae": 1.099702380952381,
+            "observations": 3024,
+            "predicted_total": 10431.17857142857,
+            "signed_bias": -0.0015622329333743548,
+            "wape": 0.31830581478822684
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "dry": {
+            "actual_total": 15680.0,
+            "mae": 1.01229069098061,
+            "observations": 4656,
+            "predicted_total": 15179.766122779196,
+            "signed_bias": -0.031902670741122754,
+            "wape": 0.3005883582401607
+          },
+          "rainy": {
+            "actual_total": 14405.0,
+            "mae": 1.09500106487561,
+            "observations": 4416,
+            "predicted_total": 14259.34797381606,
+            "signed_bias": -0.010111213202633815,
+            "wape": 0.3356837696973755
+          },
+          "transition": {
+            "actual_total": 10447.5,
+            "mae": 1.08255113870119,
+            "observations": 3024,
+            "predicted_total": 10253.1147937,
+            "signed_bias": -0.01860590632208655,
+            "wape": 0.3133414351215505
+          }
+        }
+      },
+      "by_product": {
+        "existing_lightgbm": {
+          "SIM-NEU-001": {
+            "actual_total": 1234.0,
+            "mae": 1.058273370158254,
+            "observations": 504,
+            "predicted_total": 1285.44576147756,
+            "signed_bias": 0.041690244309205836,
+            "wape": 0.4322283456724149
+          },
+          "SIM-NEU-002": {
+            "actual_total": 2919.0,
+            "mae": 1.3819646922142856,
+            "observations": 504,
+            "predicted_total": 2958.14759662504,
+            "signed_bias": 0.01341130408531689,
+            "wape": 0.23861260872764645
+          },
+          "SIM-NEU-003": {
+            "actual_total": 1484.0,
+            "mae": 1.02971373551125,
+            "observations": 504,
+            "predicted_total": 1489.25974916265,
+            "signed_bias": 0.0035443053656671157,
+            "wape": 0.34971409885287735
+          },
+          "SIM-NEU-004": {
+            "actual_total": 237.0,
+            "mae": 0.4979065815618808,
+            "observations": 504,
+            "predicted_total": 42.86436041848896,
+            "signed_bias": -0.8191377197532111,
+            "wape": 1.0588393126885567
+          },
+          "SIM-NEU-005": {
+            "actual_total": 2276.0,
+            "mae": 1.228829732937024,
+            "observations": 504,
+            "predicted_total": 2229.17839881046,
+            "signed_bias": -0.02057188101473638,
+            "wape": 0.2721134382250703
+          },
+          "SIM-NEU-006": {
+            "actual_total": 2051.0,
+            "mae": 1.1445318980260715,
+            "observations": 504,
+            "predicted_total": 2042.37574676242,
+            "signed_bias": -0.004204901627294003,
+            "wape": 0.2812501592419015
+          },
+          "SIM-NEU-007": {
+            "actual_total": 455.0,
+            "mae": 0.793420897439146,
+            "observations": 504,
+            "predicted_total": 387.3045885610402,
+            "signed_bias": -0.14878112404166988,
+            "wape": 0.8788662248556695
+          },
+          "SIM-NEU-008": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "SIM-RAIN-001": {
+            "actual_total": 1761.0,
+            "mae": 1.0634921781531745,
+            "observations": 504,
+            "predicted_total": 1751.22020942928,
+            "signed_bias": -0.005553543765315162,
+            "wape": 0.3043725484322544
+          },
+          "SIM-RAIN-002": {
+            "actual_total": 446.0,
+            "mae": 0.7115712644098613,
+            "observations": 504,
+            "predicted_total": 425.3251483041115,
+            "signed_bias": -0.046356169721723094,
+            "wape": 0.8041074378084532
+          },
+          "SIM-RAIN-003": {
+            "actual_total": 637.0,
+            "mae": 0.9964029426454206,
+            "observations": 504,
+            "predicted_total": 639.396600228328,
+            "signed_bias": 0.0037623237493375197,
+            "wape": 0.7883627678073658
+          },
+          "SIM-RAIN-004": {
+            "actual_total": 1251.0,
+            "mae": 1.1837369688929564,
+            "observations": 504,
+            "predicted_total": 1364.50038158769,
+            "signed_bias": 0.09072772309167866,
+            "wape": 0.4769012248777378
+          },
+          "SIM-RAIN-005": {
+            "actual_total": 933.0,
+            "mae": 0.83044739198349,
+            "observations": 504,
+            "predicted_total": 915.607411212159,
+            "signed_bias": -0.018641574263495178,
+            "wape": 0.44860180660201393
+          },
+          "SIM-RAIN-006": {
+            "actual_total": 1774.0,
+            "mae": 1.2297028574838096,
+            "observations": 504,
+            "predicted_total": 1838.70436721606,
+            "signed_bias": 0.03647371319958286,
+            "wape": 0.34936315680487035
+          },
+          "SIM-RAIN-007": {
+            "actual_total": 56.0,
+            "mae": 0.1111111111111111,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": -1.0,
+            "wape": 1.0
+          },
+          "SIM-RAIN-008": {
+            "actual_total": 647.0,
+            "mae": 1.0851812941225554,
+            "observations": 504,
+            "predicted_total": 619.4363966073935,
+            "signed_bias": -0.04260216907667156,
+            "wape": 0.8453344238605377
+          },
+          "SIM-SUM-001": {
+            "actual_total": 7235.0,
+            "mae": 2.08826152914377,
+            "observations": 504,
+            "predicted_total": 7168.6939570564,
+            "signed_bias": -0.009164622383358674,
+            "wape": 0.14547115558928264
+          },
+          "SIM-SUM-002": {
+            "actual_total": 5050.0,
+            "mae": 1.8083606302110515,
+            "observations": 504,
+            "predicted_total": 4819.45319420747,
+            "signed_bias": -0.04565283283020396,
+            "wape": 0.180477971807202
+          },
+          "SIM-SUM-003": {
+            "actual_total": 710.0,
+            "mae": 0.9149817455331231,
+            "observations": 504,
+            "predicted_total": 710.428978677576,
+            "signed_bias": 0.0006041953205295775,
+            "wape": 0.6495081686601324
+          },
+          "SIM-SUM-004": {
+            "actual_total": 582.5,
+            "mae": 0.8183955594116061,
+            "observations": 504,
+            "predicted_total": 531.3908720202814,
+            "signed_bias": -0.08774099223986008,
+            "wape": 0.708105342392188
+          },
+          "SIM-SUM-005": {
+            "actual_total": 3552.0,
+            "mae": 1.8498057376564285,
+            "observations": 504,
+            "predicted_total": 3599.96228091534,
+            "signed_bias": 0.013502894401841216,
+            "wape": 0.2624724357485473
+          },
+          "SIM-SUM-006": {
+            "actual_total": 1290.0,
+            "mae": 1.0820555142810833,
+            "observations": 504,
+            "predicted_total": 1293.613692264904,
+            "signed_bias": 0.002801311833258915,
+            "wape": 0.42275657302144654
+          },
+          "SIM-SUM-007": {
+            "actual_total": 2192.0,
+            "mae": 1.399835410097103,
+            "observations": 504,
+            "predicted_total": 2173.56724185876,
+            "signed_bias": -0.008409104991441606,
+            "wape": 0.32185996655517335
+          },
+          "SIM-SUM-008": {
+            "actual_total": 1760.0,
+            "mae": 1.3601041302835515,
+            "observations": 504,
+            "predicted_total": 1809.95455263709,
+            "signed_bias": 0.028383268543801136,
+            "wape": 0.38948436458119884
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "SIM-NEU-001": {
+            "actual_total": 1234.0,
+            "mae": 1.0436795175725198,
+            "observations": 504,
+            "predicted_total": 1311.28758603739,
+            "signed_bias": 0.06263175529772286,
+            "wape": 0.4262678094461507
+          },
+          "SIM-NEU-002": {
+            "actual_total": 2919.0,
+            "mae": 1.3765290213033134,
+            "observations": 504,
+            "predicted_total": 2957.29152508577,
+            "signed_bias": 0.013118028463778691,
+            "wape": 0.237674075620716
+          },
+          "SIM-NEU-003": {
+            "actual_total": 1484.0,
+            "mae": 1.0076706543331349,
+            "observations": 504,
+            "predicted_total": 1504.37169000826,
+            "signed_bias": 0.013727553913921832,
+            "wape": 0.342227769396159
+          },
+          "SIM-NEU-004": {
+            "actual_total": 237.0,
+            "mae": 0.47351543983578936,
+            "observations": 504,
+            "predicted_total": 5.739763017471656,
+            "signed_bias": -0.9757815906435795,
+            "wape": 1.0069695429419319
+          },
+          "SIM-NEU-005": {
+            "actual_total": 2276.0,
+            "mae": 1.2254679461055158,
+            "observations": 504,
+            "predicted_total": 2201.19869098678,
+            "signed_bias": -0.032865250005808436,
+            "wape": 0.2713690003678295
+          },
+          "SIM-NEU-006": {
+            "actual_total": 2051.0,
+            "mae": 1.1244270255417064,
+            "observations": 504,
+            "predicted_total": 2052.77581140258,
+            "signed_bias": 0.000865827109985373,
+            "wape": 0.2763097127611019
+          },
+          "SIM-NEU-007": {
+            "actual_total": 455.0,
+            "mae": 0.7836581331972242,
+            "observations": 504,
+            "predicted_total": 368.2423169024934,
+            "signed_bias": -0.1906762265879266,
+            "wape": 0.8680520860030791
+          },
+          "SIM-NEU-008": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "SIM-RAIN-001": {
+            "actual_total": 1761.0,
+            "mae": 1.0355311048039881,
+            "observations": 504,
+            "predicted_total": 1698.16061420065,
+            "signed_bias": -0.03568392152149347,
+            "wape": 0.29637006065940374
+          },
+          "SIM-RAIN-002": {
+            "actual_total": 446.0,
+            "mae": 0.6899091453717361,
+            "observations": 504,
+            "predicted_total": 455.556409433775,
+            "signed_bias": 0.021426926981558295,
+            "wape": 0.7796282718998991
+          },
+          "SIM-RAIN-003": {
+            "actual_total": 637.0,
+            "mae": 0.9968256544691091,
+            "observations": 504,
+            "predicted_total": 621.171883858571,
+            "signed_bias": -0.024847906030500785,
+            "wape": 0.788697221118416
+          },
+          "SIM-RAIN-004": {
+            "actual_total": 1251.0,
+            "mae": 1.214168587271865,
+            "observations": 504,
+            "predicted_total": 1307.50610695556,
+            "signed_bias": 0.0451687505639968,
+            "wape": 0.4891614452318305
+          },
+          "SIM-RAIN-005": {
+            "actual_total": 933.0,
+            "mae": 0.837839054579008,
+            "observations": 504,
+            "predicted_total": 951.29182138806,
+            "signed_bias": 0.019605381980771705,
+            "wape": 0.4525947304478242
+          },
+          "SIM-RAIN-006": {
+            "actual_total": 1774.0,
+            "mae": 1.234111251075992,
+            "observations": 504,
+            "predicted_total": 1816.66489125682,
+            "signed_bias": 0.02405010781105975,
+            "wape": 0.3506155978254228
+          },
+          "SIM-RAIN-007": {
+            "actual_total": 56.0,
+            "mae": 0.1111111111111111,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": -1.0,
+            "wape": 1.0
+          },
+          "SIM-RAIN-008": {
+            "actual_total": 647.0,
+            "mae": 1.080545536377061,
+            "observations": 504,
+            "predicted_total": 601.6477376335172,
+            "signed_bias": -0.07009623240569211,
+            "wape": 0.8417232617218529
+          },
+          "SIM-SUM-001": {
+            "actual_total": 7235.0,
+            "mae": 2.086292323003214,
+            "observations": 504,
+            "predicted_total": 7123.89916533698,
+            "signed_bias": -0.015356024141398757,
+            "wape": 0.14533397799497166
+          },
+          "SIM-SUM-002": {
+            "actual_total": 5050.0,
+            "mae": 1.8133949329955357,
+            "observations": 504,
+            "predicted_total": 4789.94207113877,
+            "signed_bias": -0.05149661957648119,
+            "wape": 0.1809804051940099
+          },
+          "SIM-SUM-003": {
+            "actual_total": 710.0,
+            "mae": 0.9024048404149444,
+            "observations": 504,
+            "predicted_total": 723.69541914968,
+            "signed_bias": 0.019289322746028167,
+            "wape": 0.6405803374213127
+          },
+          "SIM-SUM-004": {
+            "actual_total": 582.5,
+            "mae": 0.8163974053098766,
+            "observations": 504,
+            "predicted_total": 538.1022950498478,
+            "signed_bias": -0.07621923596592653,
+            "wape": 0.7063764674269146
+          },
+          "SIM-SUM-005": {
+            "actual_total": 3552.0,
+            "mae": 1.817439053821012,
+            "observations": 504,
+            "predicted_total": 3582.83245595847,
+            "signed_bias": 0.008680308546866553,
+            "wape": 0.2578798657448733
+          },
+          "SIM-SUM-006": {
+            "actual_total": 1290.0,
+            "mae": 1.091618874603869,
+            "observations": 504,
+            "predicted_total": 1280.16934199321,
+            "signed_bias": -0.007620665121542636,
+            "wape": 0.42649295565918605
+          },
+          "SIM-SUM-007": {
+            "actual_total": 2192.0,
+            "mae": 1.4160910124417858,
+            "observations": 504,
+            "predicted_total": 2165.30114658274,
+            "signed_bias": -0.01218013385823905,
+            "wape": 0.3255975685541332
+          },
+          "SIM-SUM-008": {
+            "actual_total": 1760.0,
+            "mae": 1.3540536884751389,
+            "observations": 504,
+            "predicted_total": 1813.47438869719,
+            "signed_bias": 0.030383175396130682,
+            "wape": 0.38775173806333524
+          }
+        },
+        "mean28": {
+          "SIM-NEU-001": {
+            "actual_total": 1234.0,
+            "mae": 1.0807823129251701,
+            "observations": 504,
+            "predicted_total": 1208.0,
+            "signed_bias": -0.02106969205834684,
+            "wape": 0.4414216253762445
+          },
+          "SIM-NEU-002": {
+            "actual_total": 2919.0,
+            "mae": 1.4195011337868482,
+            "observations": 504,
+            "predicted_total": 2919.0,
+            "signed_bias": -6.509078451524495e-27,
+            "wape": 0.24509372094161405
+          },
+          "SIM-NEU-003": {
+            "actual_total": 1484.0,
+            "mae": 1.02437641723356,
+            "observations": 504,
+            "predicted_total": 1482.0,
+            "signed_bias": -0.0013477088948787063,
+            "wape": 0.34790142472083174
+          },
+          "SIM-NEU-004": {
+            "actual_total": 237.0,
+            "mae": 0.596655328798186,
+            "observations": 504,
+            "predicted_total": 225.0,
+            "signed_bias": -0.05063291139240506,
+            "wape": 1.268836648583484
+          },
+          "SIM-NEU-005": {
+            "actual_total": 2276.0,
+            "mae": 1.286139455782313,
+            "observations": 504,
+            "predicted_total": 2214.0,
+            "signed_bias": -0.027240773286467488,
+            "wape": 0.28480416771277933
+          },
+          "SIM-NEU-006": {
+            "actual_total": 2051.0,
+            "mae": 1.18140589569161,
+            "observations": 504,
+            "predicted_total": 1991.0,
+            "signed_bias": -0.02925402242808386,
+            "wape": 0.29031134638155603
+          },
+          "SIM-NEU-007": {
+            "actual_total": 455.0,
+            "mae": 0.7868480725623582,
+            "observations": 504,
+            "predicted_total": 459.0,
+            "signed_bias": 0.008791208791208791,
+            "wape": 0.871585557299843
+          },
+          "SIM-NEU-008": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "SIM-RAIN-001": {
+            "actual_total": 1761.0,
+            "mae": 1.0429421768707483,
+            "observations": 504,
+            "predicted_total": 1705.0,
+            "signed_bias": -0.03180011357183418,
+            "wape": 0.29849111706011194
+          },
+          "SIM-RAIN-002": {
+            "actual_total": 446.0,
+            "mae": 0.7080498866213152,
+            "observations": 504,
+            "predicted_total": 462.0,
+            "signed_bias": 0.03587443946188341,
+            "wape": 0.8001281229980781
+          },
+          "SIM-RAIN-003": {
+            "actual_total": 637.0,
+            "mae": 0.9784580498866213,
+            "observations": 504,
+            "predicted_total": 658.0,
+            "signed_bias": 0.03296703296703297,
+            "wape": 0.7741646108993048
+          },
+          "SIM-RAIN-004": {
+            "actual_total": 1251.0,
+            "mae": 1.189200680272109,
+            "observations": 504,
+            "predicted_total": 1236.0,
+            "signed_bias": -0.011990407673860911,
+            "wape": 0.4791024323398424
+          },
+          "SIM-RAIN-005": {
+            "actual_total": 933.0,
+            "mae": 0.8504818594104309,
+            "observations": 504,
+            "predicted_total": 902.0,
+            "signed_bias": -0.03322615219721329,
+            "wape": 0.45942428418312664
+          },
+          "SIM-RAIN-006": {
+            "actual_total": 1774.0,
+            "mae": 1.2714002267573696,
+            "observations": 504,
+            "predicted_total": 1761.0,
+            "signed_bias": -0.007328072153325817,
+            "wape": 0.36120953454662585
+          },
+          "SIM-RAIN-007": {
+            "actual_total": 56.0,
+            "mae": 0.19005102040816327,
+            "observations": 504,
+            "predicted_total": 49.0,
+            "signed_bias": -0.125,
+            "wape": 1.7104591836734695
+          },
+          "SIM-RAIN-008": {
+            "actual_total": 647.0,
+            "mae": 1.0592403628117915,
+            "observations": 504,
+            "predicted_total": 650.0,
+            "signed_bias": 0.00463678516228748,
+            "wape": 0.8251269595937293
+          },
+          "SIM-SUM-001": {
+            "actual_total": 7235.0,
+            "mae": 2.29421768707483,
+            "observations": 504,
+            "predicted_total": 7299.0,
+            "signed_bias": 0.008845888044229441,
+            "wape": 0.15981834337052028
+          },
+          "SIM-SUM-002": {
+            "actual_total": 5050.0,
+            "mae": 1.939342403628118,
+            "observations": 504,
+            "predicted_total": 5117.0,
+            "signed_bias": 0.013267326732673267,
+            "wape": 0.19355021216407356
+          },
+          "SIM-SUM-003": {
+            "actual_total": 710.0,
+            "mae": 0.8964710884353742,
+            "observations": 504,
+            "predicted_total": 682.0,
+            "signed_bias": -0.03943661971830986,
+            "wape": 0.6363682092555332
+          },
+          "SIM-SUM-004": {
+            "actual_total": 582.5,
+            "mae": 0.8103032879818595,
+            "observations": 504,
+            "predicted_total": 551.5,
+            "signed_bias": -0.05321888412017167,
+            "wape": 0.7011036174126303
+          },
+          "SIM-SUM-005": {
+            "actual_total": 3552.0,
+            "mae": 1.917233560090703,
+            "observations": 504,
+            "predicted_total": 3513.0,
+            "signed_bias": -0.01097972972972973,
+            "wape": 0.27203989703989706
+          },
+          "SIM-SUM-006": {
+            "actual_total": 1290.0,
+            "mae": 1.1343537414965987,
+            "observations": 504,
+            "predicted_total": 1271.0,
+            "signed_bias": -0.014728682170542635,
+            "wape": 0.44318936877076415
+          },
+          "SIM-SUM-007": {
+            "actual_total": 2192.0,
+            "mae": 1.4460034013605443,
+            "observations": 504,
+            "predicted_total": 2140.0,
+            "signed_bias": -0.023722627737226276,
+            "wape": 0.3324752346193952
+          },
+          "SIM-SUM-008": {
+            "actual_total": 1760.0,
+            "mae": 1.340986394557823,
+            "observations": 504,
+            "predicted_total": 1784.0,
+            "signed_bias": 0.013636363636363636,
+            "wape": 0.3840097402597403
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "SIM-NEU-001": {
+            "actual_total": 1234.0,
+            "mae": 1.0461738355425,
+            "observations": 504,
+            "predicted_total": 1286.42427528284,
+            "signed_bias": 0.042483205253517016,
+            "wape": 0.427286558438752
+          },
+          "SIM-NEU-002": {
+            "actual_total": 2919.0,
+            "mae": 1.376427031639127,
+            "observations": 504,
+            "predicted_total": 2922.39437305224,
+            "signed_bias": 0.001162854762672148,
+            "wape": 0.23765646589452552
+          },
+          "SIM-NEU-003": {
+            "actual_total": 1484.0,
+            "mae": 1.00465082310623,
+            "observations": 504,
+            "predicted_total": 1492.91391280732,
+            "signed_bias": 0.006006679789299191,
+            "wape": 0.34120216633796496
+          },
+          "SIM-NEU-004": {
+            "actual_total": 237.0,
+            "mae": 0.4739940570263394,
+            "observations": 504,
+            "predicted_total": 12.949126458545555,
+            "signed_bias": -0.9453623356179512,
+            "wape": 1.007987361777532
+          },
+          "SIM-NEU-005": {
+            "actual_total": 2276.0,
+            "mae": 1.2382243543746032,
+            "observations": 504,
+            "predicted_total": 2160.53317463372,
+            "signed_bias": -0.050732348579209136,
+            "wape": 0.27419379376309316
+          },
+          "SIM-NEU-006": {
+            "actual_total": 2051.0,
+            "mae": 1.1218869622725596,
+            "observations": 504,
+            "predicted_total": 2036.57288926825,
+            "signed_bias": -0.007034183681984398,
+            "wape": 0.27568553339120916
+          },
+          "SIM-NEU-007": {
+            "actual_total": 455.0,
+            "mae": 0.7834376596360639,
+            "observations": 504,
+            "predicted_total": 379.020255148165,
+            "signed_bias": -0.1669884502238132,
+            "wape": 0.8678078691353323
+          },
+          "SIM-NEU-008": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "SIM-RAIN-001": {
+            "actual_total": 1761.0,
+            "mae": 1.0278691797739286,
+            "observations": 504,
+            "predicted_total": 1685.1731144808,
+            "signed_bias": -0.043058992344804085,
+            "wape": 0.2941772098841908
+          },
+          "SIM-RAIN-002": {
+            "actual_total": 446.0,
+            "mae": 0.7012841780276567,
+            "observations": 504,
+            "predicted_total": 452.225765918249,
+            "signed_bias": 0.013959116408630045,
+            "wape": 0.7924825688922399
+          },
+          "SIM-RAIN-003": {
+            "actual_total": 637.0,
+            "mae": 0.9844814185583036,
+            "observations": 504,
+            "predicted_total": 622.587006069863,
+            "signed_bias": -0.02262636409754631,
+            "wape": 0.7789303531450315
+          },
+          "SIM-RAIN-004": {
+            "actual_total": 1251.0,
+            "mae": 1.2033525773033928,
+            "observations": 504,
+            "predicted_total": 1307.98653789955,
+            "signed_bias": 0.04555278808916866,
+            "wape": 0.4848039160358993
+          },
+          "SIM-RAIN-005": {
+            "actual_total": 933.0,
+            "mae": 0.8295564513752143,
+            "observations": 504,
+            "predicted_total": 920.397441071314,
+            "signed_bias": -0.013507565839963558,
+            "wape": 0.4481205267878971
+          },
+          "SIM-RAIN-006": {
+            "actual_total": 1774.0,
+            "mae": 1.2200355524396826,
+            "observations": 504,
+            "predicted_total": 1821.38727980356,
+            "signed_bias": 0.02671210811925592,
+            "wape": 0.3466166394755355
+          },
+          "SIM-RAIN-007": {
+            "actual_total": 56.0,
+            "mae": 0.1111111111111111,
+            "observations": 504,
+            "predicted_total": 0.0,
+            "signed_bias": -1.0,
+            "wape": 1.0
+          },
+          "SIM-RAIN-008": {
+            "actual_total": 647.0,
+            "mae": 1.0901656482253543,
+            "observations": 504,
+            "predicted_total": 568.6601246097866,
+            "signed_bias": -0.12108172394159722,
+            "wape": 0.8492171355573085
+          },
+          "SIM-SUM-001": {
+            "actual_total": 7235.0,
+            "mae": 2.059680692083889,
+            "observations": 504,
+            "predicted_total": 7108.5488771066,
+            "signed_bias": -0.017477694940345543,
+            "wape": 0.14348017537115135
+          },
+          "SIM-SUM-002": {
+            "actual_total": 5050.0,
+            "mae": 1.809170642886508,
+            "observations": 504,
+            "predicted_total": 4787.70069199436,
+            "signed_bias": -0.0519404570308198,
+            "wape": 0.18055881267619803
+          },
+          "SIM-SUM-003": {
+            "actual_total": 710.0,
+            "mae": 0.8971881022467024,
+            "observations": 504,
+            "predicted_total": 719.42505731579,
+            "signed_bias": 0.013274728613788733,
+            "wape": 0.6368771880737155
+          },
+          "SIM-SUM-004": {
+            "actual_total": 582.5,
+            "mae": 0.8281620572517315,
+            "observations": 504,
+            "predicted_total": 535.2420042447827,
+            "signed_bias": -0.08112960644672498,
+            "wape": 0.7165556684203823
+          },
+          "SIM-SUM-005": {
+            "actual_total": 3552.0,
+            "mae": 1.8304988454762103,
+            "observations": 504,
+            "predicted_total": 3575.32510139805,
+            "signed_bias": 0.006566751519721283,
+            "wape": 0.25973294429054333
+          },
+          "SIM-SUM-006": {
+            "actual_total": 1290.0,
+            "mae": 1.0611859709937301,
+            "observations": 504,
+            "predicted_total": 1293.79539563268,
+            "signed_bias": 0.002942167157116279,
+            "wape": 0.4146028909928992
+          },
+          "SIM-SUM-007": {
+            "actual_total": 2192.0,
+            "mae": 1.3965843453257143,
+            "observations": 504,
+            "predicted_total": 2167.4712345426,
+            "signed_bias": -0.011190130226916058,
+            "wape": 0.32111245896175183
+          },
+          "SIM-SUM-008": {
+            "actual_total": 1760.0,
+            "mae": 1.3461181920710912,
+            "observations": 504,
+            "predicted_total": 1835.49525155619,
+            "signed_bias": 0.042895029293289776,
+            "wape": 0.3854793004567216
+          }
+        }
+      },
+      "by_seasonal_group": {
+        "NEUTRAL": {
+          "existing_lightgbm": {
+            "actual_total": 10656.0,
+            "mae": 0.891830113480989,
+            "observations": 4032,
+            "predicted_total": 10434.57620181766,
+            "signed_bias": -0.02077926033993439,
+            "wape": 0.33744923212794176
+          },
+          "matched_nonseasonal_ablation": {
+            "actual_total": 10656.0,
+            "mae": 0.8793684672361505,
+            "observations": 4032,
+            "predicted_total": 10400.907383440745,
+            "signed_bias": -0.023938871674104256,
+            "wape": 0.33273401462989477
+          },
+          "mean28": {
+            "actual_total": 10656.0,
+            "mae": 0.9219635770975056,
+            "observations": 4032,
+            "predicted_total": 10498.0,
+            "signed_bias": -0.014827327327327328,
+            "wape": 0.3488510832260832
+          },
+          "product_specific_seasonal_lightgbm": {
+            "actual_total": 10656.0,
+            "mae": 0.8805993404496779,
+            "observations": 4032,
+            "predicted_total": 10290.808006651081,
+            "signed_bias": -0.03427102039685805,
+            "wape": 0.33319975044041866
+          }
+        },
+        "RAINY": {
+          "existing_lightgbm": {
+            "actual_total": 7505.0,
+            "mae": 0.9014557511002974,
+            "observations": 4032,
+            "predicted_total": 7554.190514585022,
+            "signed_bias": 0.00655436570086902,
+            "wape": 0.48429974529465675
+          },
+          "matched_nonseasonal_ablation": {
+            "actual_total": 7505.0,
+            "mae": 0.9000051806324838,
+            "observations": 4032,
+            "predicted_total": 7451.999464726953,
+            "signed_bias": -0.00706203001639531,
+            "wape": 0.48352043814925716
+          },
+          "mean28": {
+            "actual_total": 7505.0,
+            "mae": 0.9112280328798186,
+            "observations": 4032,
+            "predicted_total": 7423.0,
+            "signed_bias": -0.010926049300466355,
+            "wape": 0.4895498239269059
+          },
+          "product_specific_seasonal_lightgbm": {
+            "actual_total": 7505.0,
+            "mae": 0.8959820146018305,
+            "observations": 4032,
+            "predicted_total": 7378.417269853123,
+            "signed_bias": -0.016866453050883065,
+            "wape": 0.48135902503325523
+          }
+        },
+        "SUMMER": {
+          "existing_lightgbm": {
+            "actual_total": 22371.5,
+            "mae": 1.4152250320772146,
+            "observations": 4032,
+            "predicted_total": 22107.064769637822,
+            "signed_bias": -0.011820183285080504,
+            "wape": 0.25506503047785484
+          },
+          "matched_nonseasonal_ablation": {
+            "actual_total": 22371.5,
+            "mae": 1.412211516383172,
+            "observations": 4032,
+            "predicted_total": 22017.41628390689,
+            "signed_bias": -0.015827446353311677,
+            "wape": 0.25452190662481056
+          },
+          "mean28": {
+            "actual_total": 22371.5,
+            "mae": 1.4723639455782314,
+            "observations": 4032,
+            "predicted_total": 22357.5,
+            "signed_bias": -0.0006257962139329058,
+            "wape": 0.26536313741016154
+          },
+          "product_specific_seasonal_lightgbm": {
+            "actual_total": 22371.5,
+            "mae": 1.403573606041947,
+            "observations": 4032,
+            "predicted_total": 22023.003613791054,
+            "signed_bias": -0.015577694218489922,
+            "wape": 0.2529651020075154
+          }
+        }
+      },
+      "forecast_vs_actual_examples": [
+        {
+          "absolute_error": 26.2613335183,
+          "actual": 42.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-02-13",
+          "horizon_days": 28,
+          "origin": "2026-02-01",
+          "predicted": 15.7386664817,
+          "product_id": "31000000-0000-4000-8000-000000000001",
+          "product_name": "Concrete Hollow Blocks 4-inch",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "dry",
+          "seasonal_group": "SUMMER",
+          "signed_error": -26.2613335183,
+          "sku": "SIM-SUM-001",
+          "transition": "none",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 16.1552690874,
+          "actual": 28.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-08-12",
+          "horizon_days": 28,
+          "origin": "2026-07-19",
+          "predicted": 11.8447309126,
+          "product_id": "31000000-0000-4000-8000-000000000001",
+          "product_name": "Concrete Hollow Blocks 4-inch",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "rainy",
+          "seasonal_group": "SUMMER",
+          "signed_error": -16.1552690874,
+          "sku": "SIM-SUM-001",
+          "transition": "none",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 13.0116834791,
+          "actual": 28.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-02-04",
+          "horizon_days": 28,
+          "origin": "2026-02-01",
+          "predicted": 14.9883165209,
+          "product_id": "31000000-0000-4000-8000-000000000001",
+          "product_name": "Concrete Hollow Blocks 4-inch",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "dry",
+          "seasonal_group": "SUMMER",
+          "signed_error": -13.0116834791,
+          "sku": "SIM-SUM-001",
+          "transition": "none",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 9.94282905388,
+          "actual": 18.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-09-23",
+          "horizon_days": 28,
+          "origin": "2026-09-13",
+          "predicted": 8.05717094612,
+          "product_id": "31000000-0000-4000-8000-000000000002",
+          "product_name": "Portland Cement 40kg",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "rainy",
+          "seasonal_group": "SUMMER",
+          "signed_error": -9.94282905388,
+          "sku": "SIM-SUM-002",
+          "transition": "none",
+          "unit": "bag"
+        },
+        {
+          "absolute_error": 9.7719700117,
+          "actual": 20.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-04-23",
+          "horizon_days": 28,
+          "origin": "2026-03-29",
+          "predicted": 10.2280299883,
+          "product_id": "31000000-0000-4000-8000-000000000002",
+          "product_name": "Portland Cement 40kg",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "dry",
+          "seasonal_group": "SUMMER",
+          "signed_error": -9.7719700117,
+          "sku": "SIM-SUM-002",
+          "transition": "none",
+          "unit": "bag"
+        },
+        {
+          "absolute_error": 9.74183206376,
+          "actual": 19.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-01-27",
+          "horizon_days": 28,
+          "origin": "2026-01-04",
+          "predicted": 9.25816793624,
+          "product_id": "31000000-0000-4000-8000-000000000002",
+          "product_name": "Portland Cement 40kg",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "dry",
+          "seasonal_group": "SUMMER",
+          "signed_error": -9.74183206376,
+          "sku": "SIM-SUM-002",
+          "transition": "none",
+          "unit": "bag"
+        },
+        {
+          "absolute_error": 9.0796712814,
+          "actual": 20.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-04-23",
+          "horizon_days": 28,
+          "origin": "2026-04-15",
+          "predicted": 10.9203287186,
+          "product_id": "31000000-0000-4000-8000-000000000002",
+          "product_name": "Portland Cement 40kg",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "dry",
+          "seasonal_group": "SUMMER",
+          "signed_error": -9.0796712814,
+          "sku": "SIM-SUM-002",
+          "transition": "none",
+          "unit": "bag"
+        },
+        {
+          "absolute_error": 8.5504214998,
+          "actual": 9.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-05-16",
+          "horizon_days": 28,
+          "origin": "2026-05-15",
+          "predicted": 17.5504214998,
+          "product_id": "31000000-0000-4000-8000-000000000001",
+          "product_name": "Concrete Hollow Blocks 4-inch",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "transition",
+          "seasonal_group": "SUMMER",
+          "signed_error": 8.5504214998,
+          "sku": "SIM-SUM-001",
+          "transition": "to_rainy",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 8.48676112575,
+          "actual": 18.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-01-22",
+          "horizon_days": 28,
+          "origin": "2026-01-04",
+          "predicted": 9.51323887425,
+          "product_id": "31000000-0000-4000-8000-000000000002",
+          "product_name": "Portland Cement 40kg",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "dry",
+          "seasonal_group": "SUMMER",
+          "signed_error": -8.48676112575,
+          "sku": "SIM-SUM-002",
+          "transition": "none",
+          "unit": "bag"
+        },
+        {
+          "absolute_error": 8.43336050186,
+          "actual": 0.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-05-06",
+          "horizon_days": 28,
+          "origin": "2026-04-15",
+          "predicted": 8.43336050186,
+          "product_id": "31000000-0000-4000-8000-000000000005",
+          "product_name": "Steel Reinforcing Bar 10mm",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "transition",
+          "seasonal_group": "SUMMER",
+          "signed_error": 8.43336050186,
+          "sku": "SIM-SUM-005",
+          "transition": "to_rainy",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 8.32051790182,
+          "actual": 0.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-05-13",
+          "horizon_days": 28,
+          "origin": "2026-04-30",
+          "predicted": 8.32051790182,
+          "product_id": "31000000-0000-4000-8000-000000000005",
+          "product_name": "Steel Reinforcing Bar 10mm",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "transition",
+          "seasonal_group": "SUMMER",
+          "signed_error": 8.32051790182,
+          "sku": "SIM-SUM-005",
+          "transition": "to_rainy",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 8.24374610884,
+          "actual": 0.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-05-18",
+          "horizon_days": 28,
+          "origin": "2026-04-30",
+          "predicted": 8.24374610884,
+          "product_id": "31000000-0000-4000-8000-000000000005",
+          "product_name": "Steel Reinforcing Bar 10mm",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "transition",
+          "seasonal_group": "SUMMER",
+          "signed_error": 8.24374610884,
+          "sku": "SIM-SUM-005",
+          "transition": "to_rainy",
+          "unit": "pcs"
+        }
+      ],
+      "overall_mixed_unit_diagnostic": {
+        "existing_lightgbm": {
+          "actual_total": 40532.5,
+          "mae": 1.0695036322195004,
+          "observations": 12096,
+          "predicted_total": 40095.8314860405,
+          "signed_bias": -0.010773293380854804,
+          "wape": 0.319168961582115
+        },
+        "matched_nonseasonal_ablation": {
+          "actual_total": 40532.5,
+          "mae": 1.0638617214172688,
+          "observations": 12096,
+          "predicted_total": 39870.32313207458,
+          "signed_bias": -0.016336936234513388,
+          "wape": 0.31748526200612553
+        },
+        "mean28": {
+          "actual_total": 40532.5,
+          "mae": 1.1018518518518519,
+          "observations": 12096,
+          "predicted_total": 40278.5,
+          "signed_bias": -0.0062665762042805155,
+          "wape": 0.32882254980571146
+        },
+        "product_specific_seasonal_lightgbm": {
+          "actual_total": 40532.5,
+          "mae": 1.0600516536978184,
+          "observations": 12096,
+          "predicted_total": 39692.22889029526,
+          "signed_bias": -0.020730798981181624,
+          "wape": 0.31634823421029573
+        }
+      },
+      "pretransition_anticipation": {
+        "existing_lightgbm": {
+          "to_dry": {
+            "actual_total": 1224.5,
+            "mae": 1.066727117938046,
+            "observations": 408,
+            "predicted_total": 1229.1036676023593,
+            "signed_bias": 0.003759630545005635,
+            "wape": 0.3554305137760088
+          },
+          "to_rainy": {
+            "actual_total": 5800.0,
+            "mae": 1.1060194311076632,
+            "observations": 1560,
+            "predicted_total": 5748.079589364594,
+            "signed_bias": -0.00895179493713908,
+            "wape": 0.2974810883668887
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "to_dry": {
+            "actual_total": 1224.5,
+            "mae": 1.0725386301471922,
+            "observations": 408,
+            "predicted_total": 1222.7930890316425,
+            "signed_bias": -0.0013939656744447857,
+            "wape": 0.35736689350759854
+          },
+          "to_rainy": {
+            "actual_total": 5800.0,
+            "mae": 1.1145255036412978,
+            "observations": 1560,
+            "predicted_total": 5663.1364425655365,
+            "signed_bias": -0.0235971650749075,
+            "wape": 0.29976892856559045
+          }
+        },
+        "mean28": {
+          "to_dry": {
+            "actual_total": 1224.5,
+            "mae": 1.0405287114845938,
+            "observations": 408,
+            "predicted_total": 1213.7142857142858,
+            "signed_bias": -0.008808259931167241,
+            "wape": 0.34670127748935425
+          },
+          "to_rainy": {
+            "actual_total": 5800.0,
+            "mae": 1.1321428571428571,
+            "observations": 1560,
+            "predicted_total": 5724.571428571428,
+            "signed_bias": -0.013004926108374384,
+            "wape": 0.3045073891625616
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "to_dry": {
+            "actual_total": 1224.5,
+            "mae": 1.066789309887179,
+            "observations": 408,
+            "predicted_total": 1185.218656789011,
+            "signed_bias": -0.03207949629317191,
+            "wape": 0.355451235960775
+          },
+          "to_rainy": {
+            "actual_total": 5800.0,
+            "mae": 1.109851634667975,
+            "observations": 1560,
+            "predicted_total": 5648.807500363564,
+            "signed_bias": -0.02606767235110961,
+            "wape": 0.2985118189796622
+          }
+        }
+      },
+      "seasonal_transitions": {
+        "existing_lightgbm": {
+          "to_dry": {
+            "actual_total": 2647.0,
+            "mae": 1.0495130036978317,
+            "observations": 912,
+            "predicted_total": 2681.952443142247,
+            "signed_bias": 0.013204549732620589,
+            "wape": 0.3616002491017841
+          },
+          "to_rainy": {
+            "actual_total": 7800.5,
+            "mae": 1.096987655008769,
+            "observations": 2112,
+            "predicted_total": 7767.536059952175,
+            "signed_bias": -0.004225875270537215,
+            "wape": 0.29701146431363634
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "to_dry": {
+            "actual_total": 2647.0,
+            "mae": 1.0466276880847087,
+            "observations": 912,
+            "predicted_total": 2681.242190621588,
+            "signed_bias": 0.012936226150958957,
+            "wape": 0.360606139604554
+          },
+          "to_rainy": {
+            "actual_total": 7800.5,
+            "mae": 1.102199139974602,
+            "observations": 2112,
+            "predicted_total": 7657.651073980599,
+            "signed_bias": -0.018312790977424602,
+            "wape": 0.2984224836390436
+          }
+        },
+        "mean28": {
+          "to_dry": {
+            "actual_total": 2647.0,
+            "mae": 1.04671835839599,
+            "observations": 912,
+            "predicted_total": 2665.714285714286,
+            "signed_bias": 0.007069998380916401,
+            "wape": 0.36063737924334827
+          },
+          "to_rainy": {
+            "actual_total": 7800.5,
+            "mae": 1.1225818452380953,
+            "observations": 2112,
+            "predicted_total": 7765.464285714285,
+            "signed_bias": -0.004491470326993691,
+            "wape": 0.30394113930425704
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "to_dry": {
+            "actual_total": 2647.0,
+            "mae": 1.0439533039864342,
+            "observations": 912,
+            "predicted_total": 2625.094011294776,
+            "signed_bias": -0.00827577963929883,
+            "wape": 0.35968470466022967
+          },
+          "to_rainy": {
+            "actual_total": 7800.5,
+            "mae": 1.0992183855098345,
+            "observations": 2112,
+            "predicted_total": 7628.020782405225,
+            "signed_bias": -0.022111302813252385,
+            "wape": 0.2976154387791514
+          }
+        }
+      }
+    },
+    "7": {
+      "by_compatible_unit": {
+        "existing_lightgbm": {
+          "bag": {
+            "actual_total": 2309.0,
+            "mae": 1.4535121478431745,
+            "observations": 378,
+            "predicted_total": 2215.67379080122,
+            "signed_bias": -0.04041845352913816,
+            "wape": 0.237950451227683
+          },
+          "box": {
+            "actual_total": 1247.0,
+            "mae": 1.248453998801389,
+            "observations": 252,
+            "predicted_total": 1250.29072525931,
+            "signed_bias": 0.002638913600088212,
+            "wape": 0.25229383135360867
+          },
+          "cu.m.": {
+            "actual_total": 323.0,
+            "mae": 0.8412253288249266,
+            "observations": 252,
+            "predicted_total": 313.1521364217955,
+            "signed_bias": -0.030488741728187305,
+            "wape": 0.6563120212504071
+          },
+          "pail": {
+            "actual_total": 315.0,
+            "mae": 1.1667799260564287,
+            "observations": 126,
+            "predicted_total": 327.22563363077,
+            "signed_bias": 0.038811535335777775,
+            "wape": 0.46671197042257145
+          },
+          "pcs": {
+            "actual_total": 4423.0,
+            "mae": 1.0088305128180124,
+            "observations": 1260,
+            "predicted_total": 4496.652177096858,
+            "signed_bias": 0.01665208616252738,
+            "wape": 0.28739010765333384
+          },
+          "roll": {
+            "actual_total": 867.0,
+            "mae": 1.0358648645861641,
+            "observations": 378,
+            "predicted_total": 815.69108814993,
+            "signed_bias": -0.05917982912349481,
+            "wape": 0.45162274372960787
+          },
+          "set": {
+            "actual_total": 82.0,
+            "mae": 0.6664036812689346,
+            "observations": 126,
+            "predicted_total": 7.404782470765044,
+            "signed_bias": -0.9096977747467677,
+            "wape": 1.0239861443888507
+          },
+          "sheet": {
+            "actual_total": 156.0,
+            "mae": 0.9478685094024445,
+            "observations": 126,
+            "predicted_total": 161.30003623506,
+            "signed_bias": 0.033974591250384614,
+            "wape": 0.7655861037481282
+          },
+          "tube": {
+            "actual_total": 427.0,
+            "mae": 0.9848429113587301,
+            "observations": 126,
+            "predicted_total": 430.6849248775,
+            "signed_bias": 0.008629800649882904,
+            "wape": 0.2906093836796253
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "bag": {
+            "actual_total": 2309.0,
+            "mae": 1.4432146119099736,
+            "observations": 378,
+            "predicted_total": 2215.34227723265,
+            "signed_bias": -0.04056202804995669,
+            "wape": 0.23626467011778693
+          },
+          "box": {
+            "actual_total": 1247.0,
+            "mae": 1.2436574794957937,
+            "observations": 252,
+            "predicted_total": 1251.221319495,
+            "signed_bias": 0.0033851800280673616,
+            "wape": 0.2513245267305052
+          },
+          "cu.m.": {
+            "actual_total": 323.0,
+            "mae": 0.8365311388797174,
+            "observations": 252,
+            "predicted_total": 317.6668497976588,
+            "signed_bias": -0.016511300936040866,
+            "wape": 0.6526496811073956
+          },
+          "pail": {
+            "actual_total": 315.0,
+            "mae": 1.1742071715386508,
+            "observations": 126,
+            "predicted_total": 324.59948793891,
+            "signed_bias": 0.03047456488542857,
+            "wape": 0.4696828686154603
+          },
+          "pcs": {
+            "actual_total": 4423.0,
+            "mae": 1.0000258596080196,
+            "observations": 1260,
+            "predicted_total": 4487.977912317279,
+            "signed_bias": 0.014690913931105427,
+            "wape": 0.2848818863002724
+          },
+          "roll": {
+            "actual_total": 867.0,
+            "mae": 1.008248803756471,
+            "observations": 378,
+            "predicted_total": 817.580800559062,
+            "signed_bias": -0.05700023003568397,
+            "wape": 0.43958252343707727
+          },
+          "set": {
+            "actual_total": 82.0,
+            "mae": 0.649936011042954,
+            "observations": 126,
+            "predicted_total": 0.8380377384292963,
+            "signed_bias": -0.9897800275801305,
+            "wape": 0.9986821633099049
+          },
+          "sheet": {
+            "actual_total": 156.0,
+            "mae": 0.9392111097775555,
+            "observations": 126,
+            "predicted_total": 151.233886809742,
+            "signed_bias": -0.030552007629858973,
+            "wape": 0.7585935886664872
+          },
+          "tube": {
+            "actual_total": 427.0,
+            "mae": 0.9492113363956349,
+            "observations": 126,
+            "predicted_total": 424.40998482039,
+            "signed_bias": -0.006065609319929742,
+            "wape": 0.2800951484446136
+          }
+        },
+        "mean28": {
+          "bag": {
+            "actual_total": 2309.0,
+            "mae": 1.4828987150415722,
+            "observations": 378,
+            "predicted_total": 2260.25,
+            "signed_bias": -0.0211130359462971,
+            "wape": 0.24276124481841244
+          },
+          "box": {
+            "actual_total": 1247.0,
+            "mae": 1.2738095238095237,
+            "observations": 252,
+            "predicted_total": 1227.5,
+            "signed_bias": -0.015637530072173216,
+            "wape": 0.2574178027265437
+          },
+          "cu.m.": {
+            "actual_total": 323.0,
+            "mae": 0.8518282312925171,
+            "observations": 252,
+            "predicted_total": 308.375,
+            "signed_bias": -0.045278637770897835,
+            "wape": 0.6645842547545334
+          },
+          "pail": {
+            "actual_total": 315.0,
+            "mae": 1.1680839002267573,
+            "observations": 126,
+            "predicted_total": 317.75,
+            "signed_bias": 0.00873015873015873,
+            "wape": 0.46723356009070294
+          },
+          "pcs": {
+            "actual_total": 4423.0,
+            "mae": 1.0550736961451248,
+            "observations": 1260,
+            "predicted_total": 4477.25,
+            "signed_bias": 0.012265430703142663,
+            "wape": 0.30056361228642486
+          },
+          "roll": {
+            "actual_total": 867.0,
+            "mae": 1.0234315948601662,
+            "observations": 378,
+            "predicted_total": 831.5,
+            "signed_bias": -0.040945790080738176,
+            "wape": 0.44620201021585104
+          },
+          "set": {
+            "actual_total": 82.0,
+            "mae": 0.701530612244898,
+            "observations": 126,
+            "predicted_total": 56.25,
+            "signed_bias": -0.31402439024390244,
+            "wape": 1.0779616724738676
+          },
+          "sheet": {
+            "actual_total": 156.0,
+            "mae": 0.9087301587301587,
+            "observations": 126,
+            "predicted_total": 164.5,
+            "signed_bias": 0.05448717948717949,
+            "wape": 0.7339743589743589
+          },
+          "tube": {
+            "actual_total": 427.0,
+            "mae": 1.0127551020408163,
+            "observations": 126,
+            "predicted_total": 426.25,
+            "signed_bias": -0.001756440281030445,
+            "wape": 0.29884576781532285
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "bag": {
+            "actual_total": 2309.0,
+            "mae": 1.4118775630086773,
+            "observations": 378,
+            "predicted_total": 2212.80718988552,
+            "signed_bias": -0.04165994374815071,
+            "wape": 0.23113456856530099
+          },
+          "box": {
+            "actual_total": 1247.0,
+            "mae": 1.222656951291984,
+            "observations": 252,
+            "predicted_total": 1239.92177325268,
+            "signed_bias": -0.005676204288147554,
+            "wape": 0.24708063490423415
+          },
+          "cu.m.": {
+            "actual_total": 323.0,
+            "mae": 0.8474620192092647,
+            "observations": 252,
+            "predicted_total": 315.7206179699267,
+            "signed_bias": -0.02253678647081517,
+            "wape": 0.6611777982685285
+          },
+          "pail": {
+            "actual_total": 315.0,
+            "mae": 1.130579762585476,
+            "observations": 126,
+            "predicted_total": 325.71010774601,
+            "signed_bias": 0.034000342050825395,
+            "wape": 0.4522319050341905
+          },
+          "pcs": {
+            "actual_total": 4423.0,
+            "mae": 0.9969933296448785,
+            "observations": 1260,
+            "predicted_total": 4467.348388316225,
+            "signed_bias": 0.010026766519607891,
+            "wape": 0.28401799578398074
+          },
+          "roll": {
+            "actual_total": 867.0,
+            "mae": 1.0419840125433333,
+            "observations": 378,
+            "predicted_total": 800.044465016268,
+            "signed_bias": -0.07722668394894118,
+            "wape": 0.4542906075448443
+          },
+          "set": {
+            "actual_total": 82.0,
+            "mae": 0.6526686668743727,
+            "observations": 126,
+            "predicted_total": 2.62530078206284,
+            "signed_bias": -0.9679841368041117,
+            "wape": 1.0028811222703775
+          },
+          "sheet": {
+            "actual_total": 156.0,
+            "mae": 0.9164113825738095,
+            "observations": 126,
+            "predicted_total": 152.398618007224,
+            "signed_bias": -0.02308578200497436,
+            "wape": 0.7401784243865385
+          },
+          "tube": {
+            "actual_total": 427.0,
+            "mae": 0.9619398549429365,
+            "observations": 126,
+            "predicted_total": 417.44151674783,
+            "signed_bias": -0.022385206679555035,
+            "wape": 0.28385110473725994
+          }
+        }
+      },
+      "by_demand_pattern": {
+        "existing_lightgbm": {
+          "intermittent": {
+            "actual_total": 873.0,
+            "mae": 0.883268982227725,
+            "observations": 756,
+            "predicted_total": 821.7116767639191,
+            "signed_bias": -0.05874951115244089,
+            "wape": 0.7648927268776176
+          },
+          "intermittent_low": {
+            "actual_total": 96.0,
+            "mae": 0.38875739619002286,
+            "observations": 252,
+            "predicted_total": 7.404782470765044,
+            "signed_bias": -0.9228668492628641,
+            "wape": 1.02048816499881
+          },
+          "neutral": {
+            "actual_total": 2540.0,
+            "mae": 1.1982259450977777,
+            "observations": 630,
+            "predicted_total": 2503.68794378062,
+            "signed_bias": -0.014296085125740158,
+            "wape": 0.2971977737840945
+          },
+          "no_sales": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "rainy": {
+            "actual_total": 1360.0,
+            "mae": 1.0350642198694147,
+            "observations": 504,
+            "predicted_total": 1449.866988675335,
+            "signed_bias": 0.06607866814362867,
+            "wape": 0.383582622657489
+          },
+          "summer": {
+            "actual_total": 5280.0,
+            "mae": 1.548862426349061,
+            "observations": 756,
+            "predicted_total": 5235.40390325257,
+            "signed_bias": -0.008446230444589016,
+            "wape": 0.221768938318161
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "intermittent": {
+            "actual_total": 873.0,
+            "mae": 0.8716575123148697,
+            "observations": 756,
+            "predicted_total": 819.6565072658321,
+            "signed_bias": -0.061103657198359564,
+            "wape": 0.7548374333448357
+          },
+          "intermittent_low": {
+            "actual_total": 96.0,
+            "mae": 0.38052356107703256,
+            "observations": 252,
+            "predicted_total": 0.8380377384292963,
+            "signed_bias": -0.9912704402246948,
+            "wape": 0.9988743478272104
+          },
+          "neutral": {
+            "actual_total": 2540.0,
+            "mae": 1.1816738128103175,
+            "observations": 630,
+            "predicted_total": 2513.9759082379,
+            "signed_bias": -0.010245705418149606,
+            "wape": 0.29309232364980314
+          },
+          "no_sales": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "rainy": {
+            "actual_total": 1360.0,
+            "mae": 1.020978931835873,
+            "observations": 504,
+            "predicted_total": 1438.8671371119,
+            "signed_bias": 0.05799054199404412,
+            "wape": 0.3783627806215294
+          },
+          "summer": {
+            "actual_total": 5280.0,
+            "mae": 1.540719120191164,
+            "observations": 756,
+            "predicted_total": 5217.53296635506,
+            "signed_bias": -0.011830877584268939,
+            "wape": 0.22060296493646211
+          }
+        },
+        "mean28": {
+          "intermittent": {
+            "actual_total": 873.0,
+            "mae": 0.869968820861678,
+            "observations": 756,
+            "predicted_total": 865.625,
+            "signed_bias": -0.008447880870561282,
+            "wape": 0.7533750613647521
+          },
+          "intermittent_low": {
+            "actual_total": 96.0,
+            "mae": 0.447562358276644,
+            "observations": 252,
+            "predicted_total": 68.5,
+            "signed_bias": -0.2864583333333333,
+            "wape": 1.1748511904761905
+          },
+          "neutral": {
+            "actual_total": 2540.0,
+            "mae": 1.215532879818594,
+            "observations": 630,
+            "predicted_total": 2453.5,
+            "signed_bias": -0.03405511811023622,
+            "wape": 0.3014904386951631
+          },
+          "no_sales": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "rainy": {
+            "actual_total": 1360.0,
+            "mae": 1.0830498866213152,
+            "observations": 504,
+            "predicted_total": 1401.0,
+            "signed_bias": 0.030147058823529412,
+            "wape": 0.4013655462184874
+          },
+          "summer": {
+            "actual_total": 5280.0,
+            "mae": 1.597883597883598,
+            "observations": 756,
+            "predicted_total": 5281.0,
+            "signed_bias": 0.0001893939393939394,
+            "wape": 0.2287878787878788
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "intermittent": {
+            "actual_total": 873.0,
+            "mae": 0.8811018565486185,
+            "observations": 756,
+            "predicted_total": 809.2679005508784,
+            "signed_bias": -0.07300355034263642,
+            "wape": 0.763016040722515
+          },
+          "intermittent_low": {
+            "actual_total": 96.0,
+            "mae": 0.3818898889927419,
+            "observations": 252,
+            "predicted_total": 2.62530078206284,
+            "signed_bias": -0.9726531168535121,
+            "wape": 1.0024609586059474
+          },
+          "neutral": {
+            "actual_total": 2540.0,
+            "mae": 1.1845344365385873,
+            "observations": 630,
+            "predicted_total": 2485.79273634921,
+            "signed_bias": -0.021341442382200787,
+            "wape": 0.2938018484327992
+          },
+          "no_sales": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "rainy": {
+            "actual_total": 1360.0,
+            "mae": 1.0210805121665198,
+            "observations": 504,
+            "predicted_total": 1426.320601521826,
+            "signed_bias": 0.04876514817781324,
+            "wape": 0.3784004250970044
+          },
+          "summer": {
+            "actual_total": 5280.0,
+            "mae": 1.5126617470746164,
+            "observations": 756,
+            "predicted_total": 5210.01143851977,
+            "signed_bias": -0.013255409371255682,
+            "wape": 0.21658565924022916
+          }
+        }
+      },
+      "by_philippine_season": {
+        "existing_lightgbm": {
+          "dry": {
+            "actual_total": 4260.5,
+            "mae": 0.9980270021469784,
+            "observations": 1272,
+            "predicted_total": 4188.265123306814,
+            "signed_bias": -0.016954553853581997,
+            "wape": 0.2979674561039682
+          },
+          "rainy": {
+            "actual_total": 3291.5,
+            "mae": 1.1360191836619442,
+            "observations": 1008,
+            "predicted_total": 3213.982735525079,
+            "signed_bias": -0.02355074114383132,
+            "wape": 0.3478983251196232
+          },
+          "transition": {
+            "actual_total": 2597.0,
+            "mae": 1.0734075767305438,
+            "observations": 744,
+            "predicted_total": 2615.827436111316,
+            "signed_bias": 0.007249686604280332,
+            "wape": 0.30751453103100673
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "dry": {
+            "actual_total": 4260.5,
+            "mae": 0.9899633480105696,
+            "observations": 1272,
+            "predicted_total": 4189.647145726133,
+            "signed_bias": -0.016630173518100456,
+            "wape": 0.2955599996876997
+          },
+          "rainy": {
+            "actual_total": 3291.5,
+            "mae": 1.1188818223014692,
+            "observations": 1008,
+            "predicted_total": 3212.4634888579785,
+            "signed_bias": -0.024012307805566308,
+            "wape": 0.34265012209627255
+          },
+          "transition": {
+            "actual_total": 2597.0,
+            "mae": 1.0639923383500378,
+            "observations": 744,
+            "predicted_total": 2588.75992212501,
+            "signed_bias": -0.0031729217847478244,
+            "wape": 0.30481721206485485
+          }
+        },
+        "mean28": {
+          "dry": {
+            "actual_total": 4260.5,
+            "mae": 1.0339734950584007,
+            "observations": 1272,
+            "predicted_total": 4179.75,
+            "signed_bias": -0.018953174510034032,
+            "wape": 0.30869951548275687
+          },
+          "rainy": {
+            "actual_total": 3291.5,
+            "mae": 1.163655045351474,
+            "observations": 1008,
+            "predicted_total": 3279.0,
+            "signed_bias": -0.0037976606410451163,
+            "wape": 0.3563616240966993
+          },
+          "transition": {
+            "actual_total": 2597.0,
+            "mae": 1.0778849846390168,
+            "observations": 744,
+            "predicted_total": 2610.875,
+            "signed_bias": 0.005342703118983443,
+            "wape": 0.30879723857197866
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "dry": {
+            "actual_total": 4260.5,
+            "mae": 0.9932513732801719,
+            "observations": 1272,
+            "predicted_total": 4177.481258129989,
+            "signed_bias": -0.019485680523415247,
+            "wape": 0.29654166102860663
+          },
+          "rainy": {
+            "actual_total": 3291.5,
+            "mae": 1.1105079139686245,
+            "observations": 1008,
+            "predicted_total": 3195.3104410139945,
+            "signed_bias": -0.029223624179251284,
+            "wape": 0.34008566832154746
+          },
+          "transition": {
+            "actual_total": 2597.0,
+            "mae": 1.0537568352470705,
+            "observations": 744,
+            "predicted_total": 2561.2262785797634,
+            "signed_bias": -0.01377501787456161,
+            "wape": 0.30188490004767826
+          }
+        }
+      },
+      "by_product": {
+        "existing_lightgbm": {
+          "SIM-NEU-001": {
+            "actual_total": 323.0,
+            "mae": 1.1827130311487302,
+            "observations": 126,
+            "predicted_total": 319.61910262436,
+            "signed_bias": -0.010467174537585139,
+            "wape": 0.4613679316555418
+          },
+          "SIM-NEU-002": {
+            "actual_total": 706.0,
+            "mae": 1.3915956910807143,
+            "observations": 126,
+            "predicted_total": 742.83842213669,
+            "signed_bias": 0.05217906818228046,
+            "wape": 0.24835843778494335
+          },
+          "SIM-NEU-003": {
+            "actual_total": 380.0,
+            "mae": 1.0622134286616667,
+            "observations": 126,
+            "predicted_total": 374.71008541615,
+            "signed_bias": -0.013920827852236842,
+            "wape": 0.35220761055623684
+          },
+          "SIM-NEU-004": {
+            "actual_total": 82.0,
+            "mae": 0.6664036812689346,
+            "observations": 126,
+            "predicted_total": 7.404782470765044,
+            "signed_bias": -0.9096977747467677,
+            "wape": 1.0239861443888507
+          },
+          "SIM-NEU-005": {
+            "actual_total": 590.0,
+            "mae": 1.2492952680757143,
+            "observations": 126,
+            "predicted_total": 559.0680304808,
+            "signed_bias": -0.052427066981694914,
+            "wape": 0.2667986504704068
+          },
+          "SIM-NEU-006": {
+            "actual_total": 541.0,
+            "mae": 1.1053123065220636,
+            "observations": 126,
+            "predicted_total": 507.45230312262,
+            "signed_bias": -0.06201053027242144,
+            "wape": 0.25742948358924217
+          },
+          "SIM-NEU-007": {
+            "actual_total": 117.0,
+            "mae": 0.8109954006312746,
+            "observations": 126,
+            "predicted_total": 90.6364464379336,
+            "signed_bias": -0.22532951762449915,
+            "wape": 0.8733796622182958
+          },
+          "SIM-NEU-008": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "SIM-RAIN-001": {
+            "actual_total": 427.0,
+            "mae": 0.9848429113587301,
+            "observations": 126,
+            "predicted_total": 430.6849248775,
+            "signed_bias": 0.008629800649882904,
+            "wape": 0.2906093836796253
+          },
+          "SIM-RAIN-002": {
+            "actual_total": 110.0,
+            "mae": 0.6901296555361349,
+            "observations": 126,
+            "predicted_total": 106.058412142355,
+            "signed_bias": -0.03583261688768182,
+            "wape": 0.7905121508868455
+          },
+          "SIM-RAIN-003": {
+            "actual_total": 156.0,
+            "mae": 0.9478685094024445,
+            "observations": 126,
+            "predicted_total": 161.30003623506,
+            "signed_bias": 0.033974591250384614,
+            "wape": 0.7655861037481282
+          },
+          "SIM-RAIN-004": {
+            "actual_total": 307.0,
+            "mae": 1.0974585013407143,
+            "observations": 126,
+            "predicted_total": 336.83549172277,
+            "signed_bias": 0.09718401212628665,
+            "wape": 0.4504227073906515
+          },
+          "SIM-RAIN-005": {
+            "actual_total": 223.0,
+            "mae": 0.9607645304029762,
+            "observations": 126,
+            "predicted_total": 229.963976497745,
+            "signed_bias": 0.03122859416029148,
+            "wape": 0.5428535014832959
+          },
+          "SIM-RAIN-006": {
+            "actual_total": 403.0,
+            "mae": 1.0971909363752381,
+            "observations": 126,
+            "predicted_total": 452.38259557732,
+            "signed_bias": 0.12253745800823822,
+            "wape": 0.3430423275019355
+          },
+          "SIM-RAIN-007": {
+            "actual_total": 14.0,
+            "mae": 0.1111111111111111,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": -1.0,
+            "wape": 1.0
+          },
+          "SIM-RAIN-008": {
+            "actual_total": 167.0,
+            "mae": 1.1681696701466429,
+            "observations": 126,
+            "predicted_total": 150.564645526775,
+            "signed_bias": -0.09841529624685628,
+            "wape": 0.8813735235836946
+          },
+          "SIM-SUM-001": {
+            "actual_total": 1766.0,
+            "mae": 2.1110261378169843,
+            "observations": 126,
+            "predicted_total": 1797.57073448418,
+            "signed_bias": 0.01787697309409966,
+            "wape": 0.15061681390993206
+          },
+          "SIM-SUM-002": {
+            "actual_total": 1269.0,
+            "mae": 1.6400126754492064,
+            "observations": 126,
+            "predicted_total": 1219.96597057794,
+            "signed_bias": -0.038639897101702125,
+            "wape": 0.16283813798786445
+          },
+          "SIM-SUM-003": {
+            "actual_total": 179.5,
+            "mae": 0.9156562437856508,
+            "observations": 126,
+            "predicted_total": 186.599268677606,
+            "signed_bias": 0.03955024332928134,
+            "wape": 0.6427447727966128
+          },
+          "SIM-SUM-004": {
+            "actual_total": 143.5,
+            "mae": 0.7667944138642023,
+            "observations": 126,
+            "predicted_total": 126.5528677441895,
+            "signed_bias": -0.1180984826188885,
+            "wape": 0.673282899978324
+          },
+          "SIM-SUM-005": {
+            "actual_total": 890.0,
+            "mae": 1.6548320506914285,
+            "observations": 126,
+            "predicted_total": 894.9337443364,
+            "signed_bias": 0.005543532962247191,
+            "wape": 0.23427959369339327
+          },
+          "SIM-SUM-006": {
+            "actual_total": 315.0,
+            "mae": 1.1667799260564287,
+            "observations": 126,
+            "predicted_total": 327.22563363077,
+            "signed_bias": 0.038811535335777775,
+            "wape": 0.46671197042257145
+          },
+          "SIM-SUM-007": {
+            "actual_total": 580.0,
+            "mae": 1.3635703258506349,
+            "observations": 126,
+            "predicted_total": 540.30966724844,
+            "signed_bias": -0.06843160819234483,
+            "wape": 0.2962238983744483
+          },
+          "SIM-SUM-008": {
+            "actual_total": 460.0,
+            "mae": 1.3569534422296825,
+            "observations": 126,
+            "predicted_total": 455.39815297484,
+            "signed_bias": -0.010004015272086957,
+            "wape": 0.3716872472194348
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "SIM-NEU-001": {
+            "actual_total": 323.0,
+            "mae": 1.1735014282656349,
+            "observations": 126,
+            "predicted_total": 330.31207811147,
+            "signed_bias": 0.02263801272900929,
+            "wape": 0.4577745509643034
+          },
+          "SIM-NEU-002": {
+            "actual_total": 706.0,
+            "mae": 1.4030244559574603,
+            "observations": 126,
+            "predicted_total": 738.5258097035,
+            "signed_bias": 0.04607055198796034,
+            "wape": 0.2503981323663456
+          },
+          "SIM-NEU-003": {
+            "actual_total": 380.0,
+            "mae": 1.0367983903286508,
+            "observations": 126,
+            "predicted_total": 375.76320004107,
+            "signed_bias": -0.011149473576131578,
+            "wape": 0.34378051889844735
+          },
+          "SIM-NEU-004": {
+            "actual_total": 82.0,
+            "mae": 0.649936011042954,
+            "observations": 126,
+            "predicted_total": 0.8380377384292963,
+            "signed_bias": -0.9897800275801305,
+            "wape": 0.9986821633099049
+          },
+          "SIM-NEU-005": {
+            "actual_total": 590.0,
+            "mae": 1.2107542864657144,
+            "observations": 126,
+            "predicted_total": 556.67931059036,
+            "signed_bias": -0.056475744762101696,
+            "wape": 0.2585678645672542
+          },
+          "SIM-NEU-006": {
+            "actual_total": 541.0,
+            "mae": 1.084290503034127,
+            "observations": 126,
+            "predicted_total": 512.6955097915,
+            "signed_bias": -0.052318835875231055,
+            "wape": 0.25253346281386324
+          },
+          "SIM-NEU-007": {
+            "actual_total": 117.0,
+            "mae": 0.8036795615485294,
+            "observations": 126,
+            "predicted_total": 89.8542806897293,
+            "signed_bias": -0.23201469495957863,
+            "wape": 0.8655010662830316
+          },
+          "SIM-NEU-008": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "SIM-RAIN-001": {
+            "actual_total": 427.0,
+            "mae": 0.9492113363956349,
+            "observations": 126,
+            "predicted_total": 424.40998482039,
+            "signed_bias": -0.006065609319929742,
+            "wape": 0.2800951484446136
+          },
+          "SIM-RAIN-002": {
+            "actual_total": 110.0,
+            "mae": 0.6585784441983096,
+            "observations": 126,
+            "predicted_total": 112.609475325761,
+            "signed_bias": 0.023722502961463637,
+            "wape": 0.7543716724453363
+          },
+          "SIM-RAIN-003": {
+            "actual_total": 156.0,
+            "mae": 0.9392111097775555,
+            "observations": 126,
+            "predicted_total": 151.233886809742,
+            "signed_bias": -0.030552007629858973,
+            "wape": 0.7585935886664872
+          },
+          "SIM-RAIN-004": {
+            "actual_total": 307.0,
+            "mae": 1.096033845717619,
+            "observations": 126,
+            "predicted_total": 327.96469711456,
+            "signed_bias": 0.06828891568260587,
+            "wape": 0.4498379953108143
+          },
+          "SIM-RAIN-005": {
+            "actual_total": 223.0,
+            "mae": 0.9642360252660317,
+            "observations": 126,
+            "predicted_total": 240.43376202476,
+            "signed_bias": 0.07817830504376681,
+            "wape": 0.5448149739171301
+          },
+          "SIM-RAIN-006": {
+            "actual_total": 403.0,
+            "mae": 1.0744345199642062,
+            "observations": 126,
+            "predicted_total": 446.05869315219,
+            "signed_bias": 0.10684539243719603,
+            "wape": 0.33592741815258065
+          },
+          "SIM-RAIN-007": {
+            "actual_total": 14.0,
+            "mae": 0.1111111111111111,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": -1.0,
+            "wape": 1.0
+          },
+          "SIM-RAIN-008": {
+            "actual_total": 167.0,
+            "mae": 1.155413680605389,
+            "observations": 126,
+            "predicted_total": 148.292014642941,
+            "signed_bias": -0.11202386441352695,
+            "wape": 0.8717492440495749
+          },
+          "SIM-SUM-001": {
+            "actual_total": 1766.0,
+            "mae": 2.113915295185873,
+            "observations": 126,
+            "predicted_total": 1786.9164744107,
+            "signed_bias": 0.011843983245016988,
+            "wape": 0.15082294858064552
+          },
+          "SIM-SUM-002": {
+            "actual_total": 1269.0,
+            "mae": 1.6202798110615872,
+            "observations": 126,
+            "predicted_total": 1220.17965187612,
+            "signed_bias": -0.03847151152394011,
+            "wape": 0.16087884648838455
+          },
+          "SIM-SUM-003": {
+            "actual_total": 179.5,
+            "mae": 0.8913261104508731,
+            "observations": 126,
+            "predicted_total": 188.842824012414,
+            "signed_bias": 0.052049158843532034,
+            "wape": 0.6256662390908635
+          },
+          "SIM-SUM-004": {
+            "actual_total": 143.5,
+            "mae": 0.7817361673085619,
+            "observations": 126,
+            "predicted_total": 128.8240257852448,
+            "signed_bias": -0.10227159731536725,
+            "wape": 0.6864024883684934
+          },
+          "SIM-SUM-005": {
+            "actual_total": 890.0,
+            "mae": 1.6265484186925396,
+            "observations": 126,
+            "predicted_total": 890.6747267728,
+            "signed_bias": 0.0007581199694382023,
+            "wape": 0.2302753941070337
+          },
+          "SIM-SUM-006": {
+            "actual_total": 315.0,
+            "mae": 1.1742071715386508,
+            "observations": 126,
+            "predicted_total": 324.59948793891,
+            "signed_bias": 0.03047456488542857,
+            "wape": 0.4696828686154603
+          },
+          "SIM-SUM-007": {
+            "actual_total": 580.0,
+            "mae": 1.3556275896785714,
+            "observations": 126,
+            "predicted_total": 542.3324915346,
+            "signed_bias": -0.06494398011275862,
+            "wape": 0.29449840741293104
+          },
+          "SIM-SUM-008": {
+            "actual_total": 460.0,
+            "mae": 1.3537364349897618,
+            "observations": 126,
+            "predicted_total": 452.83013382193,
+            "signed_bias": -0.0155866656045,
+            "wape": 0.37080606697545654
+          }
+        },
+        "mean28": {
+          "SIM-NEU-001": {
+            "actual_total": 323.0,
+            "mae": 1.2023809523809523,
+            "observations": 126,
+            "predicted_total": 302.0,
+            "signed_bias": -0.06501547987616099,
+            "wape": 0.46904024767801855
+          },
+          "SIM-NEU-002": {
+            "actual_total": 706.0,
+            "mae": 1.431689342403628,
+            "observations": 126,
+            "predicted_total": 729.75,
+            "signed_bias": 0.03364022662889518,
+            "wape": 0.25551396195872117
+          },
+          "SIM-NEU-003": {
+            "actual_total": 380.0,
+            "mae": 1.0289115646258504,
+            "observations": 126,
+            "predicted_total": 370.5,
+            "signed_bias": -0.025,
+            "wape": 0.34116541353383456
+          },
+          "SIM-NEU-004": {
+            "actual_total": 82.0,
+            "mae": 0.701530612244898,
+            "observations": 126,
+            "predicted_total": 56.25,
+            "signed_bias": -0.31402439024390244,
+            "wape": 1.0779616724738676
+          },
+          "SIM-NEU-005": {
+            "actual_total": 590.0,
+            "mae": 1.2987528344671202,
+            "observations": 126,
+            "predicted_total": 553.5,
+            "signed_bias": -0.06186440677966102,
+            "wape": 0.27736077481840193
+          },
+          "SIM-NEU-006": {
+            "actual_total": 541.0,
+            "mae": 1.1159297052154196,
+            "observations": 126,
+            "predicted_total": 497.75,
+            "signed_bias": -0.0799445471349353,
+            "wape": 0.25990229733298126
+          },
+          "SIM-NEU-007": {
+            "actual_total": 117.0,
+            "mae": 0.8358843537414966,
+            "observations": 126,
+            "predicted_total": 114.75,
+            "signed_bias": -0.019230769230769232,
+            "wape": 0.9001831501831502
+          },
+          "SIM-NEU-008": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "SIM-RAIN-001": {
+            "actual_total": 427.0,
+            "mae": 1.0127551020408163,
+            "observations": 126,
+            "predicted_total": 426.25,
+            "signed_bias": -0.001756440281030445,
+            "wape": 0.29884576781532285
+          },
+          "SIM-RAIN-002": {
+            "actual_total": 110.0,
+            "mae": 0.6660997732426304,
+            "observations": 126,
+            "predicted_total": 115.5,
+            "signed_bias": 0.05,
+            "wape": 0.762987012987013
+          },
+          "SIM-RAIN-003": {
+            "actual_total": 156.0,
+            "mae": 0.9087301587301587,
+            "observations": 126,
+            "predicted_total": 164.5,
+            "signed_bias": 0.05448717948717949,
+            "wape": 0.7339743589743589
+          },
+          "SIM-RAIN-004": {
+            "actual_total": 307.0,
+            "mae": 1.1201814058956916,
+            "observations": 126,
+            "predicted_total": 309.0,
+            "signed_bias": 0.006514657980456026,
+            "wape": 0.45974872033503955
+          },
+          "SIM-RAIN-005": {
+            "actual_total": 223.0,
+            "mae": 0.9665532879818595,
+            "observations": 126,
+            "predicted_total": 225.5,
+            "signed_bias": 0.011210762331838564,
+            "wape": 0.5461242793081358
+          },
+          "SIM-RAIN-006": {
+            "actual_total": 403.0,
+            "mae": 1.2327097505668934,
+            "observations": 126,
+            "predicted_total": 440.25,
+            "signed_bias": 0.0924317617866005,
+            "wape": 0.3854129741226515
+          },
+          "SIM-RAIN-007": {
+            "actual_total": 14.0,
+            "mae": 0.19359410430839002,
+            "observations": 126,
+            "predicted_total": 12.25,
+            "signed_bias": -0.125,
+            "wape": 1.7423469387755102
+          },
+          "SIM-RAIN-008": {
+            "actual_total": 167.0,
+            "mae": 1.1054421768707483,
+            "observations": 126,
+            "predicted_total": 162.5,
+            "signed_bias": -0.02694610778443114,
+            "wape": 0.8340461933276304
+          },
+          "SIM-SUM-001": {
+            "actual_total": 1766.0,
+            "mae": 2.3415532879818595,
+            "observations": 126,
+            "predicted_total": 1824.75,
+            "signed_bias": 0.03326727066817667,
+            "wape": 0.1670643908752629
+          },
+          "SIM-SUM-002": {
+            "actual_total": 1269.0,
+            "mae": 1.6930272108843538,
+            "observations": 126,
+            "predicted_total": 1279.25,
+            "signed_bias": 0.008077226162332545,
+            "wape": 0.16810199257007769
+          },
+          "SIM-SUM-003": {
+            "actual_total": 179.5,
+            "mae": 0.8979591836734694,
+            "observations": 126,
+            "predicted_total": 170.5,
+            "signed_bias": -0.05013927576601671,
+            "wape": 0.6303223239156387
+          },
+          "SIM-SUM-004": {
+            "actual_total": 143.5,
+            "mae": 0.8056972789115646,
+            "observations": 126,
+            "predicted_total": 137.875,
+            "signed_bias": -0.039198606271777,
+            "wape": 0.7074415131906421
+          },
+          "SIM-SUM-005": {
+            "actual_total": 890.0,
+            "mae": 1.628968253968254,
+            "observations": 126,
+            "predicted_total": 878.25,
+            "signed_bias": -0.013202247191011237,
+            "wape": 0.23061797752808988
+          },
+          "SIM-SUM-006": {
+            "actual_total": 315.0,
+            "mae": 1.1680839002267573,
+            "observations": 126,
+            "predicted_total": 317.75,
+            "signed_bias": 0.00873015873015873,
+            "wape": 0.46723356009070294
+          },
+          "SIM-SUM-007": {
+            "actual_total": 580.0,
+            "mae": 1.4472789115646258,
+            "observations": 126,
+            "predicted_total": 535.0,
+            "signed_bias": -0.07758620689655173,
+            "wape": 0.31440886699507387
+          },
+          "SIM-SUM-008": {
+            "actual_total": 460.0,
+            "mae": 1.308390022675737,
+            "observations": 126,
+            "predicted_total": 446.0,
+            "signed_bias": -0.030434782608695653,
+            "wape": 0.35838509316770184
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "SIM-NEU-001": {
+            "actual_total": 323.0,
+            "mae": 1.1921432745753968,
+            "observations": 126,
+            "predicted_total": 322.23620708806,
+            "signed_bias": -0.002364683937894737,
+            "wape": 0.46504660246594426
+          },
+          "SIM-NEU-002": {
+            "actual_total": 706.0,
+            "mae": 1.3672952879735714,
+            "observations": 126,
+            "predicted_total": 729.81634337345,
+            "signed_bias": 0.033734197412818696,
+            "wape": 0.24402153864684137
+          },
+          "SIM-NEU-003": {
+            "actual_total": 380.0,
+            "mae": 1.0205679821177778,
+            "observations": 126,
+            "predicted_total": 374.58702220888,
+            "signed_bias": -0.01424467839768421,
+            "wape": 0.3383988572285263
+          },
+          "SIM-NEU-004": {
+            "actual_total": 82.0,
+            "mae": 0.6526686668743727,
+            "observations": 126,
+            "predicted_total": 2.62530078206284,
+            "signed_bias": -0.9679841368041117,
+            "wape": 1.0028811222703775
+          },
+          "SIM-NEU-005": {
+            "actual_total": 590.0,
+            "mae": 1.2646470234157936,
+            "observations": 126,
+            "predicted_total": 549.04773379959,
+            "signed_bias": -0.06941062067866102,
+            "wape": 0.2700771609328644
+          },
+          "SIM-NEU-006": {
+            "actual_total": 541.0,
+            "mae": 1.0780186146103967,
+            "observations": 126,
+            "predicted_total": 510.10542987923,
+            "signed_bias": -0.0571064142712939,
+            "wape": 0.2510727272475231
+          },
+          "SIM-NEU-007": {
+            "actual_total": 117.0,
+            "mae": 0.8139707040851659,
+            "observations": 126,
+            "predicted_total": 90.1519333570497,
+            "signed_bias": -0.22947065506795128,
+            "wape": 0.8765838351686401
+          },
+          "SIM-NEU-008": {
+            "actual_total": 0.0,
+            "mae": 0.0,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": null,
+            "wape": null
+          },
+          "SIM-RAIN-001": {
+            "actual_total": 427.0,
+            "mae": 0.9619398549429365,
+            "observations": 126,
+            "predicted_total": 417.44151674783,
+            "signed_bias": -0.022385206679555035,
+            "wape": 0.28385110473725994
+          },
+          "SIM-RAIN-002": {
+            "actual_total": 110.0,
+            "mae": 0.6673998632145873,
+            "observations": 126,
+            "predicted_total": 111.727684810198,
+            "signed_bias": 0.015706225547254545,
+            "wape": 0.7644762069548909
+          },
+          "SIM-RAIN-003": {
+            "actual_total": 156.0,
+            "mae": 0.9164113825738095,
+            "observations": 126,
+            "predicted_total": 152.398618007224,
+            "signed_bias": -0.02308578200497436,
+            "wape": 0.7401784243865385
+          },
+          "SIM-RAIN-004": {
+            "actual_total": 307.0,
+            "mae": 1.0936800916584921,
+            "observations": 126,
+            "predicted_total": 329.15228100547,
+            "signed_bias": 0.07215726711879479,
+            "wape": 0.44887195944289904
+          },
+          "SIM-RAIN-005": {
+            "actual_total": 223.0,
+            "mae": 0.9640773928156825,
+            "observations": 126,
+            "predicted_total": 232.457363726636,
+            "signed_bias": 0.04240970281002691,
+            "wape": 0.5447253430259014
+          },
+          "SIM-RAIN-006": {
+            "actual_total": 403.0,
+            "mae": 1.0646247092489682,
+            "observations": 126,
+            "predicted_total": 447.26944004189,
+            "signed_bias": 0.10984972715109181,
+            "wape": 0.3328603309314392
+          },
+          "SIM-RAIN-007": {
+            "actual_total": 14.0,
+            "mae": 0.1111111111111111,
+            "observations": 126,
+            "predicted_total": 0.0,
+            "signed_bias": -1.0,
+            "wape": 1.0
+          },
+          "SIM-RAIN-008": {
+            "actual_total": 167.0,
+            "mae": 1.193905150999619,
+            "observations": 126,
+            "predicted_total": 139.26904640648,
+            "signed_bias": -0.16605361433245508,
+            "wape": 0.9007907127302515
+          },
+          "SIM-SUM-001": {
+            "actual_total": 1766.0,
+            "mae": 2.0852226969148413,
+            "observations": 126,
+            "predicted_total": 1782.21526429015,
+            "signed_bias": 0.009181916359088335,
+            "wape": 0.1487757983076274
+          },
+          "SIM-SUM-002": {
+            "actual_total": 1269.0,
+            "mae": 1.5855731951851588,
+            "observations": 126,
+            "predicted_total": 1213.24124530745,
+            "signed_bias": -0.043939128993341216,
+            "wape": 0.15743279952193065
+          },
+          "SIM-SUM-003": {
+            "actual_total": 179.5,
+            "mae": 0.8925683487386031,
+            "observations": 126,
+            "predicted_total": 188.616854961076,
+            "signed_bias": 0.05079027833468524,
+            "wape": 0.626538228083922
+          },
+          "SIM-SUM-004": {
+            "actual_total": 143.5,
+            "mae": 0.8023556896799262,
+            "observations": 126,
+            "predicted_total": 127.1037630088507,
+            "signed_bias": -0.11425949122752126,
+            "wape": 0.7045074348409108
+          },
+          "SIM-SUM-005": {
+            "actual_total": 890.0,
+            "mae": 1.6245353339213493,
+            "observations": 126,
+            "predicted_total": 889.27887659809,
+            "signed_bias": -0.0008102510133820225,
+            "wape": 0.22999039558886517
+          },
+          "SIM-SUM-006": {
+            "actual_total": 315.0,
+            "mae": 1.130579762585476,
+            "observations": 126,
+            "predicted_total": 325.71010774601,
+            "signed_bias": 0.034000342050825395,
+            "wape": 0.4522319050341905
+          },
+          "SIM-SUM-007": {
+            "actual_total": 580.0,
+            "mae": 1.354094261704762,
+            "observations": 126,
+            "predicted_total": 544.6336860706,
+            "signed_bias": -0.06097640332655172,
+            "wape": 0.2941653051289655
+          },
+          "SIM-SUM-008": {
+            "actual_total": 460.0,
+            "mae": 1.295965232136111,
+            "observations": 126,
+            "predicted_total": 454.93225850747,
+            "signed_bias": -0.011016829331586956,
+            "wape": 0.35498178097641303
+          }
+        }
+      },
+      "by_seasonal_group": {
+        "NEUTRAL": {
+          "existing_lightgbm": {
+            "actual_total": 2739.0,
+            "mae": 0.9335661009236372,
+            "observations": 1008,
+            "predicted_total": 2601.7291726893186,
+            "signed_bias": -0.05011713300864599,
+            "wape": 0.3435686855534963
+          },
+          "matched_nonseasonal_ablation": {
+            "actual_total": 2739.0,
+            "mae": 0.9202480795803838,
+            "observations": 1008,
+            "predicted_total": 2604.6682266660587,
+            "signed_bias": -0.049044093951785835,
+            "wape": 0.3386674203055958
+          },
+          "mean28": {
+            "actual_total": 2739.0,
+            "mae": 0.9518849206349206,
+            "observations": 1008,
+            "predicted_total": 2624.5,
+            "signed_bias": -0.04180357794815626,
+            "wape": 0.3503103322380431
+          },
+          "product_specific_seasonal_lightgbm": {
+            "actual_total": 2739.0,
+            "mae": 0.9236639442065594,
+            "observations": 1008,
+            "predicted_total": 2578.5699704883227,
+            "signed_bias": -0.058572482479619374,
+            "wape": 0.33992451834984005
+          }
+        },
+        "RAINY": {
+          "existing_lightgbm": {
+            "actual_total": 1807.0,
+            "mae": 0.882191978209249,
+            "observations": 1008,
+            "predicted_total": 1867.790082579525,
+            "signed_bias": 0.033641440276438846,
+            "wape": 0.49211373217206583
+          },
+          "matched_nonseasonal_ablation": {
+            "actual_total": 1807.0,
+            "mae": 0.8685287591294821,
+            "observations": 1008,
+            "predicted_total": 1851.002513890344,
+            "signed_bias": 0.024351142163997787,
+            "wape": 0.48449196967488545
+          },
+          "mean28": {
+            "actual_total": 1807.0,
+            "mae": 0.9007582199546486,
+            "observations": 1008,
+            "predicted_total": 1855.75,
+            "signed_bias": 0.02697841726618705,
+            "wape": 0.5024705510317021
+          },
+          "product_specific_seasonal_lightgbm": {
+            "actual_total": 1807.0,
+            "mae": 0.8716436945706508,
+            "observations": 1008,
+            "predicted_total": 1829.715950745728,
+            "signed_bias": 0.012571085083413392,
+            "wape": 0.48622957616337353
+          }
+        },
+        "SUMMER": {
+          "existing_lightgbm": {
+            "actual_total": 5603.0,
+            "mae": 1.3719531519680273,
+            "observations": 1008,
+            "predicted_total": 5548.556039674366,
+            "signed_bias": -0.009716930274073622,
+            "wape": 0.2468193427063665
+          },
+          "matched_nonseasonal_ablation": {
+            "actual_total": 5603.0,
+            "mae": 1.3646721248633025,
+            "observations": 1008,
+            "predicted_total": 5535.199816152719,
+            "signed_bias": -0.012100693172814777,
+            "wape": 0.24550945955063516
+          },
+          "mean28": {
+            "actual_total": 5603.0,
+            "mae": 1.4113697562358276,
+            "observations": 1008,
+            "predicted_total": 5589.375,
+            "signed_bias": -0.002431733000178476,
+            "wape": 0.2539105326228296
+          },
+          "product_specific_seasonal_lightgbm": {
+            "actual_total": 5603.0,
+            "mae": 1.3463618151082786,
+            "observations": 1008,
+            "predicted_total": 5525.732056489696,
+            "signed_bias": -0.013790459309352722,
+            "wape": 0.24221536848637243
+          }
+        }
+      },
+      "forecast_vs_actual_examples": [
+        {
+          "absolute_error": 13.0116834791,
+          "actual": 28.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-02-04",
+          "horizon_days": 7,
+          "origin": "2026-02-01",
+          "predicted": 14.9883165209,
+          "product_id": "31000000-0000-4000-8000-000000000001",
+          "product_name": "Concrete Hollow Blocks 4-inch",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "dry",
+          "seasonal_group": "SUMMER",
+          "signed_error": -13.0116834791,
+          "sku": "SIM-SUM-001",
+          "transition": "none",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 8.5504214998,
+          "actual": 9.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-05-16",
+          "horizon_days": 7,
+          "origin": "2026-05-15",
+          "predicted": 17.5504214998,
+          "product_id": "31000000-0000-4000-8000-000000000001",
+          "product_name": "Concrete Hollow Blocks 4-inch",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "transition",
+          "seasonal_group": "SUMMER",
+          "signed_error": 8.5504214998,
+          "sku": "SIM-SUM-001",
+          "transition": "to_rainy",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 8.06634778414,
+          "actual": 0.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-05-06",
+          "horizon_days": 7,
+          "origin": "2026-04-30",
+          "predicted": 8.06634778414,
+          "product_id": "31000000-0000-4000-8000-000000000005",
+          "product_name": "Steel Reinforcing Bar 10mm",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "transition",
+          "seasonal_group": "SUMMER",
+          "signed_error": 8.06634778414,
+          "sku": "SIM-SUM-005",
+          "transition": "to_rainy",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 7.2358645425,
+          "actual": 0.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-05-18",
+          "horizon_days": 7,
+          "origin": "2026-05-15",
+          "predicted": 7.2358645425,
+          "product_id": "31000000-0000-4000-8000-000000000005",
+          "product_name": "Steel Reinforcing Bar 10mm",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "transition",
+          "seasonal_group": "SUMMER",
+          "signed_error": 7.2358645425,
+          "sku": "SIM-SUM-005",
+          "transition": "to_rainy",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 6.98784910528,
+          "actual": 11.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-08-21",
+          "horizon_days": 7,
+          "origin": "2026-08-16",
+          "predicted": 4.01215089472,
+          "product_id": "31000000-0000-4000-8000-000000000007",
+          "product_name": "Cementitious Tile Adhesive 25kg",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "rainy",
+          "seasonal_group": "SUMMER",
+          "signed_error": -6.98784910528,
+          "sku": "SIM-SUM-007",
+          "transition": "none",
+          "unit": "bag"
+        },
+        {
+          "absolute_error": 6.85796207736,
+          "actual": 0.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-06-26",
+          "horizon_days": 7,
+          "origin": "2026-06-21",
+          "predicted": 6.85796207736,
+          "product_id": "31000000-0000-4000-8000-000000000005",
+          "product_name": "Steel Reinforcing Bar 10mm",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "rainy",
+          "seasonal_group": "SUMMER",
+          "signed_error": 6.85796207736,
+          "sku": "SIM-SUM-005",
+          "transition": "none",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 6.8376624554,
+          "actual": 0.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-10-15",
+          "horizon_days": 7,
+          "origin": "2026-10-12",
+          "predicted": 6.8376624554,
+          "product_id": "31000000-0000-4000-8000-000000000005",
+          "product_name": "Steel Reinforcing Bar 10mm",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "rainy",
+          "seasonal_group": "SUMMER",
+          "signed_error": 6.8376624554,
+          "sku": "SIM-SUM-005",
+          "transition": "none",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 6.56836540516,
+          "actual": 0.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-10-15",
+          "horizon_days": 7,
+          "origin": "2026-10-11",
+          "predicted": 6.56836540516,
+          "product_id": "31000000-0000-4000-8000-000000000005",
+          "product_name": "Steel Reinforcing Bar 10mm",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "rainy",
+          "seasonal_group": "SUMMER",
+          "signed_error": 6.56836540516,
+          "sku": "SIM-SUM-005",
+          "transition": "none",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 6.1235541499,
+          "actual": 21.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-05-03",
+          "horizon_days": 7,
+          "origin": "2026-04-26",
+          "predicted": 14.8764458501,
+          "product_id": "31000000-0000-4000-8000-000000000001",
+          "product_name": "Concrete Hollow Blocks 4-inch",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "transition",
+          "seasonal_group": "SUMMER",
+          "signed_error": -6.1235541499,
+          "sku": "SIM-SUM-001",
+          "transition": "to_rainy",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 6.10659936069,
+          "actual": 0.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-09-18",
+          "horizon_days": 7,
+          "origin": "2026-09-13",
+          "predicted": 6.10659936069,
+          "product_id": "31000000-0000-4000-8000-000000000005",
+          "product_name": "Steel Reinforcing Bar 10mm",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "rainy",
+          "seasonal_group": "SUMMER",
+          "signed_error": 6.10659936069,
+          "sku": "SIM-SUM-005",
+          "transition": "none",
+          "unit": "pcs"
+        },
+        {
+          "absolute_error": 5.9727115235,
+          "actual": 0.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "neutral",
+          "forecast_date": "2026-08-18",
+          "horizon_days": 7,
+          "origin": "2026-08-16",
+          "predicted": 5.9727115235,
+          "product_id": "33000000-0000-4000-8000-000000000002",
+          "product_name": "Hex Bolts M8 Box",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "rainy",
+          "seasonal_group": "NEUTRAL",
+          "signed_error": 5.9727115235,
+          "sku": "SIM-NEU-002",
+          "transition": "none",
+          "unit": "box"
+        },
+        {
+          "absolute_error": 5.9255706905,
+          "actual": 11.0,
+          "actual_model": "product_specific_seasonal_lightgbm_experimental",
+          "demand_pattern": "summer",
+          "forecast_date": "2026-02-17",
+          "horizon_days": 7,
+          "origin": "2026-02-15",
+          "predicted": 16.9255706905,
+          "product_id": "31000000-0000-4000-8000-000000000001",
+          "product_name": "Concrete Hollow Blocks 4-inch",
+          "requested_model": "product_specific_seasonal_lightgbm",
+          "season": "dry",
+          "seasonal_group": "SUMMER",
+          "signed_error": 5.9255706905,
+          "sku": "SIM-SUM-001",
+          "transition": "none",
+          "unit": "pcs"
+        }
+      ],
+      "overall_mixed_unit_diagnostic": {
+        "existing_lightgbm": {
+          "actual_total": 10149.0,
+          "mae": 1.062570410366971,
+          "observations": 3024,
+          "predicted_total": 10018.07529494321,
+          "signed_bias": -0.012900256681130245,
+          "wape": 0.3166038940732802
+        },
+        "matched_nonseasonal_ablation": {
+          "actual_total": 10149.0,
+          "mae": 1.0511496545243895,
+          "observations": 3024,
+          "predicted_total": 9990.870556709122,
+          "signed_bias": -0.015580790549894433,
+          "wape": 0.31320096120620294
+        },
+        "mean28": {
+          "actual_total": 10149.0,
+          "mae": 1.0880042989417988,
+          "observations": 3024,
+          "predicted_total": 10069.625,
+          "signed_bias": -0.007820967583013105,
+          "wape": 0.32418218543698885
+        },
+        "product_specific_seasonal_lightgbm": {
+          "actual_total": 10149.0,
+          "mae": 1.0472231512951629,
+          "observations": 3024,
+          "predicted_total": 9934.017977723748,
+          "signed_bias": -0.021182581759410065,
+          "wape": 0.3120310187719551
+        }
+      },
+      "pretransition_anticipation": {
+        "existing_lightgbm": {
+          "to_rainy": {
+            "actual_total": 901.5,
+            "mae": 1.0555740889496383,
+            "observations": 240,
+            "predicted_total": 888.2985398588532,
+            "signed_bias": -0.014643882574760732,
+            "wape": 0.2810180602860934
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "to_rainy": {
+            "actual_total": 901.5,
+            "mae": 1.0601970402736334,
+            "observations": 240,
+            "predicted_total": 884.847887591762,
+            "signed_bias": -0.018471561184956183,
+            "wape": 0.28224879607950304
+          }
+        },
+        "mean28": {
+          "to_rainy": {
+            "actual_total": 901.5,
+            "mae": 1.0719494047619047,
+            "observations": 240,
+            "predicted_total": 883.125,
+            "signed_bias": -0.02038269550748752,
+            "wape": 0.2853775453609064
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "to_rainy": {
+            "actual_total": 901.5,
+            "mae": 1.0413827529113417,
+            "observations": 240,
+            "predicted_total": 865.792595108904,
+            "signed_bias": -0.03960887952423295,
+            "wape": 0.277240000775066
+          }
+        }
+      },
+      "seasonal_transitions": {
+        "existing_lightgbm": {
+          "to_dry": {
+            "actual_total": 466.5,
+            "mae": 0.9735935631254256,
+            "observations": 168,
+            "predicted_total": 489.9555372020695,
+            "signed_bias": 0.050279822512474814,
+            "wape": 0.35061890376221116
+          },
+          "to_rainy": {
+            "actual_total": 2130.5,
+            "mae": 1.1025199973653699,
+            "observations": 576,
+            "predicted_total": 2125.8718989092467,
+            "signed_bias": -0.0021723074821654426,
+            "wape": 0.2980762818504825
+          }
+        },
+        "matched_nonseasonal_ablation": {
+          "to_dry": {
+            "actual_total": 466.5,
+            "mae": 0.938912427047006,
+            "observations": 168,
+            "predicted_total": 492.694004130319,
+            "signed_bias": 0.05615006244441372,
+            "wape": 0.3381292341776999
+          },
+          "to_rainy": {
+            "actual_total": 2130.5,
+            "mae": 1.1004739791467555,
+            "observations": 576,
+            "predicted_total": 2096.065917994691,
+            "signed_bias": -0.016162441682848673,
+            "wape": 0.297523122266384
+          }
+        },
+        "mean28": {
+          "to_dry": {
+            "actual_total": 466.5,
+            "mae": 0.9804421768707483,
+            "observations": 168,
+            "predicted_total": 484.0,
+            "signed_bias": 0.03751339764201501,
+            "wape": 0.3530852855611698
+          },
+          "to_rainy": {
+            "actual_total": 2130.5,
+            "mae": 1.1063058035714286,
+            "observations": 576,
+            "predicted_total": 2126.875,
+            "signed_bias": -0.0017014785261675663,
+            "wape": 0.2990998088979783
+          }
+        },
+        "product_specific_seasonal_lightgbm": {
+          "to_dry": {
+            "actual_total": 466.5,
+            "mae": 0.9481152793376607,
+            "observations": 168,
+            "predicted_total": 483.963509994717,
+            "signed_bias": 0.03743517683754984,
+            "wape": 0.34144344464893245
+          },
+          "to_rainy": {
+            "actual_total": 2130.5,
+            "mae": 1.0845689557206484,
+            "observations": 576,
+            "predicted_total": 2077.2627685850466,
+            "signed_bias": -0.024988139598663927,
+            "wape": 0.2932230549143832
+          }
+        }
+      }
+    }
+  },
+  "model_recommendation": {
+    "decision": "ACCEPT",
+    "note": "This is synthetic validation only and cannot prove real-store accuracy.",
+    "seasonal_wape_gain_vs_ablation": 0.001137027795829788,
+    "seasonal_wape_gain_vs_existing_lightgbm": 0.002820727371819243
+  },
+  "seasonal_learning_assessment": {
+    "all_pretransition_directions_improve": true,
+    "labels_independently_discovered": false,
+    "numerical_seasonal_multiplier_applied": false,
+    "pretransition_wape_gains_vs_ablation": {
+      "to_dry": 0.0019156575468235524,
+      "to_rainy": 0.001257109585928179
+    }
+  },
+  "stage": "2.6",
+  "stage23_comparison": {
+    "existing_lightgbm": {
+      "difference": -5.5955097761e-18,
+      "stage23_wape": 0.319168961582115,
+      "stage26_wape": 0.319168961582115
+    },
+    "matched_nonseasonal_ablation": {
+      "difference": 9.7520508234e-18,
+      "stage23_wape": 0.31748526200612553,
+      "stage26_wape": 0.31748526200612553
+    },
+    "product_specific_seasonal_lightgbm": {
+      "difference": 2.16659470795e-17,
+      "stage23_wape": 0.31634823421029573,
+      "stage26_wape": 0.31634823421029573
+    }
+  }
+}

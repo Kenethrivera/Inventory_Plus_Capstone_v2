@@ -3,11 +3,11 @@ import 'package:flutter_litert/flutter_litert.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/material.dart';
 import 'ui/login_page.dart';
-import 'ui/main_screen.dart'; 
-import 'logic/inventory_controller.dart'; 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'ui/main_screen.dart';
+import 'logic/inventory_controller.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'login/auth_service.dart';
+import 'login/session_storage.dart';
 import 'navigation/main_section.dart';
 import 'services/main_section_url.dart';
 import 'services/realtime/realtime_sync_service.dart';
@@ -21,16 +21,16 @@ Future<void> main() async {
   final initialRequestedPath = readMainSectionPath();
 
   if (kDebugMode) debugPrint('[Startup] Flutter entry');
-  
-try {
-      await dotenv.load(fileName: "lib/.env");
-      // Use const String.fromEnvironment to read Vercel's injected keys
-      // await Supabase.initialize(
-      //   url: const String.fromEnvironment('SUPABASE_URL'),
-      //   anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
-      // );
 
-      await Supabase.initialize(
+  try {
+    await dotenv.load(fileName: "lib/.env");
+    // Use const String.fromEnvironment to read Vercel's injected keys
+    // await Supabase.initialize(
+    //   url: const String.fromEnvironment('SUPABASE_URL'),
+    //   anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
+    // );
+
+    await Supabase.initialize(
       url: dotenv.env['SUPABASE_URL']!,
       anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
     );
@@ -63,6 +63,7 @@ try {
     );
   }
 }
+
 Future<void> initDetectorRuntime() async {
   if (kIsWeb) {
     await initializeWeb(); // loads the LiteRT.js/TFLite.js runtime in-browser
@@ -201,12 +202,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
     if (kDebugMode) debugPrint('[Startup] Auth restore started');
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-      final sessionToken = prefs.getString('sessionToken');
+      final sessionStorage = AppSessionStorage();
+      final sessionToken = await sessionStorage.readTokenForRestore();
 
-      if (!isLoggedIn || sessionToken == null || sessionToken.isEmpty) {
-        await prefs.clear();
+      if (sessionToken == null || sessionToken.isEmpty) {
+        await sessionStorage.clear();
         await _routeToLogin();
         return;
       }
@@ -215,7 +215,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         final userProfile = await AuthService().restoreSession(sessionToken);
 
         if (userProfile == null) {
-          await prefs.clear();
+          await sessionStorage.clear();
           await _routeToLogin();
           return;
         }
@@ -342,10 +342,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
                     'Check your connection and try again. Your saved session '
                     'has not been cleared.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Color(0xFF64748B),
-                      height: 1.4,
-                    ),
+                    style: TextStyle(color: Color(0xFF64748B), height: 1.4),
                   ),
                   const SizedBox(height: 18),
                   FilledButton.icon(

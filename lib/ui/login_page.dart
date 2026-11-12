@@ -3,14 +3,14 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:async';
 import 'dart:math';
 import '../login/auth_service.dart';
+import '../login/session_storage.dart';
 import '../logic/inventory_controller.dart';
 import '../navigation/main_section.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import '../services/store_access_service.dart';
 import '../services/staff_presence_service.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
+import 'widgets/app_toast.dart';
 import 'package:flutter/services.dart';
 
 class LoginPage extends StatefulWidget {
@@ -127,10 +127,10 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('isLoggedIn', true);
-      await prefs.setString('userId', userId);
-      await prefs.setString('sessionToken', sessionToken);
+      await AppSessionStorage().persistLogin(
+        sessionToken: sessionToken,
+        userId: userId,
+      );
 
       widget.controller.setLoggedInUser(
         name: userName,
@@ -995,11 +995,9 @@ class _LoginPageState extends State<LoginPage> {
 //           return;
 //         }
 
-//         final email = await _authService.getEmailFromUsername(input);
-//         if (email == null) throw "Username not found.";
+//         The retired implementation looked up contact details client-side.
 
-//         final otp = (100000 + Random().nextInt(900000)).toString();
-//         await _authService.sendEmailJsOtp(email, otp);
+//         It also generated and delivered verification codes in the client.
 
 //         setState(() {
 //           _email = email;
@@ -1018,7 +1016,7 @@ class _LoginPageState extends State<LoginPage> {
 //         if (input.length < 6) throw "Password must be at least 6 characters.";
 //         if (input != confirm) throw "Passwords do not match.";
 
-//         await _authService.resetPasswordForUser(_email!, input);
+//         Password updates now remain behind the server-side recovery flow.
 
 //         if (mounted) {
 //           final overlay = Overlay.of(context, rootOverlay: true);
@@ -1259,8 +1257,6 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
   String? _recoveryChallengeId;
   String? _recoveryResetToken;
   String? _recoveryUsername;
-  String? _email;
-  String? _generatedOtp;
   DateTime? _otpExpiresAt;
   DateTime? _resendAvailableAt;
   Timer? _otpTimer;
@@ -1304,33 +1300,17 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     setState(() => _isLoading = true);
     final requestedAt = _now;
     try {
-      if (_recoveryChannel == 'sms') {
-        final challengeId = await _authService.requestPasswordRecovery(
-          username,
-          'sms',
-        );
-        if (!mounted) return;
-        setState(() {
-          _recoveryChallengeId = challengeId;
-          _recoveryResetToken = null;
-          _controller.clear();
-          _startOtpClock(requestedAt);
-        });
-      } else {
-        final email = _email;
-        final code = email == null
-            ? null
-            : (100000 + Random().nextInt(900000)).toString();
-        if (email != null && code != null) {
-          await _sendRecoveryEmail(email, code);
-        }
-        if (!mounted) return;
-        setState(() {
-          _generatedOtp = code;
-          _controller.clear();
-          _startOtpClock(requestedAt);
-        });
-      }
+      final challengeId = await _authService.requestPasswordRecovery(
+        username,
+        _recoveryChannel,
+      );
+      if (!mounted) return;
+      setState(() {
+        _recoveryChallengeId = challengeId;
+        _recoveryResetToken = null;
+        _controller.clear();
+        _startOtpClock(requestedAt);
+      });
       AppToast.success(context, 'If eligible, a new code has been sent.');
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -1504,40 +1484,19 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     try {
       if (_step == 0) {
         final requestedAt = _now;
-        if (_recoveryChannel == 'sms') {
-          final challengeId = await _authService.requestPasswordRecovery(
-            input,
-            'sms',
-          );
-          if (!mounted) return;
-          setState(() {
-            _recoveryChallengeId = challengeId;
-            _recoveryResetToken = null;
-            _recoveryUsername = input;
-            _step = 1;
-            _controller.clear();
-            _startOtpClock(requestedAt);
-          });
-        } else {
-          final isAdmin = await _authService.isAdminUser(input);
-          final email = await _authService.getEmailFromUsername(input);
-          final eligibleEmail = isAdmin ? email : null;
-          final otp = eligibleEmail == null
-              ? null
-              : (100000 + Random().nextInt(900000)).toString();
-          if (!mounted) return;
-          setState(() {
-            _email = eligibleEmail;
-            _generatedOtp = otp;
-            _recoveryUsername = input;
-            _step = 1;
-            _controller.clear();
-            _startOtpClock(requestedAt);
-          });
-          if (eligibleEmail != null && otp != null) {
-            unawaited(_sendRecoveryEmail(eligibleEmail, otp));
-          }
-        }
+        final challengeId = await _authService.requestPasswordRecovery(
+          input,
+          _recoveryChannel,
+        );
+        if (!mounted) return;
+        setState(() {
+          _recoveryChallengeId = challengeId;
+          _recoveryResetToken = null;
+          _recoveryUsername = input;
+          _step = 1;
+          _controller.clear();
+          _startOtpClock(requestedAt);
+        });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _focusNode1.requestFocus();
         });
@@ -1546,27 +1505,21 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
           AppToast.error(context, 'Code expired. Request a new code.');
           return;
         }
-        if (_recoveryChannel == 'sms') {
-          final token = await _authService.verifyPasswordRecovery(
-            _recoveryChallengeId!,
-            input,
-          );
-          if (!mounted) return;
-          if (token == null || token.isEmpty) {
-            AppToast.error(
-              context,
-              'Invalid or expired code. Please try again.',
-            );
-            return;
-          }
-          _recoveryResetToken = token;
-        } else if (input != _generatedOtp) {
-          AppToast.error(
-            context,
-            'Invalid verification code. Please try again.',
-          );
+        final challengeId = _recoveryChallengeId;
+        if (challengeId == null || challengeId.isEmpty) {
+          AppToast.error(context, 'Recovery session expired. Start again.');
           return;
         }
+        final token = await _authService.verifyPasswordRecovery(
+          challengeId,
+          input,
+        );
+        if (!mounted) return;
+        if (token == null || token.isEmpty) {
+          AppToast.error(context, 'Invalid or expired code. Please try again.');
+          return;
+        }
+        _recoveryResetToken = token;
         setState(() {
           _step = 2;
           _controller.clear();
@@ -1590,12 +1543,15 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
           return;
         }
 
-        final saved = _recoveryChannel == 'sms'
-            ? await _authService.completePasswordRecovery(
-                _recoveryResetToken!,
-                password,
-              )
-            : await _authService.resetPasswordForUser(_email!, password);
+        final resetToken = _recoveryResetToken;
+        if (resetToken == null || resetToken.isEmpty) {
+          AppToast.error(context, 'Recovery session expired. Start again.');
+          return;
+        }
+        final saved = await _authService.completePasswordRecovery(
+          resetToken,
+          password,
+        );
         if (!mounted) return;
         if (!saved) {
           AppToast.error(
@@ -1628,24 +1584,12 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     }
   }
 
-  Future<void> _sendRecoveryEmail(String email, String code) async {
-    try {
-      await _authService.sendEmailJsOtp(email, code);
-    } catch (error, stackTrace) {
-      AppLogger.error(
-        'Password recovery email could not be sent',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-  }
-
   void _goBackOrCancel() {
     if (_step == 0) {
       Navigator.pop(context);
     } else {
       setState(() {
-        _step = _recoveryChannel == 'sms' ? 0 : _step - 1;
+        _step -= 1;
         if (_step == 0) {
           _otpTimer?.cancel();
           _otpExpiresAt = null;

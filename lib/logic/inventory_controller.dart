@@ -3,13 +3,13 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import '../data/inventory.dart';
 import '../services/realtime/realtime_sync_service.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
+import '../login/session_storage.dart';
 import 'helper_assignment.dart';
 import 'history_pagination.dart';
 import 'inventory_approval.dart';
@@ -121,6 +121,17 @@ class _SerializedHistoryQuery {
 }
 
 class InventoryController {
+  // Keep this default-off until the additive Stage 6B.6 RPC migration has
+  // passed the isolated database matrix. Production table grants must not be
+  // restricted before every remaining domain has an authorized replacement.
+  static const bool useStage6b6SecureAccess = bool.fromEnvironment(
+    'INVENTORY_PLUS_SECURE_ACCESS_V1',
+    defaultValue: false,
+  );
+  static const bool useStage6b7SecureProductAccess = bool.fromEnvironment(
+    'INVENTORY_PLUS_SECURE_PRODUCT_ACCESS_V1',
+    defaultValue: false,
+  );
   static const Duration _operationalOrderLookback = Duration(days: 60);
 
   // shared realtime controlelrs
@@ -1700,31 +1711,58 @@ class InventoryController {
 
     // Product details remain a normal save. Quantity and its history entry are
     // committed together by adjust_inventory_quantity_v1 below.
-    final savedProduct = await supabase
-        .from('products')
-        .update({
-          'product_name': updatedItem.name,
-          'sku': updatedItem.sku,
-          'category': updatedItem.category,
-          'product_price': updatedItem.price,
-          'description': updatedItem.description,
-          'manufacturer': updatedItem.manufacturer,
-          'model': updatedItem.model,
-          'product_size': updatedItem.productSize,
-          'shelf_level': updatedItem.shelfLevel,
-          'bin_number': updatedItem.binNumber,
-          'image_url': updatedItem.imageUrl,
-          'unit': updatedItem.unit,
-          'max_quantity': updatedItem.maxQuantity,
-        })
-        .eq('id', updatedItem.id)
-        .eq('location_id', locationId)
-        .select('id')
-        .maybeSingle();
-    if (savedProduct == null) {
-      throw const AppUserFacingException(
-        'Product was not saved. Refresh inventory and try again.',
+    if (useStage6b7SecureProductAccess) {
+      final savedProduct = await supabase.rpc(
+        'product_details_update_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_product_id': updatedItem.id,
+          'p_product_name': updatedItem.name,
+          'p_sku': updatedItem.sku,
+          'p_product_price': updatedItem.price,
+          'p_description': updatedItem.description,
+          'p_manufacturer': updatedItem.manufacturer,
+          'p_model': updatedItem.model,
+          'p_product_size': updatedItem.productSize,
+          'p_shelf_level': updatedItem.shelfLevel,
+          'p_bin_number': updatedItem.binNumber,
+          'p_image_url': updatedItem.imageUrl,
+          'p_unit': updatedItem.unit,
+          'p_max_quantity': updatedItem.maxQuantity,
+        },
       );
+      if (savedProduct != true) {
+        throw const AppUserFacingException(
+          'Product was not saved. Refresh inventory and try again.',
+        );
+      }
+    } else {
+      final savedProduct = await supabase
+          .from('products')
+          .update({
+            'product_name': updatedItem.name,
+            'sku': updatedItem.sku,
+            'category': updatedItem.category,
+            'product_price': updatedItem.price,
+            'description': updatedItem.description,
+            'manufacturer': updatedItem.manufacturer,
+            'model': updatedItem.model,
+            'product_size': updatedItem.productSize,
+            'shelf_level': updatedItem.shelfLevel,
+            'bin_number': updatedItem.binNumber,
+            'image_url': updatedItem.imageUrl,
+            'unit': updatedItem.unit,
+            'max_quantity': updatedItem.maxQuantity,
+          })
+          .eq('id', updatedItem.id)
+          .eq('location_id', locationId)
+          .select('id')
+          .maybeSingle();
+      if (savedProduct == null) {
+        throw const AppUserFacingException(
+          'Product was not saved. Refresh inventory and try again.',
+        );
+      }
     }
 
     String? transactionId;
@@ -1930,42 +1968,68 @@ class InventoryController {
     final index = _items.indexWhere((i) => i.id == id);
     if (index == -1) return;
 
-    if (await _isInOpenOrder(id)) {
+    if (!useStage6b7SecureProductAccess && await _isInOpenOrder(id)) {
       throw Exception(
         'This item is in an open order. Complete or cancel the order first.',
       );
     }
 
-    await supabase.from('products').update({'is_active': false}).eq('id', id);
+    if (useStage6b7SecureProductAccess) {
+      await supabase.rpc(
+        'product_set_active_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_product_id': id,
+          'p_is_active': false,
+        },
+      );
+    } else {
+      await supabase.from('products').update({'is_active': false}).eq('id', id);
+    }
 
     final item = _items.removeAt(index);
     _disabledItems.add(item);
     _publishInventorySnapshot();
 
-    await _logTransaction(
-      productId: id,
-      type: 'item_disabled',
-      quantityChange: 0,
-      newQuantity: item.quantity,
-    );
+    if (!useStage6b7SecureProductAccess) {
+      await _logTransaction(
+        productId: id,
+        type: 'item_disabled',
+        quantityChange: 0,
+        newQuantity: item.quantity,
+      );
+    }
   }
 
   Future<void> restoreItem(String id) async {
     final index = _disabledItems.indexWhere((i) => i.id == id);
     if (index == -1) return;
 
-    await supabase.from('products').update({'is_active': true}).eq('id', id);
+    if (useStage6b7SecureProductAccess) {
+      await supabase.rpc(
+        'product_set_active_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_product_id': id,
+          'p_is_active': true,
+        },
+      );
+    } else {
+      await supabase.from('products').update({'is_active': true}).eq('id', id);
+    }
 
     final item = _disabledItems.removeAt(index);
     _items.add(item);
     _publishInventorySnapshot();
 
-    await _logTransaction(
-      productId: id,
-      type: 'item_restored',
-      quantityChange: 0,
-      newQuantity: item.quantity,
-    );
+    if (!useStage6b7SecureProductAccess) {
+      await _logTransaction(
+        productId: id,
+        type: 'item_restored',
+        quantityChange: 0,
+        newQuantity: item.quantity,
+      );
+    }
   }
 
   Future<void> deleteItem(String id) async {
@@ -1974,16 +2038,62 @@ class InventoryController {
       throw Exception('Only legacy inactive items can be deleted.');
     }
 
-    await supabase.from('products').delete().eq('id', id); // throws on failure
+    if (useStage6b7SecureProductAccess) {
+      await supabase.rpc(
+        'product_delete_inactive_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_product_id': id,
+        },
+      );
+    } else {
+      await supabase.from('products').delete().eq('id', id);
+    }
 
     final itemToDelete = _disabledItems.removeAt(index);
     _publishInventorySnapshot();
-    await _logTransaction(
-      productId: null,
-      type: 'delete',
-      quantityChange: -itemToDelete.quantity,
-      newQuantity: 0,
-    );
+    if (!useStage6b7SecureProductAccess) {
+      await _logTransaction(
+        productId: null,
+        type: 'delete',
+        quantityChange: -itemToDelete.quantity,
+        newQuantity: 0,
+      );
+    }
+  }
+
+  Future<void> updateItemLocationDetails(
+    String itemId, {
+    required int shelf,
+    required String layer,
+  }) async {
+    try {
+      if (useStage6b7SecureProductAccess) {
+        await supabase.rpc(
+          'product_shelf_bin_update_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_product_id': itemId,
+            'p_shelf_level': shelf.toString(),
+            'p_bin_number': layer,
+          },
+        );
+      } else {
+        await supabase
+            .from('products')
+            .update({'shelf_level': shelf.toString(), 'bin_number': layer})
+            .eq('id', itemId);
+      }
+
+      final index = _items.indexWhere((item) => item.id == itemId);
+      if (index != -1) {
+        _items[index] = _items[index].copyWith(
+          shelfLevel: shelf.toString(),
+          binNumber: layer,
+        );
+        _publishInventorySnapshot();
+      }
+    } catch (e) {}
   }
 
   List<InventoryItem> get unassignedItems => _items
@@ -2220,10 +2330,17 @@ class InventoryController {
       return;
     }
     try {
-      final rows = await supabase
-          .from('profiles')
-          .select()
-          .eq('location_id', locationId);
+      final response = useStage6b6SecureAccess
+          ? await supabase.rpc(
+              'staff_configuration_snapshot_v1',
+              params: <String, dynamic>{
+                'p_session_token': _requireSessionToken(),
+              },
+            )
+          : await supabase
+                .from('profiles')
+                .select()
+                .eq('location_id', locationId);
       if (activeLocationId != locationId ||
           currentUserId != userId ||
           currentUserRole?.toLowerCase() != 'admin') {
@@ -2233,7 +2350,9 @@ class InventoryController {
         return;
       }
       _staffSnapshot = List<Map<String, dynamic>>.unmodifiable(
-        List<Map<String, dynamic>>.from(rows).map(Map<String, dynamic>.from),
+        List<Map<String, dynamic>>.from(
+          response as List,
+        ).map(Map<String, dynamic>.from),
       );
       _staffSnapshotLocationId = locationId;
       _staffSnapshotLoaded = true;
@@ -2347,24 +2466,37 @@ class InventoryController {
 
     late final Map<String, dynamic> row;
     try {
-      final hashedPassword = _hashPassword(password);
-      final inserted = await supabase
-          .from('profiles')
-          .insert(
-            buildStaffCreationPayload(
-              name: name,
-              username: username,
-              passwordHash: hashedPassword,
-              role: role,
-              locationId: locId,
-              email: email,
-              phone: phone,
-              address: address,
-              mustChangePassword: roleRequiresForcedPasswordChange(role),
-            ),
-          )
-          .select()
-          .single();
+      final inserted = useStage6b6SecureAccess
+          ? await supabase.rpc(
+              'staff_create_v1',
+              params: <String, dynamic>{
+                'p_session_token': _requireSessionToken(),
+                'p_name': name,
+                'p_username': username,
+                'p_password': password,
+                'p_role': role,
+                'p_email': normalizeOptionalStaffField(email),
+                'p_phone': normalizeOptionalStaffField(phone),
+                'p_address': normalizeOptionalStaffField(address),
+              },
+            )
+          : await supabase
+                .from('profiles')
+                .insert(
+                  buildStaffCreationPayload(
+                    name: name,
+                    username: username,
+                    passwordHash: _hashPassword(password),
+                    role: role,
+                    locationId: locId,
+                    email: email,
+                    phone: phone,
+                    address: address,
+                    mustChangePassword: roleRequiresForcedPasswordChange(role),
+                  ),
+                )
+                .select()
+                .single();
       row = Map<String, dynamic>.from(inserted);
     } on PostgrestException catch (error) {
       final constraint = staffCreationConstraintName(
@@ -2416,6 +2548,29 @@ class InventoryController {
 
   Future<bool> updateStaffRole(String id, String newRole) async {
     try {
+      if (useStage6b6SecureAccess) {
+        final targetId = int.tryParse(id);
+        if (targetId == null) return false;
+        final response = await supabase.rpc(
+          'staff_update_role_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_target_profile_id': targetId,
+            'p_role': newRole,
+          },
+        );
+        final row = Map<String, dynamic>.from(response as Map);
+        final index = _staffSnapshot.indexWhere(
+          (staff) => staff['id'].toString() == id,
+        );
+        if (index >= 0) {
+          final updated = List<Map<String, dynamic>>.from(_staffSnapshot);
+          updated[index] = row;
+          _staffSnapshot = List<Map<String, dynamic>>.unmodifiable(updated);
+          _publishStaffConfigurationSnapshot();
+        }
+        return true;
+      }
       final staff = await fetchStaffProfile(id);
       if (staff == null) return false;
       return await updateStaffAccount(
@@ -2465,20 +2620,42 @@ class InventoryController {
   }
 
   Future<Map<String, dynamic>?> fetchStaffProfile(String id) async {
-    final locationId = activeLocationId;
-    if (locationId == null) return null;
-    final row = await supabase
-        .from('profiles')
-        .select()
-        .eq('id', id)
-        .eq('location_id', locationId)
-        .maybeSingle();
-    return row == null ? null : Map<String, dynamic>.from(row);
+    if (activeLocationId == null) return null;
+    final targetId = int.tryParse(id);
+    if (targetId == null) return null;
+    final response = useStage6b6SecureAccess
+        ? await supabase.rpc(
+            'staff_profile_v1',
+            params: <String, dynamic>{
+              'p_session_token': _requireSessionToken(),
+              'p_target_profile_id': targetId,
+            },
+          )
+        : await supabase
+              .from('profiles')
+              .select()
+              .eq('id', id)
+              .eq('location_id', activeLocationId!)
+              .maybeSingle();
+    return response == null ? null : Map<String, dynamic>.from(response as Map);
   }
 
   Future<bool> deleteStaff(String id) async {
     try {
-      await supabase.from('profiles').delete().eq('id', id);
+      final targetId = int.tryParse(id);
+      if (targetId == null) return false;
+      if (useStage6b6SecureAccess) {
+        final response = await supabase.rpc(
+          'staff_delete_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_target_profile_id': targetId,
+          },
+        );
+        if (response != true) return false;
+      } else {
+        await supabase.from('profiles').delete().eq('id', id);
+      }
       _staffSnapshot = List<Map<String, dynamic>>.unmodifiable(
         _staffSnapshot.where((staff) => staff['id'].toString() != id),
       );
@@ -2518,8 +2695,7 @@ class InventoryController {
             return ChangePasswordResult.unexpectedFailure;
           }
           _sessionToken = replacementToken;
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('sessionToken', replacementToken);
+          await AppSessionStorage().replaceToken(replacementToken);
           if (roleRequiresForcedPasswordChange(currentUserRole)) {
             _setCurrentProfileMustChangePassword(false);
           }
@@ -3667,10 +3843,18 @@ class InventoryController {
     }
 
     try {
-      final rows = await supabase
-          .from('products')
-          .select()
-          .eq('location_id', locationId);
+      final response = useStage6b6SecureAccess
+          ? await supabase.rpc(
+              'inventory_snapshot_v1',
+              params: <String, dynamic>{
+                'p_session_token': _requireSessionToken(),
+              },
+            )
+          : await supabase
+                .from('products')
+                .select()
+                .eq('location_id', locationId);
+      final rows = response as List;
 
       if (activeLocationId != locationId) {
         _inventoryRefreshQueued = true;
@@ -3775,20 +3959,31 @@ class InventoryController {
       final dashboardLookbackStart = startOfToday.subtract(
         _operationalOrderLookback,
       );
-      final operationalScope = <String>[
-        'status.in.(pending,prepared,solo_picking)',
-        'created_at.gte.${dashboardLookbackStart.toIso8601String()}',
-        'prepared_at.gte.${startOfToday.toIso8601String()}',
-        'completed_at.gte.${startOfToday.toIso8601String()}',
-        'cancelled_at.gte.${startOfToday.toIso8601String()}',
-        'returned_at.gte.${startOfToday.toIso8601String()}',
-      ].join(',');
-      final rows = await supabase
-          .from('orders')
-          .select()
-          .eq('location_id', locationId)
-          .or(operationalScope)
-          .order('created_at', ascending: false);
+      final response = useStage6b6SecureAccess
+          ? await supabase.rpc(
+              'operational_orders_snapshot_v1',
+              params: <String, dynamic>{
+                'p_session_token': _requireSessionToken(),
+                'p_created_since': dashboardLookbackStart.toIso8601String(),
+                'p_event_since': startOfToday.toIso8601String(),
+              },
+            )
+          : await supabase
+                .from('orders')
+                .select()
+                .eq('location_id', locationId)
+                .or(
+                  <String>[
+                    'status.in.(pending,prepared,solo_picking)',
+                    'created_at.gte.${dashboardLookbackStart.toIso8601String()}',
+                    'prepared_at.gte.${startOfToday.toIso8601String()}',
+                    'completed_at.gte.${startOfToday.toIso8601String()}',
+                    'cancelled_at.gte.${startOfToday.toIso8601String()}',
+                    'returned_at.gte.${startOfToday.toIso8601String()}',
+                  ].join(','),
+                )
+                .order('created_at', ascending: false);
+      final rows = response as List;
 
       // The active store may have changed while the query was running.
       // Never publish results from the previous location.
@@ -4137,17 +4332,31 @@ class InventoryController {
     required String phone,
   }) async {
     try {
-      final updateData = {
-        'name': name,
-        'email': email.isEmpty ? null : email,
-        'address': location,
-        'phone': phone,
-      };
-
-      await Supabase.instance.client
-          .from('profiles')
-          .update(updateData)
-          .eq('id', userId);
+      if (useStage6b6SecureAccess && userId != currentUserId) {
+        throw StateError('Profile updates are limited to the current session');
+      }
+      if (useStage6b6SecureAccess) {
+        await supabase.rpc(
+          'current_profile_update_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_name': name,
+            'p_email': email,
+            'p_address': location,
+            'p_phone': phone,
+          },
+        );
+      } else {
+        await supabase
+            .from('profiles')
+            .update(<String, dynamic>{
+              'name': name,
+              'email': email.isEmpty ? null : email,
+              'address': location,
+              'phone': phone,
+            })
+            .eq('id', userId);
+      }
       if (userId == currentUserId) await _refreshCurrentProfile();
       if (_staffSnapshotActivated) await _refreshStaffConfiguration();
     } catch (e) {
@@ -4406,10 +4615,21 @@ class InventoryController {
 
   Future<void> assignItemToLocation(String itemId, String? mapElementId) async {
     try {
-      await supabase
-          .from('products')
-          .update({'map_element_id': mapElementId})
-          .eq('id', itemId);
+      if (useStage6b7SecureProductAccess) {
+        await supabase.rpc(
+          'product_map_assignment_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_product_id': itemId,
+            'p_map_element_id': mapElementId,
+          },
+        );
+      } else {
+        await supabase
+            .from('products')
+            .update({'map_element_id': mapElementId})
+            .eq('id', itemId);
+      }
 
       final index = _items.indexWhere((item) => item.id == itemId);
       if (index != -1) {
