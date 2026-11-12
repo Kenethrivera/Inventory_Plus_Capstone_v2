@@ -700,15 +700,18 @@ class _LoginPageState extends State<LoginPage> {
                     ? Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(child: _buildBrandPanel()),
-                          Expanded(child: _buildLoginFormPanel(form)),
+                          Expanded(child: _buildBrandPanel(wide: true)),
+                          Expanded(
+                            child: _buildLoginFormPanel(form, wide: true),
+                          ),
                         ],
                       )
                     : Column(
                         mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _buildBrandPanel(),
-                          _buildLoginFormPanel(form),
+                          _buildBrandPanel(wide: false),
+                          _buildLoginFormPanel(form, wide: false),
                         ],
                       ),
               ),
@@ -719,45 +722,43 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildBrandPanel() {
-    final compact = MediaQuery.sizeOf(context).width < 800;
+  Widget _buildBrandPanel({required bool wide}) {
+    if (!wide) {
+      return Container(
+        width: double.infinity,
+        color: _brandDark,
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildBrandIdentity(),
+            const SizedBox(height: 16),
+            const Text(
+              'Stock, orders and payments in one place.',
+              style: TextStyle(
+                color: Color(0xFFFFE7DA),
+                fontSize: 13,
+                fontFamily: 'Outfit',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       color: _brandDark,
-      padding: EdgeInsets.all(compact ? 24 : 40),
+      padding: const EdgeInsets.all(40),
       child: Column(
-        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: const Icon(LucideIcons.box, color: _brand, size: 17),
-              ),
-              const SizedBox(width: 9),
-              const Text(
-                'Inventory Plus',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Outfit',
-                ),
-              ),
-            ],
-          ),
-          if (compact) const SizedBox(height: 48) else const Spacer(),
+          _buildBrandIdentity(),
+          const Spacer(),
           Text(
             'Every item, counted.\nEvery sale, tracked.',
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
-              fontSize: compact ? 25 : 34,
+              fontSize: 34,
               fontWeight: FontWeight.w800,
               height: 1.08,
               fontFamily: 'Outfit',
@@ -766,14 +767,14 @@ class _LoginPageState extends State<LoginPage> {
           const SizedBox(height: 14),
           Text(
             'Stock, orders and payments for your hardware store\nin one place.',
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
-              fontSize: compact ? 12 : 14,
+              fontSize: 14,
               height: 1.45,
               fontFamily: 'Outfit',
             ),
           ),
-          if (compact) const SizedBox(height: 36) else const Spacer(),
+          const Spacer(),
           const Text(
             'Hardware Management System',
             style: TextStyle(
@@ -787,14 +788,40 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildLoginFormPanel(Widget form) {
-    final compact = MediaQuery.sizeOf(context).width < 380;
+  Widget _buildBrandIdentity() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: const Icon(LucideIcons.box, color: _brand, size: 17),
+        ),
+        const SizedBox(width: 9),
+        const Text(
+          'Inventory Plus',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Outfit',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoginFormPanel(Widget form, {required bool wide}) {
     return Container(
       color: const Color(0xFFF8F7F5),
       alignment: Alignment.center,
       padding: EdgeInsets.symmetric(
-        horizontal: compact ? 20 : 32,
-        vertical: compact ? 32 : 48,
+        horizontal: wide ? 32 : 24,
+        vertical: wide ? 48 : 32,
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 390),
