@@ -35,7 +35,6 @@ import 'map_editor_page.dart';
 import 'order_queue_page.dart';
 import 'orders_activity_page.dart';
 import 'pos_cart_page.dart';
-import 'profile_info_page.dart';
 import 'system_settings_page.dart';
 import 'transaction_history_page.dart';
 import 'cash_monitor_table_page.dart';
@@ -2811,7 +2810,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     controller: widget.controller,
     locationName: _helperLocationName,
     storeAccessSettings: _scheduledStoreAccessSettings,
-    onLogout: () => unawaited(_handleLogout()),
   );
 
   Widget _buildHelperMobileNavigationBar({
@@ -3223,18 +3221,58 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               ),
             ),
             _adminDrawerHeading('Operations'),
-            _adminDrawerItem(drawerContext, MainSection.dashboard, LucideIcons.layoutDashboard, 'Overview'),
-            _adminDrawerItem(drawerContext, MainSection.ordersActivity, LucideIcons.receiptText, 'Orders & activity'),
-            _adminDrawerItem(drawerContext, MainSection.approvals, LucideIcons.clipboardCheck, 'Approvals'),
-            _adminDrawerItem(drawerContext, MainSection.storeMap, LucideIcons.map, 'Store map'),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.dashboard,
+              LucideIcons.layoutDashboard,
+              'Overview',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.ordersActivity,
+              LucideIcons.receiptText,
+              'Orders & activity',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.approvals,
+              LucideIcons.clipboardCheck,
+              'Approvals',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.storeMap,
+              LucideIcons.map,
+              'Store map',
+            ),
             const SizedBox(height: 16),
             _adminDrawerHeading('Catalog'),
-            _adminDrawerItem(drawerContext, MainSection.inventory, LucideIcons.package, 'Inventory'),
-            _adminDrawerItem(drawerContext, MainSection.forecasting, LucideIcons.trendingUp, 'Analytics'),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.inventory,
+              LucideIcons.package,
+              'Inventory',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.forecasting,
+              LucideIcons.trendingUp,
+              'Analytics',
+            ),
             const SizedBox(height: 16),
             _adminDrawerHeading('Administration'),
-            _adminDrawerItem(drawerContext, MainSection.performance, LucideIcons.users, 'Staff'),
-            _adminDrawerItem(drawerContext, MainSection.systemSettings, LucideIcons.settings, 'Settings'),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.performance,
+              LucideIcons.users,
+              'Staff',
+            ),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.systemSettings,
+              LucideIcons.settings,
+              'Settings',
+            ),
           ],
         ),
       ),
@@ -4022,20 +4060,47 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   void _showProfileDialog() {
+    final size = MediaQuery.sizeOf(context);
+    if (size.width < 900) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: const Text('Profile')),
+            body: HelperMePage(
+              controller: widget.controller,
+              locationName: _helperLocationName,
+              storeAccessSettings: _scheduledStoreAccessSettings,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     showDialog(
       context: context,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         clipBehavior: Clip.antiAlias,
         child: SizedBox(
-          width: 500,
-          height: 600,
-          child: ProfileInfoPage(
-            controller: widget.controller,
-            currentName: widget.controller.currentUserName ?? 'Unknown',
-            currentEmail: widget.controller.loggedInUserEmail,
-            userId: widget.controller.currentUserId ?? '',
-            role: widget.controller.currentUserRole ?? 'staff',
+          width: size.width > 1300 ? 1240 : size.width - 64,
+          height: size.height - 64,
+          child: Stack(
+            children: [
+              HelperMePage(
+                controller: widget.controller,
+                locationName: _helperLocationName,
+                storeAccessSettings: _scheduledStoreAccessSettings,
+              ),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: IconButton(
+                  tooltip: 'Close profile',
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(LucideIcons.x),
+                ),
+              ),
+            ],
           ),
         ),
       ),

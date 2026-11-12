@@ -11,7 +11,6 @@ class HelperMePage extends StatefulWidget {
   const HelperMePage({
     super.key,
     required this.controller,
-    required this.onLogout,
     this.locationName,
     this.storeAccessSettings,
   });
@@ -19,7 +18,6 @@ class HelperMePage extends StatefulWidget {
   final InventoryController controller;
   final String? locationName;
   final StoreAccessSettings? storeAccessSettings;
-  final VoidCallback onLogout;
 
   @override
   State<HelperMePage> createState() => _HelperMePageState();
@@ -40,14 +38,20 @@ class _HelperMePageState extends State<HelperMePage> {
   StreamSubscription<CurrentUserProfileSnapshot?>? _profileSubscription;
   bool _savingProfile = false;
   bool _savingPassword = false;
+  bool _showCurrentPassword = false;
+  bool _showNewPassword = false;
+  bool _showConfirmPassword = false;
   String? _profileError;
   String? _passwordError;
   CurrentUserProfileSnapshot? _loadedProfile;
+  String? _locationName;
 
   @override
   void initState() {
     super.initState();
     _applyProfile(widget.controller.currentUserProfileSnapshot);
+    _locationName = widget.locationName;
+    if (_locationName == null) unawaited(_loadLocationName());
     _profileSubscription = widget.controller.currentUserProfileSnapshots.listen(
       (profile) {
         if (!mounted || profile == null) return;
@@ -66,6 +70,36 @@ class _HelperMePageState extends State<HelperMePage> {
     return _name.text.trim() != profile.name ||
         _phone.text.trim() != (profile.phone ?? '') ||
         _email.text.trim() != (profile.email ?? '');
+  }
+
+  String get _roleLabel {
+    final role =
+        (_loadedProfile?.role ?? widget.controller.currentUserRole ?? 'staff')
+            .toLowerCase();
+    return switch (role) {
+      'helper' => 'Order helper',
+      'admin' => 'Administrator',
+      'cashier' => 'Cashier',
+      _ =>
+        role.isEmpty ? 'Staff' : '${role[0].toUpperCase()}${role.substring(1)}',
+    };
+  }
+
+  Future<void> _loadLocationName() async {
+    final locationId = widget.controller.activeLocationId;
+    if (locationId == null) return;
+    try {
+      final row = await widget.controller.supabase
+          .from('locations')
+          .select('location_name')
+          .eq('id', locationId)
+          .maybeSingle();
+      if (!mounted || widget.controller.activeLocationId != locationId) return;
+      final name = row?['location_name']?.toString().trim();
+      if (name != null && name.isNotEmpty) setState(() => _locationName = name);
+    } catch (_) {
+      // The profile remains usable without a location label.
+    }
   }
 
   void _applyProfile(CurrentUserProfileSnapshot? profile) {
@@ -279,6 +313,7 @@ class _HelperMePageState extends State<HelperMePage> {
     TextEditingController controller, {
     TextInputType? keyboardType,
     bool obscure = false,
+    VoidCallback? onToggleVisibility,
     ValueChanged<String>? onChanged,
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -290,7 +325,14 @@ class _HelperMePageState extends State<HelperMePage> {
         keyboardType: keyboardType,
         obscureText: obscure,
         onChanged: onChanged,
-        decoration: _decoration(),
+        decoration: _decoration().copyWith(
+          suffixIcon: onToggleVisibility == null
+              ? null
+              : TextButton(
+                  onPressed: onToggleVisibility,
+                  child: Text(obscure ? 'Show' : 'Hide'),
+                ),
+        ),
         style: const TextStyle(fontSize: 14, color: _ink),
       ),
     ],
@@ -316,11 +358,346 @@ class _HelperMePageState extends State<HelperMePage> {
     ],
   );
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _desktopCard({required String title, required Widget child}) =>
+      Container(
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: _border),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 22),
+            child,
+          ],
+        ),
+      );
+
+  Widget _desktopProfile() {
     final profile = _loadedProfile;
     final name = profile?.name ?? widget.controller.currentUserName ?? 'Helper';
-    final location = widget.locationName;
+    final location = _locationName ?? 'No location assigned';
+    final settings = widget.storeAccessSettings;
+    final schedule = settings == null
+        ? 'Store hours unavailable'
+        : _scheduleLines(settings).join(' · ');
+    return ColoredBox(
+      color: const Color(0xFFF6F5F2),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(44, 40, 44, 48),
+        children: [
+          const Text(
+            'Profile',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              color: _ink,
+            ),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Manage your personal details and password.',
+            style: TextStyle(color: _muted),
+          ),
+          const SizedBox(height: 24),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: _border),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 40,
+                        backgroundColor: _ink,
+                        child: Text(
+                          _initials(name),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 21,
+                                fontWeight: FontWeight.w700,
+                                color: _ink,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$_roleLabel · $location',
+                              style: const TextStyle(color: _muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _summaryDetail('Role', _roleLabel),
+                      const SizedBox(width: 28),
+                      _summaryDetail('Location', location),
+                      const SizedBox(width: 28),
+                      _summaryDetail('Schedule', schedule),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 28,
+                    vertical: 14,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF4F1EE),
+                    border: Border(top: BorderSide(color: _border)),
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(16),
+                    ),
+                  ),
+                child: Text(
+                  _roleLabel == 'Administrator'
+                      ? 'Role, location, and schedule are managed in staff and store settings.'
+                      : 'Role, location, and schedule are managed by your administrator.',
+                  style: const TextStyle(color: _muted, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _desktopCard(
+                  title: 'Personal details',
+                  child: _personalDetailsForm(desktop: true),
+                ),
+              ),
+              const SizedBox(width: 22),
+              Expanded(
+                child: _desktopCard(
+                  title: 'Change password',
+                  child: _passwordForm(desktop: true),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryDetail(String label, String value) => SizedBox(
+    width: 150,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: _muted, fontSize: 12)),
+        const SizedBox(height: 5),
+        Text(
+          value,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: _ink, fontSize: 13),
+        ),
+      ],
+    ),
+  );
+
+  Widget _personalDetailsForm({required bool desktop}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          Expanded(
+            child: _field(
+              'Full name',
+              _name,
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: _field(
+              'Mobile number',
+              _phone,
+              keyboardType: TextInputType.phone,
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 20),
+      _field(
+        'Work email',
+        _email,
+        keyboardType: TextInputType.emailAddress,
+        onChanged: (_) => setState(() {}),
+      ),
+      if (_profileError != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          _profileError!,
+          style: const TextStyle(color: Color(0xFFB42318), fontSize: 12),
+        ),
+      ],
+      const SizedBox(height: 18),
+      Align(
+        alignment: desktop ? Alignment.centerRight : Alignment.centerLeft,
+        child: ElevatedButton(
+          onPressed: _savingProfile ? null : _saveProfile,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _ink,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9),
+            ),
+          ),
+          child: Text(_savingProfile ? 'Saving…' : 'Save changes'),
+        ),
+      ),
+    ],
+  );
+
+  Widget _passwordForm({required bool desktop}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _field(
+        'Current password',
+        _currentPassword,
+        obscure: !_showCurrentPassword,
+        onToggleVisibility: () =>
+            setState(() => _showCurrentPassword = !_showCurrentPassword),
+      ),
+      const SizedBox(height: 20),
+      if (desktop)
+        Row(
+          children: [
+            Expanded(
+              child: _field(
+                'New password',
+                _newPassword,
+                obscure: !_showNewPassword,
+                onToggleVisibility: () =>
+                    setState(() => _showNewPassword = !_showNewPassword),
+                onChanged: (_) => setState(() => _passwordError = null),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _field(
+                'Confirm new password',
+                _confirmPassword,
+                obscure: !_showConfirmPassword,
+                onToggleVisibility: () => setState(
+                  () => _showConfirmPassword = !_showConfirmPassword,
+                ),
+                onChanged: (_) => setState(() => _passwordError = null),
+              ),
+            ),
+          ],
+        )
+      else ...[
+        _field(
+          'New password',
+          _newPassword,
+          obscure: !_showNewPassword,
+          onToggleVisibility: () =>
+              setState(() => _showNewPassword = !_showNewPassword),
+          onChanged: (_) => setState(() => _passwordError = null),
+        ),
+        const SizedBox(height: 20),
+        _field(
+          'Confirm new password',
+          _confirmPassword,
+          obscure: !_showConfirmPassword,
+          onToggleVisibility: () =>
+              setState(() => _showConfirmPassword = !_showConfirmPassword),
+          onChanged: (_) => setState(() => _passwordError = null),
+        ),
+      ],
+      const SizedBox(height: 20),
+      Row(
+        children: [
+          Expanded(child: _passwordRule('At least 8 characters', _hasLength)),
+          Expanded(child: _passwordRule('Contains a number', _hasNumber)),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Expanded(
+            child: _passwordRule('Contains an uppercase letter', _hasUppercase),
+          ),
+          Expanded(
+            child: _passwordRule('Contains a lowercase letter', _hasLowercase),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Expanded(child: _passwordRule('Contains a symbol', _hasSymbol)),
+          Expanded(child: _passwordRule('Passwords match', _passwordsMatch)),
+        ],
+      ),
+      if (_passwordError != null) ...[
+        const SizedBox(height: 12),
+        Text(
+          _passwordError!,
+          style: const TextStyle(color: Color(0xFFB42318), fontSize: 12),
+        ),
+      ],
+      const SizedBox(height: 20),
+      Align(
+        alignment: Alignment.centerRight,
+        child: ElevatedButton(
+          onPressed: _savingPassword ? null : _updatePassword,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _orange,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9),
+            ),
+          ),
+          child: Text(_savingPassword ? 'Updating…' : 'Update password'),
+        ),
+      ),
+    ],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.sizeOf(context).width >= 900) return _desktopProfile();
+    final profile = _loadedProfile;
+    final name = profile?.name ?? widget.controller.currentUserName ?? 'Helper';
+    final location = _locationName;
     final settings = widget.storeAccessSettings;
     return ColoredBox(
       color: const Color(0xFFF6F5F2),
@@ -356,9 +733,7 @@ class _HelperMePageState extends State<HelperMePage> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      location == null
-                          ? 'Order helper'
-                          : 'Order helper · $location',
+                      location == null ? _roleLabel : '$_roleLabel · $location',
                       style: const TextStyle(fontSize: 13, color: _muted),
                     ),
                   ],
@@ -389,7 +764,9 @@ class _HelperMePageState extends State<HelperMePage> {
           const Divider(color: _border),
           const SizedBox(height: 4),
           Text(
-            settings?.restrictStaffLogin == true
+            _roleLabel == 'Administrator'
+                ? 'Role, location, and schedule are managed in staff and store settings.'
+                : settings?.restrictStaffLogin == true
                 ? 'Role, location, and schedule are managed by your administrator. You can only sign in during scheduled hours.'
                 : 'Role, location, and schedule are managed by your administrator.',
             style: const TextStyle(fontSize: 12, color: _muted, height: 1.4),
@@ -539,15 +916,6 @@ class _HelperMePageState extends State<HelperMePage> {
               ),
               child: Text(_savingPassword ? 'Updating…' : 'Update password'),
             ),
-          ),
-          const SizedBox(height: 28),
-          const Divider(color: _border),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: widget.onLogout,
-            icon: const Icon(LucideIcons.logOut, size: 17),
-            label: const Text('Sign out'),
-            style: TextButton.styleFrom(foregroundColor: _muted),
           ),
         ],
       ),
