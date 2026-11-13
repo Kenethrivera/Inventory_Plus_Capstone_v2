@@ -104,9 +104,9 @@ class StockThresholdPreview extends StatelessWidget {
           const SizedBox(height: 9),
           Text(
             valid
-                ? 'For max 200: out at 0, critical through '
-                      '${(200 * critical / 100).round()}, low through '
-                      '${(200 * low / 100).round()}, and healthy above that.'
+                ? 'For 200 sold in 7 days: out at 0, critical through '
+                      '${(200 * critical / 100).ceil()}, low through '
+                      '${(200 * low / 100).ceil()}, and healthy above that.'
                 : !hasNumbers
                 ? 'Enter both percentages to preview stock levels.'
                 : critical >= low

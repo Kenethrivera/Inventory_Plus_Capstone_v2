@@ -762,7 +762,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                 children: [
                   Expanded(
                     child: _numberField(
-                      'Critical at (% of max)',
+                      'Critical (% of 7-day sales)',
                       _criticalPercentCtrl,
                       width: double.infinity,
                       compact: true,
@@ -771,7 +771,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                   const SizedBox(width: 10),
                   Expanded(
                     child: _numberField(
-                      'Low stock at (% of max)',
+                      'Low stock (% of 7-day sales)',
                       _lowPercentCtrl,
                       width: double.infinity,
                       compact: true,
@@ -783,8 +783,11 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                 spacing: 16,
                 runSpacing: 12,
                 children: [
-                  _numberField('Critical at (% of max)', _criticalPercentCtrl),
-                  _numberField('Low stock at (% of max)', _lowPercentCtrl),
+                  _numberField(
+                    'Critical (% of 7-day sales)',
+                    _criticalPercentCtrl,
+                  ),
+                  _numberField('Low stock (% of 7-day sales)', _lowPercentCtrl),
                 ],
               ),
       ),

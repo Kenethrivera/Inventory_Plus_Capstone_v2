@@ -14,6 +14,7 @@ import 'helper_assignment.dart';
 import 'history_pagination.dart';
 import 'inventory_approval.dart';
 import 'payment_reference.dart';
+import 'rolling_stock_threshold.dart';
 import 'staff_performance.dart';
 import 'staff_management.dart';
 import 'package:flutter/material.dart';
@@ -281,9 +282,11 @@ class InventoryController {
   bool _currentProfileRefreshQueued = false;
   CurrentUserProfileSnapshot? _currentProfileSnapshot;
 
-  static const int _baselineRestocks = 3;
-  static const int _baselineWindowDays = 180;
-  Map<String, double> _baselineByProduct = {};
+  static const int _rollingSalesPageSize = 500;
+  Map<String, List<RollingSale>> _rollingSalesByProduct = {};
+  Future<void>? _rollingSalesRefreshInFlight;
+  bool _rollingSalesRefreshQueued = false;
+  Timer? _rollingSalesExpiryTimer;
 
   String gcashQrUrl = '';
   bool gcashEnabled = true;
@@ -571,42 +574,101 @@ class InventoryController {
 
   InventoryApprovalNotificationCallback? onApprovalRequestChanged;
 
-  Future<void> _loadStockBaselines() async {
+  Future<void> _refreshRollingSales() {
+    final inFlight = _rollingSalesRefreshInFlight;
+    if (inFlight != null) {
+      _rollingSalesRefreshQueued = true;
+      return inFlight;
+    }
+    final refresh = _loadRollingSales();
+    _rollingSalesRefreshInFlight = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_rollingSalesRefreshInFlight, refresh)) {
+        _rollingSalesRefreshInFlight = null;
+      }
+      if (_rollingSalesRefreshQueued) {
+        _rollingSalesRefreshQueued = false;
+        unawaited(_refreshRollingSales());
+      }
+    });
+  }
+
+  Future<void> _loadRollingSales() async {
     final locId = activeLocationId;
     if (locId == null) return;
     try {
-      final cutoff = DateTime.now()
-          .subtract(const Duration(days: _baselineWindowDays))
-          .toIso8601String();
-
-      final res = await supabase
-          .from('transaction_history')
-          .select('product_id, new_quantity, created_at')
-          .eq('location_id', locId)
-          .inFilter('transaction_type', ['add', 'stock_in'])
-          .gte('created_at', cutoff)
-          .order('created_at', ascending: false);
-
-      final Map<String, List<double>> levels = {};
-      for (final row in List<Map<String, dynamic>>.from(res)) {
-        final pid = row['product_id']?.toString();
-        if (pid == null) continue;
-        final list = levels.putIfAbsent(pid, () => []);
-        if (list.length < _baselineRestocks) {
-          list.add((row['new_quantity'] as num).toDouble());
+      final now = DateTime.now().toUtc();
+      final cutoff = now.subtract(RollingStockThreshold.window);
+      final sales = <String, List<RollingSale>>{};
+      var offset = 0;
+      while (true) {
+        final rows = await supabase
+            .from('transaction_history')
+            .select('product_id, quantity_change, created_at, operation_scope')
+            .eq('location_id', locId)
+            .eq('transaction_type', 'checkout')
+            .gte('created_at', cutoff.toIso8601String())
+            .lte('created_at', now.toIso8601String())
+            .order('created_at')
+            .order('id')
+            .range(offset, offset + _rollingSalesPageSize - 1);
+        for (final row in rows) {
+          final productId = row['product_id']?.toString();
+          final sale = RollingSale.fromCheckoutRow(row);
+          if (productId == null || sale == null) continue;
+          sales.putIfAbsent(productId, () => <RollingSale>[]).add(sale);
         }
+        if (rows.length < _rollingSalesPageSize) break;
+        offset += _rollingSalesPageSize;
       }
-      if (activeLocationId != locId) return;
-      _baselineByProduct = {
-        for (final e in levels.entries) e.key: e.value.reduce(math.max),
-      };
+      if (activeLocationId != locId) {
+        _rollingSalesRefreshQueued = true;
+        return;
+      }
+      _rollingSalesByProduct = sales;
+      _scheduleRollingSalesExpiry();
+      _publishInventorySnapshot();
     } catch (e) {
-      AppLogger.error('Error loading stock baselines', error: e);
+      AppLogger.error('Error loading rolling sales', error: e);
     }
   }
 
-  double baselineFor(InventoryItem item) =>
-      math.max(item.quantity, _baselineByProduct[item.id] ?? item.maxQuantity);
+  void _scheduleRollingSalesExpiry() {
+    _rollingSalesExpiryTimer?.cancel();
+    final now = DateTime.now().toUtc();
+    DateTime? nextExpiry;
+    for (final sales in _rollingSalesByProduct.values) {
+      for (final sale in sales) {
+        final expiry = sale.occurredAt.toUtc().add(
+          RollingStockThreshold.window,
+        );
+        if (!expiry.isAfter(now)) continue;
+        if (nextExpiry == null || expiry.isBefore(nextExpiry)) {
+          nextExpiry = expiry;
+        }
+      }
+    }
+    if (nextExpiry == null) return;
+    _rollingSalesExpiryTimer = Timer(nextExpiry.difference(now), () {
+      final currentTime = DateTime.now().toUtc();
+      _rollingSalesByProduct = {
+        for (final entry in _rollingSalesByProduct.entries)
+          entry.key: entry.value
+              .where(
+                (sale) => RollingStockThreshold.isInWindow(sale, currentTime),
+              )
+              .toList(),
+      };
+      _rollingSalesByProduct.removeWhere((_, sales) => sales.isEmpty);
+      _publishInventorySnapshot();
+      _scheduleRollingSalesExpiry();
+    });
+  }
+
+  double baselineFor(InventoryItem item) => RollingStockThreshold.totalSales(
+    _rollingSalesByProduct[item.id] ?? const <RollingSale>[],
+    DateTime.now(),
+  );
 
   double stockPercentFor(InventoryItem item) {
     final base = baselineFor(item);
@@ -615,9 +677,16 @@ class InventoryController {
 
   StockStatus stockStatusFor(InventoryItem item) {
     if (item.quantity <= 0) return StockStatus.out;
-    final pct = stockPercentFor(item);
-    if (pct <= globalCriticalPct) return StockStatus.critical;
-    if (pct <= globalLowStockPct) return StockStatus.low;
+    final sales = baselineFor(item);
+    if (sales <= 0) return StockStatus.ok;
+    if (item.quantity <=
+        RollingStockThreshold.threshold(sales, globalCriticalPct)) {
+      return StockStatus.critical;
+    }
+    if (item.quantity <=
+        RollingStockThreshold.threshold(sales, globalLowStockPct)) {
+      return StockStatus.low;
+    }
     return StockStatus.ok;
   }
 
@@ -986,7 +1055,7 @@ class InventoryController {
       debugPrint('[Startup] Deferred controller data started');
     }
 
-    await Future.wait<void>([_loadStockBaselines()]);
+    await _refreshRollingSales();
 
     if (kDebugMode) {
       debugPrint(
@@ -1049,7 +1118,6 @@ class InventoryController {
       } else {
         _items[existingIndex] = savedItem;
       }
-      _baselineByProduct[savedItem.id] = savedItem.quantity;
       _publishInventorySnapshot();
       return savedItem;
     } catch (error, stackTrace) {
@@ -1788,8 +1856,6 @@ class InventoryController {
     }
 
     if (quantityChange > 0) {
-      await _loadStockBaselines();
-
       final callback = onRestockRecorded;
       final locationId = activeLocationId;
       final userId = currentUserId;
@@ -3712,6 +3778,7 @@ class InventoryController {
               );
             }
             _transactionHistoryInvalidationsController.add(null);
+            unawaited(_refreshRollingSales());
           },
           onError: (Object error, StackTrace stackTrace) {
             debugPrint(
@@ -3854,7 +3921,8 @@ class InventoryController {
   void _clearInventorySnapshot() {
     _items = <InventoryItem>[];
     _disabledItems = <InventoryItem>[];
-    _baselineByProduct = <String, double>{};
+    _rollingSalesExpiryTimer?.cancel();
+    _rollingSalesByProduct = <String, List<RollingSale>>{};
     _inventorySnapshotLocationId = null;
     _inventorySnapshotLoaded = false;
     _publishInventorySnapshot();

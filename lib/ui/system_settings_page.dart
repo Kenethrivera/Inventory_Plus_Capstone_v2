@@ -3301,7 +3301,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                                 ),
                                 SizedBox(height: 4),
                                 Text(
-                                  "Set the percentage of an item's usual stock level that triggers stock alerts.",
+                                  "Set alert levels as a percentage of each item's sales in the last 7 days.",
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey,
