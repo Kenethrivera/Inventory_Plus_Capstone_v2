@@ -2006,6 +2006,13 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             style: TextStyle(fontFamily: _fontFam),
                           ),
                         ),
+                        DropdownMenuItem(
+                          value: 'bodegero',
+                          child: Text(
+                            'Bodegero',
+                            style: TextStyle(fontFamily: _fontFam),
+                          ),
+                        ),
                       ],
                       onChanged: (val) =>
                           setModalState(() => selectedRole = val!),
@@ -2212,6 +2219,10 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 DropdownMenuItem(
                   value: 'helper',
                   child: Text('Helper', style: TextStyle(fontFamily: _fontFam)),
+                ),
+                DropdownMenuItem(
+                  value: 'bodegero',
+                  child: Text('Bodegero', style: TextStyle(fontFamily: _fontFam)),
                 ),
               ],
               onChanged: (val) => setModalState(() => selectedRole = val!),

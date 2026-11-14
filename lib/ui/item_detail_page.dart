@@ -52,6 +52,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   bool _isClosing = false;
 
   bool _isEditing = false;
+  bool _requiresLoading = false;
   bool isReadOnly = false;
 
   bool _isSaving = false;
@@ -86,6 +87,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   void initState() {
     super.initState();
     _currentItem = widget.item;
+    _requiresLoading = widget.item.requiresLoading;
     _initControllers();
     _loadHistory();
     _bindInventoryStream();
@@ -139,6 +141,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   }
 
   void _setControllerValues(InventoryItem item) {
+    _requiresLoading = item.requiresLoading;
     _nameController.text = item.name;
     _priceController.text = item.price.toString();
     _stockController.text = item.quantity.toString();
@@ -547,6 +550,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         shelfLevel:
             _currentItem.shelfLevel ?? '', // Passes existing back safely
         imageUrl: finalImageUrl,
+        requiresLoading: _requiresLoading,
       );
 
       await widget.onUpdate(updated);
@@ -971,6 +975,13 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             "Product Size",
             _sizeController,
             _currentItem.productSize ?? "Standard",
+          ),
+          SwitchListTile(
+            title: const Text('Heavy / truck loading required'),
+            value: _requiresLoading,
+            onChanged: _isEditing
+                ? (value) => setState(() => _requiresLoading = value)
+                : null,
           ),
         ],
       ),

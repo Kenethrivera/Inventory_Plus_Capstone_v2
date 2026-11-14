@@ -1086,7 +1086,7 @@ class InventoryController {
 
     try {
       final response = await supabase.rpc(
-        'create_product_v1',
+        'create_product_v2',
         params: <String, dynamic>{
           'p_session_token': _requireSessionToken(),
           'p_operation_id': operationId,
@@ -1104,6 +1104,7 @@ class InventoryController {
           'p_bin_number': null,
           'p_unit': newItem.unit,
           'p_max_quantity': newItem.maxQuantity,
+          'p_requires_loading': newItem.requiresLoading,
         },
       );
 
@@ -1781,7 +1782,7 @@ class InventoryController {
     // committed together by adjust_inventory_quantity_v1 below.
     if (useStage6b7SecureProductAccess) {
       final savedProduct = await supabase.rpc(
-        'product_details_update_v1',
+        'product_details_update_v2',
         params: <String, dynamic>{
           'p_session_token': _requireSessionToken(),
           'p_product_id': updatedItem.id,
@@ -1797,6 +1798,7 @@ class InventoryController {
           'p_image_url': updatedItem.imageUrl,
           'p_unit': updatedItem.unit,
           'p_max_quantity': updatedItem.maxQuantity,
+          'p_requires_loading': updatedItem.requiresLoading,
         },
       );
       if (savedProduct != true) {
@@ -1821,6 +1823,7 @@ class InventoryController {
             'image_url': updatedItem.imageUrl,
             'unit': updatedItem.unit,
             'max_quantity': updatedItem.maxQuantity,
+            'requires_loading': updatedItem.requiresLoading,
           })
           .eq('id', updatedItem.id)
           .eq('location_id', locationId)
@@ -2232,6 +2235,7 @@ class InventoryController {
     String? binNumber,
     String? imageUrl,
     String? unit,
+    bool? requiresLoading,
   }) {
     return originalItem.copyWith(
       name: newName,
@@ -2248,6 +2252,7 @@ class InventoryController {
       binNumber: binNumber,
       imageUrl: imageUrl,
       unit: unit,
+      requiresLoading: requiresLoading,
     );
   }
 
@@ -2265,6 +2270,7 @@ class InventoryController {
     String? shelfLevel,
     String? imageUrl,
     String unit = 'pcs',
+    bool requiresLoading = false,
   }) {
     double parsedQty = double.tryParse(quantity) ?? 0.0;
     double parsedMax = double.tryParse(maxQuantity) ?? parsedQty;
@@ -2284,6 +2290,7 @@ class InventoryController {
       shelfLevel: shelfLevel,
       imageUrl: imageUrl ?? '',
       unit: unit,
+      requiresLoading: requiresLoading,
     );
   }
 
@@ -4254,6 +4261,80 @@ class InventoryController {
       }
       _throwCriticalOperationError('Order item pick failed', error, stackTrace);
     }
+  }
+
+  Future<CustomerOrder> verifyHeavyOrderItem(
+    String orderId,
+    String productId,
+  ) async {
+    final response = await supabase.rpc(
+      'verify_heavy_order_item_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+        'p_product_id': productId,
+      },
+    );
+    return _acceptUpdatedOrder(response);
+  }
+
+  Future<CustomerOrder> claimOrderLoading(String orderId) async {
+    final response = await supabase.rpc(
+      'claim_order_loading_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+      },
+    );
+    return _acceptUpdatedOrder(response);
+  }
+
+  Future<Map<String, dynamic>?> getOrderLoadingProof(String orderId) async {
+    final response = await supabase.rpc(
+      'get_order_loading_proof_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+      },
+    );
+    return response == null ? null : Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<CustomerOrder> finishOrderLoading({
+    required String orderId,
+    required String truckPlate,
+    required Map<String, double> loadedQuantities,
+    required Uint8List photoJpeg,
+  }) async {
+    final response = await supabase.rpc(
+      'finish_order_loading_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+        'p_truck_plate': truckPlate,
+        'p_loaded_quantities': loadedQuantities,
+        'p_photo_base64': base64Encode(photoJpeg),
+      },
+    );
+    return _acceptUpdatedOrder(response);
+  }
+
+  CustomerOrder _acceptUpdatedOrder(dynamic response) {
+    final updated = CustomerOrder.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+    if (_ordersSnapshotLocationId == activeLocationId) {
+      final index = _ordersSnapshot.indexWhere(
+        (order) => order.id == updated.id,
+      );
+      if (index >= 0) {
+        final orders = List<CustomerOrder>.of(_ordersSnapshot);
+        orders[index] = updated;
+        _ordersSnapshot = List<CustomerOrder>.unmodifiable(orders);
+        _ordersController.add(_ordersSnapshot);
+      }
+    }
+    return updated;
   }
 
   Future<bool> claimOrderForCurrentHelper(Object orderId) async {

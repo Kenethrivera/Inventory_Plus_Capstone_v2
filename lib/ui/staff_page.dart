@@ -440,6 +440,7 @@ class _StaffPageState extends State<StaffPage> {
       ('admin', 'Administrator'),
       ('staff', 'Cashier'),
       ('helper', 'Order helper'),
+      ('bodegero', 'Bodegero'),
     ];
     final selectedLabel = roles.firstWhere((role) => role.$1 == _role).$2;
 
@@ -741,6 +742,7 @@ class _StaffPageState extends State<StaffPage> {
   String _mobileTodaySummary(Map<String, dynamic> person) {
     final role = person['role']?.toString();
     if (role == 'admin') return 'Administrator';
+    if (role == 'bodegero') return 'Heavy loading';
     final record = _findRecord(
       role == 'helper' ? _helperToday : _cashierToday,
       person['id']?.toString() ?? '',
@@ -839,6 +841,11 @@ class _StaffPageState extends State<StaffPage> {
     if (role == 'admin')
       return const Text(
         'Administrator',
+        style: TextStyle(color: _muted, fontSize: 12),
+      );
+    if (role == 'bodegero')
+      return const Text(
+        'Heavy loading',
         style: TextStyle(color: _muted, fontSize: 12),
       );
     final record = _findRecord(
@@ -1637,6 +1644,7 @@ class _StaffEditorState extends State<_StaffEditor> {
       ('admin', 'Administrator'),
       ('staff', 'Cashier'),
       ('helper', 'Order helper'),
+      ('bodegero', 'Bodegero'),
     ])
       Padding(
         padding: EdgeInsets.only(
@@ -1719,6 +1727,7 @@ String _initials(String name) {
 String _roleLabel(String? role) => switch (role) {
   'admin' => 'Administrator',
   'helper' => 'Order helper',
+  'bodegero' => 'Bodegero',
   _ => 'Cashier',
 };
 

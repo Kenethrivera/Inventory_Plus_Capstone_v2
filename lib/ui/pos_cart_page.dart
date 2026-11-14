@@ -16,6 +16,7 @@ import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/helper_assignment_selector.dart';
 import 'widgets/order_checklist_view.dart';
+import 'widgets/cashier_order_preparation.dart';
 import 'widgets/gcash_qr_image.dart';
 import 'visual_search_page.dart';
 import 'package:inventory_plus/notifications/notification_provider.dart';
@@ -3223,9 +3224,7 @@ class _PosCartPageState extends State<PosCartPage>
                                           ),
                                         ),
                                         subtitle: Text(
-                                          isReady
-                                              ? "Ready for Pickup"
-                                              : "Being Prepared",
+                                          cashierPreparationSubtitle(o),
                                           style: TextStyle(
                                             color: mainColor,
                                             fontSize: 11,
@@ -3260,40 +3259,12 @@ class _PosCartPageState extends State<PosCartPage>
                                           bottom: 16,
                                         ),
                                         children: [
+                                          CashierOrderPreparation(order: o),
+                                          const SizedBox(height: 10),
                                           ...o.items.map(
-                                            (item) => Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    vertical: 6.0,
-                                                  ),
-                                              child: Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment
-                                                        .spaceBetween,
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      item.productName,
-                                                      style: const TextStyle(
-                                                        fontSize: 13,
-                                                        color: Color(
-                                                          0xFF0F172A,
-                                                        ),
-                                                      ),
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    'Qty: ${item.quantity.truncateToDouble() == item.quantity ? item.quantity.toInt() : item.quantity}',
-                                                    style: const TextStyle(
-                                                      fontSize: 13,
-                                                      color: _cashierInk,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
+                                            (item) => CashierOrderItemRow(
+                                              order: o,
+                                              item: item,
                                             ),
                                           ),
                                           if (isReady) ...[

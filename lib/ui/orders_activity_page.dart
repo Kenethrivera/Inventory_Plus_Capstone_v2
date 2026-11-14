@@ -10,6 +10,7 @@ import '../logic/inventory_controller.dart';
 import '../logic/orders_activity_metrics.dart';
 import '../services/csv_export.dart';
 import 'widgets/order_details_drawer.dart';
+import 'order_assignee_label.dart';
 import 'widgets/app_styled_dropdown.dart';
 
 class OrdersActivityPage extends StatefulWidget {
@@ -126,6 +127,8 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
                     order.createdByName!,
                   if (order.assignedHelperName?.trim().isNotEmpty == true)
                     order.assignedHelperName!,
+                  if (order.assignedBodegeroName?.trim().isNotEmpty == true)
+                    order.assignedBodegeroName!,
                 ],
                 for (final row in stock)
                   if (_actor(row).isNotEmpty) _actor(row),
@@ -471,7 +474,8 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
       if (!_inTime(order.createdAt)) return false;
       if (_staff != 'All staff' &&
           order.createdByName != _staff &&
-          order.assignedHelperName != _staff) {
+          order.assignedHelperName != _staff &&
+          order.assignedBodegeroName != _staff) {
         return false;
       }
       if (_status != 'All statuses' && _orderStatus(order) != _status) {
@@ -482,6 +486,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
         order.id,
         order.createdByName,
         order.assignedHelperName,
+        order.assignedBodegeroName,
         order.paymentReference,
         order.paymentMode,
         ...order.items.map((item) => item.productName),
@@ -654,7 +659,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
         'Items',
         'Payment',
         'Cashier',
-        'Helper',
+        'Assigned staff',
         'Status',
         'Total',
       ],
@@ -953,9 +958,13 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
             _paymentCell(order.paymentMode, widths[3]),
             _cell(order.createdByName ?? '—', widths[4]),
             _cell(
-              order.assignedHelperName ?? 'Unassigned',
+              orderAssignedStaffLabel(order),
               widths[5],
-              color: order.assignedHelperName == null ? _orange : _ink,
+              color:
+                  orderAssignedStaffLabel(order).contains('unassigned') ||
+                      orderAssignedStaffLabel(order) == 'Unassigned'
+                  ? _orange
+                  : _ink,
             ),
             _statusCell(order, widths[6]),
             _cell(
@@ -977,6 +986,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
     inventory: widget.controller.allItems,
     onOpenQueue: () => widget.onOpenQueue(order.id),
     orderUpdates: widget.controller.orderSnapshots,
+    loadLoadingProof: widget.controller.getOrderLoadingProof,
     loadHelpers: _loadHelpers,
     onAssignHelper: (current, helperId) async {
       await widget.controller.assignOrderToHelper(
@@ -1254,7 +1264,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
             'Items',
             'Payment',
             'Cashier',
-            'Helper',
+            'Assigned staff',
             'Status',
             'Total',
           ],
@@ -1265,7 +1275,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
               '${order.items.length}',
               order.paymentMode ?? '',
               order.createdByName ?? '',
-              order.assignedHelperName ?? '',
+              orderAssignedStaffLabel(order),
               _orderStatus(order),
               order.totalAmount.toStringAsFixed(2),
             ],

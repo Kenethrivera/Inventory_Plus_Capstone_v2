@@ -33,6 +33,7 @@ import 'forecasting_page.dart';
 import 'inventory_page.dart';
 import 'item_detail_page.dart';
 import 'map_editor_page.dart';
+import 'bodegero_queue_page.dart';
 import 'order_queue_page.dart';
 import 'orders_activity_page.dart';
 import 'pos_cart_page.dart';
@@ -2255,6 +2256,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildMainContent() {
+    if (widget.controller.currentUserRole?.toLowerCase() == 'bodegero') {
+      return BodegeroQueuePage(
+        controller: widget.controller,
+        onLogout: () => unawaited(_handleLogout()),
+      );
+    }
     final InventoryItem? selectedItem = widget.controller.findAnyItemById(
       _selectedItemId ?? '',
     );
@@ -2927,9 +2934,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 stream: widget.controller.streamOrders(),
                 initialData: widget.controller.currentOrders,
                 builder: (context, snapshot) {
-                  final activeOrders = activePreparationWorkloads(
-                    snapshot.data ?? widget.controller.currentOrders,
-                  )[widget.controller.currentUserId] ?? 0;
+                  final activeOrders =
+                      activePreparationWorkloads(
+                        snapshot.data ?? widget.controller.currentOrders,
+                      )[widget.controller.currentUserId] ??
+                      0;
                   final availability = resolveStaffAvailability(
                     isOnline: presence.isStarted,
                     isOnBreak: presence.isOnBreak,

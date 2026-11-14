@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../data/inventory.dart';
 import '../../logic/inventory_approval.dart';
 import '../../services/staff_presence_service.dart';
+import '../order_assignee_label.dart';
 import 'order_details_drawer.dart';
 
 /// The admin landing page. All figures come from the current store snapshots.
@@ -22,6 +23,7 @@ class OperationsOverview extends StatelessWidget {
     required this.onStaff,
     required this.onPayments,
     this.orderUpdates,
+    this.loadLoadingProof,
   });
 
   final String name;
@@ -36,6 +38,8 @@ class OperationsOverview extends StatelessWidget {
   final VoidCallback onStaff;
   final VoidCallback onPayments;
   final Stream<List<CustomerOrder>>? orderUpdates;
+  final Future<Map<String, dynamic>?> Function(String orderId)?
+  loadLoadingProof;
 
   static const orange = Color(0xFFC83D08);
   static const ink = Color(0xFF171717);
@@ -64,8 +68,14 @@ class OperationsOverview extends StatelessWidget {
     final gcash = sales - cash;
     final pending = orders.where((o) => o.status == 'pending').toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    final waiting = pending.where((o) => o.assignedHelperId == null).toList();
-    final preparing = pending.where((o) => o.assignedHelperId != null).toList();
+    final waiting = pending
+        .where(
+          (o) => orderNeedsHelper(o)
+              ? o.assignedHelperId == null
+              : o.assignedBodegeroId == null,
+        )
+        .toList();
+    final preparing = pending.where((o) => !waiting.contains(o)).toList();
     final ready = orders.where((o) => o.status == 'prepared').toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     final alerts = items.where((item) => item.quantity <= 10).toList()
@@ -231,7 +241,7 @@ class OperationsOverview extends StatelessWidget {
     double width,
   ) {
     final groups = <(String, List<CustomerOrder>)>[
-      ('Waiting for helper', waiting),
+      ('Waiting for staff', waiting),
       ('Being prepared', preparing),
       ('Ready for release', ready),
     ];
@@ -313,8 +323,12 @@ class OperationsOverview extends StatelessWidget {
 
   Widget _orderCard(CustomerOrder order, String group) {
     final elapsed = _elapsedTime(DateTime.now().difference(order.createdAt));
-    final helper = order.assignedHelperName?.trim();
-    final pickedCount = order.items.where((item) => item.picked).length;
+    final assignedStaff = orderAssignedStaffLabel(order);
+    final pickedCount = order.items
+        .where(
+          (item) => item.requiresLoading ? item.heavyVerified : item.picked,
+        )
+        .length;
     final itemCount = order.items.length;
     return Builder(
       builder: (context) => Material(
@@ -327,6 +341,7 @@ class OperationsOverview extends StatelessWidget {
             inventory: items,
             onOpenQueue: onOrders,
             orderUpdates: orderUpdates,
+            loadLoadingProof: loadLoadingProof,
           ),
           borderRadius: BorderRadius.circular(11),
           child: Container(
@@ -353,7 +368,7 @@ class OperationsOverview extends StatelessWidget {
                     Text(
                       elapsed,
                       style: TextStyle(
-                        color: group == 'Waiting for helper' ? orange : muted,
+                        color: group == 'Waiting for staff' ? orange : muted,
                         fontSize: 13,
                       ),
                     ),
@@ -391,13 +406,18 @@ class OperationsOverview extends StatelessWidget {
                 ],
                 const SizedBox(height: 7),
                 Text(
-                  helper == null || helper.isEmpty
-                      ? 'Unassigned · tap to view'
-                      : helper,
+                  assignedStaff.endsWith('unassigned') ||
+                          assignedStaff == 'Unassigned'
+                      ? '$assignedStaff · tap to view'
+                      : assignedStaff,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: helper == null || helper.isEmpty ? orange : ink,
+                    color:
+                        assignedStaff.endsWith('unassigned') ||
+                            assignedStaff == 'Unassigned'
+                        ? orange
+                        : ink,
                     fontSize: 13,
                   ),
                 ),

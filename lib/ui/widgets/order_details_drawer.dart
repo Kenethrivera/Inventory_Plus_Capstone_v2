@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../data/inventory.dart';
+import '../order_assignee_label.dart';
 import 'app_dialog.dart';
 import 'app_styled_dropdown.dart';
 
@@ -15,6 +18,7 @@ class OrderDetailsDrawer extends StatelessWidget {
     this.loadHelpers,
     this.onAssignHelper,
     this.onCancelOrder,
+    this.loadLoadingProof,
   });
 
   final CustomerOrder order;
@@ -24,6 +28,8 @@ class OrderDetailsDrawer extends StatelessWidget {
   final Future<void> Function(CustomerOrder order, String helperId)?
   onAssignHelper;
   final Future<void> Function(CustomerOrder order)? onCancelOrder;
+  final Future<Map<String, dynamic>?> Function(String orderId)?
+  loadLoadingProof;
 
   static const _ink = Color(0xFF201D1A);
   static const _muted = Color(0xFF827B75);
@@ -39,6 +45,7 @@ class OrderDetailsDrawer extends StatelessWidget {
     Future<List<({String id, String name})>> Function()? loadHelpers,
     Future<void> Function(CustomerOrder order, String helperId)? onAssignHelper,
     Future<void> Function(CustomerOrder order)? onCancelOrder,
+    Future<Map<String, dynamic>?> Function(String orderId)? loadLoadingProof,
   }) => showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
@@ -70,6 +77,7 @@ class OrderDetailsDrawer extends StatelessWidget {
                 loadHelpers: loadHelpers,
                 onAssignHelper: onAssignHelper,
                 onCancelOrder: onCancelOrder,
+                loadLoadingProof: loadLoadingProof,
               );
             },
           ),
@@ -184,20 +192,45 @@ class OrderDetailsDrawer extends StatelessWidget {
                         Expanded(
                           child: _summaryField(
                             'Helper',
-                            order.assignedHelperName?.trim().isNotEmpty == true
+                            !orderNeedsHelper(order)
+                                ? 'Not required'
+                                : order.assignedHelperName?.trim().isNotEmpty ==
+                                      true
                                 ? order.assignedHelperName!
                                 : 'Unassigned',
                           ),
                         ),
                         Expanded(
                           child: _summaryField(
-                            'Picked',
-                            '${_pickedCount(order)} / ${order.items.length}',
+                            'Light picked',
+                            '${order.items.where((item) => !item.requiresLoading && (item.picked || _isFullyPicked(order))).length} / ${order.items.where((item) => !item.requiresLoading).length}',
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 30),
+                    if (order.items.any((item) => item.requiresLoading)) ...[
+                      _heading('Heavy loading'),
+                      const SizedBox(height: 10),
+                      _summaryField(
+                        'Bodegero',
+                        order.assignedBodegeroName ?? 'Unassigned',
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        order.loadingVerifiedAt == null
+                            ? 'Loading verification pending'
+                            : 'Loaded onto truck · ${_date(order.loadingVerifiedAt!)}',
+                      ),
+                      if (order.loadingVerifiedAt != null &&
+                          loadLoadingProof != null)
+                        TextButton.icon(
+                          onPressed: () => _showLoadingProof(context),
+                          icon: const Icon(Icons.photo_outlined),
+                          label: const Text('View loading photo and counts'),
+                        ),
+                      const SizedBox(height: 30),
+                    ],
                     _heading('Items'),
                     const SizedBox(height: 12),
                     Container(
@@ -289,6 +322,13 @@ class OrderDetailsDrawer extends StatelessWidget {
                             order.preparedAt != null ||
                             order.completedAt != null,
                       ),
+                    if (order.loadingVerifiedAt != null)
+                      _timelineEntry(
+                        'Loaded onto truck',
+                        order.loadingVerifiedAt!,
+                        'Verified by ${order.assignedBodegeroName ?? 'Bodegero'}',
+                        connected: order.preparedAt != null,
+                      ),
                     if (order.preparedAt != null)
                       _timelineEntry(
                         'Prepared',
@@ -364,6 +404,66 @@ class OrderDetailsDrawer extends StatelessWidget {
     ),
     child: Text(label, style: TextStyle(color: color, fontSize: 12)),
   );
+
+  Future<void> _showLoadingProof(BuildContext context) async {
+    final loader = loadLoadingProof;
+    if (loader == null) return;
+    try {
+      final proof = await loader(order.id);
+      if (!context.mounted) return;
+      if (proof == null) throw StateError('Loading proof was not found.');
+      // PostgreSQL encode(bytea, 'base64') wraps long output with line breaks.
+      final encodedPhoto = (proof['photo_base64']?.toString() ?? '').replaceAll(
+        RegExp(r'\s+'),
+        '',
+      );
+      final bytes = base64Decode(encodedPhoto);
+      final counts = Map<String, dynamic>.from(
+        proof['loaded_quantities'] as Map? ?? const <String, dynamic>{},
+      );
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Truck loading proof'),
+          content: SizedBox(
+            width: MediaQuery.sizeOf(context).width < 560
+                ? MediaQuery.sizeOf(context).width - 80
+                : 480,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Truck: ${proof['truck_plate'] ?? ''}'),
+                  Text('Captured: ${proof['captured_at'] ?? ''}'),
+                  const SizedBox(height: 8),
+                  for (final item in order.items.where(
+                    (item) => item.requiresLoading,
+                  ))
+                    Text(
+                      '${item.productName}: ${counts[item.productId] ?? '—'} ${item.unit ?? ''}',
+                    ),
+                  const SizedBox(height: 12),
+                  Image.memory(bytes, fit: BoxFit.contain),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load the loading proof: $error')),
+      );
+    }
+  }
 
   Widget _summaryField(String label, String value) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -567,9 +667,6 @@ class OrderDetailsDrawer extends StatelessWidget {
       id.length > 12 ? id.substring(0, 8).toUpperCase() : id;
   static bool _isFullyPicked(CustomerOrder order) =>
       order.status == 'prepared' || order.status == 'completed';
-  static int _pickedCount(CustomerOrder order) => _isFullyPicked(order)
-      ? order.items.length
-      : order.items.where((item) => item.picked).length;
   static String _quantity(double value) => value == value.roundToDouble()
       ? value.toInt().toString()
       : value.toStringAsFixed(2);
@@ -630,6 +727,7 @@ class _OrderActionsState extends State<_OrderActions> {
     super.initState();
     if (widget.loadHelpers != null &&
         widget.order.status.toLowerCase() == 'pending' &&
+        widget.order.items.any((item) => !item.requiresLoading) &&
         widget.order.assignedHelperId == null) {
       _helpers = widget.loadHelpers!();
     }
@@ -642,6 +740,7 @@ class _OrderActionsState extends State<_OrderActions> {
         status == 'pending' || status == 'prepared' || status == 'solo_picking';
     final canAssign =
         status == 'pending' &&
+        widget.order.items.any((item) => !item.requiresLoading) &&
         widget.order.assignedHelperId == null &&
         !_assignmentSubmitted &&
         widget.onAssignHelper != null;

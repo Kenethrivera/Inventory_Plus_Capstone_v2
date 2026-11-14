@@ -72,6 +72,7 @@ void main() {
 
   test('all non-admin application staff roles use the force-change gate', () {
     expect(roleRequiresForcedPasswordChange('helper'), isTrue);
+    expect(roleRequiresForcedPasswordChange('bodegero'), isTrue);
     expect(roleRequiresForcedPasswordChange('staff'), isTrue);
     expect(roleRequiresForcedPasswordChange('cashier'), isTrue);
     expect(roleRequiresForcedPasswordChange('admin'), isFalse);

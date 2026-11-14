@@ -2570,6 +2570,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   final _shelfController = TextEditingController();
   final _binController = TextEditingController();
   String _categoryValue = '';
+  bool _requiresLoading = false;
   String? _locationValue;
   int _referenceTab = 0;
   bool _isEditing = false;
@@ -2595,6 +2596,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     _shelfController.text = widget.item.shelfLevel ?? '';
     _binController.text = widget.item.binNumber ?? '';
     _categoryValue = widget.item.category;
+    _requiresLoading = widget.item.requiresLoading;
     _locationValue = widget.item.locationId;
     _subscribeToHistory();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2693,6 +2695,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     _shelfController.text = item.shelfLevel ?? '';
     _binController.text = item.binNumber ?? '';
     _categoryValue = item.category;
+    _requiresLoading = item.requiresLoading;
     _locationValue = item.locationId;
     setState(() {
       _chosenImage = null;
@@ -3076,6 +3079,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         shelfLevel: _shelfController.text.trim(),
         binNumber: _binController.text.trim(),
         imageUrl: savedImageUrl,
+        requiresLoading: _requiresLoading,
       );
       await widget.onSave(updated);
       if (_locationValue != item.locationId) {
@@ -3860,6 +3864,14 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
             style: const TextStyle(fontSize: 12, color: _warmMuted),
           ),
         ],
+        SwitchListTile(
+          title: const Text('Heavy / truck loading required'),
+          subtitle: const Text('Bodegero verifies and loads this product.'),
+          value: _requiresLoading,
+          onChanged: canEdit
+              ? (value) => setState(() => _requiresLoading = value)
+              : null,
+        ),
         const SizedBox(height: 16),
         if (canEdit) ...[
           Wrap(

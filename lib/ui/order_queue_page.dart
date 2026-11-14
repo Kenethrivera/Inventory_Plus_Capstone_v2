@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../logic/helper_assignment.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/order_work_progress.dart';
 import '../data/inventory.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
@@ -126,7 +127,8 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
     if (latestOrder == null ||
         latestOrder.status != 'pending' ||
-        !_isAssignedToCurrentHelper(latestOrder)) {
+        !_isAssignedToCurrentHelper(latestOrder) ||
+        !latestOrder.items.any((item) => !item.requiresLoading)) {
       AppToast.error(context, 'This order is no longer assigned to you.');
       return false;
     }
@@ -365,8 +367,12 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   Widget _mobileAssignedCard(CustomerOrder order) {
     const orange = Color(0xFFC83D08);
-    final picked = _pickedIds(order).length.clamp(0, order.items.length);
-    final total = order.items.length;
+    final sharedProgress = OrderWorkProgress.fromOrder(order);
+    final lightItems = order.items.where((item) => !item.requiresLoading);
+    final picked = lightItems
+        .where((item) => _pickedIds(order).contains(item.productId))
+        .length;
+    final total = lightItems.length;
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
@@ -452,12 +458,31 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                   ),
                 ],
               ),
+              if (sharedProgress.isMixed) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Shared order · Bodegero: ${sharedProgress.bodegeroSummary}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF736B65),
+                    fontSize: 12,
+                    fontFamily: _fontFam,
+                  ),
+                ),
+              ],
               const SizedBox(height: 20),
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      picked > 0 ? 'Continue picking' : 'Start picking',
+                      picked == total &&
+                              sharedProgress.isMixed &&
+                              !sharedProgress.heavyComplete
+                          ? 'Waiting for Bodegero'
+                          : picked > 0
+                          ? 'Continue picking'
+                          : 'Start picking',
                       style: const TextStyle(
                         color: orange,
                         fontSize: 14,
@@ -478,7 +503,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   Widget _mobileOpenCard(CustomerOrder order) {
     final claiming = _claimingOrderIds.contains(order.id);
-    final total = order.items.length;
+    final total = order.items.where((item) => !item.requiresLoading).length;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -792,6 +817,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                     .where(
                       (order) =>
                           order.status == 'pending' &&
+                          order.items.any((item) => !item.requiresLoading) &&
                           (order.assignedHelperId == null ||
                               order.assignedHelperId!.trim().isEmpty),
                     )
@@ -942,8 +968,17 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                           itemCount: visiblePendingOrders.length,
                           itemBuilder: (context, index) {
                             final order = visiblePendingOrders[index];
-                            final pickedCount = _pickedIds(order).length;
-                            final totalItems = order.items.length;
+                            final lightItems = order.items.where(
+                              (item) => !item.requiresLoading,
+                            );
+                            final pickedCount = lightItems
+                                .where(
+                                  (item) => _pickedIds(
+                                    order,
+                                  ).contains(item.productId),
+                                )
+                                .length;
+                            final totalItems = lightItems.length;
 
                             return _OrderCard(
                               key: ValueKey(order.id),
@@ -1103,6 +1138,7 @@ class _OrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final String shortId = order.id.toString().substring(0, 8).toUpperCase();
     final bool isPicking = pickedCount > 0;
+    final sharedProgress = OrderWorkProgress.fromOrder(order);
     const Color assignmentColor = _primaryBlue;
     final details = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1126,6 +1162,17 @@ class _OrderCard extends StatelessWidget {
             fontFamily: _fontFam,
           ),
         ),
+        if (sharedProgress.isMixed) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Bodegero: ${sharedProgress.bodegeroSummary}',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 12,
+              fontFamily: _fontFam,
+            ),
+          ),
+        ],
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -1242,11 +1289,29 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
   String? _focusedProductId;
 
   CustomerOrder get order => widget.order;
+  List<CustomerOrderItem> get workItems => order.items
+      .where((item) => !item.requiresLoading)
+      .toList(growable: false);
   InventoryController get controller => widget.controller;
   Set<String> get pickedItems => widget.pickedItems;
   Future<void> Function(String) get onItemVerified => widget.onItemVerified;
   VoidCallback get onBack => widget.onBack;
   VoidCallback get onFinish => widget.onFinish;
+
+  Future<void> _finishLightWork(BuildContext context) async {
+    if (order.status == 'prepared' ||
+        controller.orderById(order.id)?.status == 'prepared') {
+      onFinish();
+      return;
+    }
+    if (order.items.any((item) => item.requiresLoading) &&
+        order.loadingVerifiedAt == null) {
+      AppToast.success(context, 'Light items verified. Waiting for Bodegero.');
+      onBack();
+      return;
+    }
+    await _markPrepared(context);
+  }
 
   Future<void> _markPrepared(BuildContext context) async {
     if (_isSubmittingPreparation) return;
@@ -1292,6 +1357,17 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
         onFinish();
       }
     } catch (error, stackTrace) {
+      // Bodegero may have loaded the final heavy item while Helper was
+      // pressing Finish. In that case the order is already prepared.
+      try {
+        await controller.retryOrdersSnapshot();
+      } catch (_) {
+        // Keep the original preparation error if refresh is unavailable.
+      }
+      if (controller.orderById(order.id)?.status == 'prepared') {
+        if (context.mounted) onFinish();
+        return;
+      }
       AppLogger.error(
         'Order preparation failed',
         error: error,
@@ -1466,7 +1542,7 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
   }
 
   List<CustomerOrderItem> _walkingOrderItems() {
-    final items = [...order.items];
+    final items = [...workItems];
     final fixtures = {
       for (final element in controller.storeLayout) element.id: element,
     };
@@ -1529,6 +1605,7 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
     const orange = Color(0xFFC83D08);
     const ink = Color(0xFF171717);
     const muted = Color(0xFF756D67);
+    final sharedProgress = OrderWorkProgress.fromOrder(order);
     final walkingItems = _walkingOrderItems();
     final pickStopMarkers = <PickStopMarker>[];
     for (var i = 0; i < walkingItems.length; i++) {
@@ -1545,10 +1622,10 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
         );
       }
     }
-    final pickedCount = order.items
+    final pickedCount = workItems
         .where((item) => pickedItems.contains(item.productId))
         .length;
-    final remaining = order.items.length - pickedCount;
+    final remaining = workItems.length - pickedCount;
     final nextItem = walkingItems.where(
       (item) => !pickedItems.contains(item.productId),
     );
@@ -1587,9 +1664,11 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                           fontFamily: _fontFam,
                         ),
                       ),
-                      const Text(
-                        'Deliver to checkout counter',
-                        style: TextStyle(
+                      Text(
+                        sharedProgress.isMixed
+                            ? 'Bring light items to loading area'
+                            : 'Deliver to checkout counter',
+                        style: const TextStyle(
                           color: muted,
                           fontSize: 12,
                           fontFamily: _fontFam,
@@ -1599,7 +1678,7 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                   ),
                 ),
                 Text(
-                  '$pickedCount/${order.items.length}',
+                  '$pickedCount/${workItems.length}',
                   style: const TextStyle(
                     color: ink,
                     fontSize: 17,
@@ -1613,6 +1692,24 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
           Expanded(
             child: ListView(
               children: [
+                if (sharedProgress.isMixed)
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Shared order · Bodegero: ${sharedProgress.bodegeroSummary}',
+                      style: const TextStyle(
+                        color: ink,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: _fontFam,
+                      ),
+                    ),
+                  ),
                 Container(
                   color: Colors.white,
                   padding: const EdgeInsets.fromLTRB(12, 16, 12, 20),
@@ -1773,7 +1870,7 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                 height: 54,
                 child: FilledButton(
                   onPressed: remaining == 0 && !_isSubmittingPreparation
-                      ? () => _markPrepared(context)
+                      ? () => _finishLightWork(context)
                       : null,
                   style: FilledButton.styleFrom(
                     backgroundColor: orange,
@@ -1784,10 +1881,15 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                     ),
                   ),
                   child: Text(
-                    _isSubmittingPreparation
+                    order.status == 'prepared'
+                        ? 'Order ready · Back to queue'
+                        : _isSubmittingPreparation
                         ? 'Saving preparation…'
                         : remaining == 0
-                        ? 'Finish preparing'
+                        ? order.items.any((item) => item.requiresLoading) &&
+                                  order.loadingVerifiedAt == null
+                              ? 'Finish light items'
+                              : 'Finish preparing'
                         : 'Scan $remaining more to finish',
                     style: const TextStyle(
                       fontSize: 15,
@@ -1935,9 +2037,11 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
     }
     final String shortId = order.id.toString().substring(0, 8).toUpperCase();
 
-    final int pickedCount = pickedItems.length;
+    final int pickedCount = workItems
+        .where((item) => pickedItems.contains(item.productId))
+        .length;
 
-    final int totalCount = order.items.length;
+    final int totalCount = workItems.length;
 
     final bool isAllPicked = pickedCount == totalCount;
 
@@ -2101,9 +2205,9 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(32, 8, 32, 8),
-              itemCount: order.items.length,
+              itemCount: workItems.length,
               itemBuilder: (context, index) {
-                final item = order.items[index];
+                final item = workItems[index];
 
                 final isPicked = pickedItems.contains(item.productId);
 
@@ -2140,7 +2244,7 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
               height: 56,
               child: ElevatedButton(
                 onPressed: isAllPicked && !_isSubmittingPreparation
-                    ? () => _markPrepared(context)
+                    ? () => _finishLightWork(context)
                     : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _primaryBlue,
@@ -2151,10 +2255,15 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                   ),
                 ),
                 child: Text(
-                  _isSubmittingPreparation
+                  order.status == 'prepared'
+                      ? 'Order ready · Back to queue'
+                      : _isSubmittingPreparation
                       ? 'Saving preparation...'
                       : isAllPicked
-                      ? 'Notify Cashier (Prepared)'
+                      ? order.items.any((item) => item.requiresLoading) &&
+                                order.loadingVerifiedAt == null
+                            ? 'Finish light items'
+                            : 'Notify Cashier (Prepared)'
                       : 'Pick all items first ($pickedCount/$totalCount)',
                   style: const TextStyle(
                     fontSize: 16,

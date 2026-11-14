@@ -90,6 +90,7 @@ class InventoryItem {
   final double price;
   double quantity;
   final double maxQuantity; // ADDED MAX QUANTITY
+  final bool requiresLoading;
   final String category;
   final String description;
   final String imageUrl;
@@ -108,6 +109,7 @@ class InventoryItem {
     required this.price,
     required this.quantity,
     required this.maxQuantity, // ADDED MAX QUANTITY
+    this.requiresLoading = false,
     required this.category,
     required this.description,
     required this.imageUrl,
@@ -131,6 +133,7 @@ class InventoryItem {
       maxQuantity:
           (map['max_quantity'] as num?)?.toDouble() ??
           100.0, // READ FROM DB WITH FALLBACK
+      requiresLoading: map['requires_loading'] == true,
       description: map['description'] ?? '',
       imageUrl: map['image_url'] ?? '',
       locationId: map['map_element_id'],
@@ -149,6 +152,7 @@ class InventoryItem {
     double? price,
     double? quantity,
     double? maxQuantity, // ADDED MAX QUANTITY
+    bool? requiresLoading,
     String? category,
     String? description,
     String? imageUrl,
@@ -168,6 +172,7 @@ class InventoryItem {
       price: price ?? this.price,
       quantity: quantity ?? this.quantity,
       maxQuantity: maxQuantity ?? this.maxQuantity, // ADDED MAX QUANTITY
+      requiresLoading: requiresLoading ?? this.requiresLoading,
       category: category ?? this.category,
       description: description ?? this.description,
       imageUrl: imageUrl ?? this.imageUrl,
@@ -187,6 +192,8 @@ class CustomerOrderItem {
   final String productName;
   final double quantity;
   final bool picked;
+  final bool requiresLoading;
+  final bool heavyVerified;
   final String? unit;
   final double? unitPrice;
   final double? lineTotal;
@@ -196,6 +203,8 @@ class CustomerOrderItem {
     required this.productName,
     required this.quantity,
     this.picked = false,
+    this.requiresLoading = false,
+    this.heavyVerified = false,
     this.unit,
     this.unitPrice,
     this.lineTotal,
@@ -205,6 +214,7 @@ class CustomerOrderItem {
     'product_id': productId,
     'product_name': productName,
     'quantity': quantity,
+    'requires_loading': requiresLoading,
   };
 
   factory CustomerOrderItem.fromJson(
@@ -219,6 +229,8 @@ class CustomerOrderItem {
         'Unknown',
     quantity: (json['quantity'] as num?)?.toDouble() ?? 0.0,
     picked: json['picked'] == true,
+    requiresLoading: json['requires_loading'] == true,
+    heavyVerified: json['heavy_verified'] == true,
     unit: json['unit']?.toString(),
     unitPrice: (json['unit_price'] as num?)?.toDouble(),
     lineTotal: (json['line_total'] as num?)?.toDouble(),
@@ -243,6 +255,9 @@ class CustomerOrder {
 
   final String? assignedHelperId;
   final String? assignedHelperName;
+  final String? assignedBodegeroId;
+  final String? assignedBodegeroName;
+  final DateTime? loadingVerifiedAt;
   final DateTime? assignedAt;
   final String? assignedByAdminId;
   final String? assignedByAdminName;
@@ -280,6 +295,9 @@ class CustomerOrder {
     this.createdByName,
     this.assignedHelperId,
     this.assignedHelperName,
+    this.assignedBodegeroId,
+    this.assignedBodegeroName,
+    this.loadingVerifiedAt,
     this.assignedAt,
     this.assignedByAdminId,
     this.assignedByAdminName,
@@ -332,6 +350,9 @@ class CustomerOrder {
 
       assignedHelperId: json['assigned_helper_id']?.toString(),
       assignedHelperName: json['assigned_helper_name']?.toString(),
+      assignedBodegeroId: json['assigned_bodegero_id']?.toString(),
+      assignedBodegeroName: json['assigned_bodegero_name']?.toString(),
+      loadingVerifiedAt: _parseDate(json['loading_verified_at']),
       assignedAt: _parseDate(json['assigned_at']),
       assignedByAdminId: json['assigned_by_admin_id']?.toString(),
       assignedByAdminName: json['assigned_by_admin_name']?.toString(),
