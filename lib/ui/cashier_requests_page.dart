@@ -24,12 +24,10 @@ class CashierRequestsPage extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onOpenRegister,
-    required this.onOpenInventory,
     this.approvalChanges,
   });
   final InventoryController controller;
   final VoidCallback onOpenRegister;
-  final VoidCallback onOpenInventory;
   final Stream<void>? approvalChanges;
 
   @override

@@ -441,7 +441,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return 'POS System';
 
       case 1:
-        return 'Inventory';
+        return 'Requests';
 
       case 2:
         return 'History';
@@ -2311,7 +2311,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         final int orderQueueIndex = (isHelper || isAdmin) ? pageIndex++ : -1;
 
-        final int inventoryIndex = pageIndex++;
+        final int inventoryIndex = (isAdmin || isHelper) ? pageIndex++ : -1;
 
         final int approvalsIndex = isAdmin ? pageIndex++ : -1;
 
@@ -2424,7 +2424,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             CashierRequestsPage(
               controller: widget.controller,
               onOpenRegister: () => _selectMainIndex(posIndex),
-              onOpenInventory: () => _selectMainIndex(inventoryIndex),
               approvalChanges: widget.realtimeSync.approvalRequestChanges,
             ),
           );
@@ -2462,15 +2461,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           );
         }
 
-        pages.add(
-          InventoryPage(
-            controller: widget.controller,
-            onSelectItem: _handleSelectItem,
-            onExported: () {
-              _scanExportReminderNotifications();
-            },
-          ),
-        );
+        if (inventoryIndex >= 0) {
+          pages.add(
+            InventoryPage(
+              controller: widget.controller,
+              onSelectItem: _handleSelectItem,
+              onExported: () {
+                _scanExportReminderNotifications();
+              },
+            ),
+          );
+        }
 
         if (isAdmin) {
           pages.add(
@@ -3134,11 +3135,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               selectedIcon: Icon(LucideIcons.fileText, color: _accent),
               label: 'Queue',
             ),
-          const NavigationDestination(
-            icon: Icon(LucideIcons.box, color: _inactiveText),
-            selectedIcon: Icon(LucideIcons.box, color: _accent),
-            label: 'Inventory',
-          ),
+          if (isHelper)
+            const NavigationDestination(
+              icon: Icon(LucideIcons.box, color: _inactiveText),
+              selectedIcon: Icon(LucideIcons.box, color: _accent),
+              label: 'Inventory',
+            ),
           if (isHelper || isCashier)
             const NavigationDestination(
               icon: Icon(LucideIcons.history, color: _inactiveText),
