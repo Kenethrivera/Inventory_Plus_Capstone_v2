@@ -116,45 +116,47 @@ Deno.serve(async (request) => {
         p_username: username, p_channel: channel,
       });
       if (error) throw error;
-      const challengeId = data?.challenge_id ?? crypto.randomUUID();
-      if (data?.challenge_id) {
-        let accepted = false;
-        try {
-          if (channel === 'email') {
-            const email = String(data.destination ?? '').trim();
-            if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-              accepted = await sendEmailCode(email, String(data.code));
-            }
-          } else {
-            const phone = internationalPhone(String(data.destination ?? ''));
-            if (phone) {
-              const payload: Record<string, unknown> = {
-                recipients: [phone],
-                message: `Inventory Plus password reset code: ${data.code}. Expires in 10 minutes. Do not share it.`,
-              };
-              const deviceId = Deno.env.get('TEXTBEE_DEVICE_ID')?.trim();
-              if (deviceId) payload.deviceId = deviceId;
-              const response = await fetch('https://api.textbee.dev/api/v1/gateway/send-sms', {
-                method: 'POST',
-                headers: { 'x-api-key': Deno.env.get('TEXTBEE_API_KEY')!, 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-                signal: AbortSignal.timeout(10000),
-              });
-              const result = await response.json().catch(() => null);
-              accepted = response.ok && result?.data?.success === true;
-              if (!accepted) console.error('Textbee rejected recovery SMS', response.status);
-            }
-          }
-        } catch (deliveryError) {
-          console.error('Recovery delivery failed', deliveryError);
-        }
-        if (!accepted) {
-          await admin.rpc('password_recovery_cancel_v1', {
-            p_challenge_id: challengeId,
-          });
-        }
+      if (!data?.challenge_id) {
+        // Unknown, non-Admin, and throttled accounts cannot receive a code.
+        return reply({ challengeId: null });
       }
-      // The same response for unknown, throttled, and eligible accounts.
+      const challengeId = data.challenge_id;
+      let accepted = false;
+      try {
+        if (channel === 'email') {
+          const email = String(data.destination ?? '').trim();
+          if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            accepted = await sendEmailCode(email, String(data.code));
+          }
+        } else {
+          const phone = internationalPhone(String(data.destination ?? ''));
+          if (phone) {
+            const payload: Record<string, unknown> = {
+              recipients: [phone],
+              message: `Inventory Plus password reset code: ${data.code}. Expires in 10 minutes. Do not share it.`,
+            };
+            const deviceId = Deno.env.get('TEXTBEE_DEVICE_ID')?.trim();
+            if (deviceId) payload.deviceId = deviceId;
+            const response = await fetch('https://api.textbee.dev/api/v1/gateway/send-sms', {
+              method: 'POST',
+              headers: { 'x-api-key': Deno.env.get('TEXTBEE_API_KEY')!, 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+              signal: AbortSignal.timeout(10000),
+            });
+            const result = await response.json().catch(() => null);
+            accepted = response.ok && result?.data?.success === true;
+            if (!accepted) console.error('Textbee rejected recovery SMS', response.status);
+          }
+        }
+      } catch (deliveryError) {
+        console.error('Recovery delivery failed', deliveryError);
+      }
+      if (!accepted) {
+        await admin.rpc('password_recovery_cancel_v1', {
+          p_challenge_id: challengeId,
+        });
+        return reply({ challengeId: null });
+      }
       return reply({ challengeId });
     }
     if (action === 'verify') {

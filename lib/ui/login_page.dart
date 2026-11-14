@@ -1959,6 +1959,11 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
               hint: "Enter admin username",
               icon: LucideIcons.user,
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'Staff accounts: ask your administrator to reset your password.',
+              style: TextStyle(color: Color(0xFF756D67), fontSize: 12),
+            ),
             const SizedBox(height: 26),
             const Text(
               'Verify by',

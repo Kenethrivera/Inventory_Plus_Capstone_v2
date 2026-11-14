@@ -111,7 +111,9 @@ class AuthService {
     final data = response.data;
     final challengeId = data is Map ? data['challengeId']?.toString() : null;
     if (challengeId == null || challengeId.isEmpty) {
-      throw StateError('Password recovery is unavailable. Please try again.');
+      throw const AppUserFacingException(
+        'No code was sent. Staff should ask their administrator to reset their password. Admins can check their username or try later.',
+      );
     }
     return challengeId;
   }
