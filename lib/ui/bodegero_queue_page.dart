@@ -9,6 +9,15 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
 import '../logic/order_work_progress.dart';
+import '../logic/staff_availability.dart';
+import '../notifications/models/app_notification.dart';
+import '../notifications/models/notification_type.dart';
+import '../notifications/notification_bell.dart';
+import '../notifications/notification_provider.dart';
+import '../services/staff_presence_service.dart';
+import 'bodegero_history_page.dart';
+import 'helper_me_page.dart';
+import 'helper_request_page.dart';
 import 'scanner_search_page.dart';
 import 'store_map.dart';
 
@@ -24,10 +33,16 @@ class BodegeroQueuePage extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onLogout,
+    this.approvalChanges,
+    this.onModuleChanged,
+    this.presenceService,
   });
 
   final InventoryController controller;
   final VoidCallback onLogout;
+  final Stream<void>? approvalChanges;
+  final ValueChanged<String>? onModuleChanged;
+  final StaffPresenceService? presenceService;
 
   @override
   State<BodegeroQueuePage> createState() => _BodegeroQueuePageState();
@@ -38,16 +53,21 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   final _searchController = TextEditingController();
   final _quantityControllers = <String, TextEditingController>{};
   late Stream<List<CustomerOrder>> _ordersStream;
+  late Stream<List<CustomerOrder>> _availabilityOrdersStream;
   String? _selectedOrderId;
   String _search = '';
   Uint8List? _photoJpeg;
   CustomerOrder? _completedOrder;
   bool _busy = false;
+  bool _changingBreak = false;
+  int _tabIndex = 0;
+  final Set<int> _visitedTabs = {0};
 
   @override
   void initState() {
     super.initState();
     _ordersStream = widget.controller.streamOrders();
+    _availabilityOrdersStream = widget.controller.streamOrders();
     unawaited(_loadMap());
   }
 
@@ -65,6 +85,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       _ordersStream = widget.controller.streamOrders();
+      _availabilityOrdersStream = widget.controller.streamOrders();
       unawaited(_loadMap());
     }
   }
@@ -84,6 +105,90 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value)));
   }
 
+  Future<void> _toggleBreak() async {
+    final presence = widget.presenceService;
+    if (presence == null || !presence.isStarted || _changingBreak) return;
+    setState(() => _changingBreak = true);
+    try {
+      await presence.setOnBreak(!presence.isOnBreak);
+    } catch (_) {
+      _message('Could not update your availability.');
+    } finally {
+      if (mounted) setState(() => _changingBreak = false);
+    }
+  }
+
+  Widget _availabilityChip(StaffPresenceService presence) => AnimatedBuilder(
+    animation: presence,
+    builder: (context, _) => StreamBuilder<List<CustomerOrder>>(
+      stream: _availabilityOrdersStream,
+      initialData: widget.controller.currentOrders,
+      builder: (context, snapshot) {
+        final activeOrders =
+            activeLoadingWorkloads(
+              snapshot.data ?? widget.controller.currentOrders,
+            )[widget.controller.currentUserId] ??
+            0;
+        final availability = resolveStaffAvailability(
+          isOnline: presence.isStarted,
+          isOnBreak: presence.isOnBreak,
+          isHelper: false,
+          isBodegero: true,
+          activeOrders: activeOrders,
+        );
+        final label = switch (availability) {
+          StaffAvailability.offline => 'Offline',
+          StaffAvailability.onBreak => 'On break',
+          StaffAvailability.busy => 'Busy',
+          StaffAvailability.available => 'Available',
+        };
+        final background = switch (availability) {
+          StaffAvailability.busy => _orange,
+          StaffAvailability.available => const Color(0xFF168047),
+          _ => const Color(0xFF45413E),
+        };
+        return Padding(
+          padding: const EdgeInsets.only(right: 4),
+          child: ActionChip(
+            tooltip: presence.isOnBreak
+                ? 'Switch to Available'
+                : 'Switch to On break',
+            onPressed: _changingBreak || !presence.isStarted
+                ? null
+                : _toggleBreak,
+            backgroundColor: background,
+            disabledColor: const Color(0xFF45413E),
+            side: BorderSide.none,
+            shape: const StadiumBorder(),
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: _font,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+
   void _open(CustomerOrder order) {
     for (final controller in _quantityControllers.values) {
       controller.dispose();
@@ -98,6 +203,39 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       _completedOrder = null;
       _photoJpeg = null;
     });
+  }
+
+  CustomerOrder? _notifiedLoadingOrder(AppNotification notification) {
+    if (notification.type != NotificationType.newOrder &&
+        notification.type != NotificationType.orderAssigned) {
+      return null;
+    }
+    final orderId = notification.payload['orderId']?.toString();
+    if (orderId == null || orderId.isEmpty) return null;
+    for (final order in widget.controller.currentOrders) {
+      if (order.id == orderId &&
+          (order.status == 'pending' || order.status == 'solo_picking') &&
+          order.loadingVerifiedAt == null &&
+          (order.assignedBodegeroId == null ||
+              order.assignedBodegeroId == widget.controller.currentUserId) &&
+          order.items.any((item) => item.requiresLoading)) {
+        return order;
+      }
+    }
+    return null;
+  }
+
+  Future<bool> _openNotifiedLoadingOrder(AppNotification notification) async {
+    await widget.controller.retryOrdersSnapshot();
+    if (!mounted) return false;
+    final order = _notifiedLoadingOrder(notification);
+    if (order == null) {
+      _message('This loading order is no longer available.');
+      return false;
+    }
+    setState(() => _tabIndex = 0);
+    _open(order);
+    return true;
   }
 
   Future<void> _scan(CustomerOrder order, CustomerOrderItem expected) async {
@@ -131,6 +269,10 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   }
 
   Future<void> _claim(CustomerOrder order) async {
+    if (widget.presenceService?.isOnBreak == true) {
+      _message('Switch to Available before claiming a new order.');
+      return;
+    }
     setState(() => _busy = true);
     try {
       final claimed = await widget.controller.claimOrderLoading(order.id);
@@ -215,6 +357,12 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         photoJpeg: _photoJpeg!,
       );
       if (!mounted) return;
+      final notifications = NotificationProvider.maybeOf(context);
+      if (notifications != null) {
+        unawaited(
+          notifications.resolveBodegeroLoadingNotification(orderId: order.id),
+        );
+      }
       setState(() {
         _selectedOrderId = null;
         _completedOrder = updated;
@@ -312,11 +460,19 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         ],
       ),
       actions: [
-        IconButton(
-          tooltip: 'Refresh orders',
-          onPressed: () => unawaited(widget.controller.retryOrdersSnapshot()),
-          icon: const Icon(LucideIcons.refreshCw, size: 19),
-        ),
+        if (widget.presenceService case final presence?)
+          _availabilityChip(presence),
+        if (NotificationProvider.maybeOf(context) != null)
+          NotificationBell(
+            iconColor: Colors.white,
+            helperMobilePanel: true,
+            isActionable: (notification) =>
+                (notification.type == NotificationType.newOrder ||
+                    notification.type == NotificationType.orderAssigned) &&
+                (notification.payload['orderId']?.toString().isNotEmpty ??
+                    false),
+            onNotificationSelected: _openNotifiedLoadingOrder,
+          ),
         IconButton(
           tooltip: 'Log out',
           onPressed: widget.onLogout,
@@ -497,7 +653,9 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           ),
           const SizedBox(width: 10),
           FilledButton(
-            onPressed: _busy ? null : () => _claim(order),
+            onPressed: _busy || widget.presenceService?.isOnBreak == true
+                ? null
+                : () => _claim(order),
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFF211F1D),
               foregroundColor: Colors.white,
@@ -549,6 +707,39 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (widget.presenceService case final presence?)
+                      AnimatedBuilder(
+                        animation: presence,
+                        builder: (context, _) => presence.isOnBreak
+                            ? Container(
+                                margin: const EdgeInsets.only(bottom: 20),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF2D0),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(
+                                      LucideIcons.coffee,
+                                      color: Color(0xFFA65A00),
+                                      size: 18,
+                                    ),
+                                    SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        "You're on break. New heavy orders won't be assigned or claimed until you switch back to Available.",
+                                        style: TextStyle(
+                                          color: _ink,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                     Row(
                       children: [
                         const Expanded(
@@ -1232,57 +1423,157 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     ),
   );
 
+  Widget _queueBody() => StreamBuilder<List<CustomerOrder>>(
+    stream: _ordersStream,
+    initialData: widget.controller.currentOrders,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Unable to load assigned orders.'),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () =>
+                    unawaited(widget.controller.retryOrdersSnapshot()),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        );
+      }
+      if (snapshot.connectionState == ConnectionState.waiting &&
+          (snapshot.data?.isEmpty ?? true)) {
+        return const Center(child: CircularProgressIndicator(color: _orange));
+      }
+      if (_completedOrder != null) return _completion(_completedOrder!);
+
+      final orders =
+          (snapshot.data ?? const <CustomerOrder>[])
+              .where(
+                (order) =>
+                    (order.status == 'pending' ||
+                        order.status == 'solo_picking') &&
+                    order.loadingVerifiedAt == null &&
+                    (order.assignedBodegeroId == null ||
+                        order.assignedBodegeroId ==
+                            widget.controller.currentUserId) &&
+                    order.items.any((item) => item.requiresLoading),
+              )
+              .toList()
+            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+      CustomerOrder? selected;
+      for (final order in orders) {
+        if (order.id == _selectedOrderId) selected = order;
+      }
+      return selected == null ? _queue(orders) : _checklist(selected);
+    },
+  );
+
+  Widget _mapPage() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const Padding(
+        padding: EdgeInsets.fromLTRB(20, 22, 20, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Store map',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Find heavy products on the store floor.',
+              style: TextStyle(fontSize: 13, color: _muted),
+            ),
+          ],
+        ),
+      ),
+      Expanded(
+        child: StoreMap(
+          controller: widget.controller,
+          mode: MapMode.view,
+          viewStyle: MapViewStyle.twoD,
+          itemAssignmentEnabled: false,
+          fitEntireMap: true,
+        ),
+      ),
+    ],
+  );
+
+  Widget _bottomNavigation() => BottomNavigationBar(
+    currentIndex: _tabIndex,
+    type: BottomNavigationBarType.fixed,
+    backgroundColor: Colors.white,
+    selectedItemColor: _orange,
+    unselectedItemColor: _muted,
+    selectedFontSize: 11,
+    unselectedFontSize: 11,
+    showUnselectedLabels: true,
+    onTap: (index) {
+      setState(() {
+        _tabIndex = index;
+        _visitedTabs.add(index);
+      });
+      widget.onModuleChanged?.call(
+        const [
+          'Heavy loading',
+          'Store map',
+          'Loading history',
+          'Stock request',
+          'Profile',
+        ][index],
+      );
+    },
+    items: const [
+      BottomNavigationBarItem(
+        icon: Icon(LucideIcons.listChecks),
+        label: 'Queue',
+      ),
+      BottomNavigationBarItem(icon: Icon(LucideIcons.map), label: 'Map'),
+      BottomNavigationBarItem(
+        icon: Icon(LucideIcons.history),
+        label: 'History',
+      ),
+      BottomNavigationBarItem(
+        icon: Icon(LucideIcons.clipboardPlus),
+        label: 'Request',
+      ),
+      BottomNavigationBarItem(icon: Icon(LucideIcons.userRound), label: 'Me'),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: _background,
     appBar: _header(),
-    body: StreamBuilder<List<CustomerOrder>>(
-      stream: _ordersStream,
-      initialData: widget.controller.currentOrders,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Unable to load assigned orders.'),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () =>
-                      unawaited(widget.controller.retryOrdersSnapshot()),
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          );
-        }
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            (snapshot.data?.isEmpty ?? true)) {
-          return const Center(child: CircularProgressIndicator(color: _orange));
-        }
-        if (_completedOrder != null) return _completion(_completedOrder!);
-
-        final orders =
-            (snapshot.data ?? const <CustomerOrder>[])
-                .where(
-                  (order) =>
-                      (order.status == 'pending' ||
-                          order.status == 'solo_picking') &&
-                      order.loadingVerifiedAt == null &&
-                      (order.assignedBodegeroId == null ||
-                          order.assignedBodegeroId ==
-                              widget.controller.currentUserId) &&
-                      order.items.any((item) => item.requiresLoading),
-                )
-                .toList()
-              ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
-        CustomerOrder? selected;
-        for (final order in orders) {
-          if (order.id == _selectedOrderId) selected = order;
-        }
-        return selected == null ? _queue(orders) : _checklist(selected);
-      },
+    body: IndexedStack(
+      index: _tabIndex,
+      children: [
+        _queueBody(),
+        _visitedTabs.contains(1) ? _mapPage() : const SizedBox.shrink(),
+        _visitedTabs.contains(2)
+            ? BodegeroHistoryPage(
+                controller: widget.controller,
+                isActive: _tabIndex == 2,
+              )
+            : const SizedBox.shrink(),
+        _visitedTabs.contains(3)
+            ? HelperRequestPage(
+                controller: widget.controller,
+                approvalChanges: widget.approvalChanges,
+              )
+            : const SizedBox.shrink(),
+        _visitedTabs.contains(4)
+            ? HelperMePage(controller: widget.controller)
+            : const SizedBox.shrink(),
+      ],
     ),
+    bottomNavigationBar: _tabIndex == 0 && _selectedOrderId != null
+        ? null
+        : _bottomNavigation(),
   );
 }

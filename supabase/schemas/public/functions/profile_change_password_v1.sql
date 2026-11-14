@@ -65,7 +65,7 @@ begin
   update public.profiles
   set password = v_new_hash,
       must_change_password = case
-        when v_role in ('helper', 'staff', 'cashier') then false
+        when v_role in ('helper', 'bodegero', 'staff', 'cashier') then false
         else must_change_password
       end
   where id = v_profile_id

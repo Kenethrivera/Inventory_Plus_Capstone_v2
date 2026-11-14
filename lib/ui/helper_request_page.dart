@@ -13,6 +13,7 @@ import '../services/app_logger.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_styled_dropdown.dart';
 import 'widgets/approval_proof_picker.dart';
+import 'scanner_search_page.dart';
 
 class HelperRequestPage extends StatefulWidget {
   const HelperRequestPage({
@@ -171,11 +172,34 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
     }
   }
 
+  Future<void> _scanProduct() async {
+    if (_submitting) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (scannerContext) => ScannerSearchPage(
+          controller: widget.controller,
+          onSelectItem: (item) {
+            Navigator.pop(scannerContext);
+            if (!mounted) return;
+            setState(() {
+              _productId = item.id;
+              _productFieldKey++;
+              _productError = null;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _submit(List<InventoryItem> items) async {
     if (_submitting) return;
     final product = items.where((item) => item.id == _productId).firstOrNull;
     final amount = double.tryParse(_qty.text.trim());
-    final productError = product == null ? 'Choose a product.' : null;
+    final productError = product == null
+        ? 'Choose a product or scan its shelf QR.'
+        : null;
     String? quantityError;
     if (amount == null || !amount.isFinite || amount <= 0) {
       quantityError = 'Enter a quantity above 0.';
@@ -194,8 +218,8 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
             'Only ${_quantity(product.quantity)} ${product.unit} is on hand.';
       }
     }
-    final photoError = _type == InventoryApprovalType.writeOff && _photo == null
-        ? 'Attach at least one photo of the affected stock.'
+    final photoError = _photo == null
+        ? 'Attach a supporting photo before submitting.'
         : null;
     if (productError != null || quantityError != null || photoError != null) {
       setState(() {
@@ -215,15 +239,13 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
       final operationId = widget.controller.newOperationId(
         'inventory-approval',
       );
-      final photo = _photo;
-      final proofPath = photo == null
-          ? null
-          : await widget.controller.uploadApprovalEvidence(
-              operationId: operationId,
-              bytes: photo.bytes,
-              fileName: photo.fileName,
-              mimeType: photo.mimeType,
-            );
+      final photo = _photo!;
+      final proofPath = await widget.controller.uploadApprovalEvidence(
+        operationId: operationId,
+        bytes: photo.bytes,
+        fileName: photo.fileName,
+        mimeType: photo.mimeType,
+      );
       await widget.controller.submitInventoryApprovalRequest(
         operationId: operationId,
         type: _type,
@@ -232,8 +254,8 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
         reason: _reason,
         note: _notes.text,
         proofStoragePath: proofPath,
-        proofFileName: photo?.fileName,
-        proofMimeType: photo?.mimeType,
+        proofFileName: photo.fileName,
+        proofMimeType: photo.mimeType,
       );
       if (!mounted) return;
       final typeLabel = _type.label;
@@ -251,7 +273,7 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
       await _refresh();
     } catch (error, stackTrace) {
       AppLogger.error(
-        'Helper stock request failed',
+        'Stock request failed',
         error: error,
         stackTrace: stackTrace,
       );
@@ -277,6 +299,7 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
         final selected = items
             .where((item) => item.id == _productId)
             .firstOrNull;
+        final isMobile = MediaQuery.sizeOf(context).width < 600;
         return ColoredBox(
           color: _bg,
           child: RefreshIndicator(
@@ -312,7 +335,16 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
                     children: [
                       _typeSelector(),
                       const SizedBox(height: 26),
-                      _label('Product'),
+                      Row(
+                        children: [
+                          Expanded(child: _label('Product')),
+                          TextButton.icon(
+                            onPressed: _submitting ? null : _scanProduct,
+                            icon: const Icon(LucideIcons.scanLine, size: 18),
+                            label: Text(isMobile ? 'Scan QR' : 'Scan shelf QR'),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 8),
                       AppStyledDropdown<String>(
                         key: ValueKey(
@@ -429,9 +461,7 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      _type == InventoryApprovalType.writeOff
-                          ? _annotatedLabel('Photos', 'required')
-                          : _optionalLabel('Photos'),
+                      _annotatedLabel('Supporting photo', 'required'),
                       const SizedBox(height: 8),
                       _photoPicker(),
                       _fieldError(_photoError),

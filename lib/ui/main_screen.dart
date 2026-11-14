@@ -218,6 +218,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         sessionToken: widget.controller.currentSessionToken,
         realtimeSync: widget.realtimeSync,
       );
+      if (role.toLowerCase() == 'bodegero') {
+        unawaited(_notificationController!.loadNotifications());
+      }
 
       widget.controller.onRestockRecorded =
           ({
@@ -377,6 +380,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   String _currentModuleName() {
     final role = widget.controller.currentUserRole?.toLowerCase();
+
+    if (role == 'bodegero') return 'Heavy loading';
 
     if (_currentIndex == null) {
       return 'Main Screen';
@@ -739,6 +744,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     final targetRoles = <String>[
       'helper',
+      'bodegero',
       'staff',
       if (!settings.allowAdminAnytime) 'admin',
     ];
@@ -2260,6 +2266,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       return BodegeroQueuePage(
         controller: widget.controller,
         onLogout: () => unawaited(_handleLogout()),
+        approvalChanges: widget.realtimeSync.approvalRequestChanges,
+        presenceService: _staffPresenceService,
+        onModuleChanged: (module) =>
+            _staffPresenceService?.updateModule(module),
       );
     }
     final InventoryItem? selectedItem = widget.controller.findAnyItemById(
@@ -2875,6 +2885,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     return AppBar(
       automaticallyImplyLeading: false,
       backgroundColor: const Color(0xFF211F1D),
+      foregroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       toolbarHeight: 74,
       titleSpacing: 16,
@@ -3007,6 +3018,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           inventoryIndex: inventoryIndex,
           iconColor: Colors.white,
           helperMobilePanel: true,
+        ),
+        IconButton(
+          tooltip: 'Log out',
+          onPressed: () => unawaited(_handleLogout()),
+          icon: const Icon(Icons.logout_outlined, size: 22),
         ),
         const SizedBox(width: 8),
       ],

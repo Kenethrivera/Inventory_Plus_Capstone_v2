@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../data/inventory.dart';
 import '../../logic/inventory_approval.dart';
+import '../../logic/staff_availability.dart';
 import '../../services/staff_presence_service.dart';
 import '../order_assignee_label.dart';
 import 'order_details_drawer.dart';
@@ -623,9 +624,13 @@ class OperationsOverview extends StatelessWidget {
                 final personName = person['user_name']?.toString() ?? 'Staff';
                 final role = person['user_role']?.toString() ?? 'Staff';
                 final module = person['current_module']?.toString() ?? '';
-                final busy =
-                    module.toLowerCase().contains('queue') ||
-                    module.toLowerCase().contains('pos');
+                final busy = role.toLowerCase() == 'bodegero'
+                    ? (activeLoadingWorkloads(orders)[person['user_id']
+                                  ?.toString()] ??
+                              0) >
+                          0
+                    : module.toLowerCase().contains('queue') ||
+                          module.toLowerCase().contains('pos');
                 return Column(
                   children: [
                     Padding(

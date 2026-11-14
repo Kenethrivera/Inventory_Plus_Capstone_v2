@@ -6,7 +6,7 @@ enum MainSection {
   classificationTest('classification-test', <String>{'admin'}),
   pos('pos', <String>{'admin', 'staff', 'cashier'}),
   cashierRequests('requests', <String>{'staff', 'cashier'}),
-  queue('queue', <String>{'admin', 'helper'}),
+  queue('queue', <String>{'admin', 'helper', 'bodegero'}),
   inventory('inventory', <String>{'admin', 'helper'}),
   approvals('approvals', <String>{'admin'}),
   performance('performance', <String>{'admin'}),
@@ -63,6 +63,8 @@ enum MainSection {
         ];
       case 'helper':
         return const <MainSection>[queue, inventory, history];
+      case 'bodegero':
+        return const <MainSection>[queue];
       case 'staff':
       case 'cashier':
         return const <MainSection>[pos, cashierRequests, history];

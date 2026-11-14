@@ -11,6 +11,7 @@ import '../logic/helper_assignment.dart';
 import '../logic/staff_availability.dart';
 import '../logic/staff_management.dart';
 import '../logic/staff_performance.dart';
+import '../logic/ph_mobile_number.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 import '../services/staff_presence_service.dart';
@@ -53,6 +54,7 @@ class _StaffPageState extends State<StaffPage> {
   StreamSubscription<List<Map<String, dynamic>>>? _staffSubscription;
   StreamSubscription<List<CustomerOrder>>? _ordersSubscription;
   StreamSubscription<void>? _performanceSubscription;
+  Timer? _ordersRefreshTimer;
   Map<String, int> _activeOrderCounts = const {};
   int _metricsGeneration = 0;
 
@@ -62,14 +64,35 @@ class _StaffPageState extends State<StaffPage> {
     _bind();
     _search.addListener(_rebuild);
     widget.presence?.addListener(_rebuild);
-    if (widget.isActive) unawaited(_loadToday());
+    if (widget.isActive) {
+      unawaited(_loadToday());
+      _startOrderRefresh();
+    }
+  }
+
+  void _startOrderRefresh() {
+    _ordersRefreshTimer?.cancel();
+    unawaited(widget.controller.retryOrdersSnapshot());
+    _ordersRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted && widget.isActive) {
+        unawaited(widget.controller.retryOrdersSnapshot());
+      }
+    });
   }
 
   void _bind() {
-    _activeOrderCounts = activePreparationWorkloads(widget.controller.currentOrders);
+    _activeOrderCounts = {
+      ...activePreparationWorkloads(widget.controller.currentOrders),
+      ...activeLoadingWorkloads(widget.controller.currentOrders),
+    };
     _ordersSubscription = widget.controller.streamOrders().listen((orders) {
       if (!mounted) return;
-      setState(() => _activeOrderCounts = activePreparationWorkloads(orders));
+      setState(
+        () => _activeOrderCounts = {
+          ...activePreparationWorkloads(orders),
+          ...activeLoadingWorkloads(orders),
+        },
+      );
     });
     _staffSubscription = widget.controller.streamStaffConfiguration().listen(
       (rows) {
@@ -122,6 +145,13 @@ class _StaffPageState extends State<StaffPage> {
         oldWidget.controller != widget.controller) {
       unawaited(_loadToday(force: true));
     }
+    if (widget.isActive &&
+        (!oldWidget.isActive || oldWidget.controller != widget.controller)) {
+      _startOrderRefresh();
+    } else if (!widget.isActive && oldWidget.isActive) {
+      _ordersRefreshTimer?.cancel();
+      _ordersRefreshTimer = null;
+    }
   }
 
   void _rebuild() {
@@ -168,6 +198,7 @@ class _StaffPageState extends State<StaffPage> {
 
   @override
   void dispose() {
+    _ordersRefreshTimer?.cancel();
     _metricsGeneration++;
     unawaited(_staffSubscription?.cancel());
     unawaited(_ordersSubscription?.cancel());
@@ -810,15 +841,16 @@ class _StaffPageState extends State<StaffPage> {
     final id = person['id']?.toString() ?? '';
     final presence = widget.presence;
     final online =
-        presence?.activeStaff.any(
-          (row) => row['user_id']?.toString() == id,
-        ) ??
+        presence?.activeStaff.any((row) => row['user_id']?.toString() == id) ??
         false;
-    final helper = person['role']?.toString() == 'helper';
+    final role = person['role']?.toString().toLowerCase();
+    final helper = role == 'helper';
+    final bodegero = role == 'bodegero';
     final availability = resolveStaffAvailability(
       isOnline: online,
-      isOnBreak: helper && (presence?.isUserOnBreak(id) ?? false),
+      isOnBreak: (helper || bodegero) && (presence?.isUserOnBreak(id) ?? false),
       isHelper: helper,
+      isBodegero: bodegero,
       activeOrders: _activeOrderCounts[id] ?? 0,
     );
     final label = switch (availability) {
@@ -1228,7 +1260,9 @@ class _StaffEditorState extends State<_StaffEditor> {
       text: person?['username']?.toString() ?? '',
     );
     _email = TextEditingController(text: person?['email']?.toString() ?? '');
-    _phone = TextEditingController(text: person?['phone']?.toString() ?? '');
+    _phone = TextEditingController(
+      text: philippineMobileDigits(person?['phone']?.toString()),
+    );
     _address = TextEditingController(
       text: person?['address']?.toString() ?? '',
     );
@@ -1261,7 +1295,7 @@ class _StaffEditorState extends State<_StaffEditor> {
           password: password,
           role: _role,
           email: _email.text.trim(),
-          phone: _phone.text.trim(),
+          phone: philippineMobileE164(_phone.text),
           address: _address.text.trim(),
         );
         if (!mounted) return;
@@ -1275,7 +1309,7 @@ class _StaffEditorState extends State<_StaffEditor> {
           id: widget.person!['id'].toString(),
           name: _name.text.trim(),
           email: _email.text.trim(),
-          phone: _phone.text.trim(),
+          phone: philippineMobileE164(_phone.text),
           address: _address.text.trim(),
           role: _role,
           isActive: _active,
@@ -1401,7 +1435,14 @@ class _StaffEditorState extends State<_StaffEditor> {
                         compact: mobile,
                       ),
                       SizedBox(height: mobile ? 10 : 18),
-                      _field('Mobile', _phone, phone: true, compact: mobile),
+                      _field(
+                        'Mobile number',
+                        _phone,
+                        phone: true,
+                        required: true,
+                        compact: mobile,
+                        hint: '9XXXXXXXXX',
+                      ),
                       SizedBox(height: mobile ? 10 : 18),
                       _field(
                         'Home address',
@@ -1611,23 +1652,35 @@ class _StaffEditorState extends State<_StaffEditor> {
         controller: controller,
         style: const TextStyle(fontSize: 14),
         maxLines: 1,
+        inputFormatters: phone
+            ? [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(10),
+              ]
+            : null,
         keyboardType: email
             ? TextInputType.emailAddress
             : phone
             ? TextInputType.phone
             : TextInputType.text,
-        decoration: compact
-            ? _inputDecoration(hint).copyWith(
-                isDense: true,
-                constraints: const BoxConstraints(minHeight: 38),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
+        decoration:
+            (compact
+                    ? _inputDecoration(hint).copyWith(
+                        isDense: true,
+                        constraints: const BoxConstraints(minHeight: 38),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      )
+                    : _inputDecoration(hint))
+                .copyWith(
+                  prefixText: phone ? '+63 ' : null,
+                  helperText: phone ? 'Format: $philippineMobileExample' : null,
                 ),
-              )
-            : _inputDecoration(hint),
         validator: (value) {
           final text = value?.trim() ?? '';
+          if (phone) return philippineMobileError(text);
           if (required && text.isEmpty) return '$label is required.';
           if (email &&
               text.isNotEmpty &&

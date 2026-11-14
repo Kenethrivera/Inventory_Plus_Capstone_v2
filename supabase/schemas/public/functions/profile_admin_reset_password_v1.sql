@@ -43,7 +43,7 @@ begin
         'hex'
       ),
       must_change_password = case
-        when v_target_role in ('helper', 'staff', 'cashier') then true
+        when v_target_role in ('helper', 'bodegero', 'staff', 'cashier') then true
         else must_change_password
       end
   where id = p_target_profile_id;

@@ -320,6 +320,32 @@ class NotificationFactory {
     );
   }
 
+  static AppNotification bodegeroOrderAssigned({
+    required String locationId,
+    required String orderId,
+    required String bodegeroId,
+    required String assignedByName,
+    required DateTime assignedAt,
+  }) {
+    final shortOrderId = _shortOrderId(orderId);
+    return create(
+      locationId: locationId,
+      targetRoles: const ['bodegero'],
+      title: 'Loading Assigned #$shortOrderId',
+      body:
+          '$assignedByName assigned a heavy order to you • '
+          '${_formatDateTime(assignedAt)}',
+      type: NotificationType.orderAssigned,
+      priority: NotificationPriority.high,
+      payload: {
+        'orderId': orderId,
+        'bodegeroId': bodegeroId,
+        'assignedByName': assignedByName,
+        'assignedAt': assignedAt.toUtc().toIso8601String(),
+      },
+    );
+  }
+
   static AppNotification orderPrepared({
     required String locationId,
     required String orderId,

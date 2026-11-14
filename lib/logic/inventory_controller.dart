@@ -11,6 +11,7 @@ import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 import '../login/session_storage.dart';
 import 'helper_assignment.dart';
+import 'bodegero_loading_history.dart';
 import 'history_pagination.dart';
 import 'inventory_approval.dart';
 import 'payment_reference.dart';
@@ -1258,7 +1259,10 @@ class InventoryController {
 
   bool get canRequestInventoryApproval {
     final role = currentUserRole?.toLowerCase();
-    return role == 'helper' || role == 'staff' || role == 'cashier';
+    return role == 'helper' ||
+        role == 'bodegero' ||
+        role == 'staff' ||
+        role == 'cashier';
   }
 
   Stream<InventoryApprovalPage> get approvalPageSnapshots =>
@@ -1381,7 +1385,7 @@ class InventoryController {
   }) async {
     if (!canRequestInventoryApproval) {
       throw StateError(
-        'Only Cashier or Helper accounts may request stock changes.',
+        'Only Cashier, Helper, or Bodegero accounts may request stock changes.',
       );
     }
     final matches = _items.where((candidate) => candidate.id == productId);
@@ -1398,8 +1402,8 @@ class InventoryController {
       throw ArgumentError.value(reason, 'reason', 'A reason is required');
     }
     final hasProof = proofStoragePath?.trim().isNotEmpty ?? false;
-    if (type == InventoryApprovalType.writeOff && !hasProof) {
-      throw ArgumentError('Photo evidence is required for write-off requests.');
+    if (!hasProof) {
+      throw ArgumentError('A supporting photo is required for stock requests.');
     }
     if (hasProof &&
         ((proofFileName?.trim().isEmpty ?? true) ||
@@ -1443,7 +1447,9 @@ class InventoryController {
   Future<List<InventoryApprovalRequest>>
   fetchMyInventoryApprovalRequests() async {
     if (!canRequestInventoryApproval) {
-      throw StateError('Only Cashier or Helper accounts may view requests.');
+      throw StateError(
+        'Only Cashier, Helper, or Bodegero accounts may view requests.',
+      );
     }
     final response = await supabase.rpc(
       'my_inventory_approval_requests_v1',
@@ -1457,6 +1463,27 @@ class InventoryController {
           ),
         )
         .toList(growable: false);
+  }
+
+  Future<BodegeroLoadingHistoryPage> fetchMyLoadingHistory({
+    int page = 1,
+    String search = '',
+  }) async {
+    if (currentUserRole?.toLowerCase() != 'bodegero') {
+      throw StateError('Only Bodegero accounts may view loading history.');
+    }
+    final response = await supabase.rpc(
+      'bodegero_loading_history_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_page': page,
+        'p_search': search.trim(),
+        'p_page_size': 20,
+      },
+    );
+    return BodegeroLoadingHistoryPage.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
   }
 
   Future<String> uploadApprovalEvidence({
@@ -4567,6 +4594,32 @@ class InventoryController {
     } catch (e) {
       throw Exception("Failed to save changes to the database.");
     }
+  }
+
+  Future<List<String>> securityQuestionIds() async {
+    if (currentUserRole?.toLowerCase() != 'admin') return const [];
+    final response = await supabase.rpc(
+      'password_recovery_questions_status_v1',
+      params: <String, dynamic>{'p_session_token': _requireSessionToken()},
+    );
+    if (response is! List) return const [];
+    return response.map((id) => id.toString()).toList();
+  }
+
+  Future<bool> saveSecurityQuestions({
+    required String currentPassword,
+    required List<Map<String, String>> questions,
+  }) async {
+    if (currentUserRole?.toLowerCase() != 'admin') return false;
+    final response = await supabase.rpc(
+      'password_recovery_questions_set_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_current_password': currentPassword,
+        'p_questions': questions,
+      },
+    );
+    return response == true;
   }
 
   Future<bool> adminResetUserPassword(

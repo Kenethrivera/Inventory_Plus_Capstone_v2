@@ -1,9 +1,17 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/app_error_mapper.dart';
+
 class LoginRateLimitedException implements Exception {
   const LoginRateLimitedException({required this.retryAfterSeconds});
 
   final int? retryAfterSeconds;
+}
+
+class RecoveryQuestionChallenge {
+  const RecoveryQuestionChallenge(this.challengeId, this.questionIds);
+  final String challengeId;
+  final List<String> questionIds;
 }
 
 class AuthService {
@@ -72,10 +80,34 @@ class AuthService {
     String username,
     String channel,
   ) async {
-    final response = await _supabase.functions.invoke(
-      'password-recovery',
-      body: {'action': 'request', 'username': username, 'channel': channel},
-    );
+    late final FunctionResponse response;
+    try {
+      response = await _supabase.functions.invoke(
+        'password-recovery',
+        body: {'action': 'request', 'username': username, 'channel': channel},
+      );
+    } on FunctionException catch (error) {
+      if (channel == 'email' && error.status >= 400) {
+        final details = error.details;
+        final serverError = details is Map
+            ? details['error']?.toString()
+            : null;
+        if (serverError == 'Invalid channel') {
+          throw const AppUserFacingException(
+            'Email recovery needs a server update. Use SMS or security questions for now.',
+          );
+        }
+        if (serverError == 'Email recovery is not configured') {
+          throw const AppUserFacingException(
+            'Email recovery needs EmailJS server settings. Use SMS or security questions for now.',
+          );
+        }
+        throw const AppUserFacingException(
+          'Email recovery is unavailable right now. Use SMS or security questions.',
+        );
+      }
+      rethrow;
+    }
     final data = response.data;
     final challengeId = data is Map ? data['challengeId']?.toString() : null;
     if (challengeId == null || challengeId.isEmpty) {
@@ -96,16 +128,60 @@ class AuthService {
     return data is Map ? data['resetToken']?.toString() : null;
   }
 
+  Future<RecoveryQuestionChallenge> beginQuestionRecovery(
+    String username,
+  ) async {
+    final response = await _supabase.functions.invoke(
+      'password-recovery',
+      body: {'action': 'questions-begin', 'username': username},
+    );
+    final data = response.data;
+    if (data is! Map || data['questionIds'] is! List) {
+      throw StateError('Password recovery is unavailable. Please try again.');
+    }
+    final ids = (data['questionIds'] as List)
+        .map((id) => id.toString())
+        .toList();
+    final challengeId = data['challengeId']?.toString() ?? '';
+    if (ids.isEmpty) {
+      throw const AppUserFacingException(
+        'Security question verification could not start. Check the Admin username and saved setup, or try again later.',
+      );
+    }
+    if (challengeId.isEmpty || ids.length != 3) {
+      throw StateError('Password recovery is unavailable. Please try again.');
+    }
+    return RecoveryQuestionChallenge(challengeId, ids);
+  }
+
+  Future<String?> verifyQuestionRecovery(
+    String challengeId,
+    List<String> answers,
+  ) async {
+    final response = await _supabase.functions.invoke(
+      'password-recovery',
+      body: {
+        'action': 'questions-verify',
+        'challengeId': challengeId,
+        'answers': answers,
+      },
+    );
+    final data = response.data;
+    return data is Map ? data['resetToken']?.toString() : null;
+  }
+
   Future<bool> completePasswordRecovery(
     String resetToken,
-    String password,
-  ) async {
+    String password, {
+    bool securityQuestions = false,
+  }) async {
     final response = await _supabase.functions.invoke(
       'password-recovery',
       body: {
         'action': 'complete',
         'resetToken': resetToken,
         'password': password,
+        'method': securityQuestions ? 'questions' : 'code',
       },
     );
     final data = response.data;

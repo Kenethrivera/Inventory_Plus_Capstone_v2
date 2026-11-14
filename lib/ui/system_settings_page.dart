@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../logic/inventory_controller.dart';
 import '../logic/staff_management.dart';
+import '../logic/ph_mobile_number.dart';
 import '../services/store_access_service.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
@@ -1802,6 +1803,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     required String hint,
     required IconData icon,
     TextInputType? keyboardType,
+    bool phone = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1819,6 +1821,12 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         TextField(
           controller: controller,
           keyboardType: keyboardType,
+          inputFormatters: phone
+              ? [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ]
+              : null,
           style: const TextStyle(
             color: Color(0xFF1A1F36),
             fontSize: 14,
@@ -1826,6 +1834,8 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
           ),
           decoration: InputDecoration(
             hintText: hint,
+            prefixText: phone ? '+63 ' : null,
+            helperText: phone ? 'Format: $philippineMobileExample' : null,
             hintStyle: const TextStyle(
               color: Color(0xFFB0B7C3),
               fontFamily: _fontFam,
@@ -1924,10 +1934,11 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 const SizedBox(height: 16),
                 _buildDarkField(
                   controller: phoneCtrl,
-                  label: "Phone Number",
-                  hint: "Enter phone (optional)",
+                  label: "Mobile number",
+                  hint: "9XXXXXXXXX",
                   icon: LucideIcons.phone,
                   keyboardType: TextInputType.phone,
+                  phone: true,
                 ),
                 const SizedBox(height: 16),
                 _buildDarkField(
@@ -2097,6 +2108,11 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                           );
                           return;
                         }
+                        final phoneError = philippineMobileError(phoneCtrl.text);
+                        if (phoneError != null) {
+                          _showToast(phoneError, isError: true);
+                          return;
+                        }
                         setModalState(() => isSaving = true);
                         try {
                           final result = await widget.controller.createStaff(
@@ -2104,7 +2120,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                             username: userCtrl.text.trim(),
                             password: defaultPassword,
                             email: emailCtrl.text.trim(),
-                            phone: phoneCtrl.text.trim(),
+                            phone: philippineMobileE164(phoneCtrl.text),
                             address: addressCtrl.text.trim(),
                             role: selectedRole,
                           );

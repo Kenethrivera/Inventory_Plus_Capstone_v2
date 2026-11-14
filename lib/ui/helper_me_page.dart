@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../logic/inventory_controller.dart';
+import '../logic/ph_mobile_number.dart';
 import '../services/store_access_service.dart';
 import 'widgets/app_toast.dart';
+import 'widgets/admin_security_questions_card.dart';
 
 class HelperMePage extends StatefulWidget {
   const HelperMePage({
@@ -69,9 +72,13 @@ class _HelperMePageState extends State<HelperMePage> {
     final profile = _loadedProfile;
     if (profile == null) return false;
     return _name.text.trim() != profile.name ||
-        _phone.text.trim() != (profile.phone ?? '') ||
+        _phone.text.trim() != philippineMobileDigits(profile.phone) ||
         _email.text.trim() != (profile.email ?? '') ||
         _address.text.trim() != (profile.address ?? '');
+  }
+
+  void _onProfileFieldChanged(String _) {
+    setState(() => _profileError = null);
   }
 
   String get _roleLabel {
@@ -112,7 +119,7 @@ class _HelperMePageState extends State<HelperMePage> {
     }
     _loadedProfile = profile;
     _name.text = profile.name;
-    _phone.text = profile.phone ?? '';
+    _phone.text = philippineMobileDigits(profile.phone);
     _email.text = profile.email ?? '';
     _address.text = profile.address ?? '';
   }
@@ -147,6 +154,7 @@ class _HelperMePageState extends State<HelperMePage> {
       setState(() => _profileError = 'Profile is still loading. Try again.');
       return;
     }
+    if (!_profileIsDirty) return;
     final userId = widget.controller.currentUserId;
     if (userId == null || userId.isEmpty) {
       setState(() => _profileError = 'Your session has ended. Sign in again.');
@@ -156,6 +164,11 @@ class _HelperMePageState extends State<HelperMePage> {
     final email = _email.text.trim();
     if (name.isEmpty) {
       setState(() => _profileError = 'Enter your full name.');
+      return;
+    }
+    final phoneError = philippineMobileError(_phone.text);
+    if (phoneError != null) {
+      setState(() => _profileError = phoneError);
       return;
     }
     if (email.isNotEmpty &&
@@ -173,7 +186,7 @@ class _HelperMePageState extends State<HelperMePage> {
         name: name,
         email: email,
         location: _address.text.trim(),
-        phone: _phone.text.trim(),
+        phone: philippineMobileE164(_phone.text),
       );
       if (!mounted) return;
       setState(() {
@@ -200,6 +213,15 @@ class _HelperMePageState extends State<HelperMePage> {
   bool get _passwordsMatch =>
       _confirmPassword.text.isNotEmpty &&
       _confirmPassword.text == _newPassword.text;
+
+  bool get _canUpdatePassword =>
+      _currentPassword.text.isNotEmpty &&
+      _hasLength &&
+      _hasUppercase &&
+      _hasLowercase &&
+      _hasNumber &&
+      _hasSymbol &&
+      _passwordsMatch;
 
   Future<void> _updatePassword() async {
     if (_savingPassword) return;
@@ -287,6 +309,7 @@ class _HelperMePageState extends State<HelperMePage> {
     bool obscure = false,
     VoidCallback? onToggleVisibility,
     ValueChanged<String>? onChanged,
+    bool phone = false,
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -295,10 +318,19 @@ class _HelperMePageState extends State<HelperMePage> {
       TextField(
         controller: controller,
         keyboardType: keyboardType,
+        inputFormatters: phone
+            ? [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(10),
+              ]
+            : null,
         maxLines: maxLines,
         obscureText: obscure,
         onChanged: onChanged,
         decoration: _decoration().copyWith(
+          hintText: phone ? '9XXXXXXXXX' : null,
+          prefixText: phone ? '+63 ' : null,
+          helperText: phone ? 'Format: $philippineMobileExample' : null,
           suffixIcon: onToggleVisibility == null
               ? null
               : TextButton(
@@ -346,7 +378,7 @@ class _HelperMePageState extends State<HelperMePage> {
               title,
               style: const TextStyle(
                 color: _ink,
-                fontSize: 17,
+                fontSize: 16,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -358,7 +390,8 @@ class _HelperMePageState extends State<HelperMePage> {
 
   Widget _desktopProfile() {
     final profile = _loadedProfile;
-    final name = profile?.name ?? widget.controller.currentUserName ?? 'Helper';
+    final name =
+        profile?.name ?? widget.controller.currentUserName ?? _roleLabel;
     final location = _locationName ?? 'No location assigned';
     return ColoredBox(
       color: const Color(0xFFF6F5F2),
@@ -368,7 +401,7 @@ class _HelperMePageState extends State<HelperMePage> {
           const Text(
             'Profile',
             style: TextStyle(
-              fontSize: 28,
+              fontSize: 24,
               fontWeight: FontWeight.w700,
               color: _ink,
             ),
@@ -398,7 +431,7 @@ class _HelperMePageState extends State<HelperMePage> {
                           _initials(name),
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 22,
+                            fontSize: 19,
                           ),
                         ),
                       ),
@@ -410,7 +443,7 @@ class _HelperMePageState extends State<HelperMePage> {
                             Text(
                               name,
                               style: const TextStyle(
-                                fontSize: 21,
+                                fontSize: 18,
                                 fontWeight: FontWeight.w700,
                                 color: _ink,
                               ),
@@ -439,11 +472,11 @@ class _HelperMePageState extends State<HelperMePage> {
                       bottom: Radius.circular(16),
                     ),
                   ),
-                child: Text(
-                  _roleLabel == 'Administrator'
-                      ? 'Role and location are managed in staff settings.'
-                      : 'Role and location are managed by your administrator.',
-                  style: const TextStyle(color: _muted, fontSize: 13),
+                  child: Text(
+                    _roleLabel == 'Administrator'
+                        ? 'Role and location are managed in staff settings.'
+                        : 'Role and location are managed by your administrator.',
+                    style: const TextStyle(color: _muted, fontSize: 13),
                   ),
                 ),
               ],
@@ -468,6 +501,10 @@ class _HelperMePageState extends State<HelperMePage> {
               ),
             ],
           ),
+          if (widget.controller.currentUserRole?.toLowerCase() == 'admin') ...[
+            const SizedBox(height: 22),
+            AdminSecurityQuestionsCard(controller: widget.controller),
+          ],
         ],
       ),
     );
@@ -482,7 +519,7 @@ class _HelperMePageState extends State<HelperMePage> {
             child: _field(
               'Full name',
               _name,
-              onChanged: (_) => setState(() {}),
+              onChanged: _onProfileFieldChanged,
             ),
           ),
           const SizedBox(width: 16),
@@ -491,7 +528,8 @@ class _HelperMePageState extends State<HelperMePage> {
               'Mobile number',
               _phone,
               keyboardType: TextInputType.phone,
-              onChanged: (_) => setState(() {}),
+              phone: true,
+              onChanged: _onProfileFieldChanged,
             ),
           ),
         ],
@@ -501,7 +539,7 @@ class _HelperMePageState extends State<HelperMePage> {
         'Work email',
         _email,
         keyboardType: TextInputType.emailAddress,
-        onChanged: (_) => setState(() {}),
+        onChanged: _onProfileFieldChanged,
       ),
       const SizedBox(height: 20),
       _field(
@@ -509,7 +547,7 @@ class _HelperMePageState extends State<HelperMePage> {
         _address,
         keyboardType: TextInputType.streetAddress,
         maxLines: 2,
-        onChanged: (_) => setState(() {}),
+        onChanged: _onProfileFieldChanged,
       ),
       if (_profileError != null) ...[
         const SizedBox(height: 8),
@@ -522,7 +560,7 @@ class _HelperMePageState extends State<HelperMePage> {
       Align(
         alignment: desktop ? Alignment.centerRight : Alignment.centerLeft,
         child: ElevatedButton(
-          onPressed: _savingProfile ? null : _saveProfile,
+          onPressed: _savingProfile || !_profileIsDirty ? null : _saveProfile,
           style: ElevatedButton.styleFrom(
             backgroundColor: _ink,
             foregroundColor: Colors.white,
@@ -547,6 +585,7 @@ class _HelperMePageState extends State<HelperMePage> {
         obscure: !_showCurrentPassword,
         onToggleVisibility: () =>
             setState(() => _showCurrentPassword = !_showCurrentPassword),
+        onChanged: (_) => setState(() => _passwordError = null),
       ),
       const SizedBox(height: 20),
       if (desktop)
@@ -631,7 +670,9 @@ class _HelperMePageState extends State<HelperMePage> {
       Align(
         alignment: Alignment.centerRight,
         child: ElevatedButton(
-          onPressed: _savingPassword ? null : _updatePassword,
+          onPressed: _savingPassword || !_canUpdatePassword
+              ? null
+              : _updatePassword,
           style: ElevatedButton.styleFrom(
             backgroundColor: _orange,
             foregroundColor: Colors.white,
@@ -651,7 +692,8 @@ class _HelperMePageState extends State<HelperMePage> {
   Widget build(BuildContext context) {
     if (MediaQuery.sizeOf(context).width >= 900) return _desktopProfile();
     final profile = _loadedProfile;
-    final name = profile?.name ?? widget.controller.currentUserName ?? 'Helper';
+    final name =
+        profile?.name ?? widget.controller.currentUserName ?? _roleLabel;
     final location = _locationName;
     final settings = widget.storeAccessSettings;
     return ColoredBox(
@@ -681,7 +723,7 @@ class _HelperMePageState extends State<HelperMePage> {
                     Text(
                       name,
                       style: const TextStyle(
-                        fontSize: 21,
+                        fontSize: 18,
                         fontWeight: FontWeight.w700,
                         color: _ink,
                       ),
@@ -711,31 +753,27 @@ class _HelperMePageState extends State<HelperMePage> {
           const Text(
             'Personal details',
             style: TextStyle(
-              fontSize: 17,
+              fontSize: 16,
               color: _ink,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 20),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _field('Full name', _name)),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _field(
-                  'Mobile number',
-                  _phone,
-                  keyboardType: TextInputType.phone,
-                ),
-              ),
-            ],
+          _field('Full name', _name, onChanged: _onProfileFieldChanged),
+          const SizedBox(height: 20),
+          _field(
+            'Mobile number',
+            _phone,
+            keyboardType: TextInputType.phone,
+            phone: true,
+            onChanged: _onProfileFieldChanged,
           ),
           const SizedBox(height: 22),
           _field(
             'Work email',
             _email,
             keyboardType: TextInputType.emailAddress,
+            onChanged: _onProfileFieldChanged,
           ),
           const SizedBox(height: 22),
           _field(
@@ -743,6 +781,7 @@ class _HelperMePageState extends State<HelperMePage> {
             _address,
             keyboardType: TextInputType.streetAddress,
             maxLines: 2,
+            onChanged: _onProfileFieldChanged,
           ),
           if (_profileError != null) ...[
             const SizedBox(height: 8),
@@ -755,7 +794,9 @@ class _HelperMePageState extends State<HelperMePage> {
           Align(
             alignment: Alignment.centerLeft,
             child: ElevatedButton(
-              onPressed: _savingProfile ? null : _saveProfile,
+              onPressed: _savingProfile || !_profileIsDirty
+                  ? null
+                  : _saveProfile,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _ink,
                 foregroundColor: Colors.white,
@@ -777,13 +818,18 @@ class _HelperMePageState extends State<HelperMePage> {
           const Text(
             'Change password',
             style: TextStyle(
-              fontSize: 17,
+              fontSize: 16,
               color: _ink,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 20),
-          _field('Current password', _currentPassword, obscure: true),
+          _field(
+            'Current password',
+            _currentPassword,
+            obscure: true,
+            onChanged: (_) => setState(() => _passwordError = null),
+          ),
           const SizedBox(height: 20),
           _field(
             'New password',
@@ -844,7 +890,9 @@ class _HelperMePageState extends State<HelperMePage> {
           Align(
             alignment: Alignment.centerRight,
             child: ElevatedButton(
-              onPressed: _savingPassword ? null : _updatePassword,
+              onPressed: _savingPassword || !_canUpdatePassword
+                  ? null
+                  : _updatePassword,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _orange,
                 foregroundColor: Colors.white,
@@ -860,6 +908,10 @@ class _HelperMePageState extends State<HelperMePage> {
               child: Text(_savingPassword ? 'Updating…' : 'Update password'),
             ),
           ),
+          if (widget.controller.currentUserRole?.toLowerCase() == 'admin') ...[
+            const SizedBox(height: 30),
+            AdminSecurityQuestionsCard(controller: widget.controller),
+          ],
         ],
       ),
     );

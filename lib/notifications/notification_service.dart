@@ -140,6 +140,10 @@ class NotificationService {
       case NotificationType.orderPrepared:
       case NotificationType.orderCancelled:
         final orderId = payload['orderId']?.toString();
+        if (notification.type == NotificationType.orderAssigned &&
+            payload['bodegeroId'] != null) {
+          return orderId == null ? null : 'order-loading:$orderId';
+        }
         return orderId == null ? null : 'order-workflow:$orderId';
       case NotificationType.lowStock:
       case NotificationType.criticalStock:
@@ -620,6 +624,24 @@ class NotificationService {
     await createNotification(notification);
   }
 
+  Future<void> notifyBodegeroOrderAssigned({
+    required String locationId,
+    required String orderId,
+    required String bodegeroId,
+    required String assignedByName,
+    required DateTime assignedAt,
+  }) async {
+    await createNotification(
+      NotificationFactory.bodegeroOrderAssigned(
+        locationId: locationId,
+        orderId: orderId,
+        bodegeroId: bodegeroId,
+        assignedByName: assignedByName,
+        assignedAt: assignedAt,
+      ),
+    );
+  }
+
   Future<void> notifyInventoryRestocked({
     required String locationId,
     required String transactionId,
@@ -672,13 +694,28 @@ class NotificationService {
     return _enqueueWrite(() => _resolveOrderWorkflowNotification(orderId));
   }
 
+  Future<void> resolveBodegeroLoadingNotification({required String orderId}) {
+    return _enqueueWrite(() async {
+      final active = await _repository.fetchActiveLifecycleNotifications();
+      final identity = 'order-loading:$orderId';
+      final now = DateTime.now();
+      for (final notification in active) {
+        if (_logicalIdentity(notification) == identity) {
+          await _repository.updateNotification(
+            notification.copyWith(isResolved: true, resolvedAt: now),
+          );
+        }
+      }
+    });
+  }
+
   Future<void> _resolveOrderWorkflowNotification(String orderId) async {
     final active = await _repository.fetchActiveLifecycleNotifications();
-    final identity = 'order-workflow:$orderId';
+    final identities = {'order-workflow:$orderId', 'order-loading:$orderId'};
     final now = DateTime.now();
 
     for (final notification in active) {
-      if (_logicalIdentity(notification) == identity) {
+      if (identities.contains(_logicalIdentity(notification))) {
         await _repository.updateNotification(
           notification.copyWith(isResolved: true, resolvedAt: now),
         );

@@ -76,7 +76,8 @@ class StaffPresenceService extends ChangeNotifier {
     }
 
     // A browser refresh should keep an unfinished break. Explicit logout clears it.
-    if (userRole.toLowerCase() == 'helper') {
+    if (userRole.toLowerCase() == 'helper' ||
+        userRole.toLowerCase() == 'bodegero') {
       final existing = await supabase
           .from('staff_presence')
           .select('current_module,logged_out_at')
@@ -130,8 +131,11 @@ class StaffPresenceService extends ChangeNotifier {
   }
 
   Future<void> setOnBreak(bool onBreak) async {
-    if (_disposed || !_started || userRole.toLowerCase() != 'helper') {
-      throw StateError('Helper availability is not ready.');
+    if (_disposed ||
+        !_started ||
+        (userRole.toLowerCase() != 'helper' &&
+            userRole.toLowerCase() != 'bodegero')) {
+      throw StateError('Staff availability is not ready.');
     }
     if (_isOnBreak == onBreak) return;
 

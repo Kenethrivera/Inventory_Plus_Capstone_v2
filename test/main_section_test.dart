@@ -40,13 +40,16 @@ void main() {
       MainSection.inventory,
       MainSection.history,
     ]);
+    expect(MainSection.forRole('bodegero'), const <MainSection>[
+      MainSection.queue,
+    ]);
     expect(MainSection.forRole('staff'), const <MainSection>[
       MainSection.pos,
       MainSection.cashierRequests,
       MainSection.history,
     ]);
     expect(MainSection.forRole('cashier'), MainSection.forRole('staff'));
-    for (final role in ['admin', 'helper', 'staff', 'cashier']) {
+    for (final role in ['admin', 'helper', 'bodegero', 'staff', 'cashier']) {
       for (final section in MainSection.forRole(role)) {
         expect(section.allowsRole(role), isTrue);
       }
@@ -76,6 +79,10 @@ void main() {
     expect(
       MainSection.resolveForRole(MainSection.inventory, 'helper'),
       MainSection.inventory,
+    );
+    expect(
+      MainSection.resolveForRole(MainSection.inventory, 'bodegero'),
+      MainSection.queue,
     );
     expect(MainSection.resolveForRole(null, 'admin'), MainSection.dashboard);
   });

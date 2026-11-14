@@ -119,8 +119,16 @@ class SupabaseNotificationRepository implements NotificationRepository {
             return false;
           }
 
-          final approvalRecipientId =
-              notification.payload['recipientId']?.toString();
+          final bodegeroId = notification.payload['bodegeroId']?.toString();
+          if (userRole == 'bodegero' &&
+              notification.type.name == 'orderAssigned' &&
+              bodegeroId != null &&
+              bodegeroId != recipientId) {
+            return false;
+          }
+
+          final approvalRecipientId = notification.payload['recipientId']
+              ?.toString();
           if (notification.payload['category'] == 'inventoryApproval' &&
               approvalRecipientId != null &&
               approvalRecipientId.isNotEmpty &&

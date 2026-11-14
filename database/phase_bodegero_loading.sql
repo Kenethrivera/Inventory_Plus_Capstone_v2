@@ -164,6 +164,13 @@ begin
 
   select profile.id, profile.name into v_bodegero
   from public.profiles profile
+  join public.staff_presence presence
+    on presence.user_id = profile.id::text
+   and presence.location_id = new.location_id::text
+   and lower(presence.user_role) = 'bodegero'
+   and presence.is_online = true
+   and presence.logged_out_at is null
+   and presence.last_seen_at >= now() - interval '2 minutes'
   left join lateral (
     select count(*) as active_count
     from public.orders work
@@ -365,6 +372,17 @@ begin
   select * into v_actor from private.require_app_session_v1(p_session_token);
   if not found or v_actor.role <> 'bodegero' then
     raise exception 'bodegero_required' using errcode = '42501';
+  end if;
+  if not exists (
+    select 1 from public.staff_presence presence
+    where presence.user_id = v_actor.profile_id::text
+      and presence.location_id = v_actor.location_id::text
+      and lower(presence.user_role) = 'bodegero'
+      and presence.is_online = true
+      and presence.logged_out_at is null
+      and presence.last_seen_at >= now() - interval '2 minutes'
+  ) then
+    raise exception 'bodegero_unavailable' using errcode = '42501';
   end if;
   update public.orders set
     assigned_bodegero_id = v_actor.profile_id::text,

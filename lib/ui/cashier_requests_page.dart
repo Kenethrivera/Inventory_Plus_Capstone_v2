@@ -12,6 +12,7 @@ import '../services/app_logger.dart';
 import 'widgets/app_styled_dropdown.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/approval_proof_picker.dart';
+import 'scanner_search_page.dart';
 
 const _bg = Color(0xFFF7F6F4);
 const _ink = Color(0xFF1B1A18);
@@ -511,6 +512,26 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
     }
   }
 
+  Future<void> _scanProduct() async {
+    if (_submitting) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (scannerContext) => ScannerSearchPage(
+          controller: widget.controller,
+          onSelectItem: (item) {
+            Navigator.pop(scannerContext);
+            if (!mounted) return;
+            setState(() {
+              _productId = item.id;
+              _productError = null;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _submit(List<InventoryItem> items) async {
     if (_submitting) return;
     final product = items.where((item) => item.id == _productId).firstOrNull;
@@ -534,10 +555,12 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
       }
     }
     setState(() {
-      _productError = product == null ? 'Choose a product.' : null;
+      _productError = product == null
+          ? 'Choose a product or scan its shelf QR.'
+          : null;
       _quantityError = quantityError;
-      _photoError = _type == InventoryApprovalType.writeOff && _photo == null
-          ? 'A photo is required for write-off requests.'
+      _photoError = _photo == null
+          ? 'Attach a supporting photo before submitting.'
           : null;
     });
     if (_productError != null ||
@@ -550,15 +573,13 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
       final operationId = widget.controller.newOperationId(
         'inventory-approval',
       );
-      final photo = _photo;
-      final proofPath = photo == null
-          ? null
-          : await widget.controller.uploadApprovalEvidence(
-              operationId: operationId,
-              bytes: photo.bytes,
-              fileName: photo.fileName,
-              mimeType: photo.mimeType,
-            );
+      final photo = _photo!;
+      final proofPath = await widget.controller.uploadApprovalEvidence(
+        operationId: operationId,
+        bytes: photo.bytes,
+        fileName: photo.fileName,
+        mimeType: photo.mimeType,
+      );
       await widget.controller.submitInventoryApprovalRequest(
         operationId: operationId,
         type: _type,
@@ -567,8 +588,8 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
         reason: _reason,
         note: _notes.text,
         proofStoragePath: proofPath,
-        proofFileName: photo?.fileName,
-        proofMimeType: photo?.mimeType,
+        proofFileName: photo.fileName,
+        proofMimeType: photo.mimeType,
       );
       if (mounted) Navigator.pop(context, true);
     } catch (error, stackTrace) {
@@ -604,6 +625,7 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
           final selected = items
               .where((item) => item.id == _productId)
               .firstOrNull;
+          final isMobile = MediaQuery.sizeOf(context).width < 600;
           return Column(
             children: [
               Padding(
@@ -664,7 +686,16 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
                       ],
                     ),
                     const SizedBox(height: 23),
-                    _label('Product'),
+                    Row(
+                      children: [
+                        Expanded(child: _label('Product')),
+                        TextButton.icon(
+                          onPressed: _submitting ? null : _scanProduct,
+                          icon: const Icon(Icons.qr_code_scanner, size: 19),
+                          label: Text(isMobile ? 'Scan QR' : 'Scan shelf QR'),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     AppStyledDropdown<String>(
                       value: selected?.id,
@@ -777,11 +808,9 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
                         style: const TextStyle(fontSize: 15, color: _ink),
                         children: [
                           const TextSpan(text: 'Supporting photo'),
-                          TextSpan(
-                            text: _type == InventoryApprovalType.writeOff
-                                ? ' (required)'
-                                : ' (optional)',
-                            style: const TextStyle(color: _muted),
+                          const TextSpan(
+                            text: ' (required)',
+                            style: TextStyle(color: _muted),
                           ),
                         ],
                       ),

@@ -345,6 +345,16 @@ class _PosCartPageState extends State<PosCartPage>
             assignedAt: createdOrder.assignedAt ?? DateTime.now(),
           );
         }
+        final bodegeroId = createdOrder.assignedBodegeroId;
+        if (bodegeroId != null && bodegeroId.isNotEmpty) {
+          await notificationController.notifyBodegeroOrderAssigned(
+            locationId: locationId,
+            orderId: createdOrder.id,
+            bodegeroId: bodegeroId,
+            assignedByName: createdByName,
+            assignedAt: createdOrder.createdAt,
+          );
+        }
       }
 
       if (!_soloMode && assignedHelper == null) {
