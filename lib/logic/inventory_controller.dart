@@ -4313,7 +4313,55 @@ class InventoryController {
         'p_order_id': orderId,
       },
     );
-    return _acceptUpdatedOrder(response);
+    final order = _acceptUpdatedOrder(response);
+    _invalidateStaffPerformance();
+    return order;
+  }
+
+  Future<Map<String, dynamic>> startOrderLoadingClock(String orderId) async {
+    final response = await supabase.rpc(
+      'start_order_loading_clock_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+      },
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> setOrderLoadingPause(
+    String orderId, {
+    required bool paused,
+  }) async {
+    final response = await supabase.rpc(
+      'set_order_loading_pause_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+        'p_paused': paused,
+      },
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> loadBodegeroPerformance({
+    required DateTime periodStart,
+    required DateTime periodEnd,
+  }) async {
+    if (!isAdmin) {
+      throw StateError(
+        'Staff Performance is available to Admin accounts only.',
+      );
+    }
+    final response = await supabase.rpc(
+      'bodegero_performance_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_period_start': periodStart.toUtc().toIso8601String(),
+        'p_period_end': periodEnd.toUtc().toIso8601String(),
+      },
+    );
+    return Map<String, dynamic>.from(response as Map);
   }
 
   Future<Map<String, dynamic>?> getOrderLoadingProof(String orderId) async {
@@ -4343,7 +4391,9 @@ class InventoryController {
         'p_photo_base64': base64Encode(photoJpeg),
       },
     );
-    return _acceptUpdatedOrder(response);
+    final order = _acceptUpdatedOrder(response);
+    _invalidateStaffPerformance();
+    return order;
   }
 
   CustomerOrder _acceptUpdatedOrder(dynamic response) {

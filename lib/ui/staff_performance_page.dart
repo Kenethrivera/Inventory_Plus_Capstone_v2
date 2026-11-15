@@ -74,6 +74,7 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
   StaffPerformanceRole _role = StaffPerformanceRole.helpers;
   HistoryPeriodSelection _period = HistoryPeriodSelection.current();
   StaffPerformanceSnapshot? _snapshot;
+  Map<String, dynamic>? _bodegeroReport;
   Object? _error;
   bool _loading = true;
   int _loadGeneration = 0;
@@ -106,7 +107,10 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
     if (!oldWidget.isActive && widget.isActive) {
       final forceRefresh = _staleWhileInactive;
       _staleWhileInactive = false;
-      if (forceRefresh || _snapshot == null) {
+      if (forceRefresh ||
+          (_role == StaffPerformanceRole.bodegeros
+              ? _bodegeroReport == null
+              : _snapshot == null)) {
         unawaited(_load(forceRefresh: forceRefresh));
       }
     }
@@ -133,15 +137,25 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
     }
     try {
       final range = _period.range;
-      final result = await widget.controller.loadStaffPerformance(
-        role: _role,
-        periodStart: range.start,
-        periodEnd: range.end,
-        forceRefresh: forceRefresh,
-      );
+      final bodegero = _role == StaffPerformanceRole.bodegeros;
+      final report = bodegero
+          ? await widget.controller.loadBodegeroPerformance(
+              periodStart: range.start,
+              periodEnd: range.end,
+            )
+          : null;
+      final result = bodegero
+          ? null
+          : await widget.controller.loadStaffPerformance(
+              role: _role,
+              periodStart: range.start,
+              periodEnd: range.end,
+              forceRefresh: forceRefresh,
+            );
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _snapshot = result;
+        _bodegeroReport = report;
         _loading = false;
       });
     } catch (error) {
@@ -158,6 +172,7 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
     setState(() {
       _role = role;
       _snapshot = null;
+      _bodegeroReport = null;
     });
     unawaited(_load());
   }
@@ -166,6 +181,7 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
     setState(() {
       _period = period;
       _snapshot = null;
+      _bodegeroReport = null;
     });
     unawaited(_load());
   }
@@ -196,13 +212,21 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
               ],
               _buildControls(),
               const SizedBox(height: 18),
-              if (_loading && _snapshot == null)
+              if (_loading &&
+                  (_role == StaffPerformanceRole.bodegeros
+                      ? _bodegeroReport == null
+                      : _snapshot == null))
                 const SizedBox(
                   height: 320,
                   child: Center(child: CircularProgressIndicator()),
                 )
-              else if (_error != null && _snapshot == null)
+              else if (_error != null &&
+                  (_role == StaffPerformanceRole.bodegeros
+                      ? _bodegeroReport == null
+                      : _snapshot == null))
                 _ErrorPanel(onRetry: () => _load(forceRefresh: true))
+              else if (_role == StaffPerformanceRole.bodegeros)
+                _buildBodegeroReport(_bodegeroReport!)
               else ...[
                 _buildSummary(snapshot!),
                 const SizedBox(height: 18),
@@ -348,6 +372,202 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
     ),
   );
 
+  Widget _buildBodegeroReport(Map<String, dynamic> report) {
+    final records =
+        (report['records'] as List? ?? const [])
+            .map((value) => Map<String, dynamic>.from(value as Map))
+            .toList()
+          ..sort((left, right) {
+            final a = (left['score'] as num?)?.toDouble();
+            final b = (right['score'] as num?)?.toDouble();
+            if (a == null && b != null) return 1;
+            if (a != null && b == null) return -1;
+            if (a != null && b != null && a != b) return b.compareTo(a);
+            return (left['employee_name'] ?? '').toString().compareTo(
+              (right['employee_name'] ?? '').toString(),
+            );
+          });
+    String count(Object? value) => '${(value as num?)?.toInt() ?? 0}';
+    String decimal(Object? value, [int digits = 1]) =>
+        ((value as num?)?.toDouble() ?? 0).toStringAsFixed(digits);
+    final assigned = records.fold<int>(
+      0,
+      (sum, record) => sum + ((record['assigned_count'] as num?)?.toInt() ?? 0),
+    );
+    final valid = (report['total_valid_timing'] as num?)?.toInt() ?? 0;
+    final onTime = valid == 0
+        ? null
+        : records.fold<double>(0, (sum, record) {
+                final timed =
+                    (record['valid_timing_count'] as num?)?.toInt() ?? 0;
+                final rate = (record['on_time_rate'] as num?)?.toDouble() ?? 0;
+                return sum + timed * rate;
+              }) /
+              valid;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 600;
+            final width = constraints.maxWidth >= 900
+                ? (constraints.maxWidth - 36) / 4
+                : (constraints.maxWidth - 12) / 2;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _MetricCard(
+                  width: width,
+                  compact: compact,
+                  icon: Icons.receipt_long_outlined,
+                  label: 'Assigned Orders',
+                  value: '$assigned',
+                ),
+                _MetricCard(
+                  width: width,
+                  compact: compact,
+                  icon: Icons.local_shipping_outlined,
+                  label: compact ? 'Loaded Orders' : 'Bodegero-Loaded Orders',
+                  value: count(report['total_completed']),
+                ),
+                _MetricCard(
+                  width: width,
+                  compact: compact,
+                  icon: Icons.scale_outlined,
+                  label: compact ? 'Workload Points' : 'Total Heavy Workload',
+                  value: '${decimal(report['total_workload_points'], 2)} pts',
+                ),
+                _MetricCard(
+                  width: width,
+                  compact: compact,
+                  icon: Icons.schedule,
+                  label: compact ? 'Avg On-Time' : 'Average Loading On-Time',
+                  value: onTime == null ? '—' : '${onTime.toStringAsFixed(1)}%',
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 18),
+        if (records.isEmpty)
+          const _EmptyPanel()
+        else
+          _BodegeroPerformanceResults(
+            records: records,
+            totalLoaded: (report['total_completed'] as num?)?.toInt() ?? 0,
+            totalWorkload:
+                (report['total_workload_points'] as num?)?.toDouble() ?? 0,
+            onView: _showBodegeroDetails,
+          ),
+        if (_loading) const LinearProgressIndicator(minHeight: 2),
+      ],
+    );
+  }
+
+  Future<void> _showBodegeroDetails(Map<String, dynamic> record) {
+    String number(String key, [int digits = 1]) =>
+        (record[key] as num?)?.toStringAsFixed(digits) ?? '—';
+    Widget stat(String label, String value) => Container(
+      width: 250,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _surface,
+        border: Border.all(color: _border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: _muted, fontSize: 11)),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AppDialog(
+        icon: Icons.local_shipping_outlined,
+        color: _accent,
+        title: '${record['employee_name']}',
+        subtitle: 'Bodegero · ${_period.displayLabel}',
+        maxWidth: 600,
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              record['score'] == null
+                  ? 'Insufficient data for a score'
+                  : 'Score ${number('score')} · ${StaffPerformanceV1.bandFor((record['score'] as num).toDouble())}',
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              record['score'] == null
+                  ? 'At least 5 valid timed loads are required.'
+                  : 'Based on ${record['valid_timing_count']} valid timed loads.',
+              style: const TextStyle(color: _muted, fontSize: 12),
+            ),
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                stat('Assigned orders', '${record['assigned_count']}'),
+                stat('Loaded orders', '${record['completed_count']}'),
+                stat('Workload points', number('workload_points', 2)),
+                stat(
+                  'Valid / excluded timing',
+                  '${record['valid_timing_count']} / ${record['excluded_timing_count']}',
+                ),
+                stat('Median active load', '${number('median_minutes')} min'),
+                stat(
+                  'Average wait to start',
+                  '${number('average_start_delay_minutes')} min',
+                ),
+                stat(
+                  'Recorded pause time',
+                  '${number('total_paused_minutes')} min',
+                ),
+                stat('On-time rate', '${number('on_time_rate')}%'),
+                stat('Pace', '${number('points_per_hour', 2)} pts/hour'),
+                stat('Completion rate', '${number('completion_rate')}%'),
+                stat('Overdue orders', '${record['overdue_count']}'),
+              ],
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'Score = 40% on time + 30% peer workload + 20% peer pace + 10% completion. '
+              'Peer comparisons use Bodegeros in this store and period. '
+              'Open loading work counts as overdue after 24 hours.',
+              style: TextStyle(color: _muted, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSummary(StaffPerformanceSnapshot snapshot) {
     final records = snapshot.records;
     final valid = snapshot.totalValidTimingCount;
@@ -459,6 +679,36 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
   }
 
   Future<void> _showFormula() {
+    if (_role == StaffPerformanceRole.bodegeros) {
+      return showStaffMetricExplanation(
+        context,
+        StaffMetricExplanation(
+          title: 'Bodegero performance',
+          whatItMeasures:
+              'Verified heavy loading, active time, and completed workload.',
+          whyItMatters:
+              'Shows the loading work completed while keeping untimed older orders out of the score.',
+          formula:
+              'Score = on time × 40% + peer workload × 30% + peer pace × 20% + completion × 10%',
+          data: [
+            StaffMetricValue('Selected period', _period.displayLabel),
+            const StaffMetricValue('Minimum timed loads', '5'),
+            const StaffMetricValue(
+              'On-time target',
+              'Assignment to proof, 20 + 5 minutes per workload point',
+            ),
+            const StaffMetricValue(
+              'Workload',
+              'Heavy item lines plus quantity bands',
+            ),
+          ],
+          result: 'A 0–100 score after enough timed loads',
+          scoreEffect: 'Yes',
+          scoreEffectExplanation:
+              'Pauses are excluded from active loading time. Older untimed loads do not count toward the score.',
+        ),
+      );
+    }
     final helper = _role == StaffPerformanceRole.helpers;
     final complexity = helper
         ? 'Helper workload uses a base point, item lines, quantity bands, and additional currently known storage locations.'
@@ -642,6 +892,274 @@ class _MetricCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BodegeroPerformanceResults extends StatelessWidget {
+  const _BodegeroPerformanceResults({
+    required this.records,
+    required this.totalLoaded,
+    required this.totalWorkload,
+    required this.onView,
+  });
+
+  final List<Map<String, dynamic>> records;
+  final int totalLoaded;
+  final double totalWorkload;
+  final ValueChanged<Map<String, dynamic>> onView;
+
+  int _integer(Map<String, dynamic> record, String key) =>
+      (record[key] as num?)?.toInt() ?? 0;
+
+  String _number(Map<String, dynamic> record, String key, [int digits = 1]) =>
+      (record[key] as num?)?.toStringAsFixed(digits) ?? '—';
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => constraints.maxWidth < 900
+        ? Column(
+            children: [
+              for (var index = 0; index < records.length; index++) ...[
+                _mobileCard(records[index], _rank(index)),
+                const SizedBox(height: 10),
+              ],
+            ],
+          )
+        : DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: _border),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Column(
+                children: [
+                  _row(const [
+                    'Rank',
+                    'Employee',
+                    'Loads',
+                    'Workload',
+                    'Median Load',
+                    'On-Time',
+                    'Score',
+                    'View',
+                  ], header: true),
+                  for (var index = 0; index < records.length; index++) ...[
+                    if (index > 0) const Divider(height: 1, color: _border),
+                    _dataRow(records[index], _rank(index)),
+                  ],
+                ],
+              ),
+            ),
+          ),
+  );
+
+  int? _rank(int index) {
+    if (records[index]['score'] == null) return null;
+    return records.take(index + 1).where((row) => row['score'] != null).length;
+  }
+
+  Widget _dataRow(Map<String, dynamic> record, int? rank) {
+    final score = (record['score'] as num?)?.toDouble();
+    final loads = _integer(record, 'completed_count');
+    final workload = (record['workload_points'] as num?)?.toDouble() ?? 0;
+    final timed = _integer(record, 'valid_timing_count');
+    return _row(
+      [
+        '',
+        '${record['employee_name'] ?? 'Former staff member'}',
+        '$loads',
+        '${workload.toStringAsFixed(2)} pts',
+        record['median_minutes'] == null
+            ? '—'
+            : '${_number(record, 'median_minutes')} min',
+        record['on_time_rate'] == null
+            ? '—'
+            : '${_number(record, 'on_time_rate')}%',
+        score == null ? 'Insufficient data' : score.toStringAsFixed(1),
+        '',
+      ],
+      secondary: [
+        null,
+        null,
+        totalLoaded == 0
+            ? '0.0% of total'
+            : '${(loads * 100 / totalLoaded).toStringAsFixed(1)}% of total',
+        totalWorkload == 0
+            ? '0.0% share'
+            : '${(workload * 100 / totalWorkload).toStringAsFixed(1)}% share',
+        '$timed timed',
+        null,
+        score == null ? null : StaffPerformanceV1.bandFor(score),
+        null,
+      ],
+      record: record,
+      rank: rank,
+    );
+  }
+
+  Widget _row(
+    List<String> values, {
+    List<String?>? secondary,
+    bool header = false,
+    Map<String, dynamic>? record,
+    int? rank,
+  }) {
+    const flexes = [7, 23, 12, 14, 13, 11, 14, 6];
+    return Container(
+      color: header ? _surface : Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          for (var index = 0; index < values.length; index++)
+            Expanded(
+              flex: flexes[index],
+              child: index == 0 && !header
+                  ? Align(
+                      alignment: Alignment.centerLeft,
+                      child: StaffPerformanceRankBadge(rank: rank),
+                    )
+                  : index == values.length - 1 && !header
+                  ? Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        tooltip: 'View performance details',
+                        onPressed: () => onView(record!),
+                        icon: const Icon(Icons.visibility_outlined, size: 18),
+                        visualDensity: VisualDensity.compact,
+                        color: _accent,
+                      ),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Column(
+                        crossAxisAlignment: index == 1
+                            ? CrossAxisAlignment.start
+                            : CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            values[index],
+                            maxLines: index == 1 ? 2 : 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: index == 1
+                                ? TextAlign.left
+                                : TextAlign.center,
+                            style: TextStyle(
+                              color: header ? _muted : _ink,
+                              fontSize: header ? 11 : 12,
+                              fontWeight: header
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                            ),
+                          ),
+                          if (!header && secondary?[index] != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              secondary![index]!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: index == 1
+                                  ? TextAlign.left
+                                  : TextAlign.center,
+                              style: const TextStyle(
+                                color: _muted,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileCard(Map<String, dynamic> record, int? rank) {
+    final score = (record['score'] as num?)?.toDouble();
+    final loads = _integer(record, 'completed_count');
+    final workload = (record['workload_points'] as num?)?.toDouble() ?? 0;
+    Widget metric(String label, String value) => Expanded(
+      child: Column(
+        children: [
+          Text(label, style: const TextStyle(color: _muted, fontSize: 10)),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: _border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                StaffPerformanceRankBadge(rank: rank),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${record['employee_name'] ?? 'Former staff member'}',
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Text(
+                  score == null
+                      ? 'Insufficient data'
+                      : score.toStringAsFixed(1),
+                  style: TextStyle(
+                    color: score == null ? _muted : _accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'View details',
+                  onPressed: () => onView(record),
+                  icon: const Icon(Icons.visibility_outlined, size: 19),
+                  color: _accent,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                metric('Loads', '$loads'),
+                metric('Workload', '${workload.toStringAsFixed(2)} pts'),
+                metric(
+                  'On-Time',
+                  record['on_time_rate'] == null
+                      ? '—'
+                      : '${_number(record, 'on_time_rate')}%',
+                ),
+                metric('Timed', '${_integer(record, 'valid_timing_count')}'),
+              ],
+            ),
+          ],
         ),
       ),
     );

@@ -59,6 +59,8 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   Uint8List? _photoJpeg;
   CustomerOrder? _completedOrder;
   bool _busy = false;
+  bool _clockBusy = false;
+  bool _loadingPaused = false;
   bool _changingBreak = false;
   int _tabIndex = 0;
   final Set<int> _visitedTabs = {0};
@@ -189,7 +191,19 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     ),
   );
 
-  void _open(CustomerOrder order) {
+  Future<bool> _open(CustomerOrder order) async {
+    if (_clockBusy) return false;
+    setState(() => _clockBusy = true);
+    try {
+      final clock = await widget.controller.startOrderLoadingClock(order.id);
+      if (!mounted) return false;
+      _loadingPaused = clock['paused'] == true;
+    } catch (error) {
+      _message('Could not start the loading timer: $error');
+      return false;
+    } finally {
+      if (mounted) setState(() => _clockBusy = false);
+    }
     for (final controller in _quantityControllers.values) {
       controller.dispose();
     }
@@ -203,6 +217,23 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       _completedOrder = null;
       _photoJpeg = null;
     });
+    return true;
+  }
+
+  Future<void> _toggleLoadingPause(CustomerOrder order) async {
+    if (_clockBusy) return;
+    setState(() => _clockBusy = true);
+    try {
+      final clock = await widget.controller.setOrderLoadingPause(
+        order.id,
+        paused: !_loadingPaused,
+      );
+      if (mounted) setState(() => _loadingPaused = clock['paused'] == true);
+    } catch (error) {
+      _message('Could not update loading timer: $error');
+    } finally {
+      if (mounted) setState(() => _clockBusy = false);
+    }
   }
 
   CustomerOrder? _notifiedLoadingOrder(AppNotification notification) {
@@ -234,7 +265,11 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       return false;
     }
     setState(() => _tabIndex = 0);
-    _open(order);
+    if (order.assignedBodegeroId == null) {
+      await _claim(order);
+    } else {
+      return _open(order);
+    }
     return true;
   }
 
@@ -277,8 +312,9 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     try {
       final claimed = await widget.controller.claimOrderLoading(order.id);
       if (!mounted) return;
-      _open(claimed);
-      _message('Heavy order assigned to you. Scan each shelf QR.');
+      if (await _open(claimed)) {
+        _message('Heavy order assigned to you. Scan each shelf QR.');
+      }
     } catch (error) {
       _message('Could not claim this order: $error');
     } finally {
@@ -323,6 +359,10 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   }
 
   Future<void> _finish(CustomerOrder order) async {
+    if (_loadingPaused) {
+      _message('Resume loading before confirming the truck proof.');
+      return;
+    }
     final heavyItems = order.items
         .where((item) => item.requiresLoading)
         .toList();
@@ -509,7 +549,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: () => _open(order),
+        onTap: () => unawaited(_open(order)),
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -999,7 +1039,9 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
             children: [
               if (!verified)
                 FilledButton.icon(
-                  onPressed: _busy ? null : () => _scan(order, item),
+                  onPressed: _busy || _loadingPaused
+                      ? null
+                      : () => _scan(order, item),
                   icon: const Icon(LucideIcons.scanLine, size: 17),
                   label: const Text('Scan shelf QR'),
                   style: FilledButton.styleFrom(
@@ -1034,7 +1076,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           const SizedBox(height: 12),
           TextField(
             controller: _quantityControllers[item.productId],
-            enabled: verified && !_busy,
+            enabled: verified && !_busy && !_loadingPaused,
             onChanged: (_) => setState(() {}),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
@@ -1088,7 +1130,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         TextField(
           controller: _truckController,
           maxLength: 32,
-          enabled: !_busy,
+          enabled: !_busy && !_loadingPaused,
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             labelText: 'Truck plate / identifier',
@@ -1099,7 +1141,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           ),
         ),
         OutlinedButton.icon(
-          onPressed: _busy ? null : _capturePhoto,
+          onPressed: _busy || _loadingPaused ? null : _capturePhoto,
           icon: const Icon(LucideIcons.camera, size: 18),
           label: Text(
             _photoJpeg == null ? 'Capture loaded goods' : 'Retake photo',
@@ -1142,12 +1184,15 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     final photoReady = _photoJpeg != null;
     final canFinish =
         order.assignedBodegeroId != null &&
+        !_loadingPaused &&
         allScanned &&
         countsMatch &&
         truckReady &&
         photoReady;
     final nextLabel = _busy
         ? 'Saving loading proof…'
+        : _loadingPaused
+        ? 'Resume loading to finish'
         : !allScanned
         ? 'Scan ${items.length - scanned} more ${items.length - scanned == 1 ? 'item' : 'items'}'
         : !countsMatch
@@ -1232,6 +1277,18 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: _busy || _clockBusy
+                      ? null
+                      : () => _toggleLoadingPause(order),
+                  icon: Icon(_loadingPaused ? Icons.play_arrow : Icons.pause),
+                  label: Text(
+                    _loadingPaused ? 'Resume loading' : 'Pause loading',
+                  ),
+                ),
+              ),
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 900),

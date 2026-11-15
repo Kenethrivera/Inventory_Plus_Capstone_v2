@@ -51,6 +51,7 @@ class _StaffPageState extends State<StaffPage> {
   String? _error;
   StaffPerformanceSnapshot? _cashierToday;
   StaffPerformanceSnapshot? _helperToday;
+  Map<String, dynamic>? _bodegeroToday;
   StreamSubscription<List<Map<String, dynamic>>>? _staffSubscription;
   StreamSubscription<List<CustomerOrder>>? _ordersSubscription;
   StreamSubscription<void>? _performanceSubscription;
@@ -135,6 +136,7 @@ class _StaffPageState extends State<StaffPage> {
       _loading = true;
       _cashierToday = null;
       _helperToday = null;
+      _bodegeroToday = null;
       _bind();
     }
     if (oldWidget.presence != widget.presence) {
@@ -179,6 +181,19 @@ class _StaffPageState extends State<StaffPage> {
           forceRefresh: force,
         ),
       ]);
+      Map<String, dynamic>? bodegero;
+      try {
+        bodegero = await controller.loadBodegeroPerformance(
+          periodStart: start,
+          periodEnd: end,
+        );
+      } catch (error, stackTrace) {
+        AppLogger.error(
+          'Bodegero today metrics failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
       if (!mounted ||
           generation != _metricsGeneration ||
           controller != widget.controller)
@@ -186,6 +201,7 @@ class _StaffPageState extends State<StaffPage> {
       setState(() {
         _cashierToday = results[0];
         _helperToday = results[1];
+        _bodegeroToday = bodegero;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -773,7 +789,15 @@ class _StaffPageState extends State<StaffPage> {
   String _mobileTodaySummary(Map<String, dynamic> person) {
     final role = person['role']?.toString();
     if (role == 'admin') return 'Administrator';
-    if (role == 'bodegero') return 'Heavy loading';
+    if (role == 'bodegero') {
+      final record = _bodegeroRecord(person['id']?.toString() ?? '');
+      final loaded = _bodegeroToday == null
+          ? '—'
+          : '${(record?['completed_count'] as num?)?.toInt() ?? 0}';
+      final active = _activeOrderCounts[person['id']?.toString() ?? ''] ?? 0;
+      final median = (record?['median_minutes'] as num?)?.round();
+      return '$loaded loaded  ·  ${median == null ? '—' : '$median min'} median  ·  $active active';
+    }
     final record = _findRecord(
       role == 'helper' ? _helperToday : _cashierToday,
       person['id']?.toString() ?? '',
@@ -875,11 +899,32 @@ class _StaffPageState extends State<StaffPage> {
         'Administrator',
         style: TextStyle(color: _muted, fontSize: 12),
       );
-    if (role == 'bodegero')
-      return const Text(
-        'Heavy loading',
-        style: TextStyle(color: _muted, fontSize: 12),
+    if (role == 'bodegero') {
+      final id = person['id']?.toString() ?? '';
+      final record = _bodegeroRecord(id);
+      final loaded = _bodegeroToday == null
+          ? '—'
+          : '${(record?['completed_count'] as num?)?.toInt() ?? 0}';
+      final median = (record?['median_minutes'] as num?)?.round();
+      final active = _activeOrderCounts[id] ?? 0;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$loaded loaded',
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            '${median == null ? '—' : '$median min'} median · $active active',
+            style: const TextStyle(color: _muted, fontSize: 12),
+          ),
+        ],
       );
+    }
     final record = _findRecord(
       role == 'helper' ? _helperToday : _cashierToday,
       person['id']?.toString() ?? '',
@@ -906,6 +951,17 @@ class _StaffPageState extends State<StaffPage> {
         Text(secondary, style: const TextStyle(color: _muted, fontSize: 12)),
       ],
     );
+  }
+
+  Map<String, dynamic>? _bodegeroRecord(String id) {
+    final records = _bodegeroToday?['records'];
+    if (records is! List) return null;
+    for (final value in records) {
+      if (value is Map && value['employee_id']?.toString() == id) {
+        return Map<String, dynamic>.from(value);
+      }
+    }
+    return null;
   }
 
   StaffPerformanceRecord? _findRecord(

@@ -29,6 +29,9 @@ class MapEditorPage extends StatefulWidget {
 
 class _MapEditorPageState extends State<MapEditorPage> {
   final GlobalKey<StoreMapState> _storeMapKey = GlobalKey<StoreMapState>();
+  final TextEditingController _nudgeDistanceController = TextEditingController(
+    text: '1',
+  );
   MapElement? _manageSelected;
   String? _mobileWidthControlsId;
   MapMode _mode = MapMode.manage;
@@ -51,6 +54,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
   bool _isSaving = false;
   bool _remoteChangePending = false;
   bool _remoteChangeToastShown = false;
+  bool _layoutUiRefreshQueued = false;
   bool _allowRoutePop = false;
   Object? _layoutLoadError;
   StreamSubscription<List<MapElement>>? _layoutSubscription;
@@ -147,11 +151,17 @@ class _MapEditorPageState extends State<MapEditorPage> {
     if (widget.controller.mapLayoutSignature(_draftLayout) ==
         widget.controller.mapLayoutSignature(_historyCurrent))
       return;
-    setState(() {
-      _undoStack.add(_historyCurrent);
-      if (_undoStack.length > 50) _undoStack.removeAt(0);
-      _historyCurrent = widget.controller.cloneMapLayout(_draftLayout);
-      _redoStack.clear();
+    _undoStack.add(_historyCurrent);
+    if (_undoStack.length > 50) _undoStack.removeAt(0);
+    _historyCurrent = widget.controller.cloneMapLayout(_draftLayout);
+    _redoStack.clear();
+
+    // Let StoreMap paint the moved fixture before rebuilding the whole editor.
+    if (_layoutUiRefreshQueued) return;
+    _layoutUiRefreshQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _layoutUiRefreshQueued = false;
+      if (mounted) setState(() {});
     });
   }
 
@@ -246,6 +256,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
   void dispose() {
     _layoutSubscription?.cancel();
     _inventorySubscription?.cancel();
+    _nudgeDistanceController.dispose();
     super.dispose();
   }
 
@@ -1590,49 +1601,63 @@ class _MapEditorPageState extends State<MapEditorPage> {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: _mobilePanel,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Move fixture',
-                style: TextStyle(
-                  color: Color(0xFF201D1A),
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Drag on the map or nudge one grid step.',
-                style: TextStyle(color: _mobileMuted),
-              ),
-              const SizedBox(height: 12),
-              _mobileMoveButton(LucideIcons.arrowUp, 'Up', MapSidebarAction.up),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _mobileMoveButton(
-                    LucideIcons.arrowLeft,
-                    'Left',
-                    MapSidebarAction.left,
+                  const Text(
+                    'Move fixture',
+                    style: TextStyle(
+                      color: Color(0xFF201D1A),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  const SizedBox(width: 42),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Drag on the map or choose a nudge distance.',
+                    style: TextStyle(color: _mobileMuted),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildNudgeDistanceField(),
+                  const SizedBox(height: 12),
                   _mobileMoveButton(
-                    LucideIcons.arrowRight,
-                    'Right',
-                    MapSidebarAction.right,
+                    LucideIcons.arrowUp,
+                    'Up',
+                    MapSidebarAction.up,
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _mobileMoveButton(
+                        LucideIcons.arrowLeft,
+                        'Left',
+                        MapSidebarAction.left,
+                      ),
+                      const SizedBox(width: 42),
+                      _mobileMoveButton(
+                        LucideIcons.arrowRight,
+                        'Right',
+                        MapSidebarAction.right,
+                      ),
+                    ],
+                  ),
+                  _mobileMoveButton(
+                    LucideIcons.arrowDown,
+                    'Down',
+                    MapSidebarAction.down,
                   ),
                 ],
               ),
-              _mobileMoveButton(
-                LucideIcons.arrowDown,
-                'Down',
-                MapSidebarAction.down,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1645,7 +1670,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
     MapSidebarAction action,
   ) => IconButton(
     tooltip: label,
-    onPressed: () => _storeMapKey.currentState?.applySidebarAction(action),
+    onPressed: () => _applyNudgeAction(action),
     icon: Icon(icon, color: const Color(0xFF201D1A)),
   );
 
@@ -2171,7 +2196,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
         ),
         const SizedBox(height: 12),
         _manageSectionLabel('NUDGE'),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
+        _buildNudgeDistanceField(),
+        const SizedBox(height: 10),
         Center(child: _manageMiniButton('▲', MapSidebarAction.up)),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -2214,50 +2241,71 @@ class _MapEditorPageState extends State<MapEditorPage> {
             ],
           ),
         ] else ...[
-          _manageSectionLabel('ADJUST WIDTH'),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: _manageAction(
-                  '◀ Left −',
-                  null,
-                  MapSidebarAction.widthLeftMinus,
-                  enabled: canShrink,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFCFAF8),
+              border: Border.all(color: const Color(0xFFE7E1DB)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Resize',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _manageAction(
-                  '▶ Left +',
-                  null,
-                  MapSidebarAction.widthLeftPlus,
-                  enabled: canGrow,
+                const SizedBox(height: 14),
+                const Text('Left edge', style: TextStyle(fontSize: 12)),
+                const SizedBox(height: 7),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _manageAction(
+                        '│→  −',
+                        MapSidebarAction.widthLeftMinus,
+                        enabled: canShrink,
+                        hoverEdge: MapResizeEdge.left,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _manageAction(
+                        '←│  +',
+                        MapSidebarAction.widthLeftPlus,
+                        enabled: canGrow,
+                        hoverEdge: MapResizeEdge.left,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: _manageAction(
-                  '◀ Right −',
-                  null,
-                  MapSidebarAction.widthRightMinus,
-                  enabled: canShrink,
+                const SizedBox(height: 16),
+                const Text('Right edge', style: TextStyle(fontSize: 12)),
+                const SizedBox(height: 7),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _manageAction(
+                        '←│  −',
+                        MapSidebarAction.widthRightMinus,
+                        enabled: canShrink,
+                        hoverEdge: MapResizeEdge.right,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _manageAction(
+                        '│→  +',
+                        MapSidebarAction.widthRightPlus,
+                        enabled: canGrow,
+                        hoverEdge: MapResizeEdge.right,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _manageAction(
-                  '▶ Right +',
-                  null,
-                  MapSidebarAction.widthRightPlus,
-                  enabled: canGrow,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ],
@@ -2274,13 +2322,53 @@ class _MapEditorPageState extends State<MapEditorPage> {
     ),
   );
 
+  Widget _buildNudgeDistanceField() => Row(
+    children: [
+      const Expanded(
+        child: Text('Distance (grid cells)', style: TextStyle(fontSize: 12)),
+      ),
+      const Tooltip(
+        message: '1 = one square · 0.1 = one tenth',
+        child: Icon(LucideIcons.info, size: 15, color: Color(0xFF827872)),
+      ),
+      const SizedBox(width: 10),
+      SizedBox(
+        width: 118,
+        child: TextField(
+          controller: _nudgeDistanceController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+          ],
+          style: const TextStyle(fontSize: 13),
+          decoration: _mapInputDecoration().copyWith(
+            hintText: '0.1',
+            suffixText: 'cells',
+          ),
+        ),
+      ),
+    ],
+  );
+
+  void _applyNudgeAction(MapSidebarAction action) {
+    final cells = double.tryParse(_nudgeDistanceController.text.trim());
+    if (cells == null || !cells.isFinite || cells <= 0 || cells > 100) {
+      AppToast.error(context, 'Enter a nudge distance above 0 and up to 100.');
+      return;
+    }
+    _storeMapKey.currentState?.applySidebarAction(
+      action,
+      nudgeDistance: cells * 40,
+    );
+  }
+
   Widget _manageMiniButton(String label, MapSidebarAction action) => Padding(
     padding: const EdgeInsets.all(2),
     child: SizedBox(
       width: 44,
       height: 34,
       child: OutlinedButton(
-        onPressed: () => _storeMapKey.currentState?.applySidebarAction(action),
+        onPressed: () => _applyNudgeAction(action),
         style: _manageButtonStyle(),
         child: Text(label, style: const TextStyle(fontSize: 12)),
       ),
@@ -2289,20 +2377,34 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   Widget _manageAction(
     String label,
-    IconData? icon,
     MapSidebarAction action, {
     bool enabled = true,
-  }) => SizedBox(
-    width: double.infinity,
-    child: OutlinedButton.icon(
-      onPressed: enabled
-          ? () => _storeMapKey.currentState?.applySidebarAction(action)
+    MapResizeEdge? hoverEdge,
+  }) {
+    final button = SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: enabled
+            ? () => _storeMapKey.currentState?.applySidebarAction(action)
+            : null,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF292725),
+          side: const BorderSide(color: Color(0xFFD8D0C9)),
+          minimumSize: const Size(0, 46),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+        ),
+        child: Text(label, style: const TextStyle(fontSize: 16)),
+      ),
+    );
+    if (hoverEdge == null) return button;
+    return MouseRegion(
+      onEnter: enabled
+          ? (_) => _storeMapKey.currentState?.setResizePreviewEdge(hoverEdge)
           : null,
-      style: _manageButtonStyle(),
-      icon: icon == null ? const SizedBox.shrink() : Icon(icon, size: 14),
-      label: Text(label, style: const TextStyle(fontSize: 11)),
-    ),
-  );
+      onExit: (_) => _storeMapKey.currentState?.setResizePreviewEdge(null),
+      child: button,
+    );
+  }
 
   ButtonStyle _manageButtonStyle() => OutlinedButton.styleFrom(
     foregroundColor: const Color(0xFF292725),

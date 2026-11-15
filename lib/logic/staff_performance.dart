@@ -1,13 +1,19 @@
 import 'package:flutter/foundation.dart';
 
-enum StaffPerformanceRole { helpers, cashiers }
+enum StaffPerformanceRole { helpers, cashiers, bodegeros }
 
 extension StaffPerformanceRoleLabel on StaffPerformanceRole {
-  String get label =>
-      this == StaffPerformanceRole.helpers ? 'Helpers' : 'Cashiers';
+  String get label => switch (this) {
+    StaffPerformanceRole.helpers => 'Helpers',
+    StaffPerformanceRole.cashiers => 'Cashiers',
+    StaffPerformanceRole.bodegeros => 'Bodegeros',
+  };
 
-  String get rpcValue =>
-      this == StaffPerformanceRole.helpers ? 'helper' : 'cashier';
+  String get rpcValue => switch (this) {
+    StaffPerformanceRole.helpers => 'helper',
+    StaffPerformanceRole.cashiers => 'cashier',
+    StaffPerformanceRole.bodegeros => 'bodegero',
+  };
 }
 
 /// Reviewable V1 constants. The reporting RPC mirrors these values in one

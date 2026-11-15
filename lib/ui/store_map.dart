@@ -39,6 +39,8 @@ enum MapSidebarAction {
   delete,
 }
 
+enum MapResizeEdge { left, right }
+
 // Updated to the soft light-blue background
 const Color kMapContainerBg = Color(0xFFF7F5F3);
 
@@ -146,6 +148,7 @@ class StoreMapState extends State<StoreMap>
   late Animation<double> _bounceAnimation;
   String? _activeElementId;
   String? _hoveredElementId;
+  MapResizeEdge? _resizePreviewEdge;
   bool _isPaletteDragActive = false;
   bool _isAdjustingWidth = false;
   bool _isChoosingDoorType = false;
@@ -397,6 +400,7 @@ class StoreMapState extends State<StoreMap>
       _selectedPopupElement = null;
       _activeElementId = null;
       _hoveredElementId = null;
+      _resizePreviewEdge = null;
       _isNudging = false;
       _isAdjustingWidth = false;
       _isChoosingDoorType = false;
@@ -1154,6 +1158,7 @@ class StoreMapState extends State<StoreMap>
     if (!mounted) return;
     setState(() {
       _activeElementId = null;
+      _resizePreviewEdge = null;
       _isNudging = false;
       _isAdjustingWidth = false;
       _isChoosingDoorType = false;
@@ -1166,6 +1171,11 @@ class StoreMapState extends State<StoreMap>
     if (!mounted || matches.isEmpty) return;
     setState(() => _activeElementId = elementId);
     widget.onManageSelectionChanged?.call(matches.first);
+  }
+
+  void setResizePreviewEdge(MapResizeEdge? edge) {
+    if (!mounted || _resizePreviewEdge == edge) return;
+    setState(() => _resizePreviewEdge = edge);
   }
 
   bool canUpdateElement(MapElement element) =>
@@ -1226,7 +1236,10 @@ class StoreMapState extends State<StoreMap>
     widget.onLayoutEdited?.call();
   }
 
-  void applySidebarAction(MapSidebarAction action) {
+  void applySidebarAction(
+    MapSidebarAction action, {
+    double nudgeDistance = 40,
+  }) {
     final matches = _layout.where((e) => e.id == _activeElementId);
     if (matches.isEmpty || widget.mode != MapMode.manage) return;
     final el = matches.first;
@@ -1286,16 +1299,16 @@ class StoreMapState extends State<StoreMap>
     }
     switch (action) {
       case MapSidebarAction.up:
-        _nudgeElement(el, const Offset(0, -40));
+        _nudgeElement(el, Offset(0, -nudgeDistance));
         break;
       case MapSidebarAction.down:
-        _nudgeElement(el, const Offset(0, 40));
+        _nudgeElement(el, Offset(0, nudgeDistance));
         break;
       case MapSidebarAction.left:
-        _nudgeElement(el, const Offset(-40, 0));
+        _nudgeElement(el, Offset(-nudgeDistance, 0));
         break;
       case MapSidebarAction.right:
-        _nudgeElement(el, const Offset(40, 0));
+        _nudgeElement(el, Offset(nudgeDistance, 0));
         break;
       case MapSidebarAction.widthLeftMinus:
         _changeElementWidthDirectional(el, -40, isLeft: true);
@@ -1670,6 +1683,7 @@ class StoreMapState extends State<StoreMap>
         _buildActionMenuButton(
           icon: Icons.remove,
           label: "Dec Left",
+          hoverEdge: MapResizeEdge.left,
           color: Colors.orangeAccent,
           onTap: canShrink
               ? () =>
@@ -1680,6 +1694,7 @@ class StoreMapState extends State<StoreMap>
         _buildActionMenuButton(
           icon: Icons.add,
           label: "Inc Left",
+          hoverEdge: MapResizeEdge.left,
           color: Colors.greenAccent,
           onTap: canGrow
               ? () => _changeElementWidthDirectional(activeEl, 40, isLeft: true)
@@ -1691,6 +1706,7 @@ class StoreMapState extends State<StoreMap>
         _buildActionMenuButton(
           icon: Icons.remove,
           label: "Dec Right",
+          hoverEdge: MapResizeEdge.right,
           color: Colors.orangeAccent,
           onTap: canShrink
               ? () =>
@@ -1701,6 +1717,7 @@ class StoreMapState extends State<StoreMap>
         _buildActionMenuButton(
           icon: Icons.add,
           label: "Inc Right",
+          hoverEdge: MapResizeEdge.right,
           color: Colors.greenAccent,
           onTap: canGrow
               ? () =>
@@ -1799,8 +1816,9 @@ class StoreMapState extends State<StoreMap>
     required String label,
     required Color color,
     required VoidCallback? onTap,
+    MapResizeEdge? hoverEdge,
   }) {
-    return GestureDetector(
+    final button = GestureDetector(
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1817,6 +1835,12 @@ class StoreMapState extends State<StoreMap>
           ),
         ],
       ),
+    );
+    if (hoverEdge == null) return button;
+    return MouseRegion(
+      onEnter: (_) => setResizePreviewEdge(hoverEdge),
+      onExit: (_) => setResizePreviewEdge(null),
+      child: button,
     );
   }
 
@@ -3023,6 +3047,62 @@ class StoreMapState extends State<StoreMap>
               ],
             ),
           );
+
+    if (widget.viewStyle == MapViewStyle.twoD &&
+        isActive &&
+        _resizePreviewEdge != null) {
+      final previewLeft = _resizePreviewEdge == MapResizeEdge.left;
+      shelf = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          shelf,
+          Positioned(
+            left: previewLeft ? 0 : null,
+            right: previewLeft ? null : 0,
+            top: 0,
+            bottom: 0,
+            child: Container(
+              width: 7,
+              decoration: BoxDecoration(
+                color: const Color(0xFFC83D08),
+                borderRadius: BorderRadius.horizontal(
+                  left: previewLeft ? const Radius.circular(3) : Radius.zero,
+                  right: previewLeft ? Radius.zero : const Radius.circular(3),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: previewLeft ? -8 : null,
+            right: previewLeft ? null : -8,
+            top: -29,
+            child: Transform.rotate(
+              angle: -el.rotation,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4EF),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    previewLeft ? 'Left edge' : 'Right edge',
+                    style: const TextStyle(
+                      color: Color(0xFFC83D08),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     return Positioned(
       key: ValueKey(el.id),
