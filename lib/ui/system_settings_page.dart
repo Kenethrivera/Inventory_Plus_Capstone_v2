@@ -1222,26 +1222,6 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 setState(() => _restrictStaffLogin = value);
               },
             ),
-            SwitchListTile.adaptive(
-              value: _allowAdminAnytime,
-              contentPadding: EdgeInsets.zero,
-              activeColor: _accentOrange,
-              title: const Text(
-                'Allow admin login anytime',
-                style: TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontWeight: FontWeight.w800,
-                  fontFamily: _fontFam,
-                ),
-              ),
-              subtitle: const Text(
-                'Recommended: keep this on so admin can access settings outside store hours.',
-                style: TextStyle(fontFamily: _fontFam),
-              ),
-              onChanged: (value) {
-                setState(() => _allowAdminAnytime = value);
-              },
-            ),
             const SizedBox(height: 18),
             Align(
               alignment: Alignment.centerRight,
@@ -1834,13 +1814,20 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
           ),
           decoration: InputDecoration(
             hintText: hint,
-            prefixText: phone ? '+63 ' : null,
+            prefixIcon: phone
+                ? const Center(
+                    widthFactor: 1,
+                    child: Text('+63', style: TextStyle(color: Color(0xFF1A1F36), fontSize: 14)),
+                  )
+                : Icon(icon, color: const Color(0xFF8892A4), size: 16),
+            prefixIconConstraints: phone
+                ? const BoxConstraints(minWidth: 48, minHeight: 0)
+                : null,
             helperText: phone ? 'Format: $philippineMobileExample' : null,
             hintStyle: const TextStyle(
               color: Color(0xFFB0B7C3),
               fontFamily: _fontFam,
             ),
-            prefixIcon: Icon(icon, color: const Color(0xFF8892A4), size: 16),
             filled: true,
             fillColor: const Color(0xFFFAF8F6),
             border: OutlineInputBorder(

@@ -864,6 +864,14 @@ extension _SettingsDashboard on _SystemSettingsPageState {
 
   Widget _hoursSection({bool mobile = false}) {
     if (mobile) return _mobileHoursSection();
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.maxWidth < 540
+          ? _mobileHoursSection()
+          : _desktopHoursSection(),
+    );
+  }
+
+  Widget _desktopHoursSection() {
     const names = [
       'Monday',
       'Tuesday',
@@ -890,75 +898,90 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                 decoration: const BoxDecoration(
                   border: Border(bottom: BorderSide(color: _line)),
                 ),
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 14,
-                  runSpacing: 8,
+                child: Row(
                   children: [
-                    SizedBox(
-                      width: 125,
+                    Expanded(
                       child: Text(
                         names[day - 1],
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
-                    OutlinedButton(
-                      onPressed: schedule.closed
-                          ? null
-                          : () async {
-                              final value = await _pickDashboardTime(
-                                context,
-                                _parseClockTime(schedule.openingTime),
-                                'Opening time',
-                              );
-                              if (value == null || !mounted) return;
-                              setState(
-                                () => _weeklyHoursDraft[day] = StoreDayHours(
-                                  openingTime: _formatClockTime(value),
-                                  closingTime: schedule.closingTime,
-                                ),
-                              );
-                            },
-                      child: Text(
-                        _formatDisplayTime(
-                          _parseClockTime(schedule.openingTime),
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                        ),
+                        onPressed: schedule.closed
+                            ? null
+                            : () async {
+                                final value = await _pickDashboardTime(
+                                  context,
+                                  _parseClockTime(schedule.openingTime),
+                                  'Opening time',
+                                );
+                                if (value == null || !mounted) return;
+                                setState(
+                                  () => _weeklyHoursDraft[day] = StoreDayHours(
+                                    openingTime: _formatClockTime(value),
+                                    closingTime: schedule.closingTime,
+                                  ),
+                                );
+                              },
+                        child: Text(
+                          _formatDisplayTime(
+                            _parseClockTime(schedule.openingTime),
+                          ),
                         ),
                       ),
                     ),
-                    OutlinedButton(
-                      onPressed: schedule.closed
-                          ? null
-                          : () async {
-                              final value = await _pickDashboardTime(
-                                context,
-                                _parseClockTime(schedule.closingTime),
-                                'Closing time',
-                              );
-                              if (value == null || !mounted) return;
-                              setState(
-                                () => _weeklyHoursDraft[day] = StoreDayHours(
-                                  openingTime: schedule.openingTime,
-                                  closingTime: _formatClockTime(value),
-                                ),
-                              );
-                            },
-                      child: Text(
-                        _formatDisplayTime(
-                          _parseClockTime(schedule.closingTime),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                        ),
+                        onPressed: schedule.closed
+                            ? null
+                            : () async {
+                                final value = await _pickDashboardTime(
+                                  context,
+                                  _parseClockTime(schedule.closingTime),
+                                  'Closing time',
+                                );
+                                if (value == null || !mounted) return;
+                                setState(
+                                  () => _weeklyHoursDraft[day] = StoreDayHours(
+                                    openingTime: schedule.openingTime,
+                                    closingTime: _formatClockTime(value),
+                                  ),
+                                );
+                              },
+                        child: Text(
+                          _formatDisplayTime(
+                            _parseClockTime(schedule.closingTime),
+                          ),
                         ),
                       ),
                     ),
-                    Checkbox(
-                      value: schedule.closed,
-                      onChanged: (value) => setState(() {
-                        _weeklyHoursDraft[day] = StoreDayHours(
-                          openingTime: schedule.openingTime,
-                          closingTime: schedule.closingTime,
-                          closed: value ?? false,
-                        );
-                      }),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 110,
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: schedule.closed,
+                            onChanged: (value) => setState(() {
+                              _weeklyHoursDraft[day] = StoreDayHours(
+                                openingTime: schedule.openingTime,
+                                closingTime: schedule.closingTime,
+                                closed: value ?? false,
+                              );
+                            }),
+                          ),
+                          const Text('Closed'),
+                        ],
+                      ),
                     ),
-                    const Text('Closed'),
                   ],
                 ),
               );
@@ -969,28 +992,37 @@ extension _SettingsDashboard on _SystemSettingsPageState {
           contentPadding: EdgeInsets.zero,
           title: const Text('Limit staff sign-in to store hours'),
           subtitle: const Text(
-            'Cashiers and helpers are blocked outside the schedule.',
+            'Cashiers, helpers, and Bodegeros are blocked outside the schedule.',
           ),
           value: _restrictStaffLogin,
           onChanged: (value) => setState(() => _restrictStaffLogin = value),
         ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Administrators are exempt'),
-          value: _allowAdminAnytime,
-          onChanged: (value) => setState(() => _allowAdminAnytime = value),
-        ),
         const SizedBox(height: 12),
-        _numberField(
-          'Grace period before opening (min)',
-          _beforeMinutesCtrl,
-          width: 280,
+        const Text(
+          'Grace period (minutes)',
+          style: TextStyle(fontWeight: FontWeight.w600),
         ),
-        const SizedBox(height: 12),
-        _numberField(
-          'Grace period after closing (min)',
-          _afterMinutesCtrl,
-          width: 280,
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _numberField(
+                'Before opening',
+                _beforeMinutesCtrl,
+                width: null,
+                compact: true,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _numberField(
+                'After closing',
+                _afterMinutesCtrl,
+                width: null,
+                compact: true,
+              ),
+            ),
+          ],
         ),
         if (_storeAccessError != null)
           Padding(
@@ -1025,7 +1057,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
           subtitle: const Text(
-            'Cashiers and helpers are blocked outside the schedule.',
+            'Cashiers, helpers, and Bodegeros are blocked outside the schedule.',
             style: TextStyle(fontSize: 12, color: _muted),
           ),
           value: _restrictStaffLogin,
@@ -1033,32 +1065,26 @@ extension _SettingsDashboard on _SystemSettingsPageState {
           onChanged: (value) => setState(() => _restrictStaffLogin = value),
         ),
         const Divider(height: 1, color: _line),
-        SwitchListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          title: const Text(
-            'Administrators are exempt',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(14, 12, 14, 0),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Grace period (minutes)',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
           ),
-          value: _allowAdminAnytime,
-          activeTrackColor: _orange,
-          onChanged: (value) => setState(() => _allowAdminAnytime = value),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 4, 14, 16),
           child: Row(
             children: [
               Expanded(
-                child: _mobileGraceField(
-                  'Grace before opening (min)',
-                  _beforeMinutesCtrl,
-                ),
+                child: _mobileGraceField('Before opening', _beforeMinutesCtrl),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: _mobileGraceField(
-                  'Grace after closing (min)',
-                  _afterMinutesCtrl,
-                ),
+                child: _mobileGraceField('After closing', _afterMinutesCtrl),
               ),
             ],
           ),

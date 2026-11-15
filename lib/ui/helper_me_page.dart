@@ -329,7 +329,18 @@ class _HelperMePageState extends State<HelperMePage> {
         onChanged: onChanged,
         decoration: _decoration().copyWith(
           hintText: phone ? '9XXXXXXXXX' : null,
-          prefixText: phone ? '+63 ' : null,
+          prefixIcon: phone
+              ? const Center(
+                  widthFactor: 1,
+                  child: Text(
+                    '+63',
+                    style: TextStyle(color: _ink, fontSize: 14),
+                  ),
+                )
+              : null,
+          prefixIconConstraints: phone
+              ? const BoxConstraints(minWidth: 48, minHeight: 0)
+              : null,
           helperText: phone ? 'Format: $philippineMobileExample' : null,
           suffixIcon: onToggleVisibility == null
               ? null

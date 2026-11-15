@@ -27,8 +27,6 @@ import '../logic/inventory_approval.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 
-const double _kSnapFull = 0.75;
-const double _kBaseChromeHeight = 320.0;
 const Color _cashierAccent = Color(0xFFC83D08);
 const Color _cashierTint = Color(0xFFFFF1E9);
 const Color _cashierBorder = Color(0xFFE3DED7);
@@ -69,13 +67,13 @@ class PosCartPage extends StatefulWidget {
   State<PosCartPage> createState() => _PosCartPageState();
 }
 
-class _PosCartPageState extends State<PosCartPage>
-    with SingleTickerProviderStateMixin {
+class _PosCartPageState extends State<PosCartPage> {
   String _searchQuery = '';
   String _selectedCategory = 'All';
   final Map<String, double> _cart = {};
   bool? _isGridView;
   bool _isProcessingCart = false;
+  bool _showMobileCart = false;
   final Set<String> _preparingOrderIds = <String>{};
   final Set<String> _cancellingOrderIds = <String>{};
 
@@ -85,14 +83,6 @@ class _PosCartPageState extends State<PosCartPage>
   InventoryApprovalRequest? _discountApproval;
   bool _isRequestingDiscountApproval = false;
   late String _checkoutSnapshotToken;
-
-  double _cartHeightFraction = 0.0;
-  late AnimationController _snapAnim;
-  late Animation<double> _snapAnimation;
-  double _dragStart = 0;
-  double _fractionAtDragStart = 0;
-
-  double _kBaseChromeHeight = 368.0; // was 320
 
   final bool _soloMode = false;
   String? _selectedHelperId;
@@ -118,20 +108,6 @@ class _PosCartPageState extends State<PosCartPage>
           if (mounted) setState(() => _discountApproval = request);
         });
     _pendingAutoOpenOrderId = widget.targetOrderId;
-    _snapAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 450),
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final mq = MediaQuery.of(context);
-      final totalHeight = mq.size.height - mq.padding.top;
-      if (totalHeight <= 0) return;
-      setState(() {
-        final minHeight = _kBaseChromeHeight + mq.padding.bottom;
-        _cartHeightFraction = (minHeight / totalHeight).clamp(0.0, _kSnapFull);
-      });
-    });
   }
 
   @override
@@ -139,7 +115,6 @@ class _PosCartPageState extends State<PosCartPage>
     unawaited(_runtimeSettingsSubscription?.cancel());
     unawaited(_discountApprovalSubscription?.cancel());
     widget.controller.clearDiscountApprovalTracking();
-    _snapAnim.dispose();
     super.dispose();
   }
 
@@ -175,49 +150,6 @@ class _PosCartPageState extends State<PosCartPage>
         );
       });
     }
-  }
-
-  void _snapTo(double target) {
-    final start = _cartHeightFraction;
-    _snapAnimation =
-        Tween<double>(begin: start, end: target).animate(
-          CurvedAnimation(
-            parent: _snapAnim,
-            curve: const Cubic(0.25, 0.46, 0.45, 0.94),
-          ),
-        )..addListener(() {
-          setState(() => _cartHeightFraction = _snapAnimation.value);
-        });
-    _snapAnim
-      ..reset()
-      ..forward();
-  }
-
-  void _onDragEnd(DragEndDetails details) {
-    final mq = MediaQuery.of(context);
-    final safeHeight = mq.size.height - mq.padding.top - mq.padding.bottom - 56;
-    final totalHeight = mq.size.height - mq.padding.top;
-    if (totalHeight <= 0) return;
-
-    final minHeight = _kBaseChromeHeight + mq.padding.bottom;
-    final floorFraction = (minHeight / totalHeight).clamp(0.0, _kSnapFull);
-    final safeMax = (safeHeight / totalHeight).clamp(floorFraction, _kSnapFull);
-
-    final velocity = details.primaryVelocity ?? 0;
-    double target;
-
-    if (velocity < -800) {
-      target = safeMax;
-    } else if (velocity > 800) {
-      target = floorFraction;
-    } else {
-      target =
-          (_cartHeightFraction - floorFraction).abs() <
-              (_cartHeightFraction - safeMax).abs()
-          ? floorFraction
-          : safeMax;
-    }
-    _snapTo(target.clamp(floorFraction, safeMax));
   }
 
   List<InventoryItem> get _filteredItems => widget.controller.filterInventory(
@@ -366,6 +298,7 @@ class _PosCartPageState extends State<PosCartPage>
       setState(() {
         _invalidateDiscountApproval();
         _cart.clear();
+        _showMobileCart = false;
         _discountValue = 0.0;
         _discountReason = '';
         _selectedHelperId = null;
@@ -3430,81 +3363,85 @@ class _PosCartPageState extends State<PosCartPage>
   }
 
   Widget _buildPosView(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F6F4),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isDesktop = constraints.maxWidth >= 800;
-          _isGridView ??= isDesktop;
+    return PopScope(
+      canPop: !_showMobileCart || MediaQuery.sizeOf(context).width >= 800,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _showMobileCart && MediaQuery.sizeOf(context).width < 800) {
+          setState(() => _showMobileCart = false);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF7F6F4),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth >= 800;
+            _isGridView ??= isDesktop;
 
-          if (isDesktop) {
-            return Row(
+            if (isDesktop) {
+              return Row(
+                children: [
+                  Expanded(flex: 2, child: _buildItemList()),
+                  const VerticalDivider(width: 1, color: _cashierBorder),
+                  Expanded(flex: 1, child: _buildCartPanel()),
+                ],
+              );
+            }
+
+            if (_showMobileCart) {
+              return _buildCartPanel(mobileFullPage: true);
+            }
+            return Column(
               children: [
-                Expanded(flex: 2, child: _buildItemList()),
-                const VerticalDivider(width: 1, color: _cashierBorder),
-                Expanded(flex: 1, child: _buildCartPanel()),
+                Expanded(child: _buildItemList()),
+                _buildMobileCartButton(),
               ],
             );
-          }
+          },
+        ),
+      ),
+    );
+  }
 
-          final bottomInset = MediaQuery.of(context).padding.bottom;
-          final totalHeight = constraints.maxHeight;
-          final maxCartHeight = (totalHeight - 56 - bottomInset).clamp(
-            0.0,
-            totalHeight * _kSnapFull,
-          );
-          final minCartHeight = (_kBaseChromeHeight + bottomInset).clamp(
-            0.0,
-            maxCartHeight,
-          );
-          final cartHeight = (totalHeight * _cartHeightFraction).clamp(
-            minCartHeight,
-            maxCartHeight,
-          );
-
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: cartHeight),
-                  child: _buildItemList(),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: cartHeight,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: bottomInset),
-                    child: _DraggableCartSheet(
-                      onDragStart: (details) {
-                        _snapAnim.stop();
-                        _dragStart = details.globalPosition.dy;
-                        _fractionAtDragStart = cartHeight / totalHeight;
-                      },
-                      onDragUpdate: (details) {
-                        final delta = _dragStart - details.globalPosition.dy;
-                        final newFraction =
-                            _fractionAtDragStart + delta / totalHeight;
-                        setState(() {
-                          _cartHeightFraction = newFraction.clamp(
-                            minCartHeight / totalHeight,
-                            maxCartHeight / totalHeight,
-                          );
-                        });
-                      },
-                      onDragEnd: _onDragEnd,
-                      child: _buildCartPanel(),
+  Widget _buildMobileCartButton() {
+    final count = _cart.length;
+    final total = _discountCalculation(_calculateTotal()).total;
+    return Material(
+      color: Colors.white,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: FilledButton(
+              onPressed: () => setState(() => _showMobileCart = true),
+              style: FilledButton.styleFrom(backgroundColor: _cashierAccent),
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.shoppingCart, size: 20),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'View cart',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                     ),
                   ),
-                ),
+                  Text('$count ${count == 1 ? 'item' : 'items'}',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  if (MediaQuery.sizeOf(context).width >= 380) ...[
+                    const SizedBox(width: 12),
+                    Text('₱${total.toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ],
+                ],
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -4110,7 +4047,7 @@ class _PosCartPageState extends State<PosCartPage>
     );
   }
 
-  Widget _buildCartPanel() {
+  Widget _buildCartPanel({bool mobileFullPage = false}) {
     int distinctItems = _cart.length;
     double totalQty = _cart.values.fold(0.0, (sum, val) => sum + val);
     String qtyDisplay = totalQty.truncateToDouble() == totalQty
@@ -4142,14 +4079,22 @@ class _PosCartPageState extends State<PosCartPage>
                 children: [
                   Row(
                     children: [
-                      const Icon(
-                        LucideIcons.shoppingCart,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Current Order Cart',
+                      if (mobileFullPage)
+                        IconButton(
+                          tooltip: 'Back to products',
+                          onPressed: () => setState(() => _showMobileCart = false),
+                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        )
+                      else ...[
+                        const Icon(
+                          LucideIcons.shoppingCart,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Text(
+                        mobileFullPage ? 'Your cart' : 'Current Order Cart',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -4178,35 +4123,37 @@ class _PosCartPageState extends State<PosCartPage>
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              LucideIcons.packageCheck,
-                              size: 12,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$qtyDisplay qty',
-                              style: const TextStyle(
+                      if (!mobileFullPage) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                LucideIcons.packageCheck,
+                                size: 12,
                                 color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 4),
+                              Text(
+                                '$qtyDisplay qty',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ],
@@ -4654,6 +4601,8 @@ class _PosCartPageState extends State<PosCartPage>
                             ? 'Awaiting Admin Approval'
                             : requiresDiscountApproval && !hasDiscountApproval
                             ? 'Request Approval'
+                            : mobileFullPage
+                            ? 'Process Order'
                             : (_soloMode ? 'Process & Pack' : 'Send to Helper'),
                         style: const TextStyle(
                           fontSize: 15,
@@ -4865,59 +4814,6 @@ class _DashedRectPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _DraggableCartSheet extends StatelessWidget {
-  final GestureDragStartCallback onDragStart;
-  final GestureDragUpdateCallback onDragUpdate;
-  final GestureDragEndCallback onDragEnd;
-  final Widget child;
-
-  const _DraggableCartSheet({
-    required this.onDragStart,
-    required this.onDragUpdate,
-    required this.onDragEnd,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      elevation: 16,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      shadowColor: Colors.black26,
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragStart: onDragStart,
-              onVerticalDragUpdate: onDragUpdate,
-              onVerticalDragEnd: onDragEnd,
-              child: Container(
-                width: double.infinity,
-                color: const Color(0xFFF5F5F5),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade400,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Expanded(child: child),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _QuantityStepper extends StatefulWidget {
