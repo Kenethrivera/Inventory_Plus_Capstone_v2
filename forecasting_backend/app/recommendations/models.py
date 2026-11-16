@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import Enum
+from typing import Literal
 
 from app.forecasting.models import (
     DataProvenance,
@@ -75,6 +76,7 @@ class PreliminaryRestockingInsight:
     assumptions: tuple[str, ...]
     limitations: tuple[str, ...]
     requires_owner_review: bool = True
+    reliability: Literal["unavailable", "provisional", "normal"] = "unavailable"
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,12 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 import '../logic/seasonal_learning_lab.dart';
+import 'forecasting_performance_diagnostics.dart';
+
+const bool forecastSnapshotModeEnabled = bool.fromEnvironment(
+  'FORECAST_SNAPSHOT_MODE',
+  defaultValue: false,
+);
 
 class ForecastApiException implements Exception {
   const ForecastApiException(
@@ -23,6 +29,35 @@ class ForecastApiException implements Exception {
 }
 
 abstract interface class ForecastingApiService {
+  Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken});
+  Future<ForecastSnapshotPage> loadSnapshotOverview({
+    required String locationId,
+    required String sessionToken,
+    required String model,
+    required int page,
+    required int pageSize,
+    String? unit,
+    String? search,
+  });
+
+  Future<ForecastSnapshotItem> loadProductSnapshot({
+    required String productId,
+    required String locationId,
+    required String sessionToken,
+    required String model,
+  });
+
+  Future<ForecastAnalysis> previewSavedForecastGuidance({
+    required String productId,
+    required String locationId,
+    required String sessionToken,
+    required String model,
+    required double manualDailyDemand,
+    required String manualUnit,
+    required String manualRationale,
+    required bool manualConfirmed,
+  });
+
   Future<ForecastAnalysis> analyze({
     required String productId,
     required String locationId,
@@ -92,6 +127,12 @@ abstract interface class ForecastingApiService {
 }
 
 class ForecastApiClient implements ForecastingApiService {
+  @override
+  Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken}) {
+    final uri = _baseUri.resolve('/v1/forecasting/jobs/bootstrap')
+        .replace(queryParameters: {'product_id': productId});
+    return _send(() => _client.post(uri, headers: _headers(sessionToken)));
+  }
   ForecastApiClient({
     required Uri baseUri,
     http.Client? client,
@@ -138,6 +179,93 @@ class ForecastApiClient implements ForecastingApiService {
   final Duration seasonalTimeout;
 
   @override
+  Future<ForecastSnapshotPage> loadSnapshotOverview({
+    required String locationId,
+    required String sessionToken,
+    required String model,
+    required int page,
+    required int pageSize,
+    String? unit,
+    String? search,
+  }) async {
+    final query = <String, String>{
+      'location_id': locationId,
+      'model': _snapshotModelKey(model),
+      'page': '$page',
+      'page_size': '$pageSize',
+      if (unit != null && unit.isNotEmpty) 'unit': unit,
+      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+    };
+    final uri = _baseUri
+        .resolve('/v1/forecasting/snapshots/overview')
+        .replace(queryParameters: query);
+    final response = await _send(
+      () => _client.get(uri, headers: _headers(sessionToken)),
+    );
+    return ForecastSnapshotPage.fromJson(response);
+  }
+
+  @override
+  Future<ForecastSnapshotItem> loadProductSnapshot({
+    required String productId,
+    required String locationId,
+    required String sessionToken,
+    required String model,
+  }) async {
+    final uri = _baseUri
+        .resolve(
+          '/v1/forecasting/products/${Uri.encodeComponent(productId)}/snapshot',
+        )
+        .replace(
+          queryParameters: <String, String>{
+            'location_id': locationId,
+            'model': _snapshotModelKey(model),
+          },
+        );
+    final response = await _send(
+      () => _client.get(uri, headers: _headers(sessionToken)),
+    );
+    return ForecastSnapshotItem.fromJson(response);
+  }
+
+  @override
+  Future<ForecastAnalysis> previewSavedForecastGuidance({
+    required String productId,
+    required String locationId,
+    required String sessionToken,
+    required String model,
+    required double manualDailyDemand,
+    required String manualUnit,
+    required String manualRationale,
+    required bool manualConfirmed,
+  }) async {
+    final uri = _baseUri.resolve(
+      '/v1/forecasting/products/${Uri.encodeComponent(productId)}/snapshot-guidance',
+    );
+    final response = await _send(
+      () => _client.post(
+        uri,
+        headers: <String, String>{
+          ..._headers(sessionToken),
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(<String, dynamic>{
+          'location_id': locationId,
+          'model': _snapshotModelKey(model),
+          'manual_daily_demand': manualDailyDemand,
+          'manual_unit': manualUnit,
+          'manual_rationale': manualRationale,
+          'manual_confirmed': manualConfirmed,
+        }),
+      ),
+    );
+    return ForecastAnalysis.fromJson(response);
+  }
+
+  static String _snapshotModelKey(String model) =>
+      model == 'calibrated_blend' ? 'blend' : model;
+
+  @override
   Future<ForecastAnalysis> analyze({
     required String productId,
     required String locationId,
@@ -169,6 +297,20 @@ class ForecastApiClient implements ForecastingApiService {
     final requestTimeout = model == 'seasonal_experimental'
         ? seasonalTimeout
         : timeout;
+    final diagnosticsEnabled = ForecastingPerformanceDiagnostics.enabled;
+    final requestId = diagnosticsEnabled
+        ? ForecastingPerformanceDiagnostics.newOperationId('analysis')
+        : '';
+    final stopwatch = diagnosticsEnabled ? (Stopwatch()..start()) : null;
+    if (diagnosticsEnabled) {
+      ForecastingPerformanceDiagnostics.beginAnalysis(
+        requestId: requestId,
+        productId: productId,
+        locationId: locationId,
+        model: model,
+      );
+    }
+    var outcome = 'error';
     try {
       final response = await _client
           .post(
@@ -183,6 +325,7 @@ class ForecastApiClient implements ForecastingApiService {
           .timeout(requestTimeout);
       final decoded = _decodeObject(response.body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        outcome = 'http_${response.statusCode}';
         final detail = decoded?['detail']?.toString();
         throw ForecastApiException(
           detail?.isNotEmpty == true
@@ -194,18 +337,35 @@ class ForecastApiClient implements ForecastingApiService {
       if (decoded == null) {
         throw const ForecastApiException('Forecast API returned invalid JSON.');
       }
-      return ForecastAnalysis.fromJson(decoded);
+      final analysis = ForecastAnalysis.fromJson(decoded);
+      outcome = 'success';
+      return analysis;
     } on TimeoutException {
+      outcome = 'timeout';
       throw const ForecastApiException(
         'Forecast API timed out. Try again.',
         isTimeout: true,
       );
     } on SocketException {
+      outcome = 'network_error';
       throw const ForecastApiException('Forecast API is unreachable.');
     } on http.ClientException {
+      outcome = 'client_error';
       throw const ForecastApiException('Forecast API connection failed.');
     } on FormatException {
+      outcome = 'invalid_response';
       throw const ForecastApiException('Forecast API returned invalid data.');
+    } finally {
+      if (diagnosticsEnabled) {
+        stopwatch!.stop();
+        ForecastingPerformanceDiagnostics.endAnalysis(
+          requestId: requestId,
+          productId: productId,
+          locationId: locationId,
+          stopwatch: stopwatch!,
+          outcome: outcome,
+        );
+      }
     }
   }
 
@@ -275,7 +435,8 @@ class ForecastApiClient implements ForecastingApiService {
     required ForecastAnalysis analysis,
   }) async {
     final preliminary = analysis.preliminaryRestockingInsight;
-    if (preliminary.predictedDemand == null ||
+    if (preliminary.reliability != PreliminaryReliability.normal ||
+        preliminary.predictedDemand == null ||
         preliminary.availableInventory == null ||
         preliminary.suggestedRestockQuantity == null) {
       throw const ForecastApiException(
@@ -326,7 +487,7 @@ class ForecastApiClient implements ForecastingApiService {
       query['product_id'] = productId;
     }
     final uri = _baseUri
-        .resolve('/v1/forecasting/recommendations')
+        .resolve('/v1/forecasting/restock-records')
         .replace(queryParameters: query);
     final response = await _send(
       () => _client.get(uri, headers: _headers(sessionToken)),
@@ -343,7 +504,10 @@ class ForecastApiClient implements ForecastingApiService {
             _map(value, 'recommendation tracking item'),
           ),
         )
-        .toList(growable: false);
+        .fold<Map<String, RecommendationTrackingItem>>({}, (rows, item) {
+          rows[item.recordKey] = item;
+          return rows;
+        }).values.toList(growable: false);
   }
 
   @override
@@ -606,6 +770,111 @@ class ReplenishmentConfiguration {
       );
 }
 
+class ForecastSnapshotPage {
+  const ForecastSnapshotPage({
+    required this.page,
+    required this.pageSize,
+    required this.totalCount,
+    required this.pageCount,
+    required this.items,
+  });
+
+  final int page;
+  final int pageSize;
+  final int totalCount;
+  final int pageCount;
+  final List<ForecastSnapshotItem> items;
+
+  factory ForecastSnapshotPage.fromJson(Map<String, dynamic> json) {
+    final values = json['items'];
+    if (values is! List) {
+      throw const FormatException('forecast snapshot items are invalid');
+    }
+    return ForecastSnapshotPage(
+      page: _integer(json['page'], 'page'),
+      pageSize: _integer(json['page_size'], 'page_size'),
+      totalCount: _integer(json['total_count'], 'total_count'),
+      pageCount: _integer(json['page_count'], 'page_count'),
+      items: values
+          .map(
+            (value) => ForecastSnapshotItem.fromJson(
+              _map(value, 'forecast snapshot item'),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class ForecastSnapshotItem {
+  const ForecastSnapshotItem({
+    required this.status,
+    required this.product,
+    required this.job,
+    this.snapshot,
+    this.lastSavedRecommendation,
+    this.analysis,
+    this.guidanceError,
+  });
+
+  final String status;
+  final Map<String, dynamic> product;
+  final Map<String, dynamic> job;
+  final Map<String, dynamic>? snapshot;
+  final Map<String, dynamic>? lastSavedRecommendation;
+  final ForecastAnalysis? analysis;
+  final String? guidanceError;
+
+  String get productId => _text(product['product_id'], 'product_id');
+  String get locationId => _text(product['location_id'], 'location_id');
+  String get productName => _text(product['name'], 'product name');
+  String get unit => _text(product['unit'], 'inventory unit');
+  String? get sku => product['sku']?.toString();
+  double? get onHand => _optionalNumber(product['on_hand']);
+  Map<String, dynamic>? get forecastSummary {
+    final value = snapshot?['summary'];
+    return value is Map ? Map<String, dynamic>.from(value) : null;
+  }
+
+  List<Map<String, dynamic>> forecastPoints(String role) {
+    final key = switch (role) {
+      'requested' => 'requested_forecast',
+      'recommendation' => 'recommendation_forecast',
+      'preliminary' => 'preliminary_forecast',
+      _ => throw ArgumentError.value(role, 'role'),
+    };
+    final roleValue = snapshot?[key];
+    if (roleValue is! Map || roleValue['points'] is! List) {
+      return const <Map<String, dynamic>>[];
+    }
+    return (roleValue['points'] as List)
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList(growable: false);
+  }
+
+  factory ForecastSnapshotItem.fromJson(Map<String, dynamic> json) {
+    final snapshot = json['snapshot'];
+    return ForecastSnapshotItem(
+      status: _text(json['status'], 'snapshot status'),
+      product: _map(json['product'], 'snapshot product'),
+      job: json['job'] is Map
+          ? Map<String, dynamic>.from(json['job'] as Map)
+          : const <String, dynamic>{},
+      snapshot: snapshot is Map ? Map<String, dynamic>.from(snapshot) : null,
+      lastSavedRecommendation: json['last_saved_recommendation'] is Map
+          ? Map<String, dynamic>.from(json['last_saved_recommendation'] as Map)
+          : null,
+      analysis: json['analysis'] is Map
+          ? ForecastAnalysis.fromJson(
+              Map<String, dynamic>.from(json['analysis'] as Map),
+            )
+          : null,
+      guidanceError: json['guidance_error']?.toString(),
+    );
+  }
+}
+
 class ForecastAnalysis {
   const ForecastAnalysis({
     required this.schemaVersion,
@@ -651,6 +920,8 @@ class ForecastAnalysis {
   }
 }
 
+enum PreliminaryReliability { unavailable, provisional, normal }
+
 class PreliminaryRestockingInsight {
   const PreliminaryRestockingInsight({
     required this.status,
@@ -667,9 +938,29 @@ class PreliminaryRestockingInsight {
     this.predictedDemand,
     this.availableInventory,
     this.suggestedRestockQuantity,
+    this.reliabilityCode,
   });
 
   final String status;
+  final String? reliabilityCode;
+
+  PreliminaryReliability get reliability {
+    final values = [predictedDemand, availableInventory, suggestedRestockQuantity];
+    if (status != 'available' || planningHorizonDays != 28 ||
+        values.any((value) => value == null || !value.isFinite || value < 0)) {
+      return PreliminaryReliability.unavailable;
+    }
+    switch (reliabilityCode) {
+      case 'normal': return PreliminaryReliability.normal;
+      case 'provisional': return PreliminaryReliability.provisional;
+      case 'unavailable': return PreliminaryReliability.unavailable;
+      default:
+        // Older servers do not expose supporting cold-start metadata. Never
+        // assume numeric guidance alone proves a reliable supporting forecast.
+        return PreliminaryReliability.provisional;
+    }
+  }
+
   final int planningHorizonDays;
   final double? predictedDemand;
   final double? availableInventory;
@@ -688,6 +979,7 @@ class PreliminaryRestockingInsight {
     final basis = _map(json['forecast_basis'], 'forecast_basis');
     return PreliminaryRestockingInsight(
       status: _text(json['status'], 'status'),
+      reliabilityCode: json['reliability']?.toString(),
       planningHorizonDays: _integer(
         json['planning_horizon_days'],
         'planning_horizon_days',
@@ -1046,6 +1338,9 @@ class RecommendationSnapshotSaveResult {
 class RecommendationTrackingItem {
   const RecommendationTrackingItem({
     required this.recommendationId,
+    this.transactionId,
+    this.evidenceSource,
+    this.reliability,
     required this.productId,
     required this.productName,
     required this.productSku,
@@ -1071,17 +1366,29 @@ class RecommendationTrackingItem {
     this.reconciledAt,
   });
 
-  final int recommendationId;
+  final int? recommendationId;
+  final String? transactionId;
+  final String? evidenceSource;
+  final String? reliability;
+  bool get isReconstructed => evidenceSource == 'historical_preliminary_match';
+  String get evidenceLabel => isReconstructed
+      ? (reliability == 'provisional'
+          ? 'Reconstructed provisional estimate ? needs administrator review'
+          : 'Reconstructed historical estimate')
+      : recommendationId != null ? 'Original approval-linked snapshot' : 'Not recorded';
+  String get recordKey => transactionId ?? (recommendationId != null
+      ? 'recommendation:$recommendationId'
+      : throw const FormatException('Restock record has no authoritative identity'));
   final String productId;
   final String productName;
   final String productSku;
   final String inventoryUnit;
   final DateTime recommendationDate;
-  final String forecastPeriodStart;
-  final String forecastPeriodEnd;
-  final double predictedDemand;
-  final double availableInventory;
-  final double suggestedQuantity;
+  final String? forecastPeriodStart;
+  final String? forecastPeriodEnd;
+  final double? predictedDemand;
+  final double? availableInventory;
+  final double? suggestedQuantity;
   final String evaluationStatus;
   final double? matchedReceivedQuantity;
   final double? signedQuantityDifference;
@@ -1093,39 +1400,33 @@ class RecommendationTrackingItem {
   final DateTime? reconciledAt;
   final String forecastModel;
   final String forecastVersion;
-  final int trainingHistoryDays;
+  String get forecastLabel => forecastModel == 'Not recorded'
+      ? 'Not recorded'
+      : forecastVersion.isEmpty ? forecastModel : '$forecastModel v$forecastVersion';
+  final int? trainingHistoryDays;
   final List<String> assumptions;
 
-  bool get isReconciled => evaluationStatus.toLowerCase() == 'reconciled';
+  bool get isReconciled => transactionId != null || evaluationStatus.toLowerCase() == 'reconciled';
 
   factory RecommendationTrackingItem.fromJson(
     Map<String, dynamic> json,
   ) => RecommendationTrackingItem(
-    recommendationId: _integer(json['recommendation_id'], 'recommendation_id'),
+    recommendationId: json['recommendation_id'] == null ? null : _integer(json['recommendation_id'], 'recommendation_id'),
+    transactionId: json['transaction_id']?.toString(),
+    evidenceSource: json['evidence_source']?.toString(),
+    reliability: json['reliability']?.toString(),
     productId: _text(json['product_id_snapshot'], 'product_id_snapshot'),
     productName: _text(json['product_name_snapshot'], 'product_name_snapshot'),
-    productSku: _text(json['product_sku_snapshot'], 'product_sku_snapshot'),
+    productSku: json['product_sku_snapshot']?.toString().trim() ?? '',
     inventoryUnit: _text(json['inventory_unit'], 'inventory_unit'),
     recommendationDate: DateTime.parse(
       _text(json['recommendation_date'], 'recommendation_date'),
     ),
-    forecastPeriodStart: _text(
-      json['forecast_period_start'],
-      'forecast_period_start',
-    ),
-    forecastPeriodEnd: _text(
-      json['forecast_period_end'],
-      'forecast_period_end',
-    ),
-    predictedDemand: _number(json['predicted_demand'], 'predicted_demand'),
-    availableInventory: _number(
-      json['available_inventory'],
-      'available_inventory',
-    ),
-    suggestedQuantity: _number(
-      json['suggested_quantity'],
-      'suggested_quantity',
-    ),
+    forecastPeriodStart: json['forecast_period_start'] == null ? null : _text(json['forecast_period_start'], 'forecast_period_start'),
+    forecastPeriodEnd: json['forecast_period_end'] == null ? null : _text(json['forecast_period_end'], 'forecast_period_end'),
+    predictedDemand: _optionalNumber(json['predicted_demand']),
+    availableInventory: _optionalNumber(json['available_inventory']),
+    suggestedQuantity: _optionalNumber(json['suggested_quantity']),
     evaluationStatus: _text(json['evaluation_status'], 'evaluation_status'),
     matchedReceivedQuantity: _optionalNumber(json['matched_received_quantity']),
     signedQuantityDifference: _optionalNumber(
@@ -1137,14 +1438,22 @@ class RecommendationTrackingItem {
     lastReceiptDate: _optionalTimestamp(json['last_receipt_date']),
     receiptCount: _integer(json['receipt_count'] ?? 0, 'receipt_count'),
     reconciledAt: _optionalTimestamp(json['reconciled_at']),
-    forecastModel: _text(json['forecast_model'], 'forecast_model'),
-    forecastVersion: _text(json['forecast_version'], 'forecast_version'),
-    trainingHistoryDays: _integer(
-      json['training_history_days'],
-      'training_history_days',
-    ),
-    assumptions: _strings(json['assumptions']),
+    forecastModel: (json['forecast_model']?.toString().trim().isNotEmpty ?? false)
+        ? json['forecast_model'].toString().trim() : 'Not recorded',
+    // Missing historical metadata is valid for an applied inventory transaction.
+    forecastVersion: json['forecast_version']?.toString().trim() ?? '',
+    trainingHistoryDays: json['training_history_days'] == null ? null : _integer(json['training_history_days'], 'training_history_days'),
+    assumptions: _restockAssumptions(json['assumptions']),
   );
+}
+
+// Fail clearly on a malformed historical contract rather than stringifying JSON objects.
+List<String> _restockAssumptions(Object? value) {
+  if (value == null) return const [];
+  if (value is! List || value.any((item) => item is! String)) {
+    throw const FormatException('Restock assumptions must be an array of strings');
+  }
+  return List<String>.unmodifiable(value.cast<String>());
 }
 
 class ForecastPerformanceReport {

@@ -27,7 +27,6 @@ import '../login/session_storage.dart';
 import 'dashboard_page.dart';
 import 'approval_center_page.dart';
 import 'analytics_page.dart';
-import 'classification_test_page.dart';
 import 'forecasting_page.dart';
 import 'inventory_page.dart';
 import 'item_detail_page.dart';
@@ -2284,8 +2283,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         final int forecastingIndex = isAdmin ? pageIndex++ : -1;
 
-        final int classificationTestIndex = isAdmin ? pageIndex++ : -1;
-
         final int posIndex = (isCashier || isAdmin) ? pageIndex++ : -1;
 
         final int cashierRequestsIndex = isCashier ? pageIndex++ : -1;
@@ -2371,8 +2368,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               isActive: _currentIndex == forecastingIndex,
             ),
           );
-
-          pages.add(ClassificationTestPage(controller: widget.controller));
         }
 
         if (isAdmin) {
@@ -2549,7 +2544,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   ordersActivityIndex: ordersActivityIndex,
                   analyticsIndex: analyticsIndex,
                   forecastingIndex: forecastingIndex,
-                  classificationTestIndex: classificationTestIndex,
                   inventoryIndex: inventoryIndex,
                   approvalsIndex: approvalsIndex,
                   performanceIndex: performanceIndex,
@@ -3251,12 +3245,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             ),
             _adminDrawerItem(
               drawerContext,
-              MainSection.classificationTest,
-              LucideIcons.scanSearch,
-              'Classification test',
-            ),
-            _adminDrawerItem(
-              drawerContext,
               MainSection.performance,
               LucideIcons.barChart2,
               'Performance',
@@ -3391,7 +3379,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     required int ordersActivityIndex,
     required int analyticsIndex,
     required int forecastingIndex,
-    required int classificationTestIndex,
     required int inventoryIndex,
     required int approvalsIndex,
     required int performanceIndex,
@@ -3485,11 +3472,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       forecastingIndex,
                       LucideIcons.chartNoAxesCombined,
                       'Forecasting',
-                    ),
-                    _buildSidebarItem(
-                      classificationTestIndex,
-                      LucideIcons.scanSearch,
-                      'Classification Test',
                     ),
                     const SizedBox(height: 16),
                     _sidebarHeading('Administration'),

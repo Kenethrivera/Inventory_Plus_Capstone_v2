@@ -1,0 +1,26 @@
+[Unit]
+Description=Inventory Plus scoped forecast maintenance
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=inventoryplus
+WorkingDirectory=/opt/inventory-plus/forecasting_backend
+EnvironmentFile=/etc/inventory-plus/forecast.env
+Environment=PYTHONUNBUFFERED=1
+StateDirectory=inventory-plus
+ExecStart=/opt/inventory-plus/forecasting_backend/.venv/bin/python run_forecast_maintenance.py --daily-policy --location-id 11111111-1111-1111-1111-111111111111 --max-products 5 --max-pages 1 --interval-seconds 30 --state-file /var/lib/inventory-plus/forecast-daily-policy.json --enqueue
+Restart=on-failure
+RestartSec=60
+TimeoutStopSec=120
+MemoryMax=1G
+CPUQuota=50%
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -22,7 +22,7 @@ void main() {
     ),
   );
 
-  testWidgets('displays model, forecast, policy state and warning', (
+  testWidgets('displays approved product forecast and preliminary guidance', (
     tester,
   ) async {
     final analysis = ForecastAnalysis.fromJson(forecastingAnalysisFixture());
@@ -34,26 +34,16 @@ void main() {
       tester.widget<Text>(find.byKey(const Key('forecast-total'))).data,
       '84 pcs',
     );
-    expect(find.text('calibrated_blend vstage5b-blend-v1'), findsOneWidget);
-    expect(find.text('RECOMMEND_ORDER'), findsOneWidget);
-    expect(find.text('Preliminary 28-day demand insight'), findsOneWidget);
+    expect(find.text('Preliminary suggested restock'), findsOneWidget);
+    expect(find.text('Daily sales and forecast'), findsOneWidget);
+    expect(find.text('Short-term (7 days)'), findsOneWidget);
+    expect(find.text('Planning (28 days)'), findsOneWidget);
     expect(find.text('72 pcs'), findsOneWidget);
-    expect(find.text('40 pcs'), findsOneWidget);
-    expect(
-      find.textContaining('Missing incoming or backorder'),
-      findsOneWidget,
-    );
-    expect(find.textContaining('Periodic-review policy'), findsOneWidget);
-    expect(find.textContaining('supplier capacity review'), findsOneWidget);
-    expect(find.text('How this guidance was calculated'), findsOneWidget);
-    expect(find.textContaining('Known test calculation'), findsOneWidget);
-    expect(find.textContaining('Human approval is required'), findsOneWidget);
-    expect(find.text('Live authenticated Supabase-backed API'), findsOneWidget);
-    expect(
-      find.text('Supabase sales history (may include staging or test records)'),
-      findsOneWidget,
-    );
-    expect(find.text('real'), findsOneWidget);
+    expect(find.byKey(const Key('product-demand-trend')), findsOneWidget);
+    expect(find.text('Important Forecast Limitations'), findsOneWidget);
+    expect(find.text('About this forecast'), findsOneWidget);
+    expect(find.text('Verified-input replenishment policy'), findsNothing);
+    expect(find.text('Supplier-policy calculation details'), findsNothing);
   });
 
   testWidgets('shows experimental classification and upcoming transition', (
@@ -87,11 +77,9 @@ void main() {
       host(ForecastAnalysisPanel(analysis: ForecastAnalysis.fromJson(payload))),
     );
 
-    expect(find.text('Experimental seasonal context'), findsOneWidget);
-    expect(find.text('SUMMER'), findsOneWidget);
-    expect(find.textContaining('to rainy on 2027-05-01'), findsOneWidget);
+    expect(find.textContaining('summer'), findsOneWidget);
     expect(
-      find.textContaining('Replenishment remains calculated'),
+      find.textContaining('simulation hypothesis inherited industry'),
       findsOneWidget,
     );
   });
@@ -119,12 +107,11 @@ void main() {
       );
 
       expect(find.textContaining('unknown-demand placeholder'), findsOneWidget);
-      expect(find.text('NEEDS_REVIEW'), findsOneWidget);
       expect(
         find.textContaining('No sales history is available'),
         findsOneWidget,
       );
-      expect(find.text('Not calculable'), findsOneWidget);
+      expect(find.text('No suggestion yet'), findsOneWidget);
       await tester.tap(find.text('Enter manual estimate'));
       expect(manualTapped, isTrue);
     },
@@ -198,7 +185,7 @@ void main() {
   });
 
   testWidgets(
-    'confirmed manual input is labeled provisional and non-historical',
+    'confirmed manual input keeps the revision path without stock-planning panel',
     (tester) async {
       await useDesktopSurface(tester);
       final analysis = ForecastAnalysis.fromJson(
@@ -210,19 +197,8 @@ void main() {
       );
       await tester.pumpWidget(host(ForecastAnalysisPanel(analysis: analysis)));
 
-      expect(find.text('Confirmed cold-start input'), findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('manual-demand-summary')),
-          matching: find.text('3 pcs'),
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Opening-week shelf plan'), findsOneWidget);
-      expect(
-        find.textContaining('does not create historical sales records'),
-        findsOneWidget,
-      );
+      expect(find.text('Revise manual estimate'), findsOneWidget);
+      expect(find.text('Supplier-policy calculation details'), findsNothing);
     },
   );
 

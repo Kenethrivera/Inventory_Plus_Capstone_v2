@@ -247,6 +247,35 @@ class SupabaseRecommendationPersistenceAdapter(RecommendationPersistenceAdapter)
         return payload
 
 
+class SupabaseRecommendationTrackingReader:
+    """Read historical recommendations without enabling persistence writes."""
+
+    def __init__(self, settings: ApiSettings) -> None:
+        if (
+            not settings.forecast_snapshot_reads_enabled
+            or settings.mode != "supabase"
+            or settings.supabase_url is None
+            or settings.supabase_secret_key is None
+        ):
+            raise RuntimeError("Snapshot tracking reads require server-side configuration")
+        self._client = SupabaseSecretRestClient(
+            url=settings.supabase_url,
+            secret_key=settings.supabase_secret_key,
+            timeout_seconds=settings.request_timeout_seconds,
+        )
+
+    def tracking(
+        self, *, session_token: str, product_id: UUID | None
+    ) -> list[Mapping[str, object]]:
+        return self._client.call_rpc_rows(
+            "forecast_recommendation_tracking_v1",
+            {
+                "p_session_token": session_token,
+                "p_product_id": str(product_id) if product_id is not None else None,
+            },
+        )
+
+
 def _mapping_payload(payload: Any, operation: str) -> Mapping[str, object]:
     if not isinstance(payload, Mapping):
         raise DataUnavailableError(

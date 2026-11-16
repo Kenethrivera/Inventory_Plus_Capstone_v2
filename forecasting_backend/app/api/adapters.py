@@ -14,6 +14,7 @@ import httpx
 
 from app.data import DailyDemand
 from app.data.sales_repository import SalesRepository
+from app.performance_diagnostics import log_duration, log_event, start_timer
 from app.forecasting import (
     AvailabilityEvidence,
     AvailabilityStatus,
@@ -90,6 +91,7 @@ class SupabaseRestClient:
         row_offset: int | None = None,
         row_limit: int | None = None,
     ) -> Any:
+        rpc_started = start_timer()
         data_stage = f"supabase_rpc:{function_name}"
         query_params = None
         if row_offset is not None or row_limit is not None:
@@ -99,31 +101,59 @@ class SupabaseRestClient:
                 raise ValueError("RPC row pagination must be positive")
             query_params = {"offset": row_offset, "limit": row_limit}
             data_stage = f"{data_stage}:page_offset={row_offset}"
+        response: httpx.Response | None = None
+        returned_items = 0
         try:
-            response = self._client.post(
-                f"{self._base_url}/rest/v1/rpc/{function_name}",
-                headers=self._headers,
-                params=query_params,
-                json=dict(params),
-            )
-        except (httpx.TimeoutException, httpx.NetworkError) as error:
-            error.data_stage = data_stage
-            raise
-        if response.status_code >= 400:
-            message = self._error_message(response)
-            if authentication_rpc or response.status_code in {401, 403}:
-                raise AuthenticationError("Session is invalid or expired")
-            if function_name in {
-                "forecast_replenishment_config_v1",
-                "upsert_forecast_replenishment_config_v1",
-            } and self._is_missing_function(response, message):
-                raise ReplenishmentConfigurationUnavailableError(
-                    "Replenishment configuration is unavailable until "
-                    "database/stage_5f_forecast_replenishment_configuration.sql "
-                    "is approved and applied"
+            try:
+                response = self._client.post(
+                    f"{self._base_url}/rest/v1/rpc/{function_name}",
+                    headers=self._headers,
+                    params=query_params,
+                    json=dict(params),
                 )
-            raise DataUnavailableError(message, stage=data_stage)
-        return response.json()
+            except (httpx.TimeoutException, httpx.NetworkError) as error:
+                error.data_stage = data_stage
+                log_event(
+                    "supabase.rpc.failed",
+                    rpc=function_name,
+                    category=type(error).__name__,
+                )
+                raise
+            if response.status_code >= 400:
+                log_event(
+                    "supabase.rpc.failed",
+                    rpc=function_name,
+                    category="upstream_http_error",
+                    http_status=response.status_code,
+                )
+                message = self._error_message(response)
+                if authentication_rpc or response.status_code in {401, 403}:
+                    raise AuthenticationError("Session is invalid or expired")
+                if function_name in {
+                    "forecast_replenishment_config_v1",
+                    "upsert_forecast_replenishment_config_v1",
+                } and self._is_missing_function(response, message):
+                    raise ReplenishmentConfigurationUnavailableError(
+                        "Replenishment configuration is unavailable until "
+                        "database/stage_5f_forecast_replenishment_configuration.sql "
+                        "is approved and applied"
+                    )
+                raise DataUnavailableError(message, stage=data_stage)
+            payload = response.json()
+            returned_items = (
+                len(payload) if isinstance(payload, list) else int(payload is not None)
+            )
+            return payload
+        finally:
+            log_duration(
+                "supabase.rpc",
+                rpc_started,
+                rpc=function_name,
+                http_status=(
+                    response.status_code if response is not None else "network_error"
+                ),
+                returned_items=returned_items,
+            )
 
     def call_rpc_rows(
         self,
@@ -137,30 +167,42 @@ class SupabaseRestClient:
         cap, so a single successful HTTP response is not necessarily complete.
         """
         rows: list[Mapping[str, Any]] = []
-        for page_number in range(self._RPC_MAX_PAGES):
-            page = self.call_rpc(
-                function_name,
-                params,
-                row_offset=page_number * self._RPC_PAGE_SIZE,
-                row_limit=self._RPC_PAGE_SIZE,
-            )
-            if not isinstance(page, list) or any(
-                not isinstance(row, Mapping) for row in page
-            ):
-                raise DataUnavailableError(
-                    f"{function_name} returned an invalid row set",
-                    stage=(
-                        f"supabase_rpc:{function_name}:"
-                        f"page_offset={page_number * self._RPC_PAGE_SIZE}"
-                    ),
+        pages_requested = 0
+        pagination_started = start_timer()
+        try:
+            for page_number in range(self._RPC_MAX_PAGES):
+                pages_requested += 1
+                page = self.call_rpc(
+                    function_name,
+                    params,
+                    row_offset=page_number * self._RPC_PAGE_SIZE,
+                    row_limit=self._RPC_PAGE_SIZE,
                 )
-            rows.extend(page)
-            if len(page) < self._RPC_PAGE_SIZE:
-                return rows
-        raise DataUnavailableError(
-            f"{function_name} exceeded the supported pagination limit",
-            stage=f"supabase_rpc:{function_name}:pagination_limit",
-        )
+                if not isinstance(page, list) or any(
+                    not isinstance(row, Mapping) for row in page
+                ):
+                    raise DataUnavailableError(
+                        f"{function_name} returned an invalid row set",
+                        stage=(
+                            f"supabase_rpc:{function_name}:"
+                            f"page_offset={page_number * self._RPC_PAGE_SIZE}"
+                        ),
+                    )
+                rows.extend(page)
+                if len(page) < self._RPC_PAGE_SIZE:
+                    return rows
+            raise DataUnavailableError(
+                f"{function_name} exceeded the supported pagination limit",
+                stage=f"supabase_rpc:{function_name}:pagination_limit",
+            )
+        finally:
+            log_duration(
+                "supabase.rpc_pagination",
+                pagination_started,
+                rpc=function_name,
+                pagination_requests=pages_requested,
+                returned_records=len(rows),
+            )
 
     @staticmethod
     def _is_missing_function(response: httpx.Response, message: str) -> bool:
@@ -244,6 +286,11 @@ class SupabaseForecastAdapter:
             name=str(profile.get("name") or profile.get("username") or "User"),
         )
 
+    def load_applied_restocks(self, *, session_token: str, product_id: str):
+        return self._client.rpc("forecast_applied_restocks_v1", {
+            "p_session_token": session_token, "p_product_id": product_id,
+        }).execute().data
+
     def load_replenishment_configuration(
         self,
         *,
@@ -251,6 +298,7 @@ class SupabaseForecastAdapter:
         session_token: str,
         product_id: str,
     ) -> ReplenishmentConfiguration:
+        configuration_started = start_timer()
         payload = self._client.call_rpc(
             "forecast_replenishment_config_v1",
             {
@@ -260,11 +308,13 @@ class SupabaseForecastAdapter:
         )
         if payload is None:
             raise ProductNotFoundError("Product was not found in the authorized location")
-        return _parse_replenishment_configuration(
+        configuration = _parse_replenishment_configuration(
             payload,
             expected_product_id=product_id,
             expected_location_id=profile.location_id,
         )
+        log_duration("adapter.replenishment_configuration_load", configuration_started)
+        return configuration
 
     def save_replenishment_configuration(
         self,
@@ -316,6 +366,40 @@ class SupabaseForecastAdapter:
             expected_location_id=profile.location_id,
         )
 
+    def list_active_products(
+        self,
+        *,
+        profile: SessionProfile,
+        session_token: str,
+    ) -> tuple[str, ...]:
+        """List only active products in the authenticated admin's location."""
+        if profile.role != "admin":
+            raise AuthorizationError("Forecasting is restricted to Admin profiles")
+        payload = self._client.call_rpc(
+            "forecast_active_products_v1",
+            {"p_session_token": session_token},
+        )
+        if not isinstance(payload, list):
+            raise DataUnavailableError("Active forecast product list is invalid")
+        product_ids: list[str] = []
+        for row in payload:
+            if not isinstance(row, Mapping):
+                raise DataUnavailableError("Active forecast product row is invalid")
+            product_id = str(row.get("product_id") or "").strip()
+            location_id = str(row.get("location_id") or "").strip()
+            try:
+                UUID(product_id)
+            except ValueError as error:
+                raise DataUnavailableError(
+                    "Active forecast product identifier is invalid"
+                ) from error
+            if location_id != profile.location_id:
+                raise DataUnavailableError(
+                    "Active forecast product list is outside the session location"
+                )
+            product_ids.append(product_id)
+        return tuple(sorted(set(product_ids)))
+
     def load_analysis_context(
         self,
         *,
@@ -324,12 +408,14 @@ class SupabaseForecastAdapter:
         product_id: str,
         now: datetime,
         history_days: int = 365,
+        include_demand_history: bool = True,
     ) -> AnalysisContext:
         UUID(product_id)
         if isinstance(history_days, bool) or not isinstance(history_days, int):
             raise ValueError("history_days must be an integer")
         if not 28 <= history_days <= 1825:
             raise ValueError("history_days must be between 28 and 1825")
+        product_context_started = start_timer()
         product_payload = self._client.call_rpc(
             "forecast_product_context_v1",
             {
@@ -337,6 +423,7 @@ class SupabaseForecastAdapter:
                 "p_product_id": product_id,
             },
         )
+        log_duration("adapter.product_context_rpc", product_context_started)
         product_row = (
             dict(product_payload) if isinstance(product_payload, dict) else None
         )
@@ -355,13 +442,24 @@ class SupabaseForecastAdapter:
         period_start_date = period_end_date - timedelta(days=history_days)
         period_start = datetime.combine(period_start_date, time.min, manila)
         period_end = datetime.combine(period_end_date, time.min, manila)
-        location_demand = self._load_location_demand(
-            profile=profile,
-            session_token=session_token,
-            period_start=period_start,
-            period_end=period_end,
-            business_timezone="Asia/Manila",
+        demand_load_started = start_timer()
+        location_demand = (
+            self._load_location_demand(
+                profile=profile,
+                session_token=session_token,
+                period_start=period_start,
+                period_end=period_end,
+                business_timezone="Asia/Manila",
+            )
+            if include_demand_history
+            else ()
         )
+        if include_demand_history:
+            log_duration(
+                "adapter.location_demand_load",
+                demand_load_started,
+                returned_records=len(location_demand),
+            )
         if any(row.location_id != profile.location_id for row in location_demand):
             raise DataUnavailableError("Demand history is outside the session location")
         demand = [
@@ -386,11 +484,17 @@ class SupabaseForecastAdapter:
             if demand
             else None
         )
+        dataset_started = start_timer()
         history = HistoricalDemandDataset.from_real_observations(
             product=item,
             history_start=history_start,
             history_end=period_end_date - timedelta(days=1),
             observations=demand,
+        )
+        log_duration(
+            "adapter.product_history_dataset",
+            dataset_started,
+            observation_records=len(demand),
         )
         try:
             configuration = self.load_replenishment_configuration(
@@ -499,6 +603,23 @@ class SupabaseForecastAdapter:
             replenishment_configuration=configuration,
         )
 
+    def load_operational_context(
+        self,
+        *,
+        profile: SessionProfile,
+        session_token: str,
+        product_id: str,
+        now: datetime,
+    ) -> AnalysisContext:
+        """Load current stock and policy without a historical-demand RPC."""
+        return self.load_analysis_context(
+            profile=profile,
+            session_token=session_token,
+            product_id=product_id,
+            now=now,
+            include_demand_history=False,
+        )
+
     def load_daily_demand(
         self,
         *,
@@ -549,19 +670,33 @@ class SupabaseForecastAdapter:
             period_end=period_end,
             business_timezone=business_timezone,
         )
+        cache_lookup_started = start_timer()
         now_tick = monotonic()
         is_loader = False
+        expired_count = 0
         with self._demand_cache_lock:
             expired = [
                 cached_key
                 for cached_key, entry in self._demand_cache.items()
                 if entry.expires_at <= now_tick
             ]
+            expired_count = len(expired)
             for cached_key in expired:
                 self._demand_cache.pop(cached_key, None)
 
             cached = self._demand_cache.get(key)
             if cached is not None:
+                log_duration(
+                    "history_cache.lookup",
+                    cache_lookup_started,
+                    outcome="hit",
+                    records=len(cached.rows),
+                    expired_entries=expired_count,
+                    ttl_seconds=self._DEMAND_CACHE_TTL_SECONDS,
+                    remaining_ttl_seconds=round(
+                        max(0.0, cached.expires_at - now_tick), 3
+                    ),
+                )
                 return cached.rows
 
             pending = self._demand_inflight.get(key)
@@ -571,8 +706,33 @@ class SupabaseForecastAdapter:
                 is_loader = True
 
         if not is_loader:
-            return pending.result()
+            wait_started = start_timer()
+            try:
+                rows = pending.result()
+                log_duration(
+                    "history_cache.coalesced_wait",
+                    wait_started,
+                    outcome="shared_result",
+                    records=len(rows),
+                )
+                return rows
+            except BaseException:
+                log_duration(
+                    "history_cache.coalesced_wait",
+                    wait_started,
+                    outcome="shared_error",
+                )
+                raise
 
+        log_duration(
+            "history_cache.lookup",
+            cache_lookup_started,
+            outcome="miss_loader",
+            expired_entries=expired_count,
+            ttl_seconds=self._DEMAND_CACHE_TTL_SECONDS,
+        )
+
+        history_fetch_started = start_timer()
         try:
             rows = tuple(
                 SalesRepository(self._client, session_token).daily_demand(
@@ -582,10 +742,22 @@ class SupabaseForecastAdapter:
                 )
             )
         except BaseException as error:
+            log_duration(
+                "history_cache.fetch",
+                history_fetch_started,
+                outcome="error",
+            )
             with self._demand_cache_lock:
                 self._demand_inflight.pop(key, None)
                 pending.set_exception(error)
             raise
+
+        log_duration(
+            "history_cache.fetch",
+            history_fetch_started,
+            outcome="success",
+            records=len(rows),
+        )
 
         with self._demand_cache_lock:
             self._demand_cache[key] = _DemandCacheEntry(
@@ -594,6 +766,11 @@ class SupabaseForecastAdapter:
             )
             self._demand_inflight.pop(key, None)
             pending.set_result(rows)
+        log_event(
+            "history_cache.stored",
+            ttl_seconds=self._DEMAND_CACHE_TTL_SECONDS,
+            records=len(rows),
+        )
         return rows
 
 class SyntheticDevelopmentAdapter:

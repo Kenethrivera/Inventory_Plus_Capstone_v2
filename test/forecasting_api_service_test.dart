@@ -602,4 +602,202 @@ void main() {
     expect(report.items.single.syntheticSales, isTrue);
     expect(report.summariesByUnit.single.wape, 300);
   });
+
+  test('snapshot overview uses bounded authenticated read route', () async {
+    late http.Request captured;
+    final service = ForecastApiClient(
+      baseUri: Uri.parse('https://forecast.example.test'),
+      client: MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode(<String, dynamic>{
+            'page': 2,
+            'page_size': 25,
+            'total_count': 27,
+            'page_count': 2,
+            'items': <Object>[],
+          }),
+          200,
+        );
+      }),
+    );
+
+    final page = await service.loadSnapshotOverview(
+      locationId: 'location-1',
+      sessionToken: 'opaque-session-token',
+      model: 'calibrated_blend',
+      page: 2,
+      pageSize: 25,
+      unit: 'pcs',
+      search: 'cement',
+    );
+
+    expect(captured.method, 'GET');
+    expect(captured.url.path, '/v1/forecasting/snapshots/overview');
+    expect(captured.url.queryParameters['model'], 'blend');
+    expect(captured.url.queryParameters['page_size'], '25');
+    expect(captured.url.queryParameters['unit'], 'pcs');
+    expect(captured.url.queryParameters['search'], 'cement');
+    expect(captured.headers['authorization'], 'Bearer opaque-session-token');
+    expect(page.totalCount, 27);
+    expect(page.pageCount, 2);
+  });
+
+  test(
+    'snapshot item preserves all saved forecast roles and producers',
+    () async {
+      final service = ForecastApiClient(
+        baseUri: Uri.parse('https://forecast.example.test'),
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode(<String, dynamic>{
+              'status': 'completed',
+              'product': <String, dynamic>{
+                'product_id': 'product-1',
+                'location_id': 'location-1',
+                'name': 'Cement',
+                'unit': 'bags',
+                'on_hand': 12,
+              },
+              'job': <String, dynamic>{'status': 'succeeded'},
+              'last_saved_recommendation': <String, dynamic>{
+                'suggested_restock': 12,
+                'unit': 'bags',
+                'saved_at': '2026-11-12T00:00:00Z',
+              },
+              'snapshot': <String, dynamic>{
+                'result_id': 'result-1',
+                'created_at': '2026-11-13T00:00:00Z',
+                'requested_forecast': <String, dynamic>{
+                  'producer': <String, dynamic>{
+                    'model_name': 'Calibrated Blend',
+                  },
+                  'points': <Object>[
+                    <String, dynamic>{
+                      'date': '2026-11-13',
+                      'quantity': 3,
+                      'unit': 'bags',
+                    },
+                  ],
+                },
+                'recommendation_forecast': <String, dynamic>{
+                  'producer': <String, dynamic>{'model_name': 'LightGBM'},
+                  'points': <Object>[
+                    <String, dynamic>{
+                      'date': '2026-11-13',
+                      'quantity': 4,
+                      'unit': 'bags',
+                    },
+                  ],
+                },
+                'preliminary_forecast': <String, dynamic>{
+                  'producer': <String, dynamic>{'model_name': 'LightGBM'},
+                  'points': <Object>[
+                    <String, dynamic>{
+                      'date': '2026-11-13',
+                      'quantity': 5,
+                      'unit': 'bags',
+                    },
+                  ],
+                },
+              },
+            }),
+            200,
+          ),
+        ),
+      );
+
+      final item = await service.loadProductSnapshot(
+        productId: 'product-1',
+        locationId: 'location-1',
+        sessionToken: 'opaque-session-token',
+        model: 'blend',
+      );
+
+      expect(item.status, 'completed');
+      expect(item.productId, 'product-1');
+      expect(item.forecastPoints('requested').single['quantity'], 3);
+      expect(item.forecastPoints('recommendation').single['quantity'], 4);
+      expect(item.forecastPoints('preliminary').single['quantity'], 5);
+      expect(item.lastSavedRecommendation?['suggested_restock'], 12);
+      expect(
+        (item.snapshot!['recommendation_forecast']
+            as Map)['producer']['model_name'],
+        'LightGBM',
+      );
+    },
+  );
+
+  test('product snapshot maps saved forecast into the original analysis model', () async {
+    final service = ForecastApiClient(
+      baseUri: Uri.parse('https://forecast.example.test'),
+      client: MockClient(
+        (_) async => http.Response(
+          jsonEncode(<String, dynamic>{
+            'status': 'completed',
+            'product': <String, dynamic>{
+              'product_id': 'product-1',
+              'location_id': 'location-1',
+              'name': 'Claw Hammer',
+              'unit': 'pcs',
+            },
+            'job': <String, dynamic>{'status': 'succeeded'},
+            'snapshot': <String, dynamic>{'result_id': 'saved-result-1'},
+            'analysis': forecastingAnalysisFixture(),
+          }),
+          200,
+        ),
+      ),
+    );
+    final item = await service.loadProductSnapshot(
+      productId: 'product-1',
+      locationId: 'location-1',
+      sessionToken: 'opaque-session-token',
+      model: 'blend',
+    );
+
+    expect(item.analysis?.forecast.daily.length, 28);
+    expect(item.analysis?.forecast.totalQuantity, 84);
+    expect(item.analysis?.preliminaryRestockingInsight.suggestedRestockQuantity, 72);
+  });
+
+  test('manual snapshot preview posts confirmed input without analysis call', () async {
+    late http.Request captured;
+    final service = ForecastApiClient(
+      baseUri: Uri.parse('https://forecast.example.test'),
+      client: MockClient((request) async {
+        captured = request;
+        return http.Response(jsonEncode(forecastingAnalysisFixture()), 200);
+      }),
+    );
+    final result = await service.previewSavedForecastGuidance(
+      productId: 'product-1', locationId: 'location-1',
+      sessionToken: 'opaque-session-token', model: 'calibrated_blend',
+      manualDailyDemand: 3, manualUnit: 'pcs',
+      manualRationale: 'Opening plan', manualConfirmed: true,
+    );
+    expect(captured.url.path, '/v1/forecasting/products/product-1/snapshot-guidance');
+    expect(captured.method, 'POST');
+    expect(jsonDecode(captured.body)['model'], 'blend');
+    expect(jsonDecode(captured.body)['manual_confirmed'], isTrue);
+    expect(result.forecast.totalQuantity, 84);
+  });
+  test('prepare forecast is one authorized product request, never analysis', () async {
+    final calls = <http.Request>[];
+    final service = ForecastApiClient(
+      baseUri: Uri.parse('https://forecast.example.test'),
+      client: MockClient((request) async {
+        calls.add(request);
+        return http.Response(jsonEncode({'queued': 1, 'duplicate': 0}), 200);
+      }),
+    );
+    final result = await service.prepareForecast(productId: 'product-1', sessionToken: 'test-session');
+    expect(calls, hasLength(1));
+    expect(calls.single.method, 'POST');
+    expect(calls.single.url.path, '/v1/forecasting/jobs/bootstrap');
+    expect(calls.single.url.queryParameters['product_id'], 'product-1');
+    expect(calls.single.headers['Authorization'], 'Bearer test-session');
+    expect(result['queued'], 1);
+  });
+
 }

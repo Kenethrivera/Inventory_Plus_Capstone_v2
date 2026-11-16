@@ -68,7 +68,7 @@ class PreliminaryRestockingInsightCalculator:
             predicted_demand = sum(
                 (value.quantity for value in values), Decimal("0")
             )
-            if first.metadata.is_cold_start:
+            if first.metadata.is_cold_start or cold_reason is not None:
                 limitations.append(
                     "Sales history is insufficient; the forecast is provisional and requires extra owner review."
                 )
@@ -96,6 +96,11 @@ class PreliminaryRestockingInsightCalculator:
                 PreliminaryInsightStatus.AVAILABLE
                 if suggested is not None
                 else PreliminaryInsightStatus.LIMITED
+            ),
+            reliability=(
+                "unavailable" if suggested is None
+                else "provisional" if first.metadata.is_cold_start or cold_reason is not None
+                else "normal"
             ),
             location_id=first.location_id,
             product_id=first.product_id,
