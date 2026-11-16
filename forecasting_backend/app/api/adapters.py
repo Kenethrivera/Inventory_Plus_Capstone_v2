@@ -541,7 +541,8 @@ class SupabaseForecastAdapter:
                 if configuration.backorder_quantity_verified
                 else None
             ),
-            max_capacity=_decimal_or_none(product_row.get("max_quantity")),
+            # The legacy product max_quantity is not a storage limit.
+            max_capacity=None,
             balance_basis=InventoryBalanceBasis.NET_OF_RESERVATIONS,
             captured_at=inventory_captured_at,
         )
@@ -961,7 +962,7 @@ class SyntheticDevelopmentAdapter:
             confirmed_on_order=None if is_cold_start else Decimal("0"),
             unfulfilled_reservations=Decimal("0"),
             backorders=None if is_cold_start else Decimal("0"),
-            max_capacity=Decimal("500"),
+            max_capacity=None,
             balance_basis=InventoryBalanceBasis.NET_OF_RESERVATIONS,
             captured_at=now,
         )

@@ -567,7 +567,7 @@ class OperationsOverview extends StatelessWidget {
                                     ),
                                   ),
                                   Text(
-                                    '${item.quantity.toStringAsFixed(0)} / ${item.maxQuantity.toStringAsFixed(0)} ${item.unit}',
+                                    '${item.quantity.toStringAsFixed(0)} ${item.unit} on hand',
                                     style: const TextStyle(
                                       color: muted,
                                       fontSize: 12,

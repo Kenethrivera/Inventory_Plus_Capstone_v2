@@ -70,6 +70,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   late TextEditingController _manufacturerController;
   late TextEditingController _modelController;
   late TextEditingController _sizeController;
+  late TextEditingController _colorController;
 
   Color _statusColor(StockStatus status) {
     switch (status) {
@@ -150,6 +151,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     _manufacturerController.text = item.manufacturer ?? '';
     _modelController.text = item.model ?? '';
     _sizeController.text = item.productSize ?? '';
+    _colorController.text = item.color ?? '';
   }
 
   Future<void> _showRestockDialog() => showRestockRequestDialog(
@@ -201,6 +203,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     _sizeController = TextEditingController(
       text: _currentItem.productSize ?? "",
     );
+    _colorController = TextEditingController(
+      text: _currentItem.color ?? "",
+    );
   }
 
   @override
@@ -232,6 +237,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     _manufacturerController.dispose();
     _modelController.dispose();
     _sizeController.dispose();
+    _colorController.dispose();
     super.dispose();
   }
 
@@ -547,6 +553,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         manufacturer: _manufacturerController.text,
         model: _modelController.text,
         productSize: _sizeController.text,
+        color: _colorController.text.trim(),
         shelfLevel:
             _currentItem.shelfLevel ?? '', // Passes existing back safely
         imageUrl: finalImageUrl,
@@ -975,6 +982,12 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             "Product Size",
             _sizeController,
             _currentItem.productSize ?? "Standard",
+          ),
+          const SizedBox(height: 16),
+          _buildField(
+            "Color (optional)",
+            _colorController,
+            _currentItem.color?.isNotEmpty == true ? _currentItem.color! : "—",
           ),
           SwitchListTile(
             title: const Text('Heavy / truck loading required'),

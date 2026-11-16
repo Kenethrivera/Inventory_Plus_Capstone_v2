@@ -2014,14 +2014,8 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     ],
   );
 
-  String _stockAfterLabel(InventoryApprovalRequest request) {
-    for (final item in widget.controller.allItems) {
-      if (item.id == request.productId) {
-        return '${_qty(request.resultingStock)} /${_qty(item.maxQuantity)}';
-      }
-    }
-    return _qty(request.resultingStock);
-  }
+  String _stockAfterLabel(InventoryApprovalRequest request) =>
+      _qty(request.resultingStock);
 
   Widget _supportingImage(InventoryApprovalRequest request) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,

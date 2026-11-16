@@ -1,8 +1,13 @@
 class RollingSale {
-  const RollingSale({required this.quantity, required this.occurredAt});
+  const RollingSale({
+    required this.quantity,
+    required this.occurredAt,
+    this.operationId,
+  });
 
   final double quantity;
   final DateTime occurredAt;
+  final String? operationId;
 
   static RollingSale? fromCheckoutRow(Map<String, dynamic> row) {
     final scope = row['operation_scope']?.toString();
@@ -12,7 +17,11 @@ class RollingSale {
     final change = (row['quantity_change'] as num?)?.toDouble();
     final occurredAt = DateTime.tryParse(row['created_at']?.toString() ?? '');
     if (change == null || change >= 0 || occurredAt == null) return null;
-    return RollingSale(quantity: -change, occurredAt: occurredAt);
+    return RollingSale(
+      quantity: -change,
+      occurredAt: occurredAt,
+      operationId: row['operation_id']?.toString(),
+    );
   }
 }
 
@@ -26,10 +35,16 @@ class RollingStockThreshold {
         !occurredAt.isAfter(currentTime);
   }
 
-  static double totalSales(Iterable<RollingSale> sales, DateTime now) {
+  static double totalSales(
+    Iterable<RollingSale> sales,
+    DateTime now, {
+    Set<String> cancelledOperationIds = const {},
+  }) {
     var total = 0.0;
     for (final sale in sales) {
-      if (sale.quantity > 0 && isInWindow(sale, now)) {
+      if (sale.quantity > 0 &&
+          isInWindow(sale, now) &&
+          !cancelledOperationIds.contains(sale.operationId)) {
         total += sale.quantity;
       }
     }

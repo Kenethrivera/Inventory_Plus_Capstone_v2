@@ -12,6 +12,7 @@ void main() {
         id: '$index',
         name: 'Adjustable wrench with a longer product name $index',
         sku: 'SKU-QR-$index',
+        color: index == 0 ? 'Red' : null,
         price: 1000,
         quantity: 10,
         maxQuantity: 100,

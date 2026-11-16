@@ -73,9 +73,11 @@ void main() {
       'quantity_change': -25,
       'created_at': now.toIso8601String(),
       'operation_scope': 'checkout',
+      'operation_id': 'checkout-1',
     };
 
     expect(RollingSale.fromCheckoutRow(row)?.quantity, 25);
+    expect(RollingSale.fromCheckoutRow(row)?.operationId, 'checkout-1');
     expect(
       RollingSale.fromCheckoutRow({...row, 'operation_scope': null})?.quantity,
       25,
@@ -90,6 +92,28 @@ void main() {
     expect(
       RollingSale.fromCheckoutRow({...row, 'quantity_change': 25}),
       isNull,
+    );
+  });
+
+  test('cancelled checkout orders do not count toward rolling sales', () {
+    final sales = <RollingSale>[
+      RollingSale(
+        quantity: 40,
+        occurredAt: now,
+        operationId: 'cancelled-order',
+      ),
+      RollingSale(quantity: 40, occurredAt: now, operationId: 'active-order-1'),
+      RollingSale(quantity: 40, occurredAt: now, operationId: 'active-order-2'),
+    ];
+
+    expect(RollingStockThreshold.totalSales(sales, now), 120);
+    expect(
+      RollingStockThreshold.totalSales(
+        sales,
+        now,
+        cancelledOperationIds: {'cancelled-order'},
+      ),
+      80,
     );
   });
 }

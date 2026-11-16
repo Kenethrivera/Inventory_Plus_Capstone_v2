@@ -1055,6 +1055,30 @@ class _PosCartPageState extends State<PosCartPage> {
           bool hasError = isCashExcessive || isCashInsufficient;
           // -----------------------------------------
 
+          String cashText(double value) => value == value.roundToDouble()
+              ? value.toStringAsFixed(0)
+              : value.toStringAsFixed(2);
+
+          bool canAddCash(int amount) {
+            final current = double.tryParse(cashCtrl.text.trim()) ?? 0.0;
+            final next = current + amount;
+            return !isSubmitting &&
+                !orderAlreadyCompleted &&
+                next <= maxAllowedCash &&
+                cashText(next).length <= 7;
+          }
+
+          void addCash(int amount) {
+            final current = double.tryParse(cashCtrl.text.trim()) ?? 0.0;
+            final next = current + amount;
+            final text = cashText(next);
+            cashCtrl.value = TextEditingValue(
+              text: text,
+              selection: TextSelection.collapsed(offset: text.length),
+            );
+            setDialogState(() => cashReceived = next);
+          }
+
           Widget buildPaymentTile(String title, IconData icon) {
             bool isSelected = paymentMode == title;
             return Expanded(
@@ -1404,6 +1428,35 @@ class _PosCartPageState extends State<PosCartPage> {
                                 },
                               ),
                             ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            for (final amount in const [1000, 500, 100, 50]) ...[
+                              if (amount != 1000) const SizedBox(width: 6),
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: canAddCash(amount)
+                                      ? () => addCash(amount)
+                                      : null,
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size(0, 36),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    foregroundColor: _cashierAccent,
+                                    side: const BorderSide(color: _cashierBorder),
+                                  ),
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text('+$amount'),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
 
@@ -3856,7 +3909,7 @@ class _PosCartPageState extends State<PosCartPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      item.name,
+                                      item.displayName,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w700,
                                         fontSize: 14,
@@ -3965,7 +4018,7 @@ class _PosCartPageState extends State<PosCartPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    item.name,
+                                    item.displayName,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 15,
@@ -4233,7 +4286,7 @@ class _PosCartPageState extends State<PosCartPage> {
                                                 spacing: 6,
                                                 children: [
                                                   Text(
-                                                    item.name,
+                                                    item.displayName,
                                                     style: const TextStyle(
                                                       fontWeight:
                                                           FontWeight.bold,

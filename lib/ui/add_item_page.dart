@@ -46,6 +46,7 @@ class _AddItemPageState extends State<AddItemPage> {
   final _manufacturerController = TextEditingController();
   final _modelController = TextEditingController();
   final _sizeController = TextEditingController();
+  final _colorController = TextEditingController();
 
   String? _imageUrl;
   XFile? _selectedImage;
@@ -91,6 +92,7 @@ class _AddItemPageState extends State<AddItemPage> {
     _manufacturerController.dispose();
     _modelController.dispose();
     _sizeController.dispose();
+    _colorController.dispose();
     super.dispose();
   }
 
@@ -405,6 +407,7 @@ class _AddItemPageState extends State<AddItemPage> {
         manufacturer: _manufacturerController.text.trim(),
         model: _modelController.text.trim(),
         productSize: _sizeController.text.trim(),
+        color: _colorController.text.trim(),
         shelfLevel: '', // Default empty value
         imageUrl: finalImageUrl ?? '',
         unit: _selectedUnit,
@@ -510,6 +513,14 @@ class _AddItemPageState extends State<AddItemPage> {
                                 ),
                               ),
                             ],
+                          ),
+
+                          const SizedBox(height: 16),
+                          _buildTextField(
+                            _colorController,
+                            "Color (optional)",
+                            LucideIcons.palette,
+                            isRequired: false,
                           ),
 
                           const SizedBox(height: 24),

@@ -67,7 +67,11 @@ begin
       (entry.value ->> 'quantity')::numeric as quantity
     from jsonb_array_elements(p_items) entry
   ), scoped as (
-    select product.id, product.product_name, product.unit,
+    select product.id,
+      case when nullif(trim(product.color), '') is null
+        then product.product_name
+        else product.product_name || ' · ' || trim(product.color)
+      end as product_name, product.unit,
       product.product_price, requested.quantity
     from requested
     join public.products product on product.id = requested.product_id

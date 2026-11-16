@@ -413,54 +413,50 @@ class RecommendationEngine:
             f"= {inventory_units} {inventory.unit}."
         )
 
-        if inventory.max_capacity is None or not self._nonnegative_finite(
-            inventory.max_capacity
-        ):
-            review(
-                "storage_capacity_missing_or_invalid",
-                "A valid configured maximum capacity is required before ordering.",
-            )
-            calculations = replace(
-                calculations,
-                rounded_quantity_order_units=order_units,
-                rounded_quantity_inventory_units=inventory_units,
-            )
-            return self._result(
-                inventory, supplier, calculations, warnings, explanations, audit
-            )
-
-        physical_on_hand = gross_equivalent
-        capacity_room = max(
-            Decimal("0"),
-            inventory.max_capacity
-            - physical_on_hand
-            - inventory.confirmed_on_order,
-        )
         calculations = replace(
             calculations,
             rounded_quantity_order_units=order_units,
             rounded_quantity_inventory_units=inventory_units,
-            capacity_room_inventory_units=capacity_room,
         )
-        if inventory_units > capacity_room:
-            feasible_order_units = self._round_down(
-                capacity_room / inventory_per_order_unit, supplier.pack_size
-            )
-            if feasible_order_units < supplier.minimum_order_quantity:
+        if inventory.max_capacity is not None:
+            if not self._nonnegative_finite(inventory.max_capacity):
                 review(
-                    "capacity_conflicts_with_supplier_constraints",
-                    "Storage capacity cannot fit the supplier MOQ/pack requirement.",
+                    "storage_capacity_missing_or_invalid",
+                    "A configured maximum capacity must be a valid nonnegative number.",
                 )
                 return self._result(
                     inventory, supplier, calculations, warnings, explanations, audit
                 )
-            review(
-                "capacity_limits_recommendation",
-                "Capacity permits less than the target quantity; the feasible packed "
-                "quantity requires human review.",
+            physical_on_hand = gross_equivalent
+            capacity_room = max(
+                Decimal("0"),
+                inventory.max_capacity
+                - physical_on_hand
+                - inventory.confirmed_on_order,
             )
-            order_units = feasible_order_units
-            inventory_units = order_units * inventory_per_order_unit
+            calculations = replace(
+                calculations,
+                capacity_room_inventory_units=capacity_room,
+            )
+            if inventory_units > capacity_room:
+                feasible_order_units = self._round_down(
+                    capacity_room / inventory_per_order_unit, supplier.pack_size
+                )
+                if feasible_order_units < supplier.minimum_order_quantity:
+                    review(
+                        "capacity_conflicts_with_supplier_constraints",
+                        "Storage capacity cannot fit the supplier MOQ/pack requirement.",
+                    )
+                    return self._result(
+                        inventory, supplier, calculations, warnings, explanations, audit
+                    )
+                review(
+                    "capacity_limits_recommendation",
+                    "Capacity permits less than the target quantity; the feasible packed "
+                    "quantity requires human review.",
+                )
+                order_units = feasible_order_units
+                inventory_units = order_units * inventory_per_order_unit
 
         status = (
             RecommendationStatus.NEEDS_REVIEW

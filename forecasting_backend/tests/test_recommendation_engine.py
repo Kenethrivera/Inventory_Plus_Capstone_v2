@@ -297,6 +297,15 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(result.recommended_quantity_order_units, Decimal("60"))
         self.assertEqual(result.recommended_quantity_inventory_units, Decimal("60"))
 
+    def test_missing_capacity_does_not_limit_restocking(self) -> None:
+        result = self.recommend(
+            inventory=inventory(on_hand=Decimal("0"), capacity=None),
+        )
+        self.assertEqual(result.status, RecommendationStatus.RECOMMEND_ORDER)
+        self.assertEqual(result.recommended_quantity_inventory_units, Decimal("140"))
+        self.assertIsNone(result.calculation.capacity_room_inventory_units)
+        self.assertNotIn("storage_capacity_missing_or_invalid", result.warnings)
+
     def test_valid_supplier_unit_conversion(self) -> None:
         result = self.recommend(
             supplier=supplier(

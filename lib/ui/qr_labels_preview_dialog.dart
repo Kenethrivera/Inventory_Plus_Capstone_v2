@@ -317,7 +317,7 @@ pw.Widget _pdfLabel(InventoryItem item, double size, double fontScale) =>
         crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
           pw.Text(
-            item.name,
+            item.displayName.replaceAll(' · ', ' - '),
             style: pw.TextStyle(
               fontSize: 16 * fontScale,
               fontWeight: pw.FontWeight.bold,

@@ -98,9 +98,17 @@ class InventoryItem {
   final String? manufacturer;
   final String? model;
   final String? productSize;
+  final String? color;
   final String? shelfLevel;
   final String? binNumber;
   final String unit;
+
+  String get displayName {
+    final selectedColor = color?.trim();
+    return selectedColor == null || selectedColor.isEmpty
+        ? name
+        : '$name · $selectedColor';
+  }
 
   InventoryItem({
     required this.id,
@@ -117,6 +125,7 @@ class InventoryItem {
     this.manufacturer,
     this.model,
     this.productSize,
+    this.color,
     this.shelfLevel,
     this.binNumber,
     this.unit = 'pcs',
@@ -140,6 +149,7 @@ class InventoryItem {
       manufacturer: map['manufacturer'],
       model: map['model'],
       productSize: map['product_size'],
+      color: map['color'],
       shelfLevel: map['shelf_level'],
       binNumber: map['bin_number'],
       unit: map['unit'] ?? 'pcs',
@@ -161,6 +171,7 @@ class InventoryItem {
     String? manufacturer,
     String? model,
     String? productSize,
+    String? color,
     String? shelfLevel,
     String? binNumber,
     String? unit,
@@ -180,6 +191,7 @@ class InventoryItem {
       manufacturer: manufacturer ?? this.manufacturer,
       model: model ?? this.model,
       productSize: productSize ?? this.productSize,
+      color: color ?? this.color,
       shelfLevel: shelfLevel ?? this.shelfLevel,
       binNumber: binNumber ?? this.binNumber,
       unit: unit ?? this.unit,

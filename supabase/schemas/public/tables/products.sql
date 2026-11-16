@@ -6,6 +6,7 @@ CREATE TABLE "public"."products" (
   "manufacturer"     text,
   "model"            text,
   "product_size"     text,
+  "color"            text,
   "product_price"    numeric(12,2)            DEFAULT 0.00,
   "product_quantity" numeric                  DEFAULT 0,
   "created_at"       timestamp with time zone DEFAULT now(),

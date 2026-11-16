@@ -2861,7 +2861,6 @@ String _forecastInventorySignature(List<InventoryItem> items) => sha256
                   item.sku,
                   item.unit,
                   item.quantity.toString(),
-                  item.maxQuantity.toString(),
                   item.price.toString(),
                   item.category,
                   item.locationId,

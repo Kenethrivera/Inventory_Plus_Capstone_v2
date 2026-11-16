@@ -285,6 +285,7 @@ class InventoryController {
 
   static const int _rollingSalesPageSize = 500;
   Map<String, List<RollingSale>> _rollingSalesByProduct = {};
+  Set<String> _cancelledCheckoutOperationIds = {};
   Future<void>? _rollingSalesRefreshInFlight;
   bool _rollingSalesRefreshQueued = false;
   Timer? _rollingSalesExpiryTimer;
@@ -605,7 +606,7 @@ class InventoryController {
       while (true) {
         final rows = await supabase
             .from('transaction_history')
-            .select('product_id, quantity_change, created_at, operation_scope')
+            .select('product_id, quantity_change, created_at, operation_scope, operation_id')
             .eq('location_id', locId)
             .eq('transaction_type', 'checkout')
             .gte('created_at', cutoff.toIso8601String())
@@ -622,11 +623,34 @@ class InventoryController {
         if (rows.length < _rollingSalesPageSize) break;
         offset += _rollingSalesPageSize;
       }
+      final cancelledCheckoutOperationIds = <String>{};
+      offset = 0;
+      while (sales.isNotEmpty) {
+        final cancelledOrders = await supabase
+            .from('orders')
+            .select('checkout_operation_id')
+            .eq('location_id', locId)
+            .eq('status', 'cancelled')
+            .gte('cancelled_at', cutoff.toIso8601String())
+            .lte('cancelled_at', now.toIso8601String())
+            .order('cancelled_at')
+            .order('id')
+            .range(offset, offset + _rollingSalesPageSize - 1);
+        for (final order in cancelledOrders) {
+          final operationId = order['checkout_operation_id']?.toString();
+          if (operationId != null) {
+            cancelledCheckoutOperationIds.add(operationId);
+          }
+        }
+        if (cancelledOrders.length < _rollingSalesPageSize) break;
+        offset += _rollingSalesPageSize;
+      }
       if (activeLocationId != locId) {
         _rollingSalesRefreshQueued = true;
         return;
       }
       _rollingSalesByProduct = sales;
+      _cancelledCheckoutOperationIds = cancelledCheckoutOperationIds;
       _scheduleRollingSalesExpiry();
       _publishInventorySnapshot();
     } catch (e) {
@@ -669,6 +693,7 @@ class InventoryController {
   double baselineFor(InventoryItem item) => RollingStockThreshold.totalSales(
     _rollingSalesByProduct[item.id] ?? const <RollingSale>[],
     DateTime.now(),
+    cancelledOperationIds: _cancelledCheckoutOperationIds,
   );
 
   double stockPercentFor(InventoryItem item) {
@@ -1087,7 +1112,7 @@ class InventoryController {
 
     try {
       final response = await supabase.rpc(
-        'create_product_v2',
+        'create_product_v3',
         params: <String, dynamic>{
           'p_session_token': _requireSessionToken(),
           'p_operation_id': operationId,
@@ -1101,6 +1126,7 @@ class InventoryController {
           'p_manufacturer': newItem.manufacturer,
           'p_model': newItem.model,
           'p_product_size': newItem.productSize,
+          'p_color': newItem.color,
           'p_shelf_level': newItem.shelfLevel,
           'p_bin_number': null,
           'p_unit': newItem.unit,
@@ -1818,7 +1844,7 @@ class InventoryController {
     // committed together by adjust_inventory_quantity_v1 below.
     if (useStage6b7SecureProductAccess) {
       final savedProduct = await supabase.rpc(
-        'product_details_update_v2',
+        'product_details_update_v3',
         params: <String, dynamic>{
           'p_session_token': _requireSessionToken(),
           'p_product_id': updatedItem.id,
@@ -1829,6 +1855,7 @@ class InventoryController {
           'p_manufacturer': updatedItem.manufacturer,
           'p_model': updatedItem.model,
           'p_product_size': updatedItem.productSize,
+          'p_color': updatedItem.color,
           'p_shelf_level': updatedItem.shelfLevel,
           'p_bin_number': updatedItem.binNumber,
           'p_image_url': updatedItem.imageUrl,
@@ -1854,6 +1881,7 @@ class InventoryController {
             'manufacturer': updatedItem.manufacturer,
             'model': updatedItem.model,
             'product_size': updatedItem.productSize,
+            'color': updatedItem.color,
             'shelf_level': updatedItem.shelfLevel,
             'bin_number': updatedItem.binNumber,
             'image_url': updatedItem.imageUrl,
@@ -1987,6 +2015,16 @@ class InventoryController {
   ) {
     AppLogger.error(diagnostic, error: error, stackTrace: stackTrace);
     final details = error.toString().toLowerCase();
+
+    if (error is PostgrestException &&
+        (((error.code == 'PGRST202' || error.code == '42883') &&
+                (details.contains('create_product_v3') ||
+                    details.contains('product_details_update_v3'))) ||
+            (error.code == '42703' && details.contains('color')))) {
+      throw const AppUserFacingException(
+        'Product setup is incomplete. Please ask an administrator to update the database.',
+      );
+    }
 
     if (details.contains('payment_reference_already_used')) {
       throw const AppUserFacingException(
@@ -2213,7 +2251,8 @@ class InventoryController {
     final filtered = source.where((item) {
       final matchesSearch =
           item.name.toLowerCase().contains(query.toLowerCase()) ||
-          item.sku.toLowerCase().contains(query.toLowerCase());
+          item.sku.toLowerCase().contains(query.toLowerCase()) ||
+          (item.color ?? '').toLowerCase().contains(query.toLowerCase());
 
       final matchesCategory =
           category == 'All' ||
@@ -2266,6 +2305,7 @@ class InventoryController {
     String? manufacturer,
     String? model,
     String? productSize,
+    String? color,
     String? category,
     String? shelfLevel,
     String? binNumber,
@@ -2283,6 +2323,7 @@ class InventoryController {
       manufacturer: manufacturer,
       model: model,
       productSize: productSize,
+      color: color,
       category: category,
       shelfLevel: shelfLevel,
       binNumber: binNumber,
@@ -2303,6 +2344,7 @@ class InventoryController {
     String? manufacturer,
     String? model,
     String? productSize,
+    String? color,
     String? shelfLevel,
     String? imageUrl,
     String unit = 'pcs',
@@ -2323,6 +2365,7 @@ class InventoryController {
       manufacturer: manufacturer,
       model: model,
       productSize: productSize,
+      color: color,
       shelfLevel: shelfLevel,
       imageUrl: imageUrl ?? '',
       unit: unit,
@@ -3966,6 +4009,7 @@ class InventoryController {
     _disabledItems = <InventoryItem>[];
     _rollingSalesExpiryTimer?.cancel();
     _rollingSalesByProduct = <String, List<RollingSale>>{};
+    _cancelledCheckoutOperationIds = <String>{};
     _inventorySnapshotLocationId = null;
     _inventorySnapshotLoaded = false;
     _publishInventorySnapshot();

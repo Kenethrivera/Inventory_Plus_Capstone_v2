@@ -1,10 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:printing/printing.dart';
 
@@ -47,7 +44,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   String? _loadedLocationId;
   bool _stale = true;
   int _loadGeneration = 0;
-  late final Future<Map<String, String>> _marketFuture;
   StreamSubscription<List<InventoryItem>>? _inventorySubscription;
   StreamSubscription<HistoryInvalidation>? _historySubscription;
   Timer? _reloadDebounce;
@@ -55,7 +51,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   @override
   void initState() {
     super.initState();
-    _marketFuture = _loadMarketContext();
     _inventorySubscription = widget.controller.inventorySnapshots.listen((_) {
       if (mounted && widget.isActive) setState(() {});
     });
@@ -157,81 +152,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _error = 'Analytics could not be loaded.';
       });
     }
-  }
-
-  Future<Map<String, String>> _loadMarketContext() async {
-    final results = <String, String>{};
-    Future<void> weather() async {
-      final key = dotenv.env['WEATHER_API_KEY'];
-      if (key == null || key.isEmpty) return;
-      try {
-        final uri = Uri.https('api.openweathermap.org', '/data/2.5/weather', {
-          'q': 'Quezon City,PH',
-          'units': 'metric',
-          'appid': key,
-        });
-        final response = await http
-            .get(uri)
-            .timeout(const Duration(seconds: 8));
-        if (response.statusCode != 200) return;
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final conditions = data['weather'] as List<dynamic>?;
-        final condition = conditions?.isNotEmpty == true
-            ? (conditions!.first as Map<String, dynamic>)['description']
-                  ?.toString()
-            : null;
-        if (condition != null) {
-          results['Weather'] = '$condition · Quezon City · OpenWeather';
-        }
-      } catch (_) {}
-    }
-
-    Future<void> exchange() async {
-      try {
-        final response = await http
-            .get(Uri.parse('https://open.er-api.com/v6/latest/USD'))
-            .timeout(const Duration(seconds: 8));
-        if (response.statusCode != 200) return;
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final rate = (data['rates'] as Map<String, dynamic>?)?['PHP'] as num?;
-        if (rate != null) {
-          results['USD / PHP'] =
-              '₱${rate.toStringAsFixed(2)} per USD · ExchangeRate-API';
-        }
-      } catch (_) {}
-    }
-
-    Future<void> news() async {
-      final key = dotenv.env['NEWS_API_KEY'];
-      if (key == null || key.isEmpty) return;
-      try {
-        final uri = Uri.https('newsapi.org', '/v2/everything', {
-          'q': 'Philippines construction hardware',
-          'language': 'en',
-          'sortBy': 'publishedAt',
-          'pageSize': '1',
-          'apiKey': key,
-        });
-        final response = await http
-            .get(uri)
-            .timeout(const Duration(seconds: 8));
-        if (response.statusCode != 200) return;
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final articles = data['articles'] as List<dynamic>?;
-        if (articles?.isNotEmpty != true) return;
-        final article = articles!.first as Map<String, dynamic>;
-        final title = article['title']?.toString();
-        final source = (article['source'] as Map<String, dynamic>?)?['name']
-            ?.toString();
-        if (title != null && title != '[Removed]') {
-          results['Industry news'] =
-              '$title${source == null ? '' : ' · $source'}';
-        }
-      } catch (_) {}
-    }
-
-    await Future.wait([weather(), exchange(), news()]);
-    return results;
   }
 
   DateTime get _periodStart {
@@ -481,8 +401,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                           _forecastCard(),
                           const SizedBox(height: 20),
                           _categoryCard(),
-                          const SizedBox(height: 20),
-                          _marketCard(),
                         ],
                       )
                     : Row(
@@ -490,16 +408,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                         children: [
                           Expanded(flex: 7, child: _forecastCard()),
                           const SizedBox(width: 20),
-                          Expanded(
-                            flex: 4,
-                            child: Column(
-                              children: [
-                                _categoryCard(),
-                                const SizedBox(height: 20),
-                                _marketCard(),
-                              ],
-                            ),
-                          ),
+                          Expanded(flex: 4, child: _categoryCard()),
                         ],
                       ),
                 const SizedBox(height: 28),
@@ -850,64 +759,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     );
   }
 
-  Widget _marketCard() => _card(
-    Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Market context',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Live signals for planning',
-            style: TextStyle(color: _muted, fontSize: 13),
-          ),
-          const SizedBox(height: 18),
-          FutureBuilder<Map<String, String>>(
-            future: _marketFuture,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Text(
-                  'Checking available feeds…',
-                  style: TextStyle(color: _muted),
-                );
-              }
-              final values = snapshot.data!;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final label in const [
-                    'Weather',
-                    'USD / PHP',
-                    'Industry news',
-                  ]) ...[
-                    Text(
-                      label,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      values[label] ?? 'Live feed unavailable',
-                      style: const TextStyle(color: _muted, fontSize: 13),
-                    ),
-                    if (label != 'Industry news') ...[
-                      const SizedBox(height: 14),
-                      const Divider(color: _line),
-                      const SizedBox(height: 8),
-                    ],
-                  ],
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    ),
-  );
-
   Widget _restockCard() {
     final rows = _restock;
     return _card(
@@ -928,7 +779,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 row.item.quantity <= 0
                     ? 'Out'
                     : '${row.cover.toStringAsFixed(1)} wk',
-                'Add ${_number(math.max(0, row.item.maxQuantity - row.item.quantity))} ${row.item.unit}',
+                row.weekly > 0
+                    ? 'Add ${_number(math.max(0, row.weekly * 4 - row.item.quantity))} ${row.item.unit}'
+                    : 'Review stock',
                 onTap: widget.onOpenInventory,
               ),
         ],

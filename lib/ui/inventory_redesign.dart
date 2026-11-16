@@ -29,6 +29,17 @@ String _qty(double value) => value == value.roundToDouble()
     ? value.toInt().toString()
     : value.toStringAsFixed(2);
 
+double _stockCoverageFraction(double onHand, double sevenDaySales) =>
+    sevenDaySales <= 0
+    ? 0.0
+    : (onHand / sevenDaySales).clamp(0.0, 1.0);
+
+String _stockCoverageLabel(double onHand, double sevenDaySales) {
+  if (sevenDaySales <= 0) return 'No recent sales';
+  final weeks = onHand <= 0 ? 0.0 : onHand / sevenDaySales;
+  return '${weeks.toStringAsFixed(1)} wk cover';
+}
+
 String _money(double amount) {
   final parts = amount.toStringAsFixed(2).split('.');
   final whole = parts[0].replaceAllMapped(
@@ -1012,7 +1023,8 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
               item.name.toLowerCase().contains(query) ||
               item.sku.toLowerCase().contains(query) ||
               (item.manufacturer ?? '').toLowerCase().contains(query) ||
-              (item.model ?? '').toLowerCase().contains(query));
+              (item.model ?? '').toLowerCase().contains(query) ||
+              (item.color ?? '').toLowerCase().contains(query));
     }).toList();
     if (_sortBy != 'none') filtered.sort(_compareItems);
     final pageCount = math.max(1, (filtered.length + _perPage - 1) ~/ _perPage);
@@ -1130,7 +1142,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                         controller: _search,
                         onChanged: (_) => setState(() => _page = 0),
                         decoration: InputDecoration(
-                          hintText: 'Name, SKU, brand, model',
+                          hintText: 'Name, SKU, brand, model, color',
                           prefixIcon: const Icon(LucideIcons.search, size: 18),
                           filled: true,
                           fillColor: Colors.white,
@@ -1231,7 +1243,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                                 _inventoryHeading('Product', 5),
                                 _inventoryHeading('Category', 2),
                                 _inventoryHeading('Location', 3),
-                                _inventoryHeading('Stock', 4),
+                                _inventoryHeading('Stock coverage (7d)', 4),
                                 _inventoryHeading('Price', 2, right: 16),
                                 _inventoryHeading('Status', 2),
                               ],
@@ -1387,7 +1399,10 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
 
   Widget _inventoryReferenceRow(InventoryItem item, bool disabled) {
     final status = widget.controller.stockStatusFor(item);
-    final color = disabled ? _warmMuted : _statusColor(status);
+    final sevenDaySales = widget.controller.baselineFor(item);
+    final color = disabled || sevenDaySales <= 0
+        ? _warmMuted
+        : _statusColor(status);
     final label = disabled
         ? 'Inactive'
         : status == StockStatus.ok
@@ -1395,9 +1410,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
         : status == StockStatus.low
         ? 'Low'
         : _statusLabel(status);
-    final fraction = item.maxQuantity <= 0
-        ? 0.0
-        : (item.quantity / item.maxQuantity).clamp(0.0, 1.0);
+    final fraction = _stockCoverageFraction(item.quantity, sevenDaySales);
     return Material(
       color: Colors.white,
       child: InkWell(
@@ -1422,7 +1435,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            item.name,
+                            item.displayName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -1472,9 +1485,14 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                 flex: 4,
                 child: Padding(
                   padding: const EdgeInsets.only(right: 20),
-                  child: Row(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
+                      Tooltip(
+                        message: sevenDaySales <= 0
+                            ? 'No checkout sales in the last 7 days'
+                            : 'Full bar means at least 1 week of stock at the recent sales rate',
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
@@ -1485,10 +1503,12 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 24),
+                      const SizedBox(height: 4),
                       Text(
-                        '${_qty(item.quantity)} / ${_qty(item.maxQuantity)}',
-                        style: const TextStyle(fontSize: 11, color: _ink),
+                        _stockCoverageLabel(item.quantity, sevenDaySales),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 10, color: _warmMuted),
                       ),
                     ],
                   ),
@@ -2559,13 +2579,13 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   final _historyPageTopKey = GlobalKey();
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
-  final _maxStockController = TextEditingController();
   final _skuController = TextEditingController();
   final _stockDisplayController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _manufacturerController = TextEditingController();
   final _modelController = TextEditingController();
   final _sizeController = TextEditingController();
+  final _colorController = TextEditingController();
   final _imageUrlController = TextEditingController();
   final _shelfController = TextEditingController();
   final _binController = TextEditingController();
@@ -2584,7 +2604,6 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     super.initState();
     _nameController.text = widget.item.name;
     _priceController.text = widget.item.price.toStringAsFixed(2);
-    _maxStockController.text = _qty(widget.item.maxQuantity);
     _stockDisplayController.text =
         '${_qty(widget.item.quantity)} ${widget.item.unit}';
     _skuController.text = widget.item.sku;
@@ -2592,6 +2611,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     _manufacturerController.text = widget.item.manufacturer ?? '';
     _modelController.text = widget.item.model ?? '';
     _sizeController.text = widget.item.productSize ?? '';
+    _colorController.text = widget.item.color ?? '';
     _imageUrlController.text = widget.item.imageUrl;
     _shelfController.text = widget.item.shelfLevel ?? '';
     _binController.text = widget.item.binNumber ?? '';
@@ -2668,13 +2688,13 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     _historyNotifier.dispose();
     _nameController.dispose();
     _priceController.dispose();
-    _maxStockController.dispose();
     _skuController.dispose();
     _stockDisplayController.dispose();
     _descriptionController.dispose();
     _manufacturerController.dispose();
     _modelController.dispose();
     _sizeController.dispose();
+    _colorController.dispose();
     _imageUrlController.dispose();
     _shelfController.dispose();
     _binController.dispose();
@@ -2684,13 +2704,13 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   void _startEdit(InventoryItem item) {
     _nameController.text = item.name;
     _priceController.text = item.price.toStringAsFixed(2);
-    _maxStockController.text = _qty(item.maxQuantity);
     _skuController.text = item.sku;
     _stockDisplayController.text = '${_qty(item.quantity)} ${item.unit}';
     _descriptionController.text = item.description;
     _manufacturerController.text = item.manufacturer ?? '';
     _modelController.text = item.model ?? '';
     _sizeController.text = item.productSize ?? '';
+    _colorController.text = item.color ?? '';
     _imageUrlController.text = item.imageUrl;
     _shelfController.text = item.shelfLevel ?? '';
     _binController.text = item.binNumber ?? '';
@@ -3033,15 +3053,10 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     if (_isSaving) return;
     final name = _nameController.text.trim();
     final price = double.tryParse(_priceController.text.trim());
-    final maxStock = double.tryParse(_maxStockController.text.trim());
     final imageUrl = _imageUrlController.text.trim();
 
     if (name.isEmpty || price == null || !price.isFinite || price < 0) {
       setState(() => _editError = 'Enter a product name and a valid price.');
-      return;
-    }
-    if (maxStock == null || !maxStock.isFinite || maxStock < 0) {
-      setState(() => _editError = 'Enter a valid max stock of 0 or more.');
       return;
     }
     setState(() {
@@ -3070,11 +3085,12 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         newSku: item.sku,
         newPrice: price.toString(),
         newStock: item.quantity.toString(),
-        newMaxStock: maxStock.toString(),
+        newMaxStock: item.maxQuantity.toString(),
         newDesc: _descriptionController.text.trim(),
         manufacturer: _manufacturerController.text.trim(),
         model: _modelController.text.trim(),
         productSize: _sizeController.text.trim(),
+        color: _colorController.text.trim(),
         category: _categoryValue,
         shelfLevel: _shelfController.text.trim(),
         binNumber: _binController.text.trim(),
@@ -3290,6 +3306,10 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                                   ),
                                 ],
                               ),
+                              if (item.color?.trim().isNotEmpty == true) ...[
+                                const SizedBox(height: 12),
+                                _spec('Color', item.color),
+                              ],
                             ],
                           ),
                         ),
@@ -3463,10 +3483,11 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         : status == StockStatus.low
         ? 'Low'
         : _statusLabel(status);
-    final statusColor = disabled ? _warmMuted : _statusColor(status);
-    final fraction = item.maxQuantity <= 0
-        ? 0.0
-        : (item.quantity / item.maxQuantity).clamp(0.0, 1.0);
+    final sevenDaySales = widget.controller.baselineFor(item);
+    final statusColor = disabled || sevenDaySales <= 0
+        ? _warmMuted
+        : _statusColor(status);
+    final fraction = _stockCoverageFraction(item.quantity, sevenDaySales);
     final canEdit = widget.controller.isAdmin;
     return SafeArea(
       child: Column(
@@ -3540,6 +3561,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                                         item.manufacturer,
                                         item.model,
                                         item.productSize,
+                                        item.color,
                                       ]
                                       .where(
                                         (part) =>
@@ -3580,27 +3602,46 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                             Row(
                               children: [
                                 Expanded(
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: LinearProgressIndicator(
-                                      value: fraction,
-                                      minHeight: 7,
-                                      backgroundColor: const Color(0xFFEEECE8),
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        statusColor,
+                                  child: Tooltip(
+                                    message: sevenDaySales <= 0
+                                        ? 'No checkout sales in the last 7 days'
+                                        : 'Full bar means at least 1 week of stock at the recent sales rate',
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: LinearProgressIndicator(
+                                        value: fraction,
+                                        minHeight: 7,
+                                        backgroundColor: const Color(0xFFEEECE8),
+                                        valueColor: AlwaysStoppedAnimation<Color>(
+                                          statusColor,
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 20),
                                 Text(
-                                  '${_qty(item.quantity)} / ${_qty(item.maxQuantity)}',
+                                  _stockCoverageLabel(
+                                    item.quantity,
+                                    sevenDaySales,
+                                  ),
                                   style: const TextStyle(
                                     fontSize: 13,
                                     color: _warmMuted,
                                   ),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              '${_qty(item.quantity)} ${item.unit} on hand · '
+                              '${_qty(sevenDaySales)} sold in 7 days',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: _warmMuted,
+                              ),
                             ),
                           ],
                         ),
@@ -3847,23 +3888,13 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
             const SizedBox(width: 18),
             Expanded(
               child: _referenceField(
-                'Max stock',
-                _maxStockController,
+                'Color (optional)',
+                _colorController,
                 readOnly: !canEdit,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
               ),
             ),
           ],
         ),
-        if (item.quantity > item.maxQuantity) ...[
-          const SizedBox(height: 6),
-          Text(
-            'On hand is above the current max stock. Set a higher max if this is expected.',
-            style: const TextStyle(fontSize: 12, color: _warmMuted),
-          ),
-        ],
         SwitchListTile(
           title: const Text('Heavy / truck loading required'),
           subtitle: const Text('Bodegero verifies and loads this product.'),
@@ -4356,6 +4387,8 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         ),
         const SizedBox(height: 13),
         _editField('Product size', _sizeController),
+        const SizedBox(height: 13),
+        _editField('Color (optional)', _colorController),
         const SizedBox(height: 13),
         _editField('Description', _descriptionController, maxLines: 3),
         const SizedBox(height: 18),
