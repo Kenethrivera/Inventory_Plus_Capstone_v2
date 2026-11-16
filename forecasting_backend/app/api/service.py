@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
 from app.forecasting import (
     CalibratedBlendForecaster,
-    HistoricalDemandDataset,
     LightGBMConfig,
     LightGBMForecaster,
     Mean28Forecaster,
     ProductSpecificSeasonalLightGBMForecaster,
 )
+from app.forecasting.execution import (
+    DemandForecastExecutionInput,
+    DemandForecastExecutor,
+)
+from app.performance_diagnostics import log_duration, start_timer
 from app.seasonality import PhilippineSeasonResolver
 from app.simulation.expanded_seasonal_fixture import shared_context_registry
 from app.recommendations import (
@@ -61,6 +64,12 @@ class ForecastAnalysisService:
             mean28=self._mean28,
             resolver=self._season_resolver,
             zero_never_sold_forecasts=True,
+        )
+        self._forecast_executor = DemandForecastExecutor(
+            mean28=self._mean28,
+            lightgbm=self._lightgbm,
+            blend=self._blend,
+            seasonal_experimental=self._seasonal_experimental,
         )
         self._recommendations = RecommendationEngine()
         self._preliminary_insights = PreliminaryRestockingInsightCalculator()
@@ -213,7 +222,8 @@ class ForecastAnalysisService:
             inventory=context.inventory,
         )
         if (
-            insight.predicted_demand is None
+            insight.reliability != "normal"
+            or insight.predicted_demand is None
             or insight.available_inventory is None
             or insight.suggested_restock_quantity is None
         ):
@@ -357,17 +367,29 @@ class ForecastAnalysisService:
                 "or seasonal_experimental"
             )
 
+        authorization_started = start_timer()
         profile = self._authorized_profile(
             session_token=session_token,
             requested_location_id=requested_location_id,
             product_id=product_id,
         )
+        log_duration("analysis.authentication_authorization", authorization_started)
+        context_started = start_timer()
         context = self._adapter.load_analysis_context(
             profile=profile,
             session_token=session_token,
             product_id=product_id,
             now=now,
             history_days=(
+                self.EXPERIMENTAL_HISTORY_DAYS
+                if normalized_model == "seasonal_experimental"
+                else self.STANDARD_HISTORY_DAYS
+            ),
+        )
+        log_duration(
+            "analysis.product_context_load",
+            context_started,
+            requested_history_days=(
                 self.EXPERIMENTAL_HISTORY_DAYS
                 if normalized_model == "seasonal_experimental"
                 else self.STANDARD_HISTORY_DAYS
@@ -383,42 +405,30 @@ class ForecastAnalysisService:
                 "Adapter returned data outside the authenticated product/location scope"
             )
 
-        experimental_fallback_reason = None
+        execution = self._forecast_executor.execute(
+            DemandForecastExecutionInput(
+                history=context.history,
+                model=normalized_model,
+                horizon_days=horizon_days,
+                as_of=now,
+                source_data_as_of=context.source_data_as_of,
+                preliminary_horizon_days=(
+                    self._preliminary_insights.PLANNING_HORIZON_DAYS
+                ),
+            )
+        )
+        forecasts = list(execution.requested_forecasts)
+        recommendation_forecasts = execution.recommendation_forecasts
+        preliminary_forecasts = execution.preliminary_forecasts
+        experimental_fallback_reason = execution.experimental_fallback_reason
         seasonal_context = None
-        recommendation_history = context.history
         if normalized_model == "seasonal_experimental":
-            recommendation_history = self._bounded_history(
-                context.history,
-                history_days=self.STANDARD_HISTORY_DAYS,
-            )
-            candidate = self._seasonal_experimental.forecast(
-                context.history, horizon_days=horizon_days
-            )
-            if candidate[0].metadata.model_name == self._seasonal_experimental.model_name:
-                forecasts = candidate
-            else:
-                experimental_fallback_reason = (
-                    candidate[0].metadata.fallback_reason
-                    or "experimental_candidate_unavailable"
-                )
-                forecasts = self._lightgbm.forecast(
-                    recommendation_history, horizon_days=horizon_days
-                )
             seasonal_context = self._seasonal_context(
                 product_id=product_id,
                 location_id=profile.location_id,
                 forecast_start=forecasts[0].forecast_date,
                 forecast_end=forecasts[-1].forecast_date,
                 fallback_reason=experimental_fallback_reason,
-            )
-        else:
-            forecaster = {
-                "mean28": self._mean28,
-                "lightgbm": self._lightgbm,
-                "blend": self._blend,
-            }[normalized_model]
-            forecasts = forecaster.forecast(
-                context.history, horizon_days=horizon_days
             )
         manual = None
         manual_fields_present = any(
@@ -454,21 +464,7 @@ class ForecastAnalysisService:
                 captured_at=now,
                 rationale=manual_rationale or "",
             )
-        recommendation_forecasts = forecasts
-        if normalized_model == "seasonal_experimental":
-            recommendation_forecasts = self._lightgbm.forecast(
-                recommendation_history, horizon_days=horizon_days
-            )
-        if (
-            horizon_days == self._preliminary_insights.PLANNING_HORIZON_DAYS
-            and normalized_model in {"lightgbm", "seasonal_experimental"}
-        ):
-            preliminary_forecasts = recommendation_forecasts
-        else:
-            preliminary_forecasts = self._lightgbm.forecast(
-                recommendation_history,
-                horizon_days=self._preliminary_insights.PLANNING_HORIZON_DAYS,
-            )
+        preliminary_started = start_timer()
         preliminary_insight = self._preliminary_insights.calculate(
             forecast=DemandForecastSnapshot(
                 forecasts=tuple(preliminary_forecasts),
@@ -477,6 +473,8 @@ class ForecastAnalysisService:
             ),
             inventory=context.inventory,
         )
+        log_duration("analysis.preliminary_recommendation", preliminary_started)
+        recommendation_started = start_timer()
         recommendation = self._recommendations.recommend(
             forecast=DemandForecastSnapshot(
                 forecasts=tuple(recommendation_forecasts),
@@ -491,7 +489,9 @@ class ForecastAnalysisService:
             conversions=context.conversions,
             manual_demand=manual,
         )
-        return analysis_response(
+        log_duration("analysis.recommendation_engine", recommendation_started)
+        serialization_started = start_timer()
+        response = analysis_response(
             profile=profile,
             context=context,
             forecasts=forecasts,
@@ -512,33 +512,8 @@ class ForecastAnalysisService:
             ),
             experimental_forecast_used_for_replenishment=False,
         )
-
-    @staticmethod
-    def _bounded_history(
-        history: HistoricalDemandDataset,
-        *,
-        history_days: int,
-    ) -> HistoricalDemandDataset:
-        if history.history_start is None:
-            return history
-        start = max(
-            history.history_start,
-            history.history_end - timedelta(days=history_days - 1),
-        )
-        return replace(
-            history,
-            history_start=start,
-            observations=tuple(
-                value
-                for value in history.observations
-                if start <= value.business_date <= history.history_end
-            ),
-            availability_evidence=tuple(
-                value
-                for value in history.availability_evidence
-                if start <= value.business_date <= history.history_end
-            ),
-        )
+        log_duration("analysis.response_payload_build", serialization_started)
+        return response
 
     def _seasonal_context(
         self,

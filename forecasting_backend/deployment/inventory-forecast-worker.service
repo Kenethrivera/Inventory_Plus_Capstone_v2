@@ -1,0 +1,25 @@
+[Unit]
+Description=Inventory Plus bounded forecast worker
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=inventoryplus
+WorkingDirectory=/opt/inventory-plus/forecasting_backend
+EnvironmentFile=/etc/inventory-plus/forecast.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/inventory-plus/forecasting_backend/.venv/bin/python run_forecast_worker.py --concurrency 1 --poll-seconds 5
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=900
+MemoryMax=2G
+CPUQuota=100%
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any, Iterable
 
 from app.data.validation import DemandDataError
+from app.performance_diagnostics import log_duration, start_timer
 
 from .mean28 import Mean28Forecaster
 from .models import (
@@ -63,8 +64,15 @@ class LightGBMForecaster:
         if horizon_days <= 0:
             raise DemandDataError("horizon_days must be greater than zero")
 
+        preparation_started = start_timer()
         prepared = prepare_history(dataset)
         if len(prepared.days) < self.config.min_history_days:
+            log_duration(
+                "model.lightgbm.prepare_history",
+                preparation_started,
+                history_days=len(prepared.days),
+                outcome="fallback_insufficient_history",
+            )
             return self._fallback(
                 dataset,
                 horizon_days,
@@ -72,6 +80,12 @@ class LightGBMForecaster:
             )
 
         features, targets = self._training_matrix(prepared)
+        log_duration(
+            "model.lightgbm.prepare_history",
+            preparation_started,
+            history_days=len(prepared.days),
+            training_rows=len(targets),
+        )
         if len(targets) < self.config.min_training_rows:
             return self._fallback(
                 dataset,
@@ -80,22 +94,59 @@ class LightGBMForecaster:
             )
 
         try:
-            model = self._new_regressor()
-            model.fit(features, targets)
+            initialization_started = start_timer()
+            try:
+                model = self._new_regressor()
+            except Exception:
+                log_duration(
+                    "model.lightgbm.initialize",
+                    initialization_started,
+                    outcome="error",
+                )
+                raise
+            log_duration(
+                "model.lightgbm.initialize",
+                initialization_started,
+                outcome="success",
+            )
+            fit_started = start_timer()
+            fit_outcome = "error"
+            try:
+                model.fit(features, targets)
+                fit_outcome = "success"
+            finally:
+                log_duration(
+                    "model.lightgbm.fit",
+                    fit_started,
+                    outcome=fit_outcome,
+                    training_rows=len(targets),
+                    estimator_count=self.config.n_estimators,
+                )
             values = [float(day.model_value) for day in prepared.days]
             predictions: list[Decimal] = []
             clipped = False
-            for offset in range(1, horizon_days + 1):
-                forecast_date = dataset.history_end + timedelta(days=offset)
-                row = self._feature_row(values, len(values), forecast_date)
-                raw = float(model.predict([row])[0])
-                if not math.isfinite(raw):
-                    raise ArithmeticError("LightGBM produced a non-finite value")
-                if raw < 0:
-                    clipped = True
-                value = max(0.0, raw)
-                values.append(value)
-                predictions.append(Decimal(format(value, ".12g")))
+            inference_started = start_timer()
+            inference_outcome = "error"
+            try:
+                for offset in range(1, horizon_days + 1):
+                    forecast_date = dataset.history_end + timedelta(days=offset)
+                    row = self._feature_row(values, len(values), forecast_date)
+                    raw = float(model.predict([row])[0])
+                    if not math.isfinite(raw):
+                        raise ArithmeticError("LightGBM produced a non-finite value")
+                    if raw < 0:
+                        clipped = True
+                    value = max(0.0, raw)
+                    values.append(value)
+                    predictions.append(Decimal(format(value, ".12g")))
+                inference_outcome = "success"
+            finally:
+                log_duration(
+                    "model.lightgbm.inference",
+                    inference_started,
+                    outcome=inference_outcome,
+                    horizon_days=horizon_days,
+                )
         except ImportError:
             return self._fallback(
                 dataset, horizon_days, "lightgbm_unavailable"

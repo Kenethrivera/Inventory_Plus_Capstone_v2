@@ -51,7 +51,6 @@ enum MainSection {
           ordersActivity,
           analytics,
           forecasting,
-          classificationTest,
           pos,
           queue,
           inventory,

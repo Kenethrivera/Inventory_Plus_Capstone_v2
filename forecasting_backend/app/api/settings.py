@@ -20,6 +20,8 @@ class ApiSettings:
     cors_origins: tuple[str, ...] = ()
     supabase_secret_key: str | None = field(default=None, repr=False)
     recommendation_persistence_enabled: bool = False
+    forecast_job_materialization_enabled: bool = False
+    forecast_snapshot_reads_enabled: bool = False
 
     @classmethod
     def from_environment(cls) -> ApiSettings:
@@ -61,24 +63,36 @@ class ApiSettings:
             "FORECAST_RECOMMENDATION_PERSISTENCE_ENABLED",
             default=False,
         )
+        job_materialization_enabled = _environment_bool(
+            "FORECAST_JOB_MATERIALIZATION_ENABLED",
+            default=False,
+        )
+        snapshot_reads_enabled = _environment_bool(
+            "FORECAST_SNAPSHOT_READS_ENABLED",
+            default=False,
+        )
         secret_key = (
             os.getenv("SUPABASE_SECRET_KEY", "").strip()
             or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
             or None
         )
-        if persistence_enabled:
+        if persistence_enabled or job_materialization_enabled or snapshot_reads_enabled:
             if mode != "supabase":
                 raise RuntimeError(
-                    "Recommendation persistence requires FORECAST_API_MODE=supabase"
+                    "Trusted persistence requires FORECAST_API_MODE=supabase"
                 )
             if secret_key is None:
-                raise RuntimeError(
-                    "SUPABASE_SECRET_KEY is required when recommendation "
-                    "persistence is enabled"
+                required_feature = (
+                    "forecast job materialization"
+                    if job_materialization_enabled
+                    else "forecast snapshot reads"
+                    if snapshot_reads_enabled
+                    else "recommendation persistence"
                 )
+                raise RuntimeError(f"SUPABASE_SECRET_KEY is required for {required_feature}")
             if secret_key == key or secret_key.startswith("sb_publishable_"):
                 raise RuntimeError(
-                    "Recommendation persistence requires a server-only "
+                    "Trusted persistence requires a server-only "
                     "Supabase secret key"
                 )
         cors_origins = tuple(
@@ -113,6 +127,8 @@ class ApiSettings:
             cors_origins=cors_origins,
             supabase_secret_key=secret_key,
             recommendation_persistence_enabled=persistence_enabled,
+            forecast_job_materialization_enabled=job_materialization_enabled,
+            forecast_snapshot_reads_enabled=snapshot_reads_enabled,
         )
 
     @property

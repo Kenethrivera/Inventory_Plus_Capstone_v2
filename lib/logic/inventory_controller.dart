@@ -1640,6 +1640,15 @@ class InventoryController {
       Map<String, dynamic>.from(response as Map),
     );
     _invalidateApprovalPages(refreshVisible: true);
+    if (approve && request.transactionId != null) {
+      // Approval is already committed. A read refresh failure must not be
+      // reported as a failed mutation or encourage another approval attempt.
+      try {
+        await _refreshInventoryFromDatabase();
+      } catch (_) {
+        debugPrint('[InventoryController] Approved inventory refresh pending');
+      }
+    }
     await _notifyApprovalLifecycle(request);
     return request;
   }

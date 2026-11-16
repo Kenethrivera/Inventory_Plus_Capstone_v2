@@ -325,6 +325,38 @@ it does not embed a Supabase or synthetic credential. Gemini may provide future
 narrative explanation, but neither the API client nor the Forecasting page
 allows Gemini to calculate or override any numeric value.
 
+### Saved forecast mode and bounded maintenance
+
+With the installed Stage 5A snapshot RPC and a server-only Supabase secret,
+enable snapshot reads for local testing:
+
+```powershell
+$env:FORECAST_API_MODE = 'supabase'
+$env:FORECAST_DEPLOYMENT_ENV = 'development'
+$env:FORECAST_REVIEW_PERIOD_DAYS = '7'
+$env:FORECAST_SNAPSHOT_READS_ENABLED = 'true'
+python run_api.py
+```
+
+From the repository root, launch Flutter web with
+`--dart-define=FORECAST_API_URL=http://127.0.0.1:8000` and
+`--dart-define=FORECAST_SNAPSHOT_MODE=true`. The saved Overview, Product
+Forecast, and selected Tracking & Accuracy section load independently. The
+snapshot read path never falls back to synchronous model fitting. The separate
+`database/stage_5b_forecast_snapshot_daily_summary.sql` draft adds the compact
+daily values needed for the Overview chart; install it only after approval.
+
+`run_forecast_maintenance.py` prepares a rotating batch of at most 25 active
+products and never runs a forecasting model. It previews by default. Explicit
+`--enqueue` requires `FORECAST_JOB_MATERIALIZATION_ENABLED=true` and a valid,
+server-held `FORECAST_MAINTENANCE_ADMIN_SESSION`. For a controlled single
+product, pass `--product-id <authorized-product-uuid> --enqueue`. A scheduled
+run can use `--max-products 10 --rotation-minutes 5 --enqueue`; repeated runs
+rely on the existing revision-aware job deduplication. The Admin session must
+be renewed by the hosting environment before it expires. No scheduler is
+installed or started by FastAPI. Run the existing standalone worker separately
+with `FORECAST_WORKER_ENABLED=true` and a bounded `--max-jobs` value.
+
 ## Hardware classification test service
 
 `POST /v1/classification` is an authenticated Admin-only, read-only endpoint

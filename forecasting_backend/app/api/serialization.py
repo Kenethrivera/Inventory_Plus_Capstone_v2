@@ -231,6 +231,7 @@ def analysis_response(
         },
         "preliminary_restocking_insight": {
             "status": preliminary_insight.status.value,
+            "reliability": preliminary_insight.reliability,
             "planning_horizon_days": preliminary_insight.planning_horizon_days,
             "predicted_demand": _number(preliminary_insight.predicted_demand),
             "available_inventory": _number(

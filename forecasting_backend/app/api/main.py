@@ -9,7 +9,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,15 @@ from app.classification import (
     HardwareProductClassifier,
 )
 from app.data.validation import DemandDataError
+from app.performance_diagnostics import (
+    configure_performance_logging,
+    diagnostics_enabled,
+    log_duration,
+    log_event,
+    log_startup_duration,
+    performance_request,
+    start_timer,
+)
 from app.recommendations.preliminary import PRELIMINARY_RESTOCKING_ASSUMPTIONS_V1
 
 from .adapters import SyntheticDevelopmentAdapter, SupabaseForecastAdapter
@@ -39,7 +48,16 @@ from .contracts import (
     TrustedRecommendationSnapshot,
 )
 from .forecast_performance import ForecastPerformanceEvaluator
-from .recommendation_persistence import SupabaseRecommendationPersistenceAdapter
+from .job_materialization import (
+    ForecastJobMaterializer,
+    SupabaseForecastJobRepository,
+)
+from .recommendation_persistence import (
+    SupabaseRecommendationPersistenceAdapter,
+    SupabaseRecommendationTrackingReader,
+)
+from .snapshot_reads import ForecastSnapshotReadRepository
+from .snapshot_guidance import current_stock_analysis
 from .service import ForecastAnalysisService
 from .research_reports import SeasonalLearningReportService
 from .settings import ApiSettings
@@ -62,6 +80,17 @@ class AnalysisRequest(BaseModel):
     manual_unit: str | None = None
     manual_rationale: str | None = None
     manual_confirmed: bool = False
+
+
+class SnapshotManualGuidanceRequest(BaseModel):
+    location_id: str | None = None
+    model: Literal[
+        "mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"
+    ] = "blend"
+    manual_daily_demand: Decimal = Field(ge=0)
+    manual_unit: str = Field(min_length=1)
+    manual_rationale: str = Field(min_length=1)
+    manual_confirmed: Literal[True]
 
 
 class ReplenishmentConfigurationRequest(BaseModel):
@@ -133,12 +162,72 @@ def create_app(
     settings: ApiSettings | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings.from_environment()
+    performance_diagnostics_enabled = diagnostics_enabled(
+        configured.deployment_environment
+    )
+    configure_performance_logging(performance_diagnostics_enabled)
+    app_initialization_started = start_timer(
+        enabled=performance_diagnostics_enabled
+    )
     selected_adapter = adapter or (
         SyntheticDevelopmentAdapter(configured)
         if configured.mode == "synthetic"
         else SupabaseForecastAdapter(configured)
     )
+    service_initialization_started = start_timer(
+        enabled=performance_diagnostics_enabled
+    )
     service = ForecastAnalysisService(selected_adapter)
+    job_materializer = None
+    if configured.forecast_job_materialization_enabled:
+        if (
+            configured.mode != "supabase"
+            or configured.supabase_url is None
+            or configured.supabase_secret_key is None
+            or not callable(getattr(selected_adapter, "list_active_products", None))
+        ):
+            raise RuntimeError(
+                "Trusted forecast job materialization requires the Supabase adapter and server-side credentials"
+            )
+        job_repository = SupabaseForecastJobRepository(
+            url=configured.supabase_url,
+            secret_key=configured.supabase_secret_key,
+            timeout_seconds=configured.request_timeout_seconds,
+        )
+        job_materializer = ForecastJobMaterializer(
+            catalog=selected_adapter,
+            repository=job_repository,
+            service=service,
+        )
+    snapshot_repository = None
+    if configured.forecast_snapshot_reads_enabled:
+        if (
+            configured.mode != "supabase"
+            or configured.supabase_url is None
+            or configured.supabase_secret_key is None
+        ):
+            raise RuntimeError(
+                "Forecast snapshot reads require Supabase mode and a server-only secret"
+            )
+        snapshot_repository = ForecastSnapshotReadRepository(
+            url=configured.supabase_url,
+            secret_key=configured.supabase_secret_key,
+            timeout_seconds=configured.request_timeout_seconds,
+        )
+    log_startup_duration(
+        "analysis_service.initialize",
+        service_initialization_started,
+        enabled=performance_diagnostics_enabled,
+        environment=configured.deployment_environment,
+    )
+    analysis_request_count = 0
+    analysis_request_lock = Lock()
+
+    def next_analysis_request_number() -> int:
+        nonlocal analysis_request_count
+        with analysis_request_lock:
+            analysis_request_count += 1
+            return analysis_request_count
     forecast_performance = ForecastPerformanceEvaluator(selected_adapter)
     selected_recommendation_persistence = recommendation_persistence_adapter
     if (
@@ -148,6 +237,9 @@ def create_app(
         selected_recommendation_persistence = (
             SupabaseRecommendationPersistenceAdapter(configured)
         )
+    tracking_reader = selected_recommendation_persistence
+    if tracking_reader is None and configured.forecast_snapshot_reads_enabled:
+        tracking_reader = SupabaseRecommendationTrackingReader(configured)
     hardware_classifier = classifier or HardwareProductClassifier.load_default()
     seasonal_learning_reports = (
         research_report_service or SeasonalLearningReportService()
@@ -169,13 +261,6 @@ def create_app(
 
     now = clock or (lambda: datetime.now(timezone.utc))
 
-    def recommendation_persistence() -> RecommendationPersistenceAdapter:
-        if selected_recommendation_persistence is None:
-            raise RecommendationPersistenceUnavailableError(
-                "Recommendation tracking is not activated"
-            )
-        return selected_recommendation_persistence
-
     app = FastAPI(
         title="Inventory Plus Forecasting API",
         version="stage5f-v1",
@@ -185,6 +270,340 @@ def create_app(
             "server-only recommendation-tracking boundary."
         ),
     )
+
+    @app.post("/v1/forecasting/jobs/bootstrap")
+    def bootstrap_forecast_jobs(
+        product_id: str = Query(..., min_length=36, max_length=36),
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        """Explicitly prepare one product's default job within the admin scope."""
+        if job_materializer is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Forecast job materialization is not enabled",
+            )
+        token = _bearer_token(authorization)
+        with performance_request(enabled=performance_diagnostics_enabled):
+            try:
+                profile = service.authorize_admin(
+                    session_token=token,
+                    requested_location_id=None,
+                )
+
+                if snapshot_repository is not None:
+                    # A completed snapshot is reusable only for the deployed
+                    # model/configuration identity and current source revisions.
+                    saved = snapshot_repository.product(
+                        location_id=profile.location_id, product_id=str(UUID(product_id)), model_key="blend",
+                    )
+                    for item in saved.get("items", []):
+                        snap = item.get("snapshot") or {}
+                        model_identity = snap.get("requested_model") or {}
+                        identity = job_materializer._identity
+                        if (item.get("status") == "completed"
+                            and model_identity.get("key") == identity.model_key
+                            and model_identity.get("version") == identity.model_version
+                            and model_identity.get("config_digest") == identity.config_digest
+                            and model_identity.get("implementation_digest") == identity.implementation_digest
+                            and snap.get("horizon_days") == 28 and snap.get("history_window_days") == 365):
+                            return {"business_date": snap["as_of_business_date"], "active_products": 1,
+                                    "prepared": 0, "queued": 0, "duplicate": 1, "stale": 0, "skipped": 0,
+                                    "jobs": [{"status": "succeeded", "outcome": "available"}],
+                                    "result_id": snap["result_id"]}
+
+                report = job_materializer.bootstrap(
+                    profile=profile,
+                    session_token=token,
+                    now=now(),
+                    product_id=product_id,
+                )
+                return {
+                    "business_date": report.business_date.isoformat(),
+                    "active_products": report.active_products,
+                    "prepared": report.prepared,
+                    "queued": report.queued,
+                    "duplicate": report.duplicate,
+                    "stale": report.stale,
+                    "skipped": report.skipped,
+                    "jobs": list(report.jobs),
+                }
+            except AuthenticationError as error:
+                raise HTTPException(status_code=401, detail=str(error)) from error
+            except AuthorizationError as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            except ProductNotFoundError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            except httpx.TimeoutException as error:
+                log_event(
+                    "forecast_job.bootstrap.failed",
+                    stage=getattr(error, "data_stage", "unknown"),
+                    category=type(error).__name__,
+                )
+                raise HTTPException(
+                    status_code=504, detail="Forecast job preparation timed out"
+                ) from error
+            except (httpx.NetworkError, DataUnavailableError) as error:
+                log_event(
+                    "forecast_job.bootstrap.failed",
+                    stage=(
+                        getattr(error, "data_stage", None)
+                        or getattr(error, "stage", None)
+                        or "unknown"
+                    ),
+                    category=type(error).__name__,
+                )
+                raise HTTPException(
+                    status_code=503, detail="Forecast job preparation is unavailable"
+                ) from error
+            except (PermissionError, ValueError) as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.get("/v1/forecasting/snapshots/overview")
+    def forecast_snapshot_overview(
+        response: Response,
+        location_id: str | None = None,
+        model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"] = "blend",
+        unit: str | None = Query(default=None, max_length=50),
+        search: str | None = Query(default=None, max_length=120),
+        page: int = Query(default=1, ge=1, le=10000),
+        page_size: int = Query(default=25, ge=1, le=50),
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        response.headers["Cache-Control"] = "no-store"
+        if snapshot_repository is None:
+            raise HTTPException(status_code=503, detail="Forecast snapshot reads are not enabled")
+        token = _bearer_token(authorization)
+        try:
+            profile = service.authorize_admin(
+                session_token=token,
+                requested_location_id=location_id,
+            )
+            normalized_model = "blend" if model == "calibrated_blend" else model
+            with performance_request(enabled=performance_diagnostics_enabled):
+                started = start_timer(enabled=performance_diagnostics_enabled)
+                result = snapshot_repository.overview(
+                    location_id=profile.location_id,
+                    model_key=normalized_model,
+                    page=page,
+                    page_size=page_size,
+                    unit=unit,
+                    search=search,
+                )
+                rows = result.get("items")
+                log_duration(
+                    "snapshot.overview.read",
+                    started,
+                    enabled=performance_diagnostics_enabled,
+                    page=page,
+                    page_size=page_size,
+                    result_count=len(rows) if isinstance(rows, list) else 0,
+                )
+            return result
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (httpx.TimeoutException, DataUnavailableError) as error:
+            raise HTTPException(status_code=503, detail="Forecast snapshot service is unavailable") from error
+
+    @app.get("/v1/forecasting/products/{product_id}/snapshot")
+    def forecast_product_snapshot(
+        response: Response,
+        product_id: str,
+        location_id: str | None = None,
+        model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"] = "blend",
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        response.headers["Cache-Control"] = "no-store"
+        if snapshot_repository is None:
+            raise HTTPException(status_code=503, detail="Forecast snapshot reads are not enabled")
+        token = _bearer_token(authorization)
+        try:
+            parsed_product = UUID(product_id)
+            profile = service.authorize_admin(
+                session_token=token,
+                requested_location_id=location_id,
+            )
+            normalized_model = "blend" if model == "calibrated_blend" else model
+            with performance_request(enabled=performance_diagnostics_enabled):
+                started = start_timer(enabled=performance_diagnostics_enabled)
+                result = snapshot_repository.product(
+                    location_id=profile.location_id,
+                    product_id=str(parsed_product),
+                    model_key=normalized_model,
+                )
+                items = result.get("items")
+                log_duration(
+                    "snapshot.product.read",
+                    started,
+                    enabled=performance_diagnostics_enabled,
+                    result_count=len(items) if isinstance(items, list) else 0,
+                )
+            if not isinstance(items, list) or not items:
+                raise HTTPException(status_code=404, detail="Product snapshot is unavailable")
+            item = items[0]
+            snapshot = item.get("snapshot") if isinstance(item, dict) else None
+            if item.get("status") in {"completed", "stale"} and isinstance(snapshot, dict):
+                load_operational = getattr(selected_adapter, "load_operational_context", None)
+                if callable(load_operational):
+                    try:
+                        context = load_operational(
+                            profile=profile,
+                            session_token=token,
+                            product_id=str(parsed_product),
+                            now=now(),
+                        )
+                        item["analysis"] = current_stock_analysis(
+                            service=service,
+                            profile=profile,
+                            context=context,
+                            snapshot={
+                                **snapshot,
+                                "product_id": str(parsed_product),
+                                "location_id": profile.location_id,
+                            },
+                            now=now(),
+                        )
+                        if item.get("status") == "stale":
+                            # Keep the saved chart visible, but do not present
+                            # guidance based on obsolete demand as actionable.
+                            analysis = item["analysis"]
+                            preliminary = analysis["preliminary_restocking_insight"]
+                            preliminary["status"] = "limited"
+                            preliminary["reliability"] = "unavailable"
+                            preliminary["suggested_restock_quantity"] = None
+                            preliminary["limitations"].append("Saved demand is stale; prepare a current forecast before restocking.")
+                            recommendation = analysis["recommendation"]
+                            recommendation["status"] = "needs_review"
+                            recommendation["suggested_quantity"]["inventory_units"] = None
+                            recommendation["suggested_quantity"]["order_units"] = None
+                            recommendation["warnings"].append("stale_saved_demand")
+                    except (DataUnavailableError, DemandDataError, ValueError,
+                            KeyError, TypeError, ProductNotFoundError) as error:
+                        logger.warning(
+                            "snapshot_guidance_unavailable category=%s",
+                            type(error).__name__,
+                        )
+                        item["guidance_error"] = (
+                            "Current-stock restock guidance is unavailable. "
+                            "The saved demand forecast remains available."
+                        )
+            return item
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail="product_id must be a UUID") from error
+        except (httpx.TimeoutException, DataUnavailableError) as error:
+            raise HTTPException(status_code=503, detail="Forecast snapshot service is unavailable") from error
+
+    @app.post("/v1/forecasting/products/{product_id}/snapshot-guidance")
+    def preview_saved_forecast_guidance(
+        product_id: str,
+        request: SnapshotManualGuidanceRequest,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        """Preview a confirmed cold-start estimate using saved demand forecasts."""
+        if snapshot_repository is None:
+            raise HTTPException(status_code=503, detail="Forecast snapshot reads are not enabled")
+        token = _bearer_token(authorization)
+        try:
+            parsed_product = UUID(product_id)
+            profile = service.authorize_admin(
+                session_token=token,
+                requested_location_id=request.location_id,
+            )
+            model_key = "blend" if request.model == "calibrated_blend" else request.model
+            result = snapshot_repository.product(
+                location_id=profile.location_id,
+                product_id=str(parsed_product),
+                model_key=model_key,
+            )
+            items = result.get("items")
+            if not isinstance(items, list) or not items:
+                raise HTTPException(status_code=404, detail="Product snapshot is unavailable")
+            item = items[0]
+            snapshot = item.get("snapshot") if isinstance(item, dict) else None
+            if item.get("status") != "completed" or not isinstance(snapshot, dict):
+                raise HTTPException(status_code=409, detail="A current saved forecast is required")
+            load_operational = getattr(selected_adapter, "load_operational_context", None)
+            if not callable(load_operational):
+                raise DataUnavailableError("Current stock context is unavailable")
+            current_time = now()
+            context = load_operational(
+                profile=profile,
+                session_token=token,
+                product_id=str(parsed_product),
+                now=current_time,
+            )
+            return current_stock_analysis(
+                service=service,
+                profile=profile,
+                context=context,
+                snapshot={
+                    **snapshot,
+                    "product_id": str(parsed_product),
+                    "location_id": profile.location_id,
+                },
+                now=current_time,
+                manual_daily_demand=request.manual_daily_demand,
+                manual_unit=request.manual_unit,
+                manual_rationale=request.manual_rationale,
+                manual_confirmed=request.manual_confirmed,
+            )
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except ProductNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except (httpx.TimeoutException, httpx.NetworkError, DataUnavailableError) as error:
+            raise HTTPException(status_code=503, detail="Saved forecast guidance is unavailable") from error
+
+    def recommendation_persistence() -> RecommendationPersistenceAdapter:
+        if selected_recommendation_persistence is None:
+            raise RecommendationPersistenceUnavailableError(
+                "Recommendation tracking is not activated"
+            )
+        return selected_recommendation_persistence
+
+    def recommendation_tracking_source():
+        if tracking_reader is None:
+            raise RecommendationPersistenceUnavailableError(
+                "Recommendation tracking is not activated"
+            )
+        return tracking_reader
+
+    @app.middleware("http")
+    async def measure_analysis_http_request(request: Request, call_next):
+        path = request.url.path
+        is_analysis = (
+            path.startswith("/v1/forecasting/products/")
+            and path.endswith("/analysis")
+        )
+        if not performance_diagnostics_enabled or not is_analysis:
+            return await call_next(request)
+        with performance_request(enabled=True):
+            request_started = start_timer()
+            try:
+                response = await call_next(request)
+            except Exception:
+                log_duration(
+                "api.analysis.middleware_elapsed",
+                    request_started,
+                    status="exception",
+                )
+                raise
+            log_duration(
+                "api.analysis.middleware_elapsed",
+                request_started,
+                status_code=response.status_code,
+                response_body_completion_not_measured=True,
+            )
+            return response
     if configured.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -253,41 +672,60 @@ def create_app(
         request: AnalysisRequest,
         authorization: str | None = Header(default=None),
     ) -> dict[str, object]:
-        token = _bearer_token(authorization)
+        process_request_number = (
+            next_analysis_request_number()
+            if performance_diagnostics_enabled
+            else 0
+        )
+        handler_started = start_timer()
+        log_event(
+            "api.analysis.start",
+            process_request_number=process_request_number,
+            model=request.model,
+            horizon_days=request.horizon_days,
+        )
         try:
-            return service.analyze(
-                session_token=token,
-                requested_location_id=request.location_id,
-                product_id=product_id,
-                model=request.model,
-                horizon_days=request.horizon_days,
-                now=now(),
-                manual_daily_demand=request.manual_daily_demand,
-                manual_unit=request.manual_unit,
-                manual_rationale=request.manual_rationale,
-                manual_confirmed=request.manual_confirmed,
+            token = _bearer_token(authorization)
+            try:
+                return service.analyze(
+                    session_token=token,
+                    requested_location_id=request.location_id,
+                    product_id=product_id,
+                    model=request.model,
+                    horizon_days=request.horizon_days,
+                    now=now(),
+                    manual_daily_demand=request.manual_daily_demand,
+                    manual_unit=request.manual_unit,
+                    manual_rationale=request.manual_rationale,
+                    manual_confirmed=request.manual_confirmed,
+                )
+            except AuthenticationError as error:
+                raise HTTPException(status_code=401, detail=str(error)) from error
+            except AuthorizationError as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            except ProductNotFoundError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            except ReplenishmentConfigurationUnavailableError as error:
+                _log_forecast_data_failure(error, requested_model=request.model)
+                raise HTTPException(status_code=503, detail=str(error)) from error
+            except httpx.TimeoutException as error:
+                _log_forecast_data_failure(error, requested_model=request.model)
+                raise HTTPException(
+                    status_code=504, detail="Forecast data source timed out"
+                ) from error
+            except (httpx.NetworkError, DataUnavailableError) as error:
+                _log_forecast_data_failure(error, requested_model=request.model)
+                raise HTTPException(
+                    status_code=503, detail="Forecast data source is unavailable"
+                ) from error
+            except (ValueError, DemandDataError) as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
+        finally:
+            log_duration(
+                "api.analysis.handler",
+                handler_started,
+                process_request_number=process_request_number,
             )
-        except AuthenticationError as error:
-            raise HTTPException(status_code=401, detail=str(error)) from error
-        except AuthorizationError as error:
-            raise HTTPException(status_code=403, detail=str(error)) from error
-        except ProductNotFoundError as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
-        except ReplenishmentConfigurationUnavailableError as error:
-            _log_forecast_data_failure(error, requested_model=request.model)
-            raise HTTPException(status_code=503, detail=str(error)) from error
-        except httpx.TimeoutException as error:
-            _log_forecast_data_failure(error, requested_model=request.model)
-            raise HTTPException(
-                status_code=504, detail="Forecast data source timed out"
-            ) from error
-        except (httpx.NetworkError, DataUnavailableError) as error:
-            _log_forecast_data_failure(error, requested_model=request.model)
-            raise HTTPException(
-                status_code=503, detail="Forecast data source is unavailable"
-            ) from error
-        except (ValueError, DemandDataError) as error:
-            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.get("/v1/forecasting/research/seasonal-learning")
     def seasonal_learning_laboratory(
@@ -578,6 +1016,32 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
+    @app.get("/v1/forecasting/restock-records")
+    def applied_restock_records(
+        product_id: str, location_id: str | None = None,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        token = _bearer_token(authorization)
+        try:
+            service.authorize_admin(session_token=token, requested_location_id=location_id)
+            UUID(product_id)
+            loader = getattr(selected_adapter, "load_applied_restocks", None)
+            if loader is None:
+                raise DataUnavailableError("Applied inventory records are unavailable")
+            rows = loader(session_token=token, product_id=product_id)
+            from .restock_records import validate_restock_rows
+            rows = validate_restock_rows(rows)
+            # Evidence is captured independently by the background capture process.
+            return {"read_only": True, "inventory_read_only": True, "items": rows}
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (httpx.HTTPError, DataUnavailableError) as error:
+            raise HTTPException(status_code=503, detail="Applied restock records unavailable") from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
     @app.get("/v1/forecasting/recommendations")
     def recommendation_tracking(
         product_id: str | None = None,
@@ -591,7 +1055,7 @@ def create_app(
                 requested_location_id=location_id,
             )
             parsed_product_id = UUID(product_id) if product_id else None
-            rows = recommendation_persistence().tracking(
+            rows = recommendation_tracking_source().tracking(
                 session_token=token,
                 product_id=parsed_product_id,
             )
@@ -628,6 +1092,12 @@ def create_app(
                 detail="Recommendation persistence data source timed out",
             ) from error
         except (httpx.NetworkError, DataUnavailableError) as error:
+            if performance_diagnostics_enabled:
+                log_event(
+                    "tracking.read_failed",
+                    category=type(error).__name__,
+                    data_stage=getattr(error, "stage", None),
+                )
             raise HTTPException(
                 status_code=503,
                 detail="Recommendation persistence data source is unavailable",
@@ -649,7 +1119,7 @@ def create_app(
                 requested_location_id=location_id,
             )
             parsed_product_id = UUID(product_id)
-            rows = recommendation_persistence().tracking(
+            rows = recommendation_tracking_source().tracking(
                 session_token=token,
                 product_id=parsed_product_id,
             )
@@ -672,6 +1142,12 @@ def create_app(
                 detail="Forecast performance data source timed out",
             ) from error
         except (httpx.NetworkError, DataUnavailableError, DemandDataError) as error:
+            if performance_diagnostics_enabled:
+                log_event(
+                    "forecast_performance.read_failed",
+                    category=type(error).__name__,
+                    data_stage=getattr(error, "stage", None),
+                )
             raise HTTPException(
                 status_code=503,
                 detail="Forecast performance data source is unavailable",
@@ -679,6 +1155,12 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
+    log_startup_duration(
+        "api.create_app",
+        app_initialization_started,
+        enabled=performance_diagnostics_enabled,
+        environment=configured.deployment_environment,
+    )
     return app
 
 

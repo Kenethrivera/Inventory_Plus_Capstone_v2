@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Iterable
 
 from app.data.validation import DemandDataError
+from app.performance_diagnostics import log_duration, start_timer
 
 from .backtesting import (
     BacktestPoint,
@@ -116,7 +117,16 @@ class CalibratedBlendForecaster:
             reason = ml_values[0].metadata.fallback_reason or "lightgbm_not_validated"
             return self._fallback(mean_values, f"blend_unavailable:{reason}")
 
+        backtest_started = start_timer()
         report = self.backtester.run(dataset, config=self.config.rolling_origin)
+        log_duration(
+            "model.calibrated_blend.rolling_origin_backtest",
+            backtest_started,
+            folds=len(report.folds),
+            lightgbm_forecast_calls=len(report.folds),
+            horizon_days=self.config.rolling_origin.horizon_days,
+            step_days=self.config.rolling_origin.step_days,
+        )
         calibration = learn_multiplicative_bias(
             report.points, config=self.config
         )

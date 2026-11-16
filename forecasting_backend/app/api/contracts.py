@@ -140,6 +140,10 @@ class TrustedRecommendationSnapshot:
 class ForecastDataAdapter(Protocol):
     def authenticate(self, session_token: str) -> SessionProfile: ...
 
+    def list_active_products(
+        self, *, profile: SessionProfile, session_token: str
+    ) -> tuple[str, ...]: ...
+
     def load_analysis_context(
         self,
         *,

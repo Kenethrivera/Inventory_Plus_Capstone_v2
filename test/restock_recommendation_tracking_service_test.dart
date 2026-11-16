@@ -32,6 +32,8 @@ InventoryApprovalRequest restockRequest({
 );
 
 class RecordingForecastApi implements ForecastingApiService {
+  @override
+  Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken}) => throw UnsupportedError('not used');
   RecordingForecastApi({
     ForecastAnalysis? analysis,
     this.analysisError,
@@ -48,6 +50,37 @@ class RecordingForecastApi implements ForecastingApiService {
   String? matchedTransactionId;
   double? matchedQuantity;
   int saveCalls = 0;
+
+  @override
+  Future<ForecastSnapshotPage> loadSnapshotOverview({
+    required String locationId,
+    required String sessionToken,
+    required String model,
+    required int page,
+    required int pageSize,
+    String? unit,
+    String? search,
+  }) => throw UnsupportedError('not used');
+
+  @override
+  Future<ForecastSnapshotItem> loadProductSnapshot({
+    required String productId,
+    required String locationId,
+    required String sessionToken,
+    required String model,
+  }) => throw UnsupportedError('not used');
+
+  @override
+  Future<ForecastAnalysis> previewSavedForecastGuidance({
+    required String productId,
+    required String locationId,
+    required String sessionToken,
+    required String model,
+    required double manualDailyDemand,
+    required String manualUnit,
+    required String manualRationale,
+    required bool manualConfirmed,
+  }) => throw UnsupportedError('not used');
 
   @override
   Future<ForecastAnalysis> analyze({

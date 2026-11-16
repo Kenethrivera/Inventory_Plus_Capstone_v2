@@ -1,0 +1,5 @@
+-- RETIRED DRAFT. DO NOT DEPLOY THIS FILE.
+-- Only stage_6g_applied_restock_records.sql is installed.
+-- The ONE next migration is stage_6g_historical_restock_matching.sql.
+-- It includes the evidence table, validators, background RPC and corrected read RPC.
+-- This file intentionally contains no executable SQL or alternate migration path.

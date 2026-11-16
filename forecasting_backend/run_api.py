@@ -3,6 +3,9 @@
 import os
 
 import uvicorn
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def server_binding_from_environment() -> tuple[str, int]:

@@ -4,7 +4,7 @@ import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import httpx
 from fastapi.testclient import TestClient
@@ -1019,6 +1019,98 @@ class ForecastApiTests(unittest.TestCase):
         body = post(api).json()
         self.assertFalse(body["capabilities"]["inventory_mutation"])
         self.assertFalse(body["capabilities"]["purchase_order_creation"])
+
+
+class ForecastBootstrapStartupTests(unittest.TestCase):
+    def test_factory_registers_single_product_bootstrap_route_once(self) -> None:
+        api = client()
+        route_path = "/v1/forecasting/jobs/bootstrap"
+        routes = [
+            route
+            for route in api.app.routes
+            if getattr(route, "path", None) == route_path
+            and "POST" in getattr(route, "methods", set())
+        ]
+
+        self.assertEqual(len(routes), 1)
+        query_parameters = routes[0].dependant.query_params
+        product_parameters = [
+            parameter
+            for parameter in query_parameters
+            if parameter.name == "product_id"
+        ]
+        self.assertEqual(len(product_parameters), 1)
+        self.assertTrue(product_parameters[0].field_info.is_required())
+
+    def test_rpc_failure_returns_503_and_keeps_single_product_scope(self) -> None:
+        configured = replace(
+            settings(),
+            mode="supabase",
+            supabase_url="https://example.supabase.co",
+            supabase_publishable_key="test-publishable-key",
+            supabase_secret_key="sb_secret_test-only",
+            forecast_job_materialization_enabled=True,
+        )
+        adapter = TransformingAdapter()
+        adapter.list_active_products = lambda **_kwargs: (SyntheticDevelopmentAdapter.PRODUCT_ID,)
+        materializer = Mock()
+        materializer.bootstrap.side_effect = DataUnavailableError(
+            "Trusted forecast queue operation failed (401)",
+            stage="trusted_rpc:forecast_initialize_revisions_v1:http_401",
+        )
+        with patch("app.api.main.SupabaseForecastJobRepository"):
+            with patch("app.api.main.ForecastJobMaterializer", return_value=materializer):
+                api = TestClient(
+                    create_app(adapter=adapter, settings=configured, clock=lambda: NOW)
+                )
+                with self.assertLogs(
+                    "inventory_plus.forecasting.performance", level="INFO"
+                ) as logs:
+                    response = api.post(
+                        "/v1/forecasting/jobs/bootstrap",
+                        params={"product_id": SyntheticDevelopmentAdapter.PRODUCT_ID},
+                        headers={"Authorization": f"Bearer {TOKEN}"},
+                    )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"], "Forecast job preparation is unavailable"
+        )
+        materializer.bootstrap.assert_called_once()
+        self.assertEqual(
+            materializer.bootstrap.call_args.kwargs["product_id"],
+            SyntheticDevelopmentAdapter.PRODUCT_ID,
+        )
+        self.assertTrue(
+            any("stage=trusted_rpc:forecast_initialize_revisions_v1:http_401" in line for line in logs.output)
+        )
+
+    def test_invalid_session_is_rejected_before_materialization(self) -> None:
+        configured = replace(
+            settings(),
+            mode="supabase",
+            supabase_url="https://example.supabase.co",
+            supabase_publishable_key="test-publishable-key",
+            supabase_secret_key="sb_secret_test-only",
+            forecast_job_materialization_enabled=True,
+        )
+        adapter = TransformingAdapter()
+        adapter.list_active_products = lambda **_kwargs: (SyntheticDevelopmentAdapter.PRODUCT_ID,)
+        materializer = Mock()
+        with patch("app.api.main.SupabaseForecastJobRepository"):
+            with patch("app.api.main.ForecastJobMaterializer", return_value=materializer):
+                api = TestClient(
+                    create_app(adapter=adapter, settings=configured, clock=lambda: NOW)
+                )
+                response = api.post(
+                    "/v1/forecasting/jobs/bootstrap",
+                    params={"product_id": SyntheticDevelopmentAdapter.PRODUCT_ID},
+                    headers={"Authorization": "Bearer expired-test-session"},
+                )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "Synthetic development session is invalid")
+        materializer.bootstrap.assert_not_called()
 
 
 class ForecastApiSettingsTests(unittest.TestCase):
