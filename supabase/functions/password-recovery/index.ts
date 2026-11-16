@@ -17,6 +17,32 @@ function internationalPhone(raw: string): string | null {
   return /^\+[1-9]\d{7,14}$/.test(number) ? number : null;
 }
 
+async function sendEmailCode(destination: string, code: string): Promise<boolean> {
+  const serviceId = Deno.env.get('EMAILJS_SERVICE_ID');
+  const templateId = Deno.env.get('EMAILJS_TEMPLATE_ID');
+  const publicKey = Deno.env.get('EMAILJS_PUBLIC_KEY');
+  if (!serviceId || !templateId || !publicKey) return false;
+  const payload: Record<string, unknown> = {
+    service_id: serviceId,
+    template_id: templateId,
+    user_id: publicKey,
+    template_params: { email: destination, otp_code: code },
+  };
+  const privateKey = Deno.env.get('EMAILJS_PRIVATE_KEY');
+  if (privateKey) payload.accessToken = privateKey;
+  const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'origin': Deno.env.get('EMAILJS_ORIGIN') ?? 'http://localhost',
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) console.error('EmailJS rejected recovery email', response.status);
+  return response.ok;
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers });
   if (request.method !== 'POST') return reply({ error: 'Method not allowed' }, 405);
@@ -43,22 +69,66 @@ Deno.serve(async (request) => {
   });
   const action = body.action;
   try {
+    if (action === 'questions-begin') {
+      const username = typeof body.username === 'string' ? body.username.trim() : '';
+      if (!username || username.length > 128) return reply({ error: 'Invalid username' }, 400);
+      const { data, error } = await admin.rpc('password_recovery_questions_begin_v1', {
+        p_username: username,
+      });
+      if (error) throw error;
+      if (data?.challenge_id && Array.isArray(data.question_ids)) {
+        return reply({ challengeId: data.challenge_id, questionIds: data.question_ids });
+      }
+      // Never display questions that were not saved for this account.
+      return reply({ challengeId: null, questionIds: [] });
+    }
+    if (action === 'questions-verify') {
+      const challengeId = typeof body.challengeId === 'string' ? body.challengeId : '';
+      const answers = Array.isArray(body.answers) ? body.answers : [];
+      if (!/^[0-9a-f-]{36}$/i.test(challengeId) || answers.length !== 3 ||
+          answers.some((answer) => typeof answer !== 'string' || answer.length > 200)) {
+        return reply({ resetToken: null });
+      }
+      const { data, error } = await admin.rpc('password_recovery_questions_verify_v1', {
+        p_challenge_id: challengeId,
+        p_first_answer: answers[0],
+        p_second_answer: answers[1],
+        p_third_answer: answers[2],
+      });
+      if (error) throw error;
+      return reply({ resetToken: data });
+    }
     if (action === 'request') {
       const username = typeof body.username === 'string' ? body.username.trim() : '';
-      const channel = body.channel === 'sms' ? 'sms' : null;
+      const channel = body.channel === 'sms' || body.channel === 'email'
+        ? body.channel : null;
       if (!username || username.length > 128) return reply({ error: 'Invalid username' }, 400);
       if (!channel) return reply({ error: 'Invalid channel' }, 400);
-      if (!Deno.env.get('TEXTBEE_API_KEY')) {
+      if (channel === 'sms' && !Deno.env.get('TEXTBEE_API_KEY')) {
         return reply({ error: 'SMS recovery is not configured' }, 503);
+      }
+      if (channel === 'email' &&
+          (!Deno.env.get('EMAILJS_SERVICE_ID') || !Deno.env.get('EMAILJS_TEMPLATE_ID') ||
+           !Deno.env.get('EMAILJS_PUBLIC_KEY'))) {
+        return reply({ error: 'Email recovery is not configured' }, 503);
       }
       const { data, error } = await admin.rpc('password_recovery_begin_v1', {
         p_username: username, p_channel: channel,
       });
       if (error) throw error;
-      const challengeId = data?.challenge_id ?? crypto.randomUUID();
-      if (data?.challenge_id) {
-        let accepted = false;
-        try {
+      if (!data?.challenge_id) {
+        // Unknown, non-Admin, and throttled accounts cannot receive a code.
+        return reply({ challengeId: null });
+      }
+      const challengeId = data.challenge_id;
+      let accepted = false;
+      try {
+        if (channel === 'email') {
+          const email = String(data.destination ?? '').trim();
+          if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            accepted = await sendEmailCode(email, String(data.code));
+          }
+        } else {
           const phone = internationalPhone(String(data.destination ?? ''));
           if (phone) {
             const payload: Record<string, unknown> = {
@@ -77,16 +147,16 @@ Deno.serve(async (request) => {
             accepted = response.ok && result?.data?.success === true;
             if (!accepted) console.error('Textbee rejected recovery SMS', response.status);
           }
-        } catch (deliveryError) {
-          console.error('Recovery delivery failed', deliveryError);
         }
-        if (!accepted) {
-          await admin.rpc('password_recovery_cancel_v1', {
-            p_challenge_id: challengeId,
-          });
-        }
+      } catch (deliveryError) {
+        console.error('Recovery delivery failed', deliveryError);
       }
-      // The same response for unknown, throttled, and eligible accounts.
+      if (!accepted) {
+        await admin.rpc('password_recovery_cancel_v1', {
+          p_challenge_id: challengeId,
+        });
+        return reply({ challengeId: null });
+      }
       return reply({ challengeId });
     }
     if (action === 'verify') {
@@ -107,7 +177,10 @@ Deno.serve(async (request) => {
       if (!/^[0-9a-f]{64}$/i.test(token) || password.length > 128) {
         return reply({ success: false });
       }
-      const { data, error } = await admin.rpc('password_recovery_complete_v1', {
+      const recoveryFunction = body.method === 'questions'
+        ? 'password_recovery_questions_complete_v1'
+        : 'password_recovery_complete_v1';
+      const { data, error } = await admin.rpc(recoveryFunction, {
         p_reset_token: token, p_new_password: password,
       });
       if (error) throw error;

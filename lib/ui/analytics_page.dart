@@ -42,11 +42,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   bool _loading = true;
   bool _exporting = false;
   String? _error;
-  List<CustomerOrder> _orders = const [];
-  List<Map<String, dynamic>> _movements = const [];
+  Map<String, dynamic>? _summary;
+  String? _loadedPeriod;
+  String? _loadedLocationId;
+  bool _stale = true;
+  int _loadGeneration = 0;
   late final Future<Map<String, String>> _marketFuture;
   StreamSubscription<List<InventoryItem>>? _inventorySubscription;
   StreamSubscription<HistoryInvalidation>? _historySubscription;
+  Timer? _reloadDebounce;
 
   @override
   void initState() {
@@ -55,10 +59,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     _inventorySubscription = widget.controller.inventorySnapshots.listen((_) {
       if (mounted && widget.isActive) setState(() {});
     });
-    _historySubscription = widget.controller.historyInvalidations.listen((_) {
-      if (widget.isActive) _load();
+    _historySubscription = widget.controller.historyInvalidations.listen((
+      event,
+    ) {
+      if (event.locationId != widget.controller.activeLocationId) return;
+      _stale = true;
+      _loadGeneration++;
+      if (widget.isActive) _scheduleReload();
     });
-    _load();
+    if (widget.isActive) unawaited(_load());
   }
 
   @override
@@ -67,44 +76,82 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     if (widget.controller != oldWidget.controller) {
       unawaited(_inventorySubscription?.cancel());
       unawaited(_historySubscription?.cancel());
+      _summary = null;
+      _loadedPeriod = null;
+      _loadedLocationId = null;
       _inventorySubscription = widget.controller.inventorySnapshots.listen((_) {
         if (mounted && widget.isActive) setState(() {});
       });
-      _historySubscription = widget.controller.historyInvalidations.listen((_) {
-        if (widget.isActive) _load();
+      _historySubscription = widget.controller.historyInvalidations.listen((
+        event,
+      ) {
+        if (event.locationId != widget.controller.activeLocationId) return;
+        _stale = true;
+        _loadGeneration++;
+        if (widget.isActive) _scheduleReload();
       });
-      _load();
+      _stale = true;
+      if (widget.isActive) unawaited(_load());
     } else if (widget.isActive && !oldWidget.isActive) {
-      _load();
+      if (_stale ||
+          _loadedPeriod != _period ||
+          _loadedLocationId != widget.controller.activeLocationId) {
+        unawaited(_load());
+      }
     }
   }
 
   @override
   void dispose() {
+    _reloadDebounce?.cancel();
     unawaited(_inventorySubscription?.cancel());
     unawaited(_historySubscription?.cancel());
     super.dispose();
   }
 
+  void _scheduleReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted && widget.isActive) unawaited(_load());
+    });
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
+    final generation = ++_loadGeneration;
+    final period = _period;
+    final locationId = widget.controller.activeLocationId;
+    final start = _periodStart;
+    final end = _periodEnd;
+    final previousStart = period == 'Last month'
+        ? DateTime(start.year, start.month - 1)
+        : start.subtract(end.difference(start));
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month - 8);
     setState(() {
-      _loading = true;
+      _loading =
+          _summary == null ||
+          _loadedPeriod != period ||
+          _loadedLocationId != locationId;
       _error = null;
     });
     try {
-      final results = await Future.wait<Object>([
-        widget.controller.loadActivityOrders(),
-        widget.controller.loadAllTransactionHistory(),
-      ]);
-      if (!mounted) return;
+      final summary = await widget.controller.loadAnalyticsSummary(
+        periodStart: start,
+        periodEnd: end,
+        previousStart: previousStart,
+        monthStart: monthStart,
+      );
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
-        _orders = results[0] as List<CustomerOrder>;
-        _movements = results[1] as List<Map<String, dynamic>>;
+        _summary = summary;
+        _loadedPeriod = period;
+        _loadedLocationId = locationId;
+        _stale = false;
         _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _loading = false;
         _error = 'Analytics could not be loaded.';
@@ -210,90 +257,44 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         : now.add(const Duration(microseconds: 1));
   }
 
-  bool _within(DateTime date, DateTime start, DateTime end) =>
-      !date.isBefore(start) && date.isBefore(end);
-
-  bool _isSale(CustomerOrder order) =>
-      order.status == 'completed' ||
-      order.status == 'prepared' ||
-      order.status == 'pending' ||
-      order.status == 'solo_picking';
-
-  List<CustomerOrder> get _sales => _orders.where((order) {
-    return _isSale(order) && _within(order.createdAt, _periodStart, _periodEnd);
-  }).toList();
-
-  double get _revenue =>
-      _sales.fold(0, (sum, order) => sum + order.totalAmount);
-
-  double get _unitsSold => _sales.fold(
-    0,
-    (sum, order) =>
-        sum + order.items.fold<double>(0, (s, item) => s + item.quantity),
-  );
+  double get _revenue => (_summary?['revenue'] as num?)?.toDouble() ?? 0;
+  double get _unitsSold => (_summary?['units_sold'] as num?)?.toDouble() ?? 0;
+  int get _orderCount => (_summary?['order_count'] as num?)?.toInt() ?? 0;
+  double get _previousRevenue =>
+      (_summary?['previous_revenue'] as num?)?.toDouble() ?? 0;
 
   double get _inventoryValue => widget.controller.allItems.fold(
     0,
     (sum, item) => sum + item.price * item.quantity,
   );
 
-  Map<String, double> get _categorySales {
-    final categories = <String, double>{};
-    final products = {
-      for (final item in widget.controller.allItems) item.id: item,
-    };
-    for (final order in _sales) {
-      final raw = order.items.fold<double>(
-        0,
-        (sum, item) =>
-            sum +
-            (item.lineTotal ??
-                item.quantity *
-                    (item.unitPrice ?? (products[item.productId]?.price ?? 0))),
-      );
-      for (final item in order.items) {
-        final product = products[item.productId];
-        final category = product?.category.trim().isNotEmpty == true
-            ? product!.category
-            : 'Other';
-        final line =
-            item.lineTotal ??
-            item.quantity * (item.unitPrice ?? product?.price ?? 0);
-        final amount = raw > 0
-            ? order.totalAmount * line / raw
-            : order.totalAmount / math.max(1, order.items.length);
-        categories[category] = (categories[category] ?? 0) + amount;
-      }
-    }
-    return categories;
-  }
+  Map<String, double> get _categorySales => (Map<String, dynamic>.from(
+    _summary?['categories'] as Map? ?? const {},
+  )).map((key, value) => MapEntry(key, (value as num).toDouble()));
 
   Map<String, double> _monthlyRevenue() {
     final months = <String, double>{};
-    for (final order in _orders.where(_isSale)) {
-      final key = '${order.createdAt.year}-${order.createdAt.month}';
-      months[key] = (months[key] ?? 0) + order.totalAmount;
+    final raw = Map<String, dynamic>.from(
+      _summary?['monthly'] as Map? ?? const {},
+    );
+    for (final entry in raw.entries) {
+      final parts = entry.key.split('-');
+      if (parts.length != 2) continue;
+      final key = '${int.tryParse(parts[0])}-${int.tryParse(parts[1])}';
+      months[key] = (entry.value as num).toDouble();
     }
     return months;
   }
 
+  Map<String, dynamic> get _stockSummary =>
+      Map<String, dynamic>.from(_summary?['stock'] as Map? ?? const {});
+
   List<_StockRow> get _restock {
-    final now = DateTime.now();
-    final start = now.subtract(const Duration(days: 28));
-    final sold = <String, double>{};
-    for (final tx in _movements) {
-      if (tx['transaction_type'] != 'checkout') continue;
-      final date = DateTime.tryParse(tx['created_at']?.toString() ?? '');
-      if (date == null || date.toLocal().isBefore(start)) continue;
-      final id = tx['product_id']?.toString();
-      if (id == null) continue;
-      sold[id] =
-          (sold[id] ?? 0) +
-          ((tx['quantity_change'] as num?)?.toDouble() ?? 0).abs();
-    }
+    final stock = _stockSummary;
     final rows = <_StockRow>[];
     for (final item in widget.controller.allItems) {
-      final weekly = (sold[item.id] ?? 0) / 4;
+      final movement = stock[item.id] as Map?;
+      final weekly = ((movement?['sold_28_days'] as num?)?.toDouble() ?? 0) / 4;
       final cover = weekly > 0 ? item.quantity / weekly : double.infinity;
       if (item.quantity <= 0 || (weekly > 0 && cover < 4)) {
         rows.add(_StockRow(item, weekly, cover));
@@ -305,22 +306,17 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   List<_DeadRow> get _deadStock {
     final now = DateTime.now();
-    final lastSale = <String, DateTime>{};
-    for (final tx in _movements) {
-      if (tx['transaction_type'] != 'checkout') continue;
-      final id = tx['product_id']?.toString();
-      final date = DateTime.tryParse(
-        tx['created_at']?.toString() ?? '',
-      )?.toLocal();
-      if (id != null &&
-          date != null &&
-          (lastSale[id] == null || date.isAfter(lastSale[id]!))) {
-        lastSale[id] = date;
-      }
-    }
+    final stock = _stockSummary;
     return widget.controller.allItems
         .where((item) => item.quantity > 0)
-        .map((item) => _DeadRow(item, lastSale[item.id]))
+        .map(
+          (item) => _DeadRow(
+            item,
+            DateTime.tryParse(
+              (stock[item.id] as Map?)?['last_sale']?.toString() ?? '',
+            )?.toLocal(),
+          ),
+        )
         .where(
           (row) =>
               row.lastSale != null &&
@@ -334,7 +330,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
-      final entries = _sales
+      final orders = await widget.controller.loadAnalyticsSalesExport(
+        start: _periodStart,
+        endExclusive: _periodEnd,
+      );
+      final entries = orders
           .map(
             (order) => SalesReportEntry(
               orderNumber: order.id.substring(0, math.min(order.id.length, 8)),
@@ -381,13 +381,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
+      final movements = await widget.controller.loadAllTransactionHistory();
       final start = _periodStart;
       final end = _periodEnd;
       final net = <String, double>{};
       final after = <String, double>{};
       final received = <String, double>{};
       final issued = <String, double>{};
-      for (final tx in _movements) {
+      for (final tx in movements) {
         final id = tx['product_id']?.toString();
         final date = DateTime.tryParse(
           tx['created_at']?.toString() ?? '',
@@ -568,7 +569,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     )
                     .toList(),
             onChanged: (value) {
-              if (value != null) setState(() => _period = value);
+              if (value != null && value != _period) {
+                setState(() => _period = value);
+                unawaited(_load());
+              }
             },
           ),
         ),
@@ -623,16 +627,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   );
 
   Widget _kpis(bool narrow) {
-    final previousStart = _period == 'Last month'
-        ? DateTime(_periodStart.year, _periodStart.month - 1)
-        : _periodStart.subtract(_periodEnd.difference(_periodStart));
-    final previous = _orders
-        .where(
-          (order) =>
-              _isSale(order) &&
-              _within(order.createdAt, previousStart, _periodStart),
-        )
-        .fold<double>(0, (sum, order) => sum + order.totalAmount);
+    final previous = _previousRevenue;
     final change = previous > 0 ? (_revenue - previous) / previous * 100 : null;
     final items = <Widget>[
       Column(
@@ -668,7 +663,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       _metric('Gross margin', '—', 'Unit cost unavailable'),
       _metric(
         'Avg order value',
-        _money(_sales.isEmpty ? 0 : _revenue / _sales.length),
+        _money(_orderCount == 0 ? 0 : _revenue / _orderCount),
       ),
       _metric('Units sold', _number(_unitsSold)),
       _metric(
@@ -832,7 +827,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     Expanded(
                       child: Text(entry.key, overflow: TextOverflow.ellipsis),
                     ),
-                    Text('${(entry.value / total * 100).round()}%'),
+                    Text(
+                      '${total > 0 ? (entry.value / total * 100).round() : 0}%',
+                    ),
                   ],
                 ),
                 const SizedBox(height: 7),

@@ -5,9 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/helper_assignment.dart';
+import '../logic/staff_availability.dart';
 import '../logic/staff_management.dart';
 import '../logic/staff_performance.dart';
+import '../logic/ph_mobile_number.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 import '../services/staff_presence_service.dart';
@@ -47,8 +51,12 @@ class _StaffPageState extends State<StaffPage> {
   String? _error;
   StaffPerformanceSnapshot? _cashierToday;
   StaffPerformanceSnapshot? _helperToday;
+  Map<String, dynamic>? _bodegeroToday;
   StreamSubscription<List<Map<String, dynamic>>>? _staffSubscription;
+  StreamSubscription<List<CustomerOrder>>? _ordersSubscription;
   StreamSubscription<void>? _performanceSubscription;
+  Timer? _ordersRefreshTimer;
+  Map<String, int> _activeOrderCounts = const {};
   int _metricsGeneration = 0;
 
   @override
@@ -57,10 +65,36 @@ class _StaffPageState extends State<StaffPage> {
     _bind();
     _search.addListener(_rebuild);
     widget.presence?.addListener(_rebuild);
-    if (widget.isActive) unawaited(_loadToday());
+    if (widget.isActive) {
+      unawaited(_loadToday());
+      _startOrderRefresh();
+    }
+  }
+
+  void _startOrderRefresh() {
+    _ordersRefreshTimer?.cancel();
+    unawaited(widget.controller.retryOrdersSnapshot());
+    _ordersRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted && widget.isActive) {
+        unawaited(widget.controller.retryOrdersSnapshot());
+      }
+    });
   }
 
   void _bind() {
+    _activeOrderCounts = {
+      ...activePreparationWorkloads(widget.controller.currentOrders),
+      ...activeLoadingWorkloads(widget.controller.currentOrders),
+    };
+    _ordersSubscription = widget.controller.streamOrders().listen((orders) {
+      if (!mounted) return;
+      setState(
+        () => _activeOrderCounts = {
+          ...activePreparationWorkloads(orders),
+          ...activeLoadingWorkloads(orders),
+        },
+      );
+    });
     _staffSubscription = widget.controller.streamStaffConfiguration().listen(
       (rows) {
         if (!mounted) return;
@@ -96,11 +130,13 @@ class _StaffPageState extends State<StaffPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       unawaited(_staffSubscription?.cancel());
+      unawaited(_ordersSubscription?.cancel());
       unawaited(_performanceSubscription?.cancel());
       _staff = const [];
       _loading = true;
       _cashierToday = null;
       _helperToday = null;
+      _bodegeroToday = null;
       _bind();
     }
     if (oldWidget.presence != widget.presence) {
@@ -110,6 +146,13 @@ class _StaffPageState extends State<StaffPage> {
     if ((!oldWidget.isActive && widget.isActive) ||
         oldWidget.controller != widget.controller) {
       unawaited(_loadToday(force: true));
+    }
+    if (widget.isActive &&
+        (!oldWidget.isActive || oldWidget.controller != widget.controller)) {
+      _startOrderRefresh();
+    } else if (!widget.isActive && oldWidget.isActive) {
+      _ordersRefreshTimer?.cancel();
+      _ordersRefreshTimer = null;
     }
   }
 
@@ -138,6 +181,19 @@ class _StaffPageState extends State<StaffPage> {
           forceRefresh: force,
         ),
       ]);
+      Map<String, dynamic>? bodegero;
+      try {
+        bodegero = await controller.loadBodegeroPerformance(
+          periodStart: start,
+          periodEnd: end,
+        );
+      } catch (error, stackTrace) {
+        AppLogger.error(
+          'Bodegero today metrics failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
       if (!mounted ||
           generation != _metricsGeneration ||
           controller != widget.controller)
@@ -145,6 +201,7 @@ class _StaffPageState extends State<StaffPage> {
       setState(() {
         _cashierToday = results[0];
         _helperToday = results[1];
+        _bodegeroToday = bodegero;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -157,8 +214,10 @@ class _StaffPageState extends State<StaffPage> {
 
   @override
   void dispose() {
+    _ordersRefreshTimer?.cancel();
     _metricsGeneration++;
     unawaited(_staffSubscription?.cancel());
+    unawaited(_ordersSubscription?.cancel());
     unawaited(_performanceSubscription?.cancel());
     widget.presence?.removeListener(_rebuild);
     _search.removeListener(_rebuild);
@@ -428,6 +487,7 @@ class _StaffPageState extends State<StaffPage> {
       ('admin', 'Administrator'),
       ('staff', 'Cashier'),
       ('helper', 'Order helper'),
+      ('bodegero', 'Bodegero'),
     ];
     final selectedLabel = roles.firstWhere((role) => role.$1 == _role).$2;
 
@@ -729,6 +789,15 @@ class _StaffPageState extends State<StaffPage> {
   String _mobileTodaySummary(Map<String, dynamic> person) {
     final role = person['role']?.toString();
     if (role == 'admin') return 'Administrator';
+    if (role == 'bodegero') {
+      final record = _bodegeroRecord(person['id']?.toString() ?? '');
+      final loaded = _bodegeroToday == null
+          ? '—'
+          : '${(record?['completed_count'] as num?)?.toInt() ?? 0}';
+      final active = _activeOrderCounts[person['id']?.toString() ?? ''] ?? 0;
+      final median = (record?['median_minutes'] as num?)?.round();
+      return '$loaded loaded  ·  ${median == null ? '—' : '$median min'} median  ·  $active active';
+    }
     final record = _findRecord(
       role == 'helper' ? _helperToday : _cashierToday,
       person['id']?.toString() ?? '',
@@ -794,24 +863,32 @@ class _StaffPageState extends State<StaffPage> {
 
   Widget _availability(Map<String, dynamic> person) {
     final id = person['id']?.toString() ?? '';
+    final presence = widget.presence;
     final online =
-        widget.presence?.activeStaff.any(
-          (row) => row['user_id']?.toString() == id,
-        ) ??
+        presence?.activeStaff.any((row) => row['user_id']?.toString() == id) ??
         false;
-    final helper = person['role']?.toString() == 'helper';
-    final record = _findRecord(_helperToday, id);
-    final busy = online && helper && (record?.currentWorkload ?? 0) > 0;
-    final label = online
-        ? busy
-              ? 'Busy'
-              : 'Available'
-        : 'Offline';
-    final color = online
-        ? busy
-              ? _orange
-              : _green
-        : _muted;
+    final role = person['role']?.toString().toLowerCase();
+    final helper = role == 'helper';
+    final bodegero = role == 'bodegero';
+    final availability = resolveStaffAvailability(
+      isOnline: online,
+      isOnBreak: (helper || bodegero) && (presence?.isUserOnBreak(id) ?? false),
+      isHelper: helper,
+      isBodegero: bodegero,
+      activeOrders: _activeOrderCounts[id] ?? 0,
+    );
+    final label = switch (availability) {
+      StaffAvailability.offline => 'Offline',
+      StaffAvailability.onBreak => 'On break',
+      StaffAvailability.busy => 'Busy',
+      StaffAvailability.available => 'Available',
+    };
+    final color = switch (availability) {
+      StaffAvailability.offline => _muted,
+      StaffAvailability.onBreak => const Color(0xFF9A5B00),
+      StaffAvailability.busy => _orange,
+      StaffAvailability.available => _green,
+    };
     return _pill(label, color);
   }
 
@@ -822,6 +899,32 @@ class _StaffPageState extends State<StaffPage> {
         'Administrator',
         style: TextStyle(color: _muted, fontSize: 12),
       );
+    if (role == 'bodegero') {
+      final id = person['id']?.toString() ?? '';
+      final record = _bodegeroRecord(id);
+      final loaded = _bodegeroToday == null
+          ? '—'
+          : '${(record?['completed_count'] as num?)?.toInt() ?? 0}';
+      final median = (record?['median_minutes'] as num?)?.round();
+      final active = _activeOrderCounts[id] ?? 0;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$loaded loaded',
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            '${median == null ? '—' : '$median min'} median · $active active',
+            style: const TextStyle(color: _muted, fontSize: 12),
+          ),
+        ],
+      );
+    }
     final record = _findRecord(
       role == 'helper' ? _helperToday : _cashierToday,
       person['id']?.toString() ?? '',
@@ -848,6 +951,17 @@ class _StaffPageState extends State<StaffPage> {
         Text(secondary, style: const TextStyle(color: _muted, fontSize: 12)),
       ],
     );
+  }
+
+  Map<String, dynamic>? _bodegeroRecord(String id) {
+    final records = _bodegeroToday?['records'];
+    if (records is! List) return null;
+    for (final value in records) {
+      if (value is Map && value['employee_id']?.toString() == id) {
+        return Map<String, dynamic>.from(value);
+      }
+    }
+    return null;
   }
 
   StaffPerformanceRecord? _findRecord(
@@ -1202,7 +1316,9 @@ class _StaffEditorState extends State<_StaffEditor> {
       text: person?['username']?.toString() ?? '',
     );
     _email = TextEditingController(text: person?['email']?.toString() ?? '');
-    _phone = TextEditingController(text: person?['phone']?.toString() ?? '');
+    _phone = TextEditingController(
+      text: philippineMobileDigits(person?['phone']?.toString()),
+    );
     _address = TextEditingController(
       text: person?['address']?.toString() ?? '',
     );
@@ -1235,7 +1351,7 @@ class _StaffEditorState extends State<_StaffEditor> {
           password: password,
           role: _role,
           email: _email.text.trim(),
-          phone: _phone.text.trim(),
+          phone: philippineMobileE164(_phone.text),
           address: _address.text.trim(),
         );
         if (!mounted) return;
@@ -1249,7 +1365,7 @@ class _StaffEditorState extends State<_StaffEditor> {
           id: widget.person!['id'].toString(),
           name: _name.text.trim(),
           email: _email.text.trim(),
-          phone: _phone.text.trim(),
+          phone: philippineMobileE164(_phone.text),
           address: _address.text.trim(),
           role: _role,
           isActive: _active,
@@ -1375,7 +1491,14 @@ class _StaffEditorState extends State<_StaffEditor> {
                         compact: mobile,
                       ),
                       SizedBox(height: mobile ? 10 : 18),
-                      _field('Mobile', _phone, phone: true, compact: mobile),
+                      _field(
+                        'Mobile number',
+                        _phone,
+                        phone: true,
+                        required: true,
+                        compact: mobile,
+                        hint: '9XXXXXXXXX',
+                      ),
                       SizedBox(height: mobile ? 10 : 18),
                       _field(
                         'Home address',
@@ -1585,23 +1708,43 @@ class _StaffEditorState extends State<_StaffEditor> {
         controller: controller,
         style: const TextStyle(fontSize: 14),
         maxLines: 1,
+        inputFormatters: phone
+            ? [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(10),
+              ]
+            : null,
         keyboardType: email
             ? TextInputType.emailAddress
             : phone
             ? TextInputType.phone
             : TextInputType.text,
-        decoration: compact
-            ? _inputDecoration(hint).copyWith(
-                isDense: true,
-                constraints: const BoxConstraints(minHeight: 38),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
+        decoration:
+            (compact
+                    ? _inputDecoration(hint).copyWith(
+                        isDense: true,
+                        constraints: const BoxConstraints(minHeight: 38),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      )
+                    : _inputDecoration(hint))
+                .copyWith(
+                  prefixIcon: phone
+                      ? const Center(
+                          widthFactor: 1,
+                          child: Text('+63', style: TextStyle(color: _ink, fontSize: 14)),
+                        )
+                      : null,
+                  prefixIconConstraints: phone
+                      ? const BoxConstraints(minWidth: 48, minHeight: 0)
+                      : null,
+                  helperText: phone ? 'Format: $philippineMobileExample' : null,
                 ),
-              )
-            : _inputDecoration(hint),
         validator: (value) {
           final text = value?.trim() ?? '';
+          if (phone) return philippineMobileError(text);
           if (required && text.isEmpty) return '$label is required.';
           if (email &&
               text.isNotEmpty &&
@@ -1618,6 +1761,7 @@ class _StaffEditorState extends State<_StaffEditor> {
       ('admin', 'Administrator'),
       ('staff', 'Cashier'),
       ('helper', 'Order helper'),
+      ('bodegero', 'Bodegero'),
     ])
       Padding(
         padding: EdgeInsets.only(
@@ -1700,6 +1844,7 @@ String _initials(String name) {
 String _roleLabel(String? role) => switch (role) {
   'admin' => 'Administrator',
   'helper' => 'Order helper',
+  'bodegero' => 'Bodegero',
   _ => 'Cashier',
 };
 

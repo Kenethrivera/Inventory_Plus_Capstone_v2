@@ -8,11 +8,11 @@ import '../logic/history_pagination.dart';
 import 'widgets/history_pagination_footer.dart';
 import 'widgets/history_period_controls.dart';
 
-const Color _primaryBlue = Color(0xFF2563EB);
-const Color _darkText = Color(0xFF0F172A);
-const Color _mutedText = Color(0xFF64748B);
-const Color _pageBg = Color(0xFFF4F6F8);
-const Color _border = Color(0xFFE2E8F0);
+const Color _accent = Color(0xFFC83D08);
+const Color _darkText = Color(0xFF211F1D);
+const Color _mutedText = Color(0xFF756D67);
+const Color _pageBg = Color(0xFFF7F6F4);
+const Color _border = Color(0xFFE3DED7);
 const String _fontFam = 'Hellix';
 
 class StaffHistoryPage extends StatefulWidget {
@@ -323,7 +323,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
 
   Color _statusColor(String status) => switch (status.toLowerCase()) {
     'pending' => const Color(0xFFD97706),
-    'prepared' => _primaryBlue,
+    'prepared' => _accent,
     'completed' => const Color(0xFF16A34A),
     'cancelled' => const Color(0xFFDC2626),
     'returned' => const Color(0xFFEA580C),
@@ -341,7 +341,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     if (_currentUserId == null || _currentUserId!.isEmpty) {
       return const Scaffold(
         backgroundColor: _pageBg,
-        body: Center(child: CircularProgressIndicator(color: _primaryBlue)),
+        body: Center(child: CircularProgressIndicator(color: _accent)),
       );
     }
 
@@ -698,7 +698,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
         const Color(0xFFC3273C),
         const Color(0xFFFCE8EA),
       ),
-      _ => ('Assigned', const Color(0xFF28619C), const Color(0xFFE4EFFD)),
+      _ => ('Assigned', _accent, const Color(0xFFFFF1E9)),
     };
     final created = order.createdAt.toLocal();
     final today = DateTime.now();
@@ -819,8 +819,8 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
           if (loading && result != null)
             const LinearProgressIndicator(
               minHeight: 2,
-              color: Color(0xFF60A5FA),
-              backgroundColor: Color(0xFFEFF6FF),
+              color: _accent,
+              backgroundColor: Color(0xFFFFF1E9),
             ),
           if (error != null && result != null)
             Padding(
@@ -945,7 +945,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     required int cancelled,
   }) {
     final metrics = <_StaffMetric>[
-      _StaffMetric('My Records', '$total', Icons.history, _primaryBlue),
+      _StaffMetric('My Records', '$total', Icons.history, _accent),
       _StaffMetric(
         'Active',
         '$active',
@@ -1035,7 +1035,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
                   tooltip: 'Refresh restocks',
                   onPressed: () => _refreshCurrent(forceRefresh: true),
                   icon: const Icon(Icons.refresh, size: 18),
-                  color: _primaryBlue,
+                  color: _accent,
                   visualDensity: VisualDensity.compact,
                 )
               : null;
@@ -1115,7 +1115,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
                   icon: const Icon(Icons.close, size: 16),
                 ),
           filled: true,
-          fillColor: const Color(0xFFF8FAFC),
+          fillColor: const Color(0xFFFAF8F6),
           contentPadding: EdgeInsets.zero,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
@@ -1127,7 +1127,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: _primaryBlue),
+            borderSide: const BorderSide(color: _accent),
           ),
         ),
       ),
@@ -1155,7 +1155,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
           Container(
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 14),
-            color: const Color(0xFFF8FAFC),
+            color: const Color(0xFFFAF8F6),
             child: Row(
               children: [
                 const _StaffTableCell('ORDER', flex: 15, header: true),
@@ -1183,7 +1183,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
             child: ListView.separated(
               itemCount: orders.length,
               separatorBuilder: (_, _) =>
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  const Divider(height: 1, color: Color(0xFFF2ECE7)),
               itemBuilder: (context, index) {
                 final order = orders[index];
                 final activityDate = _activityDate(order);
@@ -1193,7 +1193,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: () => _showOrderDetails(order),
-                      hoverColor: const Color(0xFFF8FAFC),
+                      hoverColor: const Color(0xFFFAF8F6),
                       child: Container(
                         constraints: const BoxConstraints(minHeight: 58),
                         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -1212,7 +1212,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
                             _StaffTableCell(
                               _myActionLabel(order),
                               flex: 17,
-                              color: _primaryBlue,
+                              color: _accent,
                             ),
                             _StaffTableCell(
                               order.items.length.toString(),
@@ -1310,7 +1310,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
                   Text(
                     _myActionLabel(order),
                     style: const TextStyle(
-                      color: _primaryBlue,
+                      color: _accent,
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
                       fontFamily: _fontFam,
@@ -1434,7 +1434,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
           Container(
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 14),
-            color: const Color(0xFFF8FAFC),
+            color: const Color(0xFFFAF8F6),
             child: const Row(
               children: [
                 _StaffTableCell('ITEM', flex: 22, header: true),
@@ -1460,7 +1460,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
             child: ListView.separated(
               itemCount: restocks.length,
               separatorBuilder: (_, _) =>
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  const Divider(height: 1, color: Color(0xFFF2ECE7)),
               itemBuilder: (context, index) {
                 final transaction = restocks[index];
                 final product = _readProductMap(transaction['products']);
@@ -1741,7 +1741,7 @@ class _HistorySegments extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: const Color(0xFFF2ECE7),
         borderRadius: BorderRadius.circular(9),
       ),
       child: Wrap(
@@ -2159,9 +2159,9 @@ class _StaffDetailSection extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: const Color(0xFFFAF8F6),
             borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: const Color(0xFFF1F5F9)),
+            border: Border.all(color: const Color(0xFFF2ECE7)),
           ),
           child: child,
         ),

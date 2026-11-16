@@ -53,6 +53,7 @@ class _AddItemPageState extends State<AddItemPage> {
 
   // Selected unit symbol (comes from the `measurements` table)
   String _selectedUnit = 'pcs';
+  bool _requiresLoading = false;
   static const String _addNewValue = '__add_new_unit__';
   int _unitFieldVersion = 0; // forces the dropdown to rebuild after the modal
   StreamSubscription<InventoryRuntimeSettingsSnapshot>?
@@ -407,6 +408,7 @@ class _AddItemPageState extends State<AddItemPage> {
         shelfLevel: '', // Default empty value
         imageUrl: finalImageUrl ?? '',
         unit: _selectedUnit,
+        requiresLoading: _requiresLoading,
       );
 
       final savedItem = await widget.controller.addItem(
@@ -544,6 +546,15 @@ class _AddItemPageState extends State<AddItemPage> {
 
                           const SizedBox(height: 16),
                           _buildUnitDropdown(),
+                          SwitchListTile(
+                            title: const Text('Heavy / truck loading required'),
+                            subtitle: const Text(
+                              'Assign this product to a bodegero when ordered.',
+                            ),
+                            value: _requiresLoading,
+                            onChanged: (value) =>
+                                setState(() => _requiresLoading = value),
+                          ),
 
                           const SizedBox(height: 16),
                           _buildTextField(

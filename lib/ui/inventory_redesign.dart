@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_styled_dropdown.dart';
 import 'widgets/restock_request_dialog.dart';
@@ -2569,6 +2570,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   final _shelfController = TextEditingController();
   final _binController = TextEditingController();
   String _categoryValue = '';
+  bool _requiresLoading = false;
   String? _locationValue;
   int _referenceTab = 0;
   bool _isEditing = false;
@@ -2594,6 +2596,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     _shelfController.text = widget.item.shelfLevel ?? '';
     _binController.text = widget.item.binNumber ?? '';
     _categoryValue = widget.item.category;
+    _requiresLoading = widget.item.requiresLoading;
     _locationValue = widget.item.locationId;
     _subscribeToHistory();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2692,6 +2695,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     _shelfController.text = item.shelfLevel ?? '';
     _binController.text = item.binNumber ?? '';
     _categoryValue = item.category;
+    _requiresLoading = item.requiresLoading;
     _locationValue = item.locationId;
     setState(() {
       _chosenImage = null;
@@ -3075,6 +3079,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         shelfLevel: _shelfController.text.trim(),
         binNumber: _binController.text.trim(),
         imageUrl: savedImageUrl,
+        requiresLoading: _requiresLoading,
       );
       await widget.onSave(updated);
       if (_locationValue != item.locationId) {
@@ -3859,6 +3864,14 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
             style: const TextStyle(fontSize: 12, color: _warmMuted),
           ),
         ],
+        SwitchListTile(
+          title: const Text('Heavy / truck loading required'),
+          subtitle: const Text('Bodegero verifies and loads this product.'),
+          value: _requiresLoading,
+          onChanged: canEdit
+              ? (value) => setState(() => _requiresLoading = value)
+              : null,
+        ),
         const SizedBox(height: 16),
         if (canEdit) ...[
           Wrap(
@@ -4221,23 +4234,36 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   Future<void> _toggleReferenceStatus(InventoryItem item, bool disabled) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(disabled ? 'Restore product?' : 'Disable product?'),
-        content: Text(
-          disabled
-              ? 'This product will return to the active inventory.'
-              : 'This product will be hidden from active inventory.',
-        ),
+      builder: (dialogContext) => AppDialog(
+        icon: disabled ? LucideIcons.rotateCcw : LucideIcons.packageX,
+        color: disabled ? _accent : _warmRed,
+        title: disabled ? 'Restore product?' : 'Disable product?',
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _ink,
+              side: const BorderSide(color: _border),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: disabled ? _accent : _warmRed,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
             child: Text(disabled ? 'Restore' : 'Disable'),
           ),
         ],
+        child: Text(
+          disabled
+              ? 'This product will return to the active inventory.'
+              : 'This product will be hidden from active inventory.',
+          style: const TextStyle(color: _slate, fontSize: 14, height: 1.5),
+        ),
       ),
     );
     if (confirmed != true || !mounted) return;

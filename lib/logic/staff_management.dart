@@ -34,6 +34,7 @@ String generateStaffPassword({required String name, required String role}) {
   final prefix = switch (role.trim().toLowerCase()) {
     'admin' => 'Admin',
     'helper' => 'Helper',
+    'bodegero' => 'Bodegero',
     _ => 'Cashier',
   };
   return '$prefix$initials@123';
@@ -113,7 +114,7 @@ String? staffCreationConstraintName({String? message, String? details}) {
 
 bool roleRequiresForcedPasswordChange(String? role) {
   return switch (role?.trim().toLowerCase()) {
-    'helper' || 'staff' || 'cashier' => true,
+    'helper' || 'bodegero' || 'staff' || 'cashier' => true,
     _ => false,
   };
 }

@@ -1,17 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../logic/inventory_controller.dart';
+import '../logic/ph_mobile_number.dart';
 import '../services/store_access_service.dart';
 import 'widgets/app_toast.dart';
+import 'widgets/admin_security_questions_card.dart';
 
 class HelperMePage extends StatefulWidget {
   const HelperMePage({
     super.key,
     required this.controller,
-    required this.onLogout,
     this.locationName,
     this.storeAccessSettings,
   });
@@ -19,7 +21,6 @@ class HelperMePage extends StatefulWidget {
   final InventoryController controller;
   final String? locationName;
   final StoreAccessSettings? storeAccessSettings;
-  final VoidCallback onLogout;
 
   @override
   State<HelperMePage> createState() => _HelperMePageState();
@@ -34,20 +35,27 @@ class _HelperMePageState extends State<HelperMePage> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   final _email = TextEditingController();
+  final _address = TextEditingController();
   final _currentPassword = TextEditingController();
   final _newPassword = TextEditingController();
   final _confirmPassword = TextEditingController();
   StreamSubscription<CurrentUserProfileSnapshot?>? _profileSubscription;
   bool _savingProfile = false;
   bool _savingPassword = false;
+  bool _showCurrentPassword = false;
+  bool _showNewPassword = false;
+  bool _showConfirmPassword = false;
   String? _profileError;
   String? _passwordError;
   CurrentUserProfileSnapshot? _loadedProfile;
+  String? _locationName;
 
   @override
   void initState() {
     super.initState();
     _applyProfile(widget.controller.currentUserProfileSnapshot);
+    _locationName = widget.locationName;
+    if (_locationName == null) unawaited(_loadLocationName());
     _profileSubscription = widget.controller.currentUserProfileSnapshots.listen(
       (profile) {
         if (!mounted || profile == null) return;
@@ -64,8 +72,43 @@ class _HelperMePageState extends State<HelperMePage> {
     final profile = _loadedProfile;
     if (profile == null) return false;
     return _name.text.trim() != profile.name ||
-        _phone.text.trim() != (profile.phone ?? '') ||
-        _email.text.trim() != (profile.email ?? '');
+        _phone.text.trim() != philippineMobileDigits(profile.phone) ||
+        _email.text.trim() != (profile.email ?? '') ||
+        _address.text.trim() != (profile.address ?? '');
+  }
+
+  void _onProfileFieldChanged(String _) {
+    setState(() => _profileError = null);
+  }
+
+  String get _roleLabel {
+    final role =
+        (_loadedProfile?.role ?? widget.controller.currentUserRole ?? 'staff')
+            .toLowerCase();
+    return switch (role) {
+      'helper' => 'Order helper',
+      'admin' => 'Administrator',
+      'cashier' => 'Cashier',
+      _ =>
+        role.isEmpty ? 'Staff' : '${role[0].toUpperCase()}${role.substring(1)}',
+    };
+  }
+
+  Future<void> _loadLocationName() async {
+    final locationId = widget.controller.activeLocationId;
+    if (locationId == null) return;
+    try {
+      final row = await widget.controller.supabase
+          .from('locations')
+          .select('location_name')
+          .eq('id', locationId)
+          .maybeSingle();
+      if (!mounted || widget.controller.activeLocationId != locationId) return;
+      final name = row?['location_name']?.toString().trim();
+      if (name != null && name.isNotEmpty) setState(() => _locationName = name);
+    } catch (_) {
+      // The profile remains usable without a location label.
+    }
   }
 
   void _applyProfile(CurrentUserProfileSnapshot? profile) {
@@ -76,8 +119,9 @@ class _HelperMePageState extends State<HelperMePage> {
     }
     _loadedProfile = profile;
     _name.text = profile.name;
-    _phone.text = profile.phone ?? '';
+    _phone.text = philippineMobileDigits(profile.phone);
     _email.text = profile.email ?? '';
+    _address.text = profile.address ?? '';
   }
 
   Future<void> _refreshProfile() async {
@@ -97,6 +141,7 @@ class _HelperMePageState extends State<HelperMePage> {
     _name.dispose();
     _phone.dispose();
     _email.dispose();
+    _address.dispose();
     _currentPassword.dispose();
     _newPassword.dispose();
     _confirmPassword.dispose();
@@ -109,6 +154,7 @@ class _HelperMePageState extends State<HelperMePage> {
       setState(() => _profileError = 'Profile is still loading. Try again.');
       return;
     }
+    if (!_profileIsDirty) return;
     final userId = widget.controller.currentUserId;
     if (userId == null || userId.isEmpty) {
       setState(() => _profileError = 'Your session has ended. Sign in again.');
@@ -118,6 +164,11 @@ class _HelperMePageState extends State<HelperMePage> {
     final email = _email.text.trim();
     if (name.isEmpty) {
       setState(() => _profileError = 'Enter your full name.');
+      return;
+    }
+    final phoneError = philippineMobileError(_phone.text);
+    if (phoneError != null) {
+      setState(() => _profileError = phoneError);
       return;
     }
     if (email.isNotEmpty &&
@@ -134,8 +185,8 @@ class _HelperMePageState extends State<HelperMePage> {
         userId: userId,
         name: name,
         email: email,
-        location: _loadedProfile?.address ?? '',
-        phone: _phone.text.trim(),
+        location: _address.text.trim(),
+        phone: philippineMobileE164(_phone.text),
       );
       if (!mounted) return;
       setState(() {
@@ -162,6 +213,15 @@ class _HelperMePageState extends State<HelperMePage> {
   bool get _passwordsMatch =>
       _confirmPassword.text.isNotEmpty &&
       _confirmPassword.text == _newPassword.text;
+
+  bool get _canUpdatePassword =>
+      _currentPassword.text.isNotEmpty &&
+      _hasLength &&
+      _hasUppercase &&
+      _hasLowercase &&
+      _hasNumber &&
+      _hasSymbol &&
+      _passwordsMatch;
 
   Future<void> _updatePassword() async {
     if (_savingPassword) return;
@@ -223,39 +283,6 @@ class _HelperMePageState extends State<HelperMePage> {
       .map((part) => part[0].toUpperCase())
       .join();
 
-  String _formatTime(String raw) {
-    final parts = raw.split(':');
-    final hour = int.tryParse(parts.first) ?? 0;
-    final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-    final hour12 = hour % 12 == 0 ? 12 : hour % 12;
-    return '$hour12:${minute.toString().padLeft(2, '0')} ${hour < 12 ? 'AM' : 'PM'}';
-  }
-
-  List<String> _scheduleLines(StoreAccessSettings settings) {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final lines = <String>[];
-    var start = 0;
-    while (start < 7) {
-      final hours = settings.hoursForWeekday(start + 1);
-      var end = start;
-      while (end + 1 < 7) {
-        final next = settings.hoursForWeekday(end + 2);
-        if (next.openingTime != hours.openingTime ||
-            next.closingTime != hours.closingTime ||
-            next.closed != hours.closed) {
-          break;
-        }
-        end++;
-      }
-      final label = start == end ? days[start] : '${days[start]}–${days[end]}';
-      lines.add(
-        '$label · ${hours.closed ? 'Closed' : '${_formatTime(hours.openingTime)} – ${_formatTime(hours.closingTime)}'}',
-      );
-      start = end + 1;
-    }
-    return lines;
-  }
-
   InputDecoration _decoration() => InputDecoration(
     filled: true,
     fillColor: Colors.white,
@@ -278,8 +305,11 @@ class _HelperMePageState extends State<HelperMePage> {
     String label,
     TextEditingController controller, {
     TextInputType? keyboardType,
+    int maxLines = 1,
     bool obscure = false,
+    VoidCallback? onToggleVisibility,
     ValueChanged<String>? onChanged,
+    bool phone = false,
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -288,9 +318,37 @@ class _HelperMePageState extends State<HelperMePage> {
       TextField(
         controller: controller,
         keyboardType: keyboardType,
+        inputFormatters: phone
+            ? [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(10),
+              ]
+            : null,
+        maxLines: maxLines,
         obscureText: obscure,
         onChanged: onChanged,
-        decoration: _decoration(),
+        decoration: _decoration().copyWith(
+          hintText: phone ? '9XXXXXXXXX' : null,
+          prefixIcon: phone
+              ? const Center(
+                  widthFactor: 1,
+                  child: Text(
+                    '+63',
+                    style: TextStyle(color: _ink, fontSize: 14),
+                  ),
+                )
+              : null,
+          prefixIconConstraints: phone
+              ? const BoxConstraints(minWidth: 48, minHeight: 0)
+              : null,
+          helperText: phone ? 'Format: $philippineMobileExample' : null,
+          suffixIcon: onToggleVisibility == null
+              ? null
+              : TextButton(
+                  onPressed: onToggleVisibility,
+                  child: Text(obscure ? 'Show' : 'Hide'),
+                ),
+        ),
         style: const TextStyle(fontSize: 14, color: _ink),
       ),
     ],
@@ -316,11 +374,338 @@ class _HelperMePageState extends State<HelperMePage> {
     ],
   );
 
+  Widget _desktopCard({required String title, required Widget child}) =>
+      Container(
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: _border),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 22),
+            child,
+          ],
+        ),
+      );
+
+  Widget _desktopProfile() {
+    final profile = _loadedProfile;
+    final name =
+        profile?.name ?? widget.controller.currentUserName ?? _roleLabel;
+    final location = _locationName ?? 'No location assigned';
+    return ColoredBox(
+      color: const Color(0xFFF6F5F2),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(44, 40, 44, 48),
+        children: [
+          const Text(
+            'Profile',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: _ink,
+            ),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Manage your personal details and password.',
+            style: TextStyle(color: _muted),
+          ),
+          const SizedBox(height: 24),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: _border),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 40,
+                        backgroundColor: _ink,
+                        child: Text(
+                          _initials(name),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 19,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: _ink,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$_roleLabel · $location',
+                              style: const TextStyle(color: _muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 28,
+                    vertical: 14,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF4F1EE),
+                    border: Border(top: BorderSide(color: _border)),
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    _roleLabel == 'Administrator'
+                        ? 'Role and location are managed in staff settings.'
+                        : 'Role and location are managed by your administrator.',
+                    style: const TextStyle(color: _muted, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _desktopCard(
+                  title: 'Personal details',
+                  child: _personalDetailsForm(desktop: true),
+                ),
+              ),
+              const SizedBox(width: 22),
+              Expanded(
+                child: _desktopCard(
+                  title: 'Change password',
+                  child: _passwordForm(desktop: true),
+                ),
+              ),
+            ],
+          ),
+          if (widget.controller.currentUserRole?.toLowerCase() == 'admin') ...[
+            const SizedBox(height: 22),
+            AdminSecurityQuestionsCard(controller: widget.controller),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _personalDetailsForm({required bool desktop}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          Expanded(
+            child: _field(
+              'Full name',
+              _name,
+              onChanged: _onProfileFieldChanged,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: _field(
+              'Mobile number',
+              _phone,
+              keyboardType: TextInputType.phone,
+              phone: true,
+              onChanged: _onProfileFieldChanged,
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 20),
+      _field(
+        'Work email',
+        _email,
+        keyboardType: TextInputType.emailAddress,
+        onChanged: _onProfileFieldChanged,
+      ),
+      const SizedBox(height: 20),
+      _field(
+        'Home address',
+        _address,
+        keyboardType: TextInputType.streetAddress,
+        maxLines: 2,
+        onChanged: _onProfileFieldChanged,
+      ),
+      if (_profileError != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          _profileError!,
+          style: const TextStyle(color: Color(0xFFB42318), fontSize: 12),
+        ),
+      ],
+      const SizedBox(height: 18),
+      Align(
+        alignment: desktop ? Alignment.centerRight : Alignment.centerLeft,
+        child: ElevatedButton(
+          onPressed: _savingProfile || !_profileIsDirty ? null : _saveProfile,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _ink,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9),
+            ),
+          ),
+          child: Text(_savingProfile ? 'Saving…' : 'Save changes'),
+        ),
+      ),
+    ],
+  );
+
+  Widget _passwordForm({required bool desktop}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _field(
+        'Current password',
+        _currentPassword,
+        obscure: !_showCurrentPassword,
+        onToggleVisibility: () =>
+            setState(() => _showCurrentPassword = !_showCurrentPassword),
+        onChanged: (_) => setState(() => _passwordError = null),
+      ),
+      const SizedBox(height: 20),
+      if (desktop)
+        Row(
+          children: [
+            Expanded(
+              child: _field(
+                'New password',
+                _newPassword,
+                obscure: !_showNewPassword,
+                onToggleVisibility: () =>
+                    setState(() => _showNewPassword = !_showNewPassword),
+                onChanged: (_) => setState(() => _passwordError = null),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _field(
+                'Confirm new password',
+                _confirmPassword,
+                obscure: !_showConfirmPassword,
+                onToggleVisibility: () => setState(
+                  () => _showConfirmPassword = !_showConfirmPassword,
+                ),
+                onChanged: (_) => setState(() => _passwordError = null),
+              ),
+            ),
+          ],
+        )
+      else ...[
+        _field(
+          'New password',
+          _newPassword,
+          obscure: !_showNewPassword,
+          onToggleVisibility: () =>
+              setState(() => _showNewPassword = !_showNewPassword),
+          onChanged: (_) => setState(() => _passwordError = null),
+        ),
+        const SizedBox(height: 20),
+        _field(
+          'Confirm new password',
+          _confirmPassword,
+          obscure: !_showConfirmPassword,
+          onToggleVisibility: () =>
+              setState(() => _showConfirmPassword = !_showConfirmPassword),
+          onChanged: (_) => setState(() => _passwordError = null),
+        ),
+      ],
+      const SizedBox(height: 20),
+      Row(
+        children: [
+          Expanded(child: _passwordRule('At least 8 characters', _hasLength)),
+          Expanded(child: _passwordRule('Contains a number', _hasNumber)),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Expanded(
+            child: _passwordRule('Contains an uppercase letter', _hasUppercase),
+          ),
+          Expanded(
+            child: _passwordRule('Contains a lowercase letter', _hasLowercase),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Expanded(child: _passwordRule('Contains a symbol', _hasSymbol)),
+          Expanded(child: _passwordRule('Passwords match', _passwordsMatch)),
+        ],
+      ),
+      if (_passwordError != null) ...[
+        const SizedBox(height: 12),
+        Text(
+          _passwordError!,
+          style: const TextStyle(color: Color(0xFFB42318), fontSize: 12),
+        ),
+      ],
+      const SizedBox(height: 20),
+      Align(
+        alignment: Alignment.centerRight,
+        child: ElevatedButton(
+          onPressed: _savingPassword || !_canUpdatePassword
+              ? null
+              : _updatePassword,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _orange,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9),
+            ),
+          ),
+          child: Text(_savingPassword ? 'Updating…' : 'Update password'),
+        ),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.sizeOf(context).width >= 900) return _desktopProfile();
     final profile = _loadedProfile;
-    final name = profile?.name ?? widget.controller.currentUserName ?? 'Helper';
-    final location = widget.locationName;
+    final name =
+        profile?.name ?? widget.controller.currentUserName ?? _roleLabel;
+    final location = _locationName;
     final settings = widget.storeAccessSettings;
     return ColoredBox(
       color: const Color(0xFFF6F5F2),
@@ -349,16 +734,14 @@ class _HelperMePageState extends State<HelperMePage> {
                     Text(
                       name,
                       style: const TextStyle(
-                        fontSize: 21,
+                        fontSize: 18,
                         fontWeight: FontWeight.w700,
                         color: _ink,
                       ),
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      location == null
-                          ? 'Order helper'
-                          : 'Order helper · $location',
+                      location == null ? _roleLabel : '$_roleLabel · $location',
                       style: const TextStyle(fontSize: 13, color: _muted),
                     ),
                   ],
@@ -369,60 +752,47 @@ class _HelperMePageState extends State<HelperMePage> {
           const SizedBox(height: 26),
           const Divider(color: _border),
           const SizedBox(height: 12),
-          const Text('Schedule', style: TextStyle(fontSize: 12, color: _muted)),
-          const SizedBox(height: 5),
-          if (settings == null)
-            const Text(
-              'Store hours unavailable',
-              style: TextStyle(fontSize: 14, color: _ink),
-            )
-          else
-            for (final line in _scheduleLines(settings))
-              Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Text(
-                  line,
-                  style: const TextStyle(fontSize: 14, color: _ink),
-                ),
-              ),
-          const SizedBox(height: 16),
-          const Divider(color: _border),
-          const SizedBox(height: 4),
           Text(
-            settings?.restrictStaffLogin == true
-                ? 'Role, location, and schedule are managed by your administrator. You can only sign in during scheduled hours.'
-                : 'Role, location, and schedule are managed by your administrator.',
+            _roleLabel == 'Administrator'
+                ? 'Role and location are managed in staff settings.'
+                : settings?.restrictStaffLogin == true
+                ? 'Role and location are managed by your administrator. Sign-in access follows store hours.'
+                : 'Role and location are managed by your administrator.',
             style: const TextStyle(fontSize: 12, color: _muted, height: 1.4),
           ),
           const SizedBox(height: 30),
           const Text(
             'Personal details',
             style: TextStyle(
-              fontSize: 17,
+              fontSize: 16,
               color: _ink,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 20),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _field('Full name', _name)),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _field(
-                  'Mobile number',
-                  _phone,
-                  keyboardType: TextInputType.phone,
-                ),
-              ),
-            ],
+          _field('Full name', _name, onChanged: _onProfileFieldChanged),
+          const SizedBox(height: 20),
+          _field(
+            'Mobile number',
+            _phone,
+            keyboardType: TextInputType.phone,
+            phone: true,
+            onChanged: _onProfileFieldChanged,
           ),
           const SizedBox(height: 22),
           _field(
             'Work email',
             _email,
             keyboardType: TextInputType.emailAddress,
+            onChanged: _onProfileFieldChanged,
+          ),
+          const SizedBox(height: 22),
+          _field(
+            'Home address',
+            _address,
+            keyboardType: TextInputType.streetAddress,
+            maxLines: 2,
+            onChanged: _onProfileFieldChanged,
           ),
           if (_profileError != null) ...[
             const SizedBox(height: 8),
@@ -435,7 +805,9 @@ class _HelperMePageState extends State<HelperMePage> {
           Align(
             alignment: Alignment.centerLeft,
             child: ElevatedButton(
-              onPressed: _savingProfile ? null : _saveProfile,
+              onPressed: _savingProfile || !_profileIsDirty
+                  ? null
+                  : _saveProfile,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _ink,
                 foregroundColor: Colors.white,
@@ -457,13 +829,18 @@ class _HelperMePageState extends State<HelperMePage> {
           const Text(
             'Change password',
             style: TextStyle(
-              fontSize: 17,
+              fontSize: 16,
               color: _ink,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 20),
-          _field('Current password', _currentPassword, obscure: true),
+          _field(
+            'Current password',
+            _currentPassword,
+            obscure: true,
+            onChanged: (_) => setState(() => _passwordError = null),
+          ),
           const SizedBox(height: 20),
           _field(
             'New password',
@@ -524,7 +901,9 @@ class _HelperMePageState extends State<HelperMePage> {
           Align(
             alignment: Alignment.centerRight,
             child: ElevatedButton(
-              onPressed: _savingPassword ? null : _updatePassword,
+              onPressed: _savingPassword || !_canUpdatePassword
+                  ? null
+                  : _updatePassword,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _orange,
                 foregroundColor: Colors.white,
@@ -540,15 +919,10 @@ class _HelperMePageState extends State<HelperMePage> {
               child: Text(_savingPassword ? 'Updating…' : 'Update password'),
             ),
           ),
-          const SizedBox(height: 28),
-          const Divider(color: _border),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: widget.onLogout,
-            icon: const Icon(LucideIcons.logOut, size: 17),
-            label: const Text('Sign out'),
-            style: TextButton.styleFrom(foregroundColor: _muted),
-          ),
+          if (widget.controller.currentUserRole?.toLowerCase() == 'admin') ...[
+            const SizedBox(height: 30),
+            AdminSecurityQuestionsCard(controller: widget.controller),
+          ],
         ],
       ),
     );

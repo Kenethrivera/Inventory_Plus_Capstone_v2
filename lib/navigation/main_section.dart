@@ -6,8 +6,8 @@ enum MainSection {
   classificationTest('classification-test', <String>{'admin'}),
   pos('pos', <String>{'admin', 'staff', 'cashier'}),
   cashierRequests('requests', <String>{'staff', 'cashier'}),
-  queue('queue', <String>{'admin', 'helper'}),
-  inventory('inventory', <String>{'admin', 'staff', 'cashier', 'helper'}),
+  queue('queue', <String>{'admin', 'helper', 'bodegero'}),
+  inventory('inventory', <String>{'admin', 'helper'}),
   approvals('approvals', <String>{'admin'}),
   performance('performance', <String>{'admin'}),
   history('history', <String>{'staff', 'cashier', 'helper'}),
@@ -62,9 +62,11 @@ enum MainSection {
         ];
       case 'helper':
         return const <MainSection>[queue, inventory, history];
+      case 'bodegero':
+        return const <MainSection>[queue];
       case 'staff':
       case 'cashier':
-        return const <MainSection>[pos, cashierRequests, inventory, history];
+        return const <MainSection>[pos, cashierRequests, history];
       default:
         return const <MainSection>[inventory];
     }
@@ -74,7 +76,9 @@ enum MainSection {
 
   static MainSection resolveForRole(MainSection? requested, String role) {
     final sections = forRole(role);
-    return requested != null && sections.contains(requested)
+    return requested != null &&
+            requested.allowsRole(role) &&
+            sections.contains(requested)
         ? requested
         : sections.first;
   }

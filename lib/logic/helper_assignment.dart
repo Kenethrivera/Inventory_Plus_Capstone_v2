@@ -109,6 +109,7 @@ List<CustomerOrder> assignedPendingOrdersForHelper({
   return List<CustomerOrder>.unmodifiable(
     orders.where((order) {
       return order.status.trim().toLowerCase() == 'pending' &&
+          order.items.any((item) => !item.requiresLoading) &&
           order.assignedHelperId?.trim() == normalizedHelperId;
     }),
   );

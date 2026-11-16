@@ -546,6 +546,29 @@ class NotificationController extends ChangeNotifier {
     }
   }
 
+  Future<void> notifyBodegeroOrderAssigned({
+    required String locationId,
+    required String orderId,
+    required String bodegeroId,
+    required String assignedByName,
+    required DateTime assignedAt,
+  }) async {
+    try {
+      _errorMessage = null;
+      await _service.notifyBodegeroOrderAssigned(
+        locationId: locationId,
+        orderId: orderId,
+        bodegeroId: bodegeroId,
+        assignedByName: assignedByName,
+        assignedAt: assignedAt,
+      );
+      await loadNotifications();
+    } catch (error) {
+      _recordError(error, operation: 'Loading assignment notification failed');
+      notifyListeners();
+    }
+  }
+
   Future<void> notifyInventoryRestocked({
     required String locationId,
     required String transactionId,
@@ -578,9 +601,7 @@ class NotificationController extends ChangeNotifier {
     }
   }
 
-  Future<void> notifyInventoryApproval(
-    InventoryApprovalRequest request,
-  ) async {
+  Future<void> notifyInventoryApproval(InventoryApprovalRequest request) async {
     _errorMessage = null;
     try {
       await _service.notifyInventoryApproval(request);
@@ -601,6 +622,19 @@ class NotificationController extends ChangeNotifier {
       await _refreshNotifications();
     } catch (e) {
       _recordError(e, operation: 'Order notification resolution failed');
+      notifyListeners();
+    }
+  }
+
+  Future<void> resolveBodegeroLoadingNotification({
+    required String orderId,
+  }) async {
+    try {
+      _errorMessage = null;
+      await _service.resolveBodegeroLoadingNotification(orderId: orderId);
+      await _refreshNotifications();
+    } catch (error) {
+      _recordError(error, operation: 'Loading notification resolution failed');
       notifyListeners();
     }
   }

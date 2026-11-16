@@ -134,6 +134,7 @@ class _DashboardPageState extends State<DashboardPage> {
     name: widget.controller.currentUserName ?? 'Admin',
     orders: _orders,
     orderUpdates: widget.controller.orderSnapshots,
+    loadLoadingProof: widget.controller.getOrderLoadingProof,
     items: _items,
     approvals: _approvalPage?.requests ?? const <InventoryApprovalRequest>[],
     approvalCount: _approvalPage?.totalCount ?? 0,

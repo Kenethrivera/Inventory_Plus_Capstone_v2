@@ -17,6 +17,7 @@ import '../logic/inventory_controller.dart';
 import '../logic/helper_assignment.dart';
 import '../logic/inventory_approval.dart';
 import '../logic/staff_management.dart';
+import '../logic/staff_availability.dart';
 import '../navigation/main_section.dart';
 import '../services/debug_clock.dart';
 import '../services/export_period.dart';
@@ -31,10 +32,10 @@ import 'forecasting_page.dart';
 import 'inventory_page.dart';
 import 'item_detail_page.dart';
 import 'map_editor_page.dart';
+import 'bodegero_queue_page.dart';
 import 'order_queue_page.dart';
 import 'orders_activity_page.dart';
 import 'pos_cart_page.dart';
-import 'profile_info_page.dart';
 import 'system_settings_page.dart';
 import 'transaction_history_page.dart';
 import 'cash_monitor_table_page.dart';
@@ -216,6 +217,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         sessionToken: widget.controller.currentSessionToken,
         realtimeSync: widget.realtimeSync,
       );
+      if (role.toLowerCase() == 'bodegero') {
+        unawaited(_notificationController!.loadNotifications());
+      }
 
       widget.controller.onRestockRecorded =
           ({
@@ -376,6 +380,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   String _currentModuleName() {
     final role = widget.controller.currentUserRole?.toLowerCase();
 
+    if (role == 'bodegero') return 'Heavy loading';
+
     if (_currentIndex == null) {
       return 'Main Screen';
     }
@@ -439,7 +445,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return 'POS System';
 
       case 1:
-        return 'Inventory';
+        return 'Requests';
 
       case 2:
         return 'History';
@@ -737,6 +743,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     final targetRoles = <String>[
       'helper',
+      'bodegero',
       'staff',
       if (!settings.allowAdminAnytime) 'admin',
     ];
@@ -2020,9 +2027,41 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         DateTime picked = DebugClock.now();
 
         return StatefulBuilder(
-          builder: (ctx, setD) => AlertDialog(
-            title: const Text('Debug clock'),
-            content: Column(
+          builder: (ctx, setD) => AppDialog(
+            icon: LucideIcons.clockAlert,
+            color: _accent,
+            title: 'Debug clock',
+            actions: [
+              OutlinedButton(
+                onPressed: () {
+                  DebugClock.set(null);
+                  Navigator.pop(dialogContext);
+                  setState(() {});
+                  _rerunReminderScans();
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF201D1A),
+                  side: const BorderSide(color: Color(0xFFE7E1DB)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Reset to real time'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  DebugClock.set(picked);
+                  Navigator.pop(dialogContext);
+                  setState(() {});
+                  _rerunReminderScans();
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: _accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Apply'),
+              ),
+            ],
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -2108,26 +2147,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  DebugClock.set(null);
-                  Navigator.pop(dialogContext);
-                  setState(() {});
-                  _rerunReminderScans();
-                },
-                child: const Text('Reset to real time'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  DebugClock.set(picked);
-                  Navigator.pop(dialogContext);
-                  setState(() {});
-                  _rerunReminderScans();
-                },
-                child: const Text('Apply'),
-              ),
-            ],
           ),
         );
       },
@@ -2242,6 +2261,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildMainContent() {
+    if (widget.controller.currentUserRole?.toLowerCase() == 'bodegero') {
+      return BodegeroQueuePage(
+        controller: widget.controller,
+        onLogout: () => unawaited(_handleLogout()),
+        approvalChanges: widget.realtimeSync.approvalRequestChanges,
+        presenceService: _staffPresenceService,
+        onModuleChanged: (module) =>
+            _staffPresenceService?.updateModule(module),
+      );
+    }
     final InventoryItem? selectedItem = widget.controller.findAnyItemById(
       _selectedItemId ?? '',
     );
@@ -2289,7 +2318,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         final int orderQueueIndex = (isHelper || isAdmin) ? pageIndex++ : -1;
 
-        final int inventoryIndex = pageIndex++;
+        final int inventoryIndex = (isAdmin || isHelper) ? pageIndex++ : -1;
 
         final int approvalsIndex = isAdmin ? pageIndex++ : -1;
 
@@ -2400,7 +2429,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             CashierRequestsPage(
               controller: widget.controller,
               onOpenRegister: () => _selectMainIndex(posIndex),
-              onOpenInventory: () => _selectMainIndex(inventoryIndex),
               approvalChanges: widget.realtimeSync.approvalRequestChanges,
             ),
           );
@@ -2438,15 +2466,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           );
         }
 
-        pages.add(
-          InventoryPage(
-            controller: widget.controller,
-            onSelectItem: _handleSelectItem,
-            onExported: () {
-              _scanExportReminderNotifications();
-            },
-          ),
-        );
+        if (inventoryIndex >= 0) {
+          pages.add(
+            InventoryPage(
+              controller: widget.controller,
+              onSelectItem: _handleSelectItem,
+              onExported: () {
+                _scanExportReminderNotifications();
+              },
+            ),
+          );
+        }
 
         if (isAdmin) {
           pages.add(
@@ -2793,7 +2823,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     controller: widget.controller,
     locationName: _helperLocationName,
     storeAccessSettings: _scheduledStoreAccessSettings,
-    onLogout: () => unawaited(_handleLogout()),
   );
 
   Widget _buildHelperMobileNavigationBar({
@@ -2850,6 +2879,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     return AppBar(
       automaticallyImplyLeading: false,
       backgroundColor: const Color(0xFF211F1D),
+      foregroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       toolbarHeight: 74,
       titleSpacing: 16,
@@ -2906,46 +2936,72 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           AnimatedBuilder(
             animation: presence,
             builder: (context, _) {
-              final onBreak = presence.isOnBreak;
-              return Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: ActionChip(
-                  tooltip: onBreak
-                      ? 'Switch to Available'
-                      : 'Switch to On break',
-                  onPressed: _changingHelperBreak || !presence.isStarted
-                      ? null
-                      : _toggleHelperBreak,
-                  backgroundColor: onBreak
-                      ? const Color(0xFF45413E)
-                      : const Color(0xFF168047),
-                  disabledColor: const Color(0xFF45413E),
-                  side: BorderSide.none,
-                  shape: const StadiumBorder(),
-                  label: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
+              return StreamBuilder<List<CustomerOrder>>(
+                stream: widget.controller.streamOrders(),
+                initialData: widget.controller.currentOrders,
+                builder: (context, snapshot) {
+                  final activeOrders =
+                      activePreparationWorkloads(
+                        snapshot.data ?? widget.controller.currentOrders,
+                      )[widget.controller.currentUserId] ??
+                      0;
+                  final availability = resolveStaffAvailability(
+                    isOnline: presence.isStarted,
+                    isOnBreak: presence.isOnBreak,
+                    isHelper: true,
+                    activeOrders: activeOrders,
+                  );
+                  final onBreak = availability == StaffAvailability.onBreak;
+                  final label = switch (availability) {
+                    StaffAvailability.offline => 'Offline',
+                    StaffAvailability.onBreak => 'On break',
+                    StaffAvailability.busy => 'Busy',
+                    StaffAvailability.available => 'Available',
+                  };
+                  final backgroundColor = switch (availability) {
+                    StaffAvailability.busy => const Color(0xFFC83D08),
+                    StaffAvailability.available => const Color(0xFF168047),
+                    _ => const Color(0xFF45413E),
+                  };
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: ActionChip(
+                      tooltip: onBreak
+                          ? 'Switch to Available'
+                          : 'Switch to On break',
+                      onPressed: _changingHelperBreak || !presence.isStarted
+                          ? null
+                          : _toggleHelperBreak,
+                      backgroundColor: backgroundColor,
+                      disabledColor: const Color(0xFF45413E),
+                      side: BorderSide.none,
+                      shape: const StadiumBorder(),
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: _fontFam,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 7),
-                      Text(
-                        onBreak ? 'On break' : 'Available',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: _fontFam,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -2956,6 +3012,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           inventoryIndex: inventoryIndex,
           iconColor: Colors.white,
           helperMobilePanel: true,
+        ),
+        IconButton(
+          tooltip: 'Log out',
+          onPressed: () => unawaited(_handleLogout()),
+          icon: const Icon(Icons.logout_outlined, size: 22),
         ),
         const SizedBox(width: 8),
       ],
@@ -3084,11 +3145,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               selectedIcon: Icon(LucideIcons.fileText, color: _accent),
               label: 'Queue',
             ),
-          const NavigationDestination(
-            icon: Icon(LucideIcons.box, color: _inactiveText),
-            selectedIcon: Icon(LucideIcons.box, color: _accent),
-            label: 'Inventory',
-          ),
+          if (isHelper)
+            const NavigationDestination(
+              icon: Icon(LucideIcons.box, color: _inactiveText),
+              selectedIcon: Icon(LucideIcons.box, color: _accent),
+              label: 'Inventory',
+            ),
           if (isHelper || isCashier)
             const NavigationDestination(
               icon: Icon(LucideIcons.history, color: _inactiveText),
@@ -3204,24 +3266,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
-            _adminDrawerHeading('Main'),
+            _adminDrawerHeading('Operations'),
             _adminDrawerItem(
               drawerContext,
               MainSection.dashboard,
               LucideIcons.layoutDashboard,
-              'Home',
+              'Overview',
             ),
             _adminDrawerItem(
               drawerContext,
               MainSection.ordersActivity,
               LucideIcons.receiptText,
-              'Orders',
-            ),
-            _adminDrawerItem(
-              drawerContext,
-              MainSection.inventory,
-              LucideIcons.box,
-              'Inventory',
+              'Orders & activity',
             ),
             _adminDrawerItem(
               drawerContext,
@@ -3229,8 +3285,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               LucideIcons.clipboardCheck,
               'Approvals',
             ),
-            const Divider(height: 28),
-            _adminDrawerHeading('More'),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.storeMap,
+              LucideIcons.map,
+              'Store map',
+            ),
+            const SizedBox(height: 16),
+            _adminDrawerHeading('Catalog'),
+            _adminDrawerItem(
+              drawerContext,
+              MainSection.inventory,
+              LucideIcons.package,
+              'Inventory',
+            ),
             _adminDrawerItem(
               drawerContext,
               MainSection.analytics,
@@ -3241,37 +3309,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               drawerContext,
               MainSection.forecasting,
               LucideIcons.chartNoAxesCombined,
-              'Forecast',
+              'Forecasting',
             ),
+            const SizedBox(height: 16),
+            _adminDrawerHeading('Administration'),
             _adminDrawerItem(
               drawerContext,
               MainSection.performance,
-              LucideIcons.barChart2,
-              'Performance',
-            ),
-            _adminDrawerItem(
-              drawerContext,
-              MainSection.storeMap,
-              LucideIcons.map,
-              'Store map',
-            ),
-            _adminDrawerItem(
-              drawerContext,
-              MainSection.pos,
-              LucideIcons.shoppingCart,
-              'POS system',
-            ),
-            _adminDrawerItem(
-              drawerContext,
-              MainSection.queue,
-              LucideIcons.listChecks,
-              'Order queue',
-            ),
-            _adminDrawerItem(
-              drawerContext,
-              MainSection.transactions,
-              LucideIcons.history,
-              'Transactions',
+              LucideIcons.users,
+              'Staff',
             ),
             _adminDrawerItem(
               drawerContext,
@@ -3403,30 +3449,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     Row(
                       children: [
                         Container(
-                          width: 36,
-                          height: 36,
+                          width: 42,
+                          height: 42,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFC83D08),
-                            borderRadius: BorderRadius.circular(11),
+                            color: _accent,
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Center(
-                            child: Text(
-                              'I+',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                          child: const Icon(
+                            LucideIcons.package,
+                            color: Colors.white,
+                            size: 24,
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 12),
                         const Expanded(
                           child: Text(
                             'Inventory Plus',
                             style: TextStyle(
                               color: Color(0xFF171717),
-                              fontSize: 16,
+                              fontSize: 22,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -3534,16 +3575,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
                   color: _accent,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
                   LucideIcons.package,
                   color: Colors.white,
-                  size: 18,
+                  size: 24,
                 ),
               ),
               const SizedBox(width: 12),
@@ -3552,7 +3593,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 style: TextStyle(
                   color: _darkText,
                   fontWeight: FontWeight.w900,
-                  fontSize: 20,
+                  fontSize: 22,
                   fontFamily: _fontFam,
                 ),
               ),
@@ -3838,7 +3879,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 15),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFF1B1B1B) : Colors.transparent,
+        color: selected ? _accent : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -3857,13 +3898,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
-                color: const Color(0xFF15803D),
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.22)
+                    : const Color(0xFFFFF0E8),
                 borderRadius: BorderRadius.circular(5),
               ),
               child: Text(
                 '$badgeCount',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: selected ? Colors.white : _accent,
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                 ),
@@ -4065,20 +4108,47 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   void _showProfileDialog() {
+    final size = MediaQuery.sizeOf(context);
+    if (size.width < 900) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: const Text('Profile')),
+            body: HelperMePage(
+              controller: widget.controller,
+              locationName: _helperLocationName,
+              storeAccessSettings: _scheduledStoreAccessSettings,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     showDialog(
       context: context,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         clipBehavior: Clip.antiAlias,
         child: SizedBox(
-          width: 500,
-          height: 600,
-          child: ProfileInfoPage(
-            controller: widget.controller,
-            currentName: widget.controller.currentUserName ?? 'Unknown',
-            currentEmail: widget.controller.loggedInUserEmail,
-            userId: widget.controller.currentUserId ?? '',
-            role: widget.controller.currentUserRole ?? 'staff',
+          width: size.width > 1300 ? 1240 : size.width - 64,
+          height: size.height - 64,
+          child: Stack(
+            children: [
+              HelperMePage(
+                controller: widget.controller,
+                locationName: _helperLocationName,
+                storeAccessSettings: _scheduledStoreAccessSettings,
+              ),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: IconButton(
+                  tooltip: 'Close profile',
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(LucideIcons.x),
+                ),
+              ),
+            ],
           ),
         ),
       ),

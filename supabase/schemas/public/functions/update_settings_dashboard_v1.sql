@@ -7,7 +7,7 @@ CREATE OR REPLACE FUNCTION public.update_settings_dashboard_v1 (
   p_gcash_enabled boolean,
   p_gcash_account_name text,
   p_gcash_number text,
-  p_cashier_limits jsonb
+  p_cashier_limits jsonb -- Retained for RPC compatibility; individual overrides are ignored.
 )
   RETURNS boolean
   LANGUAGE plpgsql
@@ -16,9 +16,6 @@ CREATE OR REPLACE FUNCTION public.update_settings_dashboard_v1 (
   AS $function$
 declare
   v_profile record;
-  v_cashier record;
-  v_limit numeric;
-  v_updated integer;
 begin
   select * into v_profile
   from private.require_app_session_v1(p_session_token);
@@ -33,10 +30,6 @@ begin
      or p_default_cashier_limit not between 0 and p_max_approved_discount then
     raise exception 'Store settings contain invalid limits';
   end if;
-  if p_cashier_limits is null or jsonb_typeof(p_cashier_limits) <> 'object' then
-    raise exception 'Cashier limits must be an object';
-  end if;
-
   insert into public.store_settings (
     location_id,
     auto_assign_orders,
@@ -65,25 +58,6 @@ begin
     gcash_account_name = excluded.gcash_account_name,
     gcash_number = excluded.gcash_number;
 
-  for v_cashier in select key, value from jsonb_each_text(p_cashier_limits) loop
-    begin
-      v_limit := v_cashier.value::numeric;
-    exception when invalid_text_representation then
-      raise exception 'Cashier limits must be valid percentages';
-    end;
-    if v_limit is null or v_limit < 0 or v_limit > p_max_approved_discount then
-      raise exception 'Cashier limits must be within the approved maximum';
-    end if;
-    update public.profiles
-    set cashier_discount_limit_pct = v_limit
-    where id::text = v_cashier.key
-      and location_id = v_profile.location_id
-      and role in ('staff', 'cashier');
-    get diagnostics v_updated = row_count;
-    if v_updated <> 1 then
-      raise exception 'Cashier account is no longer available';
-    end if;
-  end loop;
   return true;
 end;
 $function$;

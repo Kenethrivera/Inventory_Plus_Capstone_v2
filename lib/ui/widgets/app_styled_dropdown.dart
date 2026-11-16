@@ -148,7 +148,11 @@ class AppStyledDropdown<T> extends StatelessWidget {
                         Expanded(
                           child: DefaultTextStyle.merge(
                             style: TextStyle(
-                              color: index == selectedIndex ? _orange : _ink,
+                              color: !items[index].enabled
+                                  ? _muted
+                                  : index == selectedIndex
+                                  ? _orange
+                                  : _ink,
                               fontSize: style?.fontSize ?? 13,
                               fontWeight: index == selectedIndex
                                   ? FontWeight.w600
@@ -159,6 +163,7 @@ class AppStyledDropdown<T> extends StatelessWidget {
                             child: _styledLabel(
                               items[index].child,
                               selected: index == selectedIndex,
+                              enabled: items[index].enabled,
                             ),
                           ),
                         ),
@@ -183,14 +188,22 @@ class AppStyledDropdown<T> extends StatelessWidget {
   }
 }
 
-Widget _styledLabel(Widget child, {required bool selected}) {
+Widget _styledLabel(
+  Widget child, {
+  required bool selected,
+  bool enabled = true,
+}) {
   if (child is Text && child.data != null && child.data!.isNotEmpty) {
     return Text(
       child.data!,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: (child.style ?? const TextStyle()).copyWith(
-        color: selected ? _orange : _ink,
+        color: !enabled
+            ? _muted
+            : selected
+            ? _orange
+            : _ink,
         fontWeight: selected ? FontWeight.w600 : null,
       ),
     );

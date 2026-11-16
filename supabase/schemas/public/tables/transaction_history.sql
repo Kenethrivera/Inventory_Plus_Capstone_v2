@@ -22,6 +22,9 @@ CREATE UNIQUE INDEX transaction_history_inventory_adjustment_operation_unique ON
 
 CREATE INDEX transaction_history_location_created_idx ON public.transaction_history USING btree (location_id, created_at DESC, id DESC);
 
+CREATE INDEX transaction_history_checkout_analytics_idx ON public.transaction_history USING btree (location_id, product_id, created_at DESC)
+  INCLUDE (quantity_change) WHERE transaction_type = 'checkout';
+
 CREATE UNIQUE INDEX transaction_history_operation_unique ON public.transaction_history USING btree (location_id, operation_id, product_id, transaction_type)
   WHERE (operation_id IS NOT NULL);
 

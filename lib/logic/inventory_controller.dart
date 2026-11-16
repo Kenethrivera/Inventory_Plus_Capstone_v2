@@ -11,9 +11,11 @@ import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 import '../login/session_storage.dart';
 import 'helper_assignment.dart';
+import 'bodegero_loading_history.dart';
 import 'history_pagination.dart';
 import 'inventory_approval.dart';
 import 'payment_reference.dart';
+import 'rolling_stock_threshold.dart';
 import 'staff_performance.dart';
 import 'staff_management.dart';
 import 'package:flutter/material.dart';
@@ -281,9 +283,11 @@ class InventoryController {
   bool _currentProfileRefreshQueued = false;
   CurrentUserProfileSnapshot? _currentProfileSnapshot;
 
-  static const int _baselineRestocks = 3;
-  static const int _baselineWindowDays = 180;
-  Map<String, double> _baselineByProduct = {};
+  static const int _rollingSalesPageSize = 500;
+  Map<String, List<RollingSale>> _rollingSalesByProduct = {};
+  Future<void>? _rollingSalesRefreshInFlight;
+  bool _rollingSalesRefreshQueued = false;
+  Timer? _rollingSalesExpiryTimer;
 
   String gcashQrUrl = '';
   bool gcashEnabled = true;
@@ -536,7 +540,6 @@ class InventoryController {
     required bool acceptGcash,
     required String gcashAccountName,
     required String gcashNumber,
-    required Map<String, double> cashierLimits,
   }) async {
     await supabase.rpc(
       'update_settings_dashboard_v1',
@@ -549,7 +552,7 @@ class InventoryController {
         'p_gcash_enabled': acceptGcash,
         'p_gcash_account_name': gcashAccountName.trim(),
         'p_gcash_number': gcashNumber.trim(),
-        'p_cashier_limits': cashierLimits,
+        'p_cashier_limits': <String, double>{},
       },
     );
     gcashEnabled = acceptGcash;
@@ -572,42 +575,101 @@ class InventoryController {
 
   InventoryApprovalNotificationCallback? onApprovalRequestChanged;
 
-  Future<void> _loadStockBaselines() async {
+  Future<void> _refreshRollingSales() {
+    final inFlight = _rollingSalesRefreshInFlight;
+    if (inFlight != null) {
+      _rollingSalesRefreshQueued = true;
+      return inFlight;
+    }
+    final refresh = _loadRollingSales();
+    _rollingSalesRefreshInFlight = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_rollingSalesRefreshInFlight, refresh)) {
+        _rollingSalesRefreshInFlight = null;
+      }
+      if (_rollingSalesRefreshQueued) {
+        _rollingSalesRefreshQueued = false;
+        unawaited(_refreshRollingSales());
+      }
+    });
+  }
+
+  Future<void> _loadRollingSales() async {
     final locId = activeLocationId;
     if (locId == null) return;
     try {
-      final cutoff = DateTime.now()
-          .subtract(const Duration(days: _baselineWindowDays))
-          .toIso8601String();
-
-      final res = await supabase
-          .from('transaction_history')
-          .select('product_id, new_quantity, created_at')
-          .eq('location_id', locId)
-          .inFilter('transaction_type', ['add', 'stock_in'])
-          .gte('created_at', cutoff)
-          .order('created_at', ascending: false);
-
-      final Map<String, List<double>> levels = {};
-      for (final row in List<Map<String, dynamic>>.from(res)) {
-        final pid = row['product_id']?.toString();
-        if (pid == null) continue;
-        final list = levels.putIfAbsent(pid, () => []);
-        if (list.length < _baselineRestocks) {
-          list.add((row['new_quantity'] as num).toDouble());
+      final now = DateTime.now().toUtc();
+      final cutoff = now.subtract(RollingStockThreshold.window);
+      final sales = <String, List<RollingSale>>{};
+      var offset = 0;
+      while (true) {
+        final rows = await supabase
+            .from('transaction_history')
+            .select('product_id, quantity_change, created_at, operation_scope')
+            .eq('location_id', locId)
+            .eq('transaction_type', 'checkout')
+            .gte('created_at', cutoff.toIso8601String())
+            .lte('created_at', now.toIso8601String())
+            .order('created_at')
+            .order('id')
+            .range(offset, offset + _rollingSalesPageSize - 1);
+        for (final row in rows) {
+          final productId = row['product_id']?.toString();
+          final sale = RollingSale.fromCheckoutRow(row);
+          if (productId == null || sale == null) continue;
+          sales.putIfAbsent(productId, () => <RollingSale>[]).add(sale);
         }
+        if (rows.length < _rollingSalesPageSize) break;
+        offset += _rollingSalesPageSize;
       }
-      if (activeLocationId != locId) return;
-      _baselineByProduct = {
-        for (final e in levels.entries) e.key: e.value.reduce(math.max),
-      };
+      if (activeLocationId != locId) {
+        _rollingSalesRefreshQueued = true;
+        return;
+      }
+      _rollingSalesByProduct = sales;
+      _scheduleRollingSalesExpiry();
+      _publishInventorySnapshot();
     } catch (e) {
-      AppLogger.error('Error loading stock baselines', error: e);
+      AppLogger.error('Error loading rolling sales', error: e);
     }
   }
 
-  double baselineFor(InventoryItem item) =>
-      math.max(item.quantity, _baselineByProduct[item.id] ?? item.maxQuantity);
+  void _scheduleRollingSalesExpiry() {
+    _rollingSalesExpiryTimer?.cancel();
+    final now = DateTime.now().toUtc();
+    DateTime? nextExpiry;
+    for (final sales in _rollingSalesByProduct.values) {
+      for (final sale in sales) {
+        final expiry = sale.occurredAt.toUtc().add(
+          RollingStockThreshold.window,
+        );
+        if (!expiry.isAfter(now)) continue;
+        if (nextExpiry == null || expiry.isBefore(nextExpiry)) {
+          nextExpiry = expiry;
+        }
+      }
+    }
+    if (nextExpiry == null) return;
+    _rollingSalesExpiryTimer = Timer(nextExpiry.difference(now), () {
+      final currentTime = DateTime.now().toUtc();
+      _rollingSalesByProduct = {
+        for (final entry in _rollingSalesByProduct.entries)
+          entry.key: entry.value
+              .where(
+                (sale) => RollingStockThreshold.isInWindow(sale, currentTime),
+              )
+              .toList(),
+      };
+      _rollingSalesByProduct.removeWhere((_, sales) => sales.isEmpty);
+      _publishInventorySnapshot();
+      _scheduleRollingSalesExpiry();
+    });
+  }
+
+  double baselineFor(InventoryItem item) => RollingStockThreshold.totalSales(
+    _rollingSalesByProduct[item.id] ?? const <RollingSale>[],
+    DateTime.now(),
+  );
 
   double stockPercentFor(InventoryItem item) {
     final base = baselineFor(item);
@@ -616,9 +678,16 @@ class InventoryController {
 
   StockStatus stockStatusFor(InventoryItem item) {
     if (item.quantity <= 0) return StockStatus.out;
-    final pct = stockPercentFor(item);
-    if (pct <= globalCriticalPct) return StockStatus.critical;
-    if (pct <= globalLowStockPct) return StockStatus.low;
+    final sales = baselineFor(item);
+    if (sales <= 0) return StockStatus.ok;
+    if (item.quantity <=
+        RollingStockThreshold.threshold(sales, globalCriticalPct)) {
+      return StockStatus.critical;
+    }
+    if (item.quantity <=
+        RollingStockThreshold.threshold(sales, globalLowStockPct)) {
+      return StockStatus.low;
+    }
     return StockStatus.ok;
   }
 
@@ -878,28 +947,12 @@ class InventoryController {
             .eq('location_id', locationId)
             .maybeSingle();
       }
-      double? cashierOverride;
-      if (accountId != null) {
-        try {
-          final profile = await supabase
-              .from('profiles')
-              .select('cashier_discount_limit_pct')
-              .eq('id', accountId)
-              .eq('location_id', locationId)
-              .maybeSingle();
-          cashierOverride = (profile?['cashier_discount_limit_pct'] as num?)
-              ?.toDouble();
-        } catch (_) {
-          // Older databases have no per-cashier override column yet.
-        }
-      }
       if (activeLocationId != locationId || currentUserNumericId != accountId) {
         return;
       }
       gcashQrUrl = response?['gcash_qr_url']?.toString() ?? '';
       gcashEnabled = response?['gcash_enabled'] != false;
       cashierAutoApprovedDiscountLimitPct =
-          cashierOverride ??
           (response?['cashier_auto_approved_discount_limit_pct'] as num?)
               ?.toDouble() ??
           10.0;
@@ -1003,7 +1056,7 @@ class InventoryController {
       debugPrint('[Startup] Deferred controller data started');
     }
 
-    await Future.wait<void>([_loadStockBaselines()]);
+    await _refreshRollingSales();
 
     if (kDebugMode) {
       debugPrint(
@@ -1034,7 +1087,7 @@ class InventoryController {
 
     try {
       final response = await supabase.rpc(
-        'create_product_v1',
+        'create_product_v2',
         params: <String, dynamic>{
           'p_session_token': _requireSessionToken(),
           'p_operation_id': operationId,
@@ -1052,6 +1105,7 @@ class InventoryController {
           'p_bin_number': null,
           'p_unit': newItem.unit,
           'p_max_quantity': newItem.maxQuantity,
+          'p_requires_loading': newItem.requiresLoading,
         },
       );
 
@@ -1066,7 +1120,6 @@ class InventoryController {
       } else {
         _items[existingIndex] = savedItem;
       }
-      _baselineByProduct[savedItem.id] = savedItem.quantity;
       _publishInventorySnapshot();
       return savedItem;
     } catch (error, stackTrace) {
@@ -1206,7 +1259,10 @@ class InventoryController {
 
   bool get canRequestInventoryApproval {
     final role = currentUserRole?.toLowerCase();
-    return role == 'helper' || role == 'staff' || role == 'cashier';
+    return role == 'helper' ||
+        role == 'bodegero' ||
+        role == 'staff' ||
+        role == 'cashier';
   }
 
   Stream<InventoryApprovalPage> get approvalPageSnapshots =>
@@ -1329,7 +1385,7 @@ class InventoryController {
   }) async {
     if (!canRequestInventoryApproval) {
       throw StateError(
-        'Only Cashier or Helper accounts may request stock changes.',
+        'Only Cashier, Helper, or Bodegero accounts may request stock changes.',
       );
     }
     final matches = _items.where((candidate) => candidate.id == productId);
@@ -1346,8 +1402,8 @@ class InventoryController {
       throw ArgumentError.value(reason, 'reason', 'A reason is required');
     }
     final hasProof = proofStoragePath?.trim().isNotEmpty ?? false;
-    if (type == InventoryApprovalType.writeOff && !hasProof) {
-      throw ArgumentError('Photo evidence is required for write-off requests.');
+    if (!hasProof) {
+      throw ArgumentError('A supporting photo is required for stock requests.');
     }
     if (hasProof &&
         ((proofFileName?.trim().isEmpty ?? true) ||
@@ -1391,7 +1447,9 @@ class InventoryController {
   Future<List<InventoryApprovalRequest>>
   fetchMyInventoryApprovalRequests() async {
     if (!canRequestInventoryApproval) {
-      throw StateError('Only Cashier or Helper accounts may view requests.');
+      throw StateError(
+        'Only Cashier, Helper, or Bodegero accounts may view requests.',
+      );
     }
     final response = await supabase.rpc(
       'my_inventory_approval_requests_v1',
@@ -1405,6 +1463,27 @@ class InventoryController {
           ),
         )
         .toList(growable: false);
+  }
+
+  Future<BodegeroLoadingHistoryPage> fetchMyLoadingHistory({
+    int page = 1,
+    String search = '',
+  }) async {
+    if (currentUserRole?.toLowerCase() != 'bodegero') {
+      throw StateError('Only Bodegero accounts may view loading history.');
+    }
+    final response = await supabase.rpc(
+      'bodegero_loading_history_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_page': page,
+        'p_search': search.trim(),
+        'p_page_size': 20,
+      },
+    );
+    return BodegeroLoadingHistoryPage.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
   }
 
   Future<String> uploadApprovalEvidence({
@@ -1739,7 +1818,7 @@ class InventoryController {
     // committed together by adjust_inventory_quantity_v1 below.
     if (useStage6b7SecureProductAccess) {
       final savedProduct = await supabase.rpc(
-        'product_details_update_v1',
+        'product_details_update_v2',
         params: <String, dynamic>{
           'p_session_token': _requireSessionToken(),
           'p_product_id': updatedItem.id,
@@ -1755,6 +1834,7 @@ class InventoryController {
           'p_image_url': updatedItem.imageUrl,
           'p_unit': updatedItem.unit,
           'p_max_quantity': updatedItem.maxQuantity,
+          'p_requires_loading': updatedItem.requiresLoading,
         },
       );
       if (savedProduct != true) {
@@ -1779,6 +1859,7 @@ class InventoryController {
             'image_url': updatedItem.imageUrl,
             'unit': updatedItem.unit,
             'max_quantity': updatedItem.maxQuantity,
+            'requires_loading': updatedItem.requiresLoading,
           })
           .eq('id', updatedItem.id)
           .eq('location_id', locationId)
@@ -1814,8 +1895,6 @@ class InventoryController {
     }
 
     if (quantityChange > 0) {
-      await _loadStockBaselines();
-
       final callback = onRestockRecorded;
       final locationId = activeLocationId;
       final userId = currentUserId;
@@ -2192,6 +2271,7 @@ class InventoryController {
     String? binNumber,
     String? imageUrl,
     String? unit,
+    bool? requiresLoading,
   }) {
     return originalItem.copyWith(
       name: newName,
@@ -2208,6 +2288,7 @@ class InventoryController {
       binNumber: binNumber,
       imageUrl: imageUrl,
       unit: unit,
+      requiresLoading: requiresLoading,
     );
   }
 
@@ -2225,6 +2306,7 @@ class InventoryController {
     String? shelfLevel,
     String? imageUrl,
     String unit = 'pcs',
+    bool requiresLoading = false,
   }) {
     double parsedQty = double.tryParse(quantity) ?? 0.0;
     double parsedMax = double.tryParse(maxQuantity) ?? parsedQty;
@@ -2244,6 +2326,7 @@ class InventoryController {
       shelfLevel: shelfLevel,
       imageUrl: imageUrl ?? '',
       unit: unit,
+      requiresLoading: requiresLoading,
     );
   }
 
@@ -2918,6 +3001,62 @@ class InventoryController {
       }
       return List<Map<String, dynamic>>.unmodifiable(rows);
     });
+  }
+
+  Future<Map<String, dynamic>> loadAnalyticsSummary({
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required DateTime previousStart,
+    required DateTime monthStart,
+  }) async {
+    final locationId = activeLocationId;
+    if (locationId == null) return const <String, dynamic>{};
+    final response = await supabase.rpc(
+      'analytics_summary_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_period_start': periodStart.toUtc().toIso8601String(),
+        'p_period_end': periodEnd.toUtc().toIso8601String(),
+        'p_previous_start': previousStart.toUtc().toIso8601String(),
+        'p_month_start': monthStart.toUtc().toIso8601String(),
+      },
+    );
+    if (activeLocationId != locationId) {
+      throw StateError('Analytics location changed while loading.');
+    }
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<List<CustomerOrder>> loadAnalyticsSalesExport({
+    required DateTime start,
+    required DateTime endExclusive,
+  }) async {
+    final locationId = activeLocationId;
+    if (locationId == null) return const <CustomerOrder>[];
+    const pageSize = 500;
+    final orders = <CustomerOrder>[];
+    for (var offset = 0; ; offset += pageSize) {
+      final rows = await supabase
+          .from('orders')
+          .select()
+          .eq('location_id', locationId)
+          .inFilter('status', [
+            'completed',
+            'prepared',
+            'pending',
+            'solo_picking',
+          ])
+          .gte('created_at', start.toUtc().toIso8601String())
+          .lt('created_at', endExclusive.toUtc().toIso8601String())
+          .order('created_at', ascending: false)
+          .range(offset, offset + pageSize - 1);
+      if (activeLocationId != locationId) {
+        throw StateError('Analytics location changed while exporting.');
+      }
+      orders.addAll(rows.map(CustomerOrder.fromJson));
+      if (rows.length < pageSize) break;
+    }
+    return List<CustomerOrder>.unmodifiable(orders);
   }
 
   Future<List<Map<String, dynamic>>> fetchAllTransactionHistory() async {
@@ -3682,6 +3821,7 @@ class InventoryController {
               );
             }
             _transactionHistoryInvalidationsController.add(null);
+            unawaited(_refreshRollingSales());
           },
           onError: (Object error, StackTrace stackTrace) {
             debugPrint(
@@ -3824,7 +3964,8 @@ class InventoryController {
   void _clearInventorySnapshot() {
     _items = <InventoryItem>[];
     _disabledItems = <InventoryItem>[];
-    _baselineByProduct = <String, double>{};
+    _rollingSalesExpiryTimer?.cancel();
+    _rollingSalesByProduct = <String, List<RollingSale>>{};
     _inventorySnapshotLocationId = null;
     _inventorySnapshotLoaded = false;
     _publishInventorySnapshot();
@@ -4158,6 +4299,130 @@ class InventoryController {
     }
   }
 
+  Future<CustomerOrder> verifyHeavyOrderItem(
+    String orderId,
+    String productId,
+  ) async {
+    final response = await supabase.rpc(
+      'verify_heavy_order_item_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+        'p_product_id': productId,
+      },
+    );
+    return _acceptUpdatedOrder(response);
+  }
+
+  Future<CustomerOrder> claimOrderLoading(String orderId) async {
+    final response = await supabase.rpc(
+      'claim_order_loading_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+      },
+    );
+    final order = _acceptUpdatedOrder(response);
+    _invalidateStaffPerformance();
+    return order;
+  }
+
+  Future<Map<String, dynamic>> startOrderLoadingClock(String orderId) async {
+    final response = await supabase.rpc(
+      'start_order_loading_clock_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+      },
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> setOrderLoadingPause(
+    String orderId, {
+    required bool paused,
+  }) async {
+    final response = await supabase.rpc(
+      'set_order_loading_pause_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+        'p_paused': paused,
+      },
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> loadBodegeroPerformance({
+    required DateTime periodStart,
+    required DateTime periodEnd,
+  }) async {
+    if (!isAdmin) {
+      throw StateError(
+        'Staff Performance is available to Admin accounts only.',
+      );
+    }
+    final response = await supabase.rpc(
+      'bodegero_performance_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_period_start': periodStart.toUtc().toIso8601String(),
+        'p_period_end': periodEnd.toUtc().toIso8601String(),
+      },
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>?> getOrderLoadingProof(String orderId) async {
+    final response = await supabase.rpc(
+      'get_order_loading_proof_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+      },
+    );
+    return response == null ? null : Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<CustomerOrder> finishOrderLoading({
+    required String orderId,
+    required String truckPlate,
+    required Map<String, double> loadedQuantities,
+    required Uint8List photoJpeg,
+  }) async {
+    final response = await supabase.rpc(
+      'finish_order_loading_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+        'p_truck_plate': truckPlate,
+        'p_loaded_quantities': loadedQuantities,
+        'p_photo_base64': base64Encode(photoJpeg),
+      },
+    );
+    final order = _acceptUpdatedOrder(response);
+    _invalidateStaffPerformance();
+    return order;
+  }
+
+  CustomerOrder _acceptUpdatedOrder(dynamic response) {
+    final updated = CustomerOrder.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+    if (_ordersSnapshotLocationId == activeLocationId) {
+      final index = _ordersSnapshot.indexWhere(
+        (order) => order.id == updated.id,
+      );
+      if (index >= 0) {
+        final orders = List<CustomerOrder>.of(_ordersSnapshot);
+        orders[index] = updated;
+        _ordersSnapshot = List<CustomerOrder>.unmodifiable(orders);
+        _ordersController.add(_ordersSnapshot);
+      }
+    }
+    return updated;
+  }
+
   Future<bool> claimOrderForCurrentHelper(Object orderId) async {
     final locationId = activeLocationId;
     final helperId = currentUserNumericId;
@@ -4388,6 +4653,32 @@ class InventoryController {
     } catch (e) {
       throw Exception("Failed to save changes to the database.");
     }
+  }
+
+  Future<List<String>> securityQuestionIds() async {
+    if (currentUserRole?.toLowerCase() != 'admin') return const [];
+    final response = await supabase.rpc(
+      'password_recovery_questions_status_v1',
+      params: <String, dynamic>{'p_session_token': _requireSessionToken()},
+    );
+    if (response is! List) return const [];
+    return response.map((id) => id.toString()).toList();
+  }
+
+  Future<bool> saveSecurityQuestions({
+    required String currentPassword,
+    required List<Map<String, String>> questions,
+  }) async {
+    if (currentUserRole?.toLowerCase() != 'admin') return false;
+    final response = await supabase.rpc(
+      'password_recovery_questions_set_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_current_password': currentPassword,
+        'p_questions': questions,
+      },
+    );
+    return response == true;
   }
 
   Future<bool> adminResetUserPassword(

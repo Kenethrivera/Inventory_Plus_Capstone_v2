@@ -31,8 +31,8 @@ begin
   select * into v_profile
   from private.require_app_session_v1(p_session_token);
   if not found then raise exception 'Approval session is invalid or expired'; end if;
-  if v_profile.role not in ('helper', 'staff', 'cashier') then
-    raise exception 'Only Cashier or Helper accounts may request stock changes';
+  if v_profile.role not in ('helper', 'bodegero', 'staff', 'cashier') then
+    raise exception 'Only Cashier, Helper, or Bodegero accounts may request stock changes';
   end if;
   if v_operation_id is null or length(v_operation_id) < 16 then
     raise exception 'approval_submission_invalid';
@@ -61,8 +61,8 @@ begin
   if p_quantity is null or p_quantity <= 0 then
     raise exception 'Quantity must be greater than 0';
   end if;
-  if v_type = 'write_off' and v_proof_path is null then
-    raise exception 'Photo evidence is required for write-off requests';
+  if v_proof_path is null then
+    raise exception 'A supporting photo is required for stock requests';
   end if;
   if v_proof_path is not null or v_proof_name is not null or v_proof_mime is not null then
     if v_proof_path is null or v_proof_name is null or v_proof_mime is null then

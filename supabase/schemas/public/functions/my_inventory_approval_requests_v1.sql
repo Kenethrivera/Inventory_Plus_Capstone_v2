@@ -16,8 +16,8 @@ begin
   if not found then
     raise exception 'Approval session is invalid or expired';
   end if;
-  if v_profile.role not in ('helper', 'staff', 'cashier') then
-    raise exception 'Only Cashier or Helper accounts may view requests';
+  if v_profile.role not in ('helper', 'bodegero', 'staff', 'cashier') then
+    raise exception 'Only Cashier, Helper, or Bodegero accounts may view requests';
   end if;
 
   select coalesce(jsonb_agg(private.approval_request_json_v1(scoped.row_value)

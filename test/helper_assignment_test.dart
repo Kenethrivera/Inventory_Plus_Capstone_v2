@@ -22,10 +22,19 @@ void main() {
     String? helperId,
     required String status,
     required DateTime assignedAt,
+    List<CustomerOrderItem>? items,
   }) {
     return CustomerOrder(
       id: id,
-      items: const <CustomerOrderItem>[],
+      items:
+          items ??
+          <CustomerOrderItem>[
+            CustomerOrderItem(
+              productId: 'light',
+              productName: 'Light item',
+              quantity: 1,
+            ),
+          ],
       status: status,
       createdAt: assignedAt.subtract(const Duration(minutes: 1)),
       assignedHelperId: helperId,
@@ -83,6 +92,43 @@ void main() {
       expect(visible.map((entry) => entry.id), ['mine']);
     },
   );
+
+  test('Helper queue excludes heavy-only orders but keeps mixed orders', () {
+    final heavy = CustomerOrderItem(
+      productId: 'cement',
+      productName: 'Cement',
+      quantity: 5,
+      requiresLoading: true,
+    );
+    final light = CustomerOrderItem(
+      productId: 'brush',
+      productName: 'Brush',
+      quantity: 1,
+    );
+    final orders = [
+      order(
+        id: 'heavy',
+        helperId: '1',
+        status: 'pending',
+        assignedAt: now,
+        items: [heavy],
+      ),
+      order(
+        id: 'mixed',
+        helperId: '1',
+        status: 'pending',
+        assignedAt: now,
+        items: [heavy, light],
+      ),
+    ];
+    expect(
+      assignedPendingOrdersForHelper(
+        orders: orders,
+        helperId: '1',
+      ).map((entry) => entry.id),
+      ['mixed'],
+    );
+  });
 
   test('eligible Helpers are online, fresh, same-location Helper profiles', () {
     final rows = <Map<String, dynamic>>[
@@ -272,7 +318,7 @@ void main() {
     },
   );
 
-  test('normal Helper UI has no claim pool and backend claim remains', () {
+  test('Helper UI only opens and claims orders with light work', () {
     final helperUi = File('lib/ui/order_queue_page.dart').readAsStringSync();
     final controller = File(
       'lib/logic/inventory_controller.dart',
@@ -280,9 +326,11 @@ void main() {
 
     expect(helperUi, contains('assignedPendingOrdersForHelper'));
     expect(helperUi, contains('_openAssignedOrderChecklist'));
-    expect(helperUi, isNot(contains('claimOrderForCurrentHelper(')));
-    expect(helperUi.toLowerCase(), isNot(contains('claimed by you')));
-    expect(helperUi.toLowerCase(), isNot(contains('unassigned pending')));
+    expect(
+      helperUi,
+      contains('order.items.any((item) => !item.requiresLoading)'),
+    );
+    expect(helperUi, contains('claimOrderForCurrentHelper('));
     expect(controller, contains('claimOrderForCurrentHelper('));
   });
 

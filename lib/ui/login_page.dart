@@ -5,6 +5,7 @@ import 'dart:math';
 import '../login/auth_service.dart';
 import '../login/session_storage.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/security_questions.dart';
 import '../navigation/main_section.dart';
 import '../services/store_access_service.dart';
 import '../services/staff_presence_service.dart';
@@ -700,15 +701,18 @@ class _LoginPageState extends State<LoginPage> {
                     ? Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(child: _buildBrandPanel()),
-                          Expanded(child: _buildLoginFormPanel(form)),
+                          Expanded(child: _buildBrandPanel(wide: true)),
+                          Expanded(
+                            child: _buildLoginFormPanel(form, wide: true),
+                          ),
                         ],
                       )
                     : Column(
                         mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _buildBrandPanel(),
-                          _buildLoginFormPanel(form),
+                          _buildBrandPanel(wide: false),
+                          _buildLoginFormPanel(form, wide: false),
                         ],
                       ),
               ),
@@ -719,45 +723,43 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildBrandPanel() {
-    final compact = MediaQuery.sizeOf(context).width < 800;
+  Widget _buildBrandPanel({required bool wide}) {
+    if (!wide) {
+      return Container(
+        width: double.infinity,
+        color: _brandDark,
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildBrandIdentity(),
+            const SizedBox(height: 16),
+            const Text(
+              'Stock, orders and payments in one place.',
+              style: TextStyle(
+                color: Color(0xFFFFE7DA),
+                fontSize: 13,
+                fontFamily: 'Outfit',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       color: _brandDark,
-      padding: EdgeInsets.all(compact ? 24 : 40),
+      padding: const EdgeInsets.all(40),
       child: Column(
-        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: const Icon(LucideIcons.box, color: _brand, size: 17),
-              ),
-              const SizedBox(width: 9),
-              const Text(
-                'Inventory Plus',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Outfit',
-                ),
-              ),
-            ],
-          ),
-          if (compact) const SizedBox(height: 48) else const Spacer(),
+          _buildBrandIdentity(),
+          const Spacer(),
           Text(
             'Every item, counted.\nEvery sale, tracked.',
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
-              fontSize: compact ? 25 : 34,
+              fontSize: 34,
               fontWeight: FontWeight.w800,
               height: 1.08,
               fontFamily: 'Outfit',
@@ -766,14 +768,14 @@ class _LoginPageState extends State<LoginPage> {
           const SizedBox(height: 14),
           Text(
             'Stock, orders and payments for your hardware store\nin one place.',
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
-              fontSize: compact ? 12 : 14,
+              fontSize: 14,
               height: 1.45,
               fontFamily: 'Outfit',
             ),
           ),
-          if (compact) const SizedBox(height: 36) else const Spacer(),
+          const Spacer(),
           const Text(
             'Hardware Management System',
             style: TextStyle(
@@ -787,14 +789,40 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildLoginFormPanel(Widget form) {
-    final compact = MediaQuery.sizeOf(context).width < 380;
+  Widget _buildBrandIdentity() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: const Icon(LucideIcons.box, color: _brand, size: 17),
+        ),
+        const SizedBox(width: 9),
+        const Text(
+          'Inventory Plus',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Outfit',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoginFormPanel(Widget form, {required bool wide}) {
     return Container(
       color: const Color(0xFFF8F7F5),
       alignment: Alignment.center,
       padding: EdgeInsets.symmetric(
-        horizontal: compact ? 20 : 32,
-        vertical: compact ? 32 : 48,
+        horizontal: wide ? 32 : 24,
+        vertical: wide ? 48 : 32,
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 390),
@@ -1248,12 +1276,16 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
   late final AuthService _authService = widget.authService ?? AuthService();
   final _controller = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _questionAnswers = List.generate(3, (_) => TextEditingController());
 
   final _focusNode1 = FocusNode();
   final _focusNode2 = FocusNode();
 
-  int _step = 0; // 0: username, 1: OTP, 2: new password
-  String _recoveryChannel = 'email';
+  int _step = 0; // 0: username, 1: verification, 2: new password
+  String _recoveryChannel = 'sms';
+  List<String> _questionIds = const [];
+  int _questionAttemptsLeft = 3;
+  String? _questionError;
   String? _recoveryChallengeId;
   String? _recoveryResetToken;
   String? _recoveryUsername;
@@ -1329,9 +1361,11 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     }
   }
 
-  final _stepTitles = [
+  List<String> get _stepTitles => [
     'Find your account',
-    'Enter the code',
+    _recoveryChannel == 'questions'
+        ? 'Verify with security questions'
+        : 'Enter the code',
     'Set new password',
   ];
 
@@ -1367,6 +1401,9 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     // WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     _confirmPasswordController.dispose();
+    for (final answer in _questionAnswers) {
+      answer.dispose();
+    }
     _focusNode1.dispose();
     _focusNode2.dispose();
     super.dispose();
@@ -1477,13 +1514,33 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
 
   Future<void> _nextStep() async {
     final input = _controller.text.trim();
-    if (input.isEmpty) return;
+    if (input.isEmpty && !(_step == 1 && _recoveryChannel == 'questions')) {
+      return;
+    }
 
     setState(() => _isLoading = true);
 
     try {
       if (_step == 0) {
         final requestedAt = _now;
+        if (_recoveryChannel == 'questions') {
+          final challenge = await _authService.beginQuestionRecovery(input);
+          if (!mounted) return;
+          setState(() {
+            _recoveryChallengeId = challenge.challengeId;
+            _recoveryResetToken = null;
+            _recoveryUsername = input;
+            _questionIds = challenge.questionIds;
+            _questionAttemptsLeft = 3;
+            _questionError = null;
+            _step = 1;
+            _controller.clear();
+            for (final answer in _questionAnswers) {
+              answer.clear();
+            }
+          });
+          return;
+        }
         final challengeId = await _authService.requestPasswordRecovery(
           input,
           _recoveryChannel,
@@ -1501,6 +1558,38 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
           if (mounted) _focusNode1.requestFocus();
         });
       } else if (_step == 1) {
+        if (_recoveryChannel == 'questions') {
+          final challengeId = _recoveryChallengeId;
+          if (challengeId == null || _questionAttemptsLeft == 0) return;
+          final answers = _questionAnswers
+              .map((answer) => answer.text.trim())
+              .toList();
+          if (answers.any((answer) => answer.isEmpty)) {
+            setState(() => _questionError = 'Answer all three questions.');
+            return;
+          }
+          final token = await _authService.verifyQuestionRecovery(
+            challengeId,
+            answers,
+          );
+          if (!mounted) return;
+          if (token == null || token.isEmpty) {
+            setState(() {
+              _questionAttemptsLeft--;
+              _questionError = _questionAttemptsLeft > 0
+                  ? 'Those answers do not match. $_questionAttemptsLeft attempts left.'
+                  : 'Verification ended. Start again or use SMS.';
+            });
+            return;
+          }
+          setState(() {
+            _recoveryResetToken = token;
+            _step = 2;
+            _controller.clear();
+            _questionError = null;
+          });
+          return;
+        }
         if (_secondsUntil(_otpExpiresAt) == 0) {
           AppToast.error(context, 'Code expired. Request a new code.');
           return;
@@ -1551,12 +1640,15 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
         final saved = await _authService.completePasswordRecovery(
           resetToken,
           password,
+          securityQuestions: _recoveryChannel == 'questions',
         );
         if (!mounted) return;
         if (!saved) {
           AppToast.error(
             context,
-            'The reset session expired. Please request a new code.',
+            _recoveryChannel == 'questions'
+                ? 'The reset session expired. Start again with security questions.'
+                : 'The reset session expired. Please request a new code.',
           );
           return;
         }
@@ -1589,15 +1681,19 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
       Navigator.pop(context);
     } else {
       setState(() {
-        _step -= 1;
-        if (_step == 0) {
-          _otpTimer?.cancel();
-          _otpExpiresAt = null;
-          _resendAvailableAt = null;
-          _recoveryUsername = null;
-        }
+        _step = 0;
+        _otpTimer?.cancel();
+        _otpExpiresAt = null;
+        _resendAvailableAt = null;
+        _recoveryUsername = null;
         _recoveryChallengeId = null;
         _recoveryResetToken = null;
+        _questionIds = const [];
+        _questionAttemptsLeft = 3;
+        _questionError = null;
+        for (final answer in _questionAnswers) {
+          answer.clear();
+        }
         _controller.clear();
         _confirmPasswordController.clear();
       });
@@ -1674,7 +1770,9 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
           ),
           SizedBox(height: compact ? 8 : 14),
           Text(
-            "We'll send a code to verify it's you, then you can choose a new password.",
+            _recoveryChannel == 'questions'
+                ? 'Answer the three questions you set in your Admin profile, then choose a new password.'
+                : "We'll send a code to verify it's you, then you can choose a new password.",
             style: TextStyle(
               color: Colors.white,
               fontSize: compact ? 13 : 16,
@@ -1861,9 +1959,14 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
               hint: "Enter admin username",
               icon: LucideIcons.user,
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'Staff accounts: ask your administrator to reset your password.',
+              style: TextStyle(color: Color(0xFF756D67), fontSize: 12),
+            ),
             const SizedBox(height: 26),
             const Text(
-              'Send code by',
+              'Verify by',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 10),
@@ -1884,66 +1987,111 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                   Expanded(child: _recoveryChannelOption('sms', 'SMS')),
                 ],
               ),
+            const SizedBox(height: 10),
+            _recoveryChannelOption('questions', 'Security questions'),
           ] else if (_step == 1) ...[
-            _buildModalField(
-              controller: _controller,
-              focusNode: _focusNode1,
-              label: "OTP code",
-              hint: "000000",
-              icon: LucideIcons.shieldCheck,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(6),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.info_outline, color: Colors.grey.shade500, size: 14),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    "Enter the verification code if you received one.",
-                    style: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 12,
-                      fontFamily: 'Outfit',
-                    ),
+            if (_recoveryChannel == 'questions') ...[
+              for (var index = 0; index < _questionIds.length; index++) ...[
+                Text(
+                  '${index + 1}. ${securityQuestionChoices[_questionIds[index]] ?? 'Security question'}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _questionAnswers[index],
+                  enabled: !_isLoading && _questionAttemptsLeft > 0,
+                  onChanged: (_) => setState(() => _questionError = null),
+                  decoration: const InputDecoration(
+                    hintText: 'Your answer',
+                    border: OutlineInputBorder(),
                   ),
                 ),
+                const SizedBox(height: 18),
               ],
-            ),
-            const SizedBox(height: 14),
-            Text(
-              _secondsUntil(_otpExpiresAt) > 0
-                  ? 'Code expires in ${_clockText(_secondsUntil(_otpExpiresAt))}'
-                  : 'Code expired',
-              style: TextStyle(
-                color: _secondsUntil(_otpExpiresAt) > 0
-                    ? const Color(0xFF64748B)
-                    : const Color(0xFFDC2626),
-                fontSize: 12,
-                fontFamily: 'Outfit',
-                fontWeight: FontWeight.w600,
+              Text(
+                _questionError ??
+                    'Answers are not case-sensitive. Questions expire in 10 minutes. $_questionAttemptsLeft attempts left.',
+                style: TextStyle(
+                  color: _questionError == null
+                      ? const Color(0xFF756D67)
+                      : const Color(0xFFB42318),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            TextButton(
-              onPressed: _isLoading || _secondsUntil(_resendAvailableAt) > 0
-                  ? null
-                  : _resendOtp,
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                foregroundColor: _blue,
-                alignment: Alignment.centerLeft,
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _isLoading
+                    ? null
+                    : () {
+                        _goBackOrCancel();
+                        setState(() => _recoveryChannel = 'sms');
+                      },
+                child: const Text('Send an SMS code instead'),
               ),
-              child: Text(
-                _secondsUntil(_resendAvailableAt) > 0
-                    ? 'Resend OTP in ${_clockText(_secondsUntil(_resendAvailableAt))}'
-                    : 'Resend OTP',
+            ] else ...[
+              _buildModalField(
+                controller: _controller,
+                focusNode: _focusNode1,
+                label: "OTP code",
+                hint: "000000",
+                icon: LucideIcons.shieldCheck,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(6),
+                ],
               ),
-            ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    color: Colors.grey.shade500,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      "Enter the verification code if you received one.",
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 12,
+                        fontFamily: 'Outfit',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                _secondsUntil(_otpExpiresAt) > 0
+                    ? 'Code expires in ${_clockText(_secondsUntil(_otpExpiresAt))}'
+                    : 'Code expired',
+                style: TextStyle(
+                  color: _secondsUntil(_otpExpiresAt) > 0
+                      ? const Color(0xFF64748B)
+                      : const Color(0xFFDC2626),
+                  fontSize: 12,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: _isLoading || _secondsUntil(_resendAvailableAt) > 0
+                    ? null
+                    : _resendOtp,
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  foregroundColor: _blue,
+                  alignment: Alignment.centerLeft,
+                ),
+                child: Text(
+                  _secondsUntil(_resendAvailableAt) > 0
+                      ? 'Resend OTP in ${_clockText(_secondsUntil(_resendAvailableAt))}'
+                      : 'Resend OTP',
+                ),
+              ),
+            ],
           ] else ...[
             _buildModalField(
               controller: _controller,
@@ -2026,7 +2174,13 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                 ),
               ),
               ElevatedButton(
-                onPressed: _isLoading ? null : _nextStep,
+                onPressed:
+                    _isLoading ||
+                        (_step == 1 &&
+                            _recoveryChannel == 'questions' &&
+                            _questionAttemptsLeft == 0)
+                    ? null
+                    : _nextStep,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _blue,
                   foregroundColor: Colors.white,
@@ -2050,9 +2204,13 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                       )
                     : Text(
                         _step == 0
-                            ? 'Send code'
+                            ? _recoveryChannel == 'questions'
+                                  ? 'Continue'
+                                  : 'Send code'
                             : _step == 1
-                            ? 'Verify code'
+                            ? _recoveryChannel == 'questions'
+                                  ? 'Verify answers'
+                                  : 'Verify code'
                             : 'Update password',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
@@ -2075,7 +2233,7 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
           : () => setState(() => _recoveryChannel = channel),
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        height: 68,
+        height: channel == 'questions' ? 76 : 68,
         padding: const EdgeInsets.symmetric(horizontal: 18),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFFFFF1E8) : Colors.white,
@@ -2093,13 +2251,26 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
               color: selected ? _blue : const Color(0xFF817A75),
             ),
             const SizedBox(width: 12),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF171717),
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Outfit',
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: const Color(0xFF171717),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Outfit',
+                    ),
+                  ),
+                  if (channel == 'questions')
+                    const Text(
+                      'Answer questions set in your profile. No code needed.',
+                      style: TextStyle(color: Color(0xFF817A75), fontSize: 11),
+                    ),
+                ],
               ),
             ),
           ],

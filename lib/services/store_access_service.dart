@@ -64,7 +64,8 @@ class StoreAccessSettings {
       staffAccessAfterMinutes:
           int.tryParse(map['staff_access_after_minutes'].toString()) ?? 30,
       restrictStaffLogin: map['restrict_staff_login'] == true,
-      allowAdminAnytime: map['allow_admin_anytime'] != false,
+      // Admins must be able to open settings when the store is closed.
+      allowAdminAnytime: true,
       weeklyHours: _parseWeeklyHours(map['weekly_hours']),
     );
   }
@@ -91,7 +92,7 @@ class StoreAccessSettings {
       'staff_access_before_minutes': staffAccessBeforeMinutes,
       'staff_access_after_minutes': staffAccessAfterMinutes,
       'restrict_staff_login': restrictStaffLogin,
-      'allow_admin_anytime': allowAdminAnytime,
+      'allow_admin_anytime': true,
       'weekly_hours': {
         for (var day = 1; day <= 7; day++) '$day': hoursForWeekday(day).toMap(),
       },

@@ -44,9 +44,10 @@ CREATE TABLE "public"."approval_requests" (
     NOT NULL) AND (unit IS NOT NULL) AND (requested_quantity IS NOT NULL) AND (requested_quantity > (0)::numeric) AND (stock_at_request IS
     NOT NULL) AND (stock_at_request >= (0)::numeric)))),
   CONSTRAINT "approval_request_write_off_reason" CHECK (((request_type <> 'write_off'::text) OR (NULLIF(TRIM(BOTH FROM reason), ''::text) IS NOT NULL))),
+  CONSTRAINT "approval_request_stock_photo_required" CHECK ((request_type NOT IN ('restock'::text, 'write_off'::text)) OR (NULLIF(BTRIM(proof_storage_path), '') IS NOT NULL AND NULLIF(BTRIM(proof_file_name), '') IS NOT NULL AND NULLIF(BTRIM(proof_mime_type), '') IS NOT NULL)),
   CONSTRAINT "approval_requests_pkey" PRIMARY KEY (id),
   CONSTRAINT "approval_requests_request_type_check" CHECK ((request_type = ANY (ARRAY['restock'::text, 'write_off'::text, 'discount'::text]))),
-  CONSTRAINT "approval_requests_requested_by_role_check" CHECK ((requested_by_role = ANY (ARRAY['helper'::text, 'staff'::text, 'cashier'::text]))),
+  CONSTRAINT "approval_requests_requested_by_role_check" CHECK ((requested_by_role = ANY (ARRAY['helper'::text, 'bodegero'::text, 'staff'::text, 'cashier'::text]))),
   CONSTRAINT "approval_requests_requested_quantity_check" CHECK ((requested_quantity > (0)::numeric)),
   CONSTRAINT "approval_requests_status_check" CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text]))),
   CONSTRAINT "approval_requests_stock_at_request_check" CHECK ((stock_at_request >= (0)::numeric)),

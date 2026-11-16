@@ -40,13 +40,20 @@ void main() {
       MainSection.inventory,
       MainSection.history,
     ]);
+    expect(MainSection.forRole('bodegero'), const <MainSection>[
+      MainSection.queue,
+    ]);
     expect(MainSection.forRole('staff'), const <MainSection>[
       MainSection.pos,
       MainSection.cashierRequests,
-      MainSection.inventory,
       MainSection.history,
     ]);
     expect(MainSection.forRole('cashier'), MainSection.forRole('staff'));
+    for (final role in ['admin', 'helper', 'bodegero', 'staff', 'cashier']) {
+      for (final section in MainSection.forRole(role)) {
+        expect(section.allowsRole(role), isTrue);
+      }
+    }
   });
 
   test('forbidden or unknown routes fall back to role default', () {
@@ -57,6 +64,25 @@ void main() {
     expect(
       MainSection.resolveForRole(MainSection.transactions, 'staff'),
       MainSection.pos,
+    );
+    for (final role in ['staff', 'cashier']) {
+      expect(MainSection.inventory.allowsRole(role), isFalse);
+      expect(
+        MainSection.resolveForRole(
+          MainSection.fromPath('#/main/inventory'),
+          role,
+        ),
+        MainSection.pos,
+      );
+      expect(MainSection.forRole(role), isNot(contains(MainSection.inventory)));
+    }
+    expect(
+      MainSection.resolveForRole(MainSection.inventory, 'helper'),
+      MainSection.inventory,
+    );
+    expect(
+      MainSection.resolveForRole(MainSection.inventory, 'bodegero'),
+      MainSection.queue,
     );
     expect(MainSection.resolveForRole(null, 'admin'), MainSection.dashboard);
   });

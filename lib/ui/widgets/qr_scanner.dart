@@ -2,26 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/app_error_mapper.dart';
 import '../../services/app_logger.dart';
+import 'app_toast.dart';
 
 class QRScanner extends StatefulWidget {
   final Function(String) onScan;
   final bool isScanning;
 
-  const QRScanner({
-    super.key,
-    required this.onScan,
-    required this.isScanning,
-  });
+  const QRScanner({super.key, required this.onScan, required this.isScanning});
 
   @override
   State<QRScanner> createState() => _QRScannerState();
 }
 
-class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMixin {
+class _QRScannerState extends State<QRScanner>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
   bool _hasScanned = false;
   MobileScannerErrorCode? _lastLoggedError;
+  final MobileScannerController _scannerController = MobileScannerController();
 
   @override
   void initState() {
@@ -41,7 +40,7 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
   void didUpdateWidget(QRScanner oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.isScanning && !oldWidget.isScanning) {
-      _hasScanned = false; 
+      _hasScanned = false;
       _controller.repeat(reverse: true);
     } else if (!widget.isScanning) {
       _controller.stop();
@@ -51,7 +50,23 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
   @override
   void dispose() {
     _controller.dispose();
+    _scannerController.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleFlashlight() async {
+    try {
+      await _scannerController.toggleTorch();
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Scanner flashlight failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        AppToast.error(context, 'Flashlight is unavailable on this device.');
+      }
+    }
   }
 
   @override
@@ -61,6 +76,7 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
         children: [
           if (widget.isScanning)
             MobileScanner(
+              controller: _scannerController,
               fit: BoxFit.cover,
               errorBuilder: (context, error, child) {
                 if (_lastLoggedError != error.errorCode) {
@@ -109,14 +125,14 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
               },
               onDetect: (capture) {
                 if (_hasScanned) return;
-                
+
                 final List<Barcode> barcodes = capture.barcodes;
                 for (final barcode in barcodes) {
                   final String? code = barcode.rawValue;
                   if (code != null) {
-                    _hasScanned = true; 
+                    _hasScanned = true;
                     widget.onScan(code);
-                    break; 
+                    break;
                   }
                 }
               },
@@ -127,6 +143,38 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
           _buildScannerOverlay(),
 
           _buildDecorativeElements(),
+
+          if (widget.isScanning &&
+              MediaQuery.sizeOf(context).shortestSide < 600)
+            Positioned(
+              right: 20,
+              bottom: 120,
+              child: ValueListenableBuilder<MobileScannerState>(
+                valueListenable: _scannerController,
+                builder: (context, state, _) {
+                  if (!state.isInitialized ||
+                      state.torchState == TorchState.unavailable) {
+                    return const SizedBox.shrink();
+                  }
+                  final isOn = state.torchState == TorchState.on;
+                  return IconButton.filled(
+                    tooltip: isOn
+                        ? 'Turn flashlight off'
+                        : 'Turn flashlight on',
+                    onPressed: _toggleFlashlight,
+                    style: IconButton.styleFrom(
+                      backgroundColor: isOn
+                          ? const Color(0xFFFBBF24)
+                          : Colors.black87,
+                      foregroundColor: isOn ? Colors.black : Colors.white,
+                    ),
+                    icon: Icon(
+                      isOn ? Icons.flashlight_on : Icons.flashlight_off,
+                    ),
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );
@@ -135,7 +183,7 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
   Widget _buildScannerOverlay() {
     return ColorFiltered(
       colorFilter: ColorFilter.mode(
-        Colors.black.withOpacity(0.5),
+        Colors.black.withValues(alpha: 0.5),
         BlendMode.srcOut,
       ),
       child: Stack(
@@ -173,7 +221,7 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
             _buildCorner(top: 0, right: 0, isTop: true, isLeft: false),
             _buildCorner(bottom: 0, left: 0, isTop: false, isLeft: true),
             _buildCorner(bottom: 0, right: 0, isTop: false, isLeft: false),
-            
+
             if (widget.isScanning)
               AnimatedBuilder(
                 animation: _animation,
@@ -208,24 +256,46 @@ class _QRScannerState extends State<QRScanner> with SingleTickerProviderStateMix
     );
   }
 
-  Widget _buildCorner({double? top, double? bottom, double? left, double? right, required bool isTop, required bool isLeft}) {
+  Widget _buildCorner({
+    double? top,
+    double? bottom,
+    double? left,
+    double? right,
+    required bool isTop,
+    required bool isLeft,
+  }) {
     return Positioned(
-      top: top, bottom: bottom, left: left, right: right,
+      top: top,
+      bottom: bottom,
+      left: left,
+      right: right,
       child: Container(
         width: 32,
         height: 32,
         decoration: BoxDecoration(
           border: Border(
-            top: isTop ? const BorderSide(color: Color(0xFF2563EB), width: 4) : BorderSide.none,
-            bottom: !isTop ? const BorderSide(color: Color(0xFF2563EB), width: 4) : BorderSide.none,
-            left: isLeft ? const BorderSide(color: Color(0xFF2563EB), width: 4) : BorderSide.none,
-            right: !isLeft ? const BorderSide(color: Color(0xFF2563EB), width: 4) : BorderSide.none,
+            top: isTop
+                ? const BorderSide(color: Color(0xFF2563EB), width: 4)
+                : BorderSide.none,
+            bottom: !isTop
+                ? const BorderSide(color: Color(0xFF2563EB), width: 4)
+                : BorderSide.none,
+            left: isLeft
+                ? const BorderSide(color: Color(0xFF2563EB), width: 4)
+                : BorderSide.none,
+            right: !isLeft
+                ? const BorderSide(color: Color(0xFF2563EB), width: 4)
+                : BorderSide.none,
           ),
           borderRadius: BorderRadius.only(
             topLeft: isTop && isLeft ? const Radius.circular(8) : Radius.zero,
             topRight: isTop && !isLeft ? const Radius.circular(8) : Radius.zero,
-            bottomLeft: !isTop && isLeft ? const Radius.circular(8) : Radius.zero,
-            bottomRight: !isTop && !isLeft ? const Radius.circular(8) : Radius.zero,
+            bottomLeft: !isTop && isLeft
+                ? const Radius.circular(8)
+                : Radius.zero,
+            bottomRight: !isTop && !isLeft
+                ? const Radius.circular(8)
+                : Radius.zero,
           ),
         ),
       ),

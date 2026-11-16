@@ -22,8 +22,8 @@ begin
   select * into v_profile
   from private.require_app_session_v1(p_session_token);
   if not found then raise exception 'Approval session is invalid or expired'; end if;
-  if v_profile.role not in ('helper', 'staff', 'cashier') then
-    raise exception 'Only Cashier or Helper accounts may upload proof';
+  if v_profile.role not in ('helper', 'bodegero', 'staff', 'cashier') then
+    raise exception 'Only Cashier, Helper, or Bodegero accounts may upload proof';
   end if;
   if v_operation_id is null or length(v_operation_id) < 16 then
     raise exception 'evidence_operation_invalid';

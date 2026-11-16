@@ -3,8 +3,7 @@ import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
 import 'add_item_page.dart';
 import 'inventory_redesign.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
+import 'qr_labels_preview_dialog.dart';
 import 'package:printing/printing.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import '../services/export_period.dart';
@@ -260,103 +259,11 @@ class _InventoryPageState extends State<InventoryPage> {
       _showToast("No inventory items found to generate labels.", isError: true);
       return;
     }
-
-    showDialog(
+    final downloaded = await showDialog<bool>(
       context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) =>
-          const Center(child: CircularProgressIndicator()),
+      builder: (_) => QrLabelsPreviewDialog(items: List.of(items!)),
     );
-
-    try {
-      final doc = pw.Document();
-      const int itemsPerPage = 6;
-
-      for (var i = 0; i < items.length; i += itemsPerPage) {
-        final chunk = items.skip(i).take(itemsPerPage).toList();
-
-        doc.addPage(
-          pw.Page(
-            pageFormat: PdfPageFormat.a4,
-            margin: const pw.EdgeInsets.all(32),
-            build: (pw.Context context) {
-              return pw.Wrap(
-                spacing: 20,
-                runSpacing: 20,
-                children: chunk.map((item) {
-                  return pw.Container(
-                    width: 240,
-                    height: 240,
-                    padding: const pw.EdgeInsets.all(12),
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border.all(color: PdfColors.grey, width: 2),
-                      borderRadius: pw.BorderRadius.circular(12),
-                    ),
-                    child: pw.Column(
-                      mainAxisAlignment: pw.MainAxisAlignment.center,
-                      crossAxisAlignment: pw.CrossAxisAlignment.center,
-                      children: [
-                        pw.Text(
-                          item.name,
-                          style: pw.TextStyle(
-                            fontSize: 16,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                        ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          "SKU: ${item.sku}",
-                          style: const pw.TextStyle(
-                            fontSize: 12,
-                            color: PdfColors.black,
-                          ),
-                        ),
-                        pw.SizedBox(height: 12),
-                        pw.Expanded(
-                          child: pw.BarcodeWidget(
-                            barcode: pw.Barcode.qrCode(),
-                            data: item.sku,
-                            drawText: false,
-                          ),
-                        ),
-                        pw.SizedBox(height: 8),
-                        pw.Text(
-                          "Price: P${item.price.toStringAsFixed(2)}",
-                          style: pw.TextStyle(
-                            fontSize: 14,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
-        );
-      }
-
-      final bytes = await doc.save();
-      if (context.mounted) Navigator.pop(context);
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: 'Inventory_QR_Labels.pdf',
-      );
-
-      _showToast("QR labels generated");
-    } catch (e, stackTrace) {
-      AppLogger.error(
-        'Inventory QR label generation failed',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      if (context.mounted) {
-        Navigator.pop(context);
-        _showToast(AppErrorMapper.unknown, isError: true);
-      }
-    }
+    if (downloaded == true && mounted) _showToast('QR labels ready');
   }
 
   String _formatCurrency(double value) {
