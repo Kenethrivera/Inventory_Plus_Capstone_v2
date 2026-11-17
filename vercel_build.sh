@@ -12,8 +12,7 @@ echo "GEMINI_API_KEY_4=$GEMINI_API_KEY_4" >> lib/.env
 echo "GEMINI_API_KEY_5=$GEMINI_API_KEY_5" >> lib/.env
 
 # 2. Run the Flutter web build. Icon tree shaking is intentionally enabled.
-flutter/bin/flutter build web --release
-
+flutter/bin/flutter build web --release --dart-define=FORECAST_API_URL="$FORECAST_API_URL"
 # 3. lucide_icons_flutter registers every optional weight in its package
 # manifest even when the app imports only the regular library. Remove those
 # unused web font families from the generated manifest and deployment output.
