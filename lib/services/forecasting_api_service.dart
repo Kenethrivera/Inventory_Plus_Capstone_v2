@@ -29,7 +29,7 @@ class ForecastApiException implements Exception {
 }
 
 abstract interface class ForecastingApiService {
-  Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken});
+  Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken, String model = "blend"});
   Future<ForecastSnapshotPage> loadSnapshotOverview({
     required String locationId,
     required String sessionToken,
@@ -128,9 +128,9 @@ abstract interface class ForecastingApiService {
 
 class ForecastApiClient implements ForecastingApiService {
   @override
-  Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken}) {
+  Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken, String model = "blend"}) {
     final uri = _baseUri.resolve('/v1/forecasting/jobs/bootstrap')
-        .replace(queryParameters: {'product_id': productId});
+        .replace(queryParameters: {'product_id': productId, 'model': _snapshotModelKey(model)});
     return _send(() => _client.post(uri, headers: _headers(sessionToken)));
   }
   ForecastApiClient({

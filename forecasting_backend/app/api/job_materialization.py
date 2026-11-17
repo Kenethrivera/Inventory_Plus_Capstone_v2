@@ -31,11 +31,13 @@ from app.forecasting import (
     HistoricalDemandDataset,
     LightGBMForecaster,
     Mean28Forecaster,
+    ProductSpecificSeasonalLightGBMForecaster,
     RollingOriginBacktester,
 )
 from app.forecasting.execution import DemandForecastExecutor
 from app.forecasting.series import prepare_history
 from app.performance_diagnostics import log_event, log_duration, start_timer
+from app.seasonality import PhilippineSeasonResolver
 
 
 BUSINESS_TIMEZONE = "Asia/Manila"
@@ -192,6 +194,8 @@ def _implementation_digest() -> str:
         CalibratedBlendForecaster,
         LightGBMForecaster,
         Mean28Forecaster,
+        ProductSpecificSeasonalLightGBMForecaster,
+        PhilippineSeasonResolver,
         RollingOriginBacktester,
         prepare_history,
         HistoricalDemandDataset,
@@ -225,7 +229,42 @@ def _implementation_digest() -> str:
     return digest.hexdigest()
 
 
-def forecast_model_identity(service: ForecastAnalysisService) -> ForecastModelIdentity:
+def forecast_model_identity(service: ForecastAnalysisService, model_key: str = DEFAULT_MODEL) -> ForecastModelIdentity:
+    if model_key == "calibrated_blend":
+        model_key = "blend"
+    if model_key not in {"mean28", "lightgbm", "blend", "seasonal_experimental"}:
+        raise ValueError("Unsupported requested forecast model")
+    if model_key != "blend":
+        history_days = 1095 if model_key == "seasonal_experimental" else DEFAULT_HISTORY_DAYS
+        version = {
+            "mean28": service._mean28.MODEL_VERSION,
+            "lightgbm": service._lightgbm.MODEL_VERSION,
+            "seasonal_experimental": service._seasonal_experimental.MODEL_VERSION,
+        }[model_key]
+        manifest = {
+            "schema": "inventory-plus-model-config-v1",
+            "requested_model": model_key,
+            "requested_model_version": version,
+            "horizon_days": DEFAULT_HORIZON_DAYS,
+            "history_window_days": history_days,
+            "business_timezone": BUSINESS_TIMEZONE,
+            "blend": asdict(service._blend.config),
+            "lightgbm": asdict(service._lightgbm.config),
+            "mean28_lookback_days": service._mean28.LOOKBACK_DAYS,
+            "seasonal_experimental": {
+                "config": asdict(service._seasonal_experimental.config),
+                "include_seasonal_features": service._seasonal_experimental.include_seasonal_features,
+                "zero_never_sold_forecasts": service._seasonal_experimental.zero_never_sold_forecasts,
+                "calendar_version": service._seasonal_experimental.resolver.CALENDAR_VERSION,
+            },
+            "executor_auxiliary_outputs": {
+                "recommendation_role": "requested_forecasts_for_nonseasonal_models",
+                "seasonal_recommendation_model": "lightgbm",
+                "preliminary_model": "lightgbm",
+                "preliminary_horizon_days": 28,
+            },
+        }
+        return ForecastModelIdentity(model_key, version, _sha256_json(manifest), _implementation_digest())
     blend = service._blend
     lightgbm = service._lightgbm
     mean28 = service._mean28
@@ -328,7 +367,8 @@ class ForecastJobMaterializer:
     ) -> None:
         self._catalog = catalog
         self._repository = repository
-        self._identity = forecast_model_identity(service)
+        self._identities = {key: forecast_model_identity(service, key) for key in ("blend", "mean28", "lightgbm", "seasonal_experimental")}
+        self._identity = self._identities["blend"]
 
     def bootstrap(
         self,
@@ -338,7 +378,14 @@ class ForecastJobMaterializer:
         now: datetime,
         product_id: str | None = None,
         product_ids: Sequence[str] | None = None,
+        model_key: str = DEFAULT_MODEL,
     ) -> MaterializationReport:
+        if model_key == "calibrated_blend":
+            model_key = "blend"
+        identity = self._identities.get(model_key)
+        if identity is None:
+            raise ValueError("Unsupported requested forecast model")
+        history_days = 1095 if model_key == "seasonal_experimental" else DEFAULT_HISTORY_DAYS
         if profile.role != "admin":
             raise PermissionError("Forecast job bootstrap is restricted to Admin profiles")
         if now.tzinfo is None:
@@ -396,7 +443,7 @@ class ForecastJobMaterializer:
                     session_token=session_token,
                     product_id=product_id,
                     now=as_of_at,
-                    history_days=DEFAULT_HISTORY_DAYS,
+                    history_days=history_days,
                 )
                 history = context.history
                 stage = "input_scope_validation"
@@ -422,12 +469,12 @@ class ForecastJobMaterializer:
                 identity_fields: dict[str, object] = {
                     "location_id": profile.location_id,
                     "product_id": product_id,
-                    "requested_model_key": self._identity.model_key,
-                    "requested_model_version": self._identity.model_version,
-                    "requested_model_config_digest": self._identity.config_digest,
-                    "requested_implementation_digest": self._identity.implementation_digest,
+                    "requested_model_key": identity.model_key,
+                    "requested_model_version": identity.model_version,
+                    "requested_model_config_digest": identity.config_digest,
+                    "requested_implementation_digest": identity.implementation_digest,
                     "horizon_days": DEFAULT_HORIZON_DAYS,
-                    "history_window_days": DEFAULT_HISTORY_DAYS,
+                    "history_window_days": history_days,
                     "as_of_business_date": business_date.isoformat(),
                     "as_of_at": as_of_at.astimezone(timezone.utc).isoformat(),
                     "sales_revision": int(revision["sales_revision"]),

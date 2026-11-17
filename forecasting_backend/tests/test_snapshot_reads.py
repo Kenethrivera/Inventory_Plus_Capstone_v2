@@ -187,14 +187,15 @@ class SnapshotReadApiTests(unittest.TestCase):
 
     def test_bootstrap_reuses_exact_current_result_without_materialization(self):
         from dataclasses import replace
-        from types import SimpleNamespace
         from unittest.mock import Mock
+        from app.api.job_materialization import forecast_model_identity
+        from app.api.service import ForecastAnalysisService
+        identity = forecast_model_identity(ForecastAnalysisService(adapter=self.adapter))
         materializer = Mock()
-        materializer._identity = SimpleNamespace(model_key="blend",model_version="1",config_digest="a"*64,implementation_digest="b"*64)
         self.adapter.list_active_products = lambda **kwargs: ()
         self.repository.product = lambda **kwargs: {"items":[{
             "status":"completed", "snapshot":{"result_id":"saved", "horizon_days":28,"history_window_days":365,
-            "as_of_business_date":"2026-11-14", "requested_model":{"key":"blend","version":"1","config_digest":"a"*64,"implementation_digest":"b"*64}}}]}
+            "as_of_business_date":"2026-11-14", "requested_model":{"key":"blend","version":"1","config_digest":identity.config_digest,"implementation_digest":identity.implementation_digest}}}]}
         with patch("app.api.main.SupabaseForecastJobRepository"), patch("app.api.main.ForecastJobMaterializer",return_value=materializer):
             app = create_app(adapter=self.adapter,settings=replace(snapshot_settings(),forecast_job_materialization_enabled=True))
         response = TestClient(app).post("/v1/forecasting/jobs/bootstrap",params={"product_id":"31000000-0000-4000-8000-000000000001"},headers={"Authorization":f"Bearer {TOKEN}"})
