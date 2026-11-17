@@ -1246,15 +1246,12 @@ class _ForecastingPageState extends State<ForecastingPage> {
   Future<void> _prepareForecast() async {
     final productId = _selectedProductId;
     if (productId == null || _preparingForecast) return;
-    if (_selectedModel != 'blend' && _selectedModel != 'calibrated_blend') {
-      AppToast.error(context, 'Background preparation currently supports Calibrated Blend only. Select that model to prepare a forecast.');
-      return;
-    }
     setState(() => _preparingForecast = true);
     try {
+      final requestedModel = _selectedModel;
       final report = await _api().prepareForecast(productId: productId,
-        sessionToken: widget.controller.currentSessionToken);
-      if (!mounted || productId != _selectedProductId) return;
+        sessionToken: widget.controller.currentSessionToken, model: requestedModel);
+      if (!mounted || productId != _selectedProductId || requestedModel != _selectedModel) return;
       final queued = (report['queued'] as num? ?? 0) + (report['duplicate'] as num? ?? 0);
       final jobs = (report['jobs'] as List?)?.whereType<Map>().toList() ?? const <Map>[];
       final failed = jobs.any((job) => job['status'] == 'failed' || job['status'] == 'superseded');

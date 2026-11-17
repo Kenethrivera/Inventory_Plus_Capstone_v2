@@ -351,7 +351,7 @@ class ForecastJobWorker:
         expected_history = 1095 if model_key == "seasonal_experimental" else DEFAULT_HISTORY_DAYS
         if model_key not in versions or not 1 <= horizon <= 90 or history_days != expected_history:
             raise DataUnavailableError("Queued forecast model identity is not supported by this worker")
-        config_digest = self._model_identity.config_digest if model_key == "blend" and horizon == DEFAULT_HORIZON_DAYS and history_days == DEFAULT_HISTORY_DAYS else self._model_config_digest(model_key, horizon, history_days)
+        config_digest = forecast_model_identity(self.service, model_key).config_digest if horizon == DEFAULT_HORIZON_DAYS and history_days == expected_history else self._model_config_digest(model_key, horizon, history_days)
         checks = (
             str(job["requested_model_version"]) == versions[model_key],
             str(job["requested_model_config_digest"]) == config_digest,

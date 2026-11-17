@@ -10,6 +10,7 @@ import unittest
 from zoneinfo import ZoneInfo
 
 from app.api.job_materialization import demand_input_digest, forecast_model_identity
+from app.api.service import ForecastAnalysisService
 from app.data.models import DailyDemand
 from app.forecasting import (
     CalibratedBlendConfig,
@@ -171,6 +172,61 @@ def make_job(history):
 
 
 class ForecastWorkerTests(unittest.TestCase):
+    def test_short_history_all_models_publish_three_real_executor_roles(self):
+        source = history_fixture()
+        service = ForecastAnalysisService(adapter=object())
+        for model_key, history_days in (
+            ("mean28", 365), ("lightgbm", 365), ("blend", 365),
+            ("seasonal_experimental", 1095),
+        ):
+            history = HistoricalDemandDataset.from_real_observations(
+                product=source.product,
+                history_start=AS_OF.date() - timedelta(days=history_days),
+                history_end=source.history_end,
+                observations=source.observations,
+            )
+            repository = FakeRepository(history)
+            worker = ForecastJobWorker(repository, service=service)
+            identity = forecast_model_identity(service, model_key)
+            job = dict(make_job(history))
+            job.update(
+                requested_model_key=model_key,
+                requested_model_version=identity.model_version,
+                requested_model_config_digest=identity.config_digest,
+                requested_implementation_digest=identity.implementation_digest,
+                history_window_days=history_days,
+            )
+            with self.subTest(model=model_key):
+                self.assertEqual(worker.process_claim(job), "succeeded")
+                bundle = repository.published["output_bundle"]
+                self.assertEqual(bundle["execution"]["requested_model"]["key"], model_key)
+                self.assertEqual(set(bundle["outputs"]), {
+                    "requested_forecasts", "recommendation_forecasts",
+                    "preliminary_forecasts",
+                })
+                for role in bundle["outputs"].values():
+                    self.assertEqual(len(role["series"][0]["points"]), 28)
+
+    def test_worker_accepts_materializer_identity_for_all_requested_models(self):
+        history = history_fixture()
+        service = make_service(FakeExecutor())
+        worker = ForecastJobWorker(FakeRepository(history), service=service)
+        for model_key, history_days in (
+            ("mean28", 365), ("lightgbm", 365), ("blend", 365),
+            ("seasonal_experimental", 1095),
+        ):
+            identity = forecast_model_identity(service, model_key)
+            job = dict(make_job(history))
+            job.update(
+                requested_model_key=model_key,
+                requested_model_version=identity.model_version,
+                requested_model_config_digest=identity.config_digest,
+                requested_implementation_digest=identity.implementation_digest,
+                history_window_days=history_days,
+            )
+            with self.subTest(model=model_key):
+                worker._validate_job_identity(job)
+
     def test_real_short_history_blend_fallback_publishes_explicit_reason(self):
         history = history_fixture()
         mean = Mean28Forecaster()
