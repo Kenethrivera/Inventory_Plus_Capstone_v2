@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inventory_plus/logic/inventory_controller.dart';
+import 'package:inventory_plus/data/inventory.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -27,22 +28,21 @@ void main() {
     expect(controller.hasAlternateGcashAccount, isFalse);
   });
 
-  test('cashier details come from the active account only', () {
-    final controller = InventoryController()
-      ..gcashAccountName = 'Main Store'
-      ..gcashNumber = '09111111111'
-      ..gcashQrUrl = 'https://example.com/main.png'
-      ..alternateGcashAccountName = 'Backup Store'
-      ..alternateGcashNumber = '09222222222'
-      ..alternateGcashQrUrl = 'https://example.com/backup.png';
+  test('completed order parses the receiving account snapshot', () {
+    final order = CustomerOrder.fromJson({
+      'id': 'test-order',
+      'status': 'completed',
+      'created_at': '2026-11-18T00:00:00Z',
+      'items': <dynamic>[],
+      'payment_mode': 'GCash',
+      'payment_reference': '1234567890123',
+      'gcash_destination_slot': 'alternate',
+      'gcash_destination_name': 'Backup Store',
+      'gcash_destination_number': '09222222222',
+    });
 
-    expect(controller.activeGcashAccountName, 'Main Store');
-    expect(controller.activeGcashNumber, '09111111111');
-    expect(controller.activeGcashQrUrl, 'https://example.com/main.png');
-
-    controller.activeGcashAccount = 'alternate';
-    expect(controller.activeGcashAccountName, 'Backup Store');
-    expect(controller.activeGcashNumber, '09222222222');
-    expect(controller.activeGcashQrUrl, 'https://example.com/backup.png');
+    expect(order.gcashDestinationSlot, 'alternate');
+    expect(order.gcashDestinationName, 'Backup Store');
+    expect(order.gcashDestinationNumber, '09222222222');
   });
 }

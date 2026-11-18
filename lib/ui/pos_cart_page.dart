@@ -1041,7 +1041,10 @@ class _PosCartPageState extends State<PosCartPage> {
     final backupGcashAccountName = widget.controller.alternateGcashAccountName;
     final backupGcashNumber = widget.controller.alternateGcashNumber;
     final backupGcashQrUrl = widget.controller.alternateGcashQrUrl;
-    final backupAvailable = widget.controller.hasAlternateGcashAccount;
+    final backupConfigured = widget.controller.hasAlternateGcashAccount;
+    final backupAvailable = backupConfigured &&
+        await widget.controller.canRecordGcashDestination();
+    if (!mounted) return null;
     String paymentMode = 'Cash';
     bool useBackupGcash = false;
     final cashCtrl = TextEditingController();
@@ -1616,6 +1619,15 @@ class _PosCartPageState extends State<PosCartPage> {
                                 ),
                                 const SizedBox(height: 12),
                               ],
+                              if (backupConfigured && !backupAvailable)
+                                const Padding(
+                                  padding: EdgeInsets.only(bottom: 12),
+                                  child: Text(
+                                    'Backup QR is unavailable. Ask an administrator to finish payment setup.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(fontSize: 11, color: _cashierAccent),
+                                  ),
+                                ),
                               if ((useBackupGcash
                                       ? backupGcashAccountName
                                       : primaryGcashAccountName)

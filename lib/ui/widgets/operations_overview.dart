@@ -1006,15 +1006,11 @@ class _InteractiveSalesChartState extends State<_InteractiveSalesChart>
                               builder: (context, _) {
                                 final hourPosition =
                                     _hoverPosition.value * endHour;
-                                final lower = hourPosition.floor().clamp(
+                                final hour = hourPosition.floor().clamp(
                                   0,
-                                  endHour,
+                                  endHour - 1,
                                 );
-                                final upper = (lower + 1).clamp(0, endHour);
-                                final runningTotal =
-                                    totals[lower] +
-                                    (totals[upper] - totals[lower]) *
-                                        (hourPosition - lower);
+                                final runningTotal = totals[hour + 1];
                                 final x = width * _hoverPosition.value;
                                 final y = _SalesPainter.yFor(
                                   runningTotal,
@@ -1065,7 +1061,7 @@ class _InteractiveSalesChartState extends State<_InteractiveSalesChart>
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Text(
-                                              _timeLabel(hourPosition),
+                                              _hourLabel(hour),
                                               style: const TextStyle(
                                                 color: OperationsOverview.ink,
                                                 fontSize: 13,
@@ -1101,21 +1097,46 @@ class _InteractiveSalesChartState extends State<_InteractiveSalesChart>
           ),
         ),
         const SizedBox(height: 5),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              '12 AM',
-              style: TextStyle(color: OperationsOverview.muted, fontSize: 12),
-            ),
-            Text(
-              _hourLabel(endHour),
-              style: const TextStyle(
-                color: OperationsOverview.muted,
-                fontSize: 12,
-              ),
-            ),
-          ],
+        SizedBox(
+          height: 18,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const labelWidth = 48.0;
+              final step = (endHour * labelWidth / constraints.maxWidth)
+                  .ceil()
+                  .clamp(1, endHour);
+              final hours = <int>[
+                0,
+                for (var hour = step; hour < endHour - step + 1; hour += step)
+                  hour,
+                endHour,
+              ];
+              return Stack(
+                children: [
+                  for (final hour in hours)
+                    Positioned(
+                      left:
+                          (constraints.maxWidth * hour / endHour -
+                                  labelWidth / 2)
+                              .clamp(0.0, constraints.maxWidth - labelWidth),
+                      width: labelWidth,
+                      child: Text(
+                        _hourLabel(hour),
+                        textAlign: hour == 0
+                            ? TextAlign.left
+                            : hour == endHour
+                            ? TextAlign.right
+                            : TextAlign.center,
+                        style: const TextStyle(
+                          color: OperationsOverview.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
         ),
       ],
     );
@@ -1125,17 +1146,6 @@ class _InteractiveSalesChartState extends State<_InteractiveSalesChart>
     final clockHour = hour % 24;
     final displayHour = clockHour % 12 == 0 ? 12 : clockHour % 12;
     return '$displayHour ${clockHour < 12 ? 'AM' : 'PM'}';
-  }
-
-  String _timeLabel(double hourPosition) {
-    final minutes = (hourPosition * 60).round();
-    final hour = minutes ~/ 60;
-    final minute = minutes % 60;
-    if (minute == 0) return _hourLabel(hour);
-    final clockHour = hour % 24;
-    final displayHour = clockHour % 12 == 0 ? 12 : clockHour % 12;
-    return '$displayHour:${minute.toString().padLeft(2, '0')} '
-        '${clockHour < 12 ? 'AM' : 'PM'}';
   }
 }
 
@@ -1159,16 +1169,21 @@ class _SalesPainter extends CustomPainter {
       ..color = OperationsOverview.orange.withValues(alpha: 0.10);
     final path = Path();
     final area = Path()..moveTo(0, size.height);
-    for (var i = 0; i < values.length; i++) {
-      final x = size.width * i / (values.length - 1);
-      final y = yFor(values[i], maximum, size.height);
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-      area.lineTo(x, y);
+    final hours = values.length - 1;
+    final firstY = yFor(values[1], maximum, size.height);
+    path.moveTo(0, firstY);
+    area.lineTo(0, firstY);
+    for (var hour = 1; hour < hours; hour++) {
+      final x = size.width * hour / hours;
+      final previousY = yFor(values[hour], maximum, size.height);
+      final nextY = yFor(values[hour + 1], maximum, size.height);
+      path.lineTo(x, previousY);
+      path.lineTo(x, nextY);
+      area.lineTo(x, previousY);
+      area.lineTo(x, nextY);
     }
+    path.lineTo(size.width, yFor(maximum, maximum, size.height));
+    area.lineTo(size.width, yFor(maximum, maximum, size.height));
     area.lineTo(size.width, size.height);
     area.close();
     canvas.drawPath(area, fill);

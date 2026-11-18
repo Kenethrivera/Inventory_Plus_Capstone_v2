@@ -128,3 +128,12 @@ grant execute on function public.complete_customer_order_v2(
 revoke all on function public.complete_customer_order_v2(
   text, uuid, text, double precision, double precision, text, text, text, text
 ) from public, authenticated;
+
+-- Checkout asks this read-only function before offering the backup QR.
+create or replace function public.gcash_destination_feature_ready_v1()
+returns boolean language sql stable
+set search_path to 'public', 'pg_temp'
+as $function$ select true $function$;
+
+grant execute on function public.gcash_destination_feature_ready_v1()
+  to anon, authenticated, service_role, postgres;

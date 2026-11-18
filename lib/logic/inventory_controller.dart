@@ -302,6 +302,17 @@ class InventoryController {
       alternateGcashAccountName.isNotEmpty &&
       alternateGcashNumber.isNotEmpty;
 
+  Future<bool> canRecordGcashDestination() async {
+    try {
+      return await supabase.rpc('gcash_destination_feature_ready_v1') == true;
+    } catch (error) {
+      // An older database must not offer the backup QR, because it cannot
+      // record which receiving account a completed sale used.
+      debugPrint('[GCash] Destination recording is unavailable: $error');
+      return false;
+    }
+  }
+
   double cashierAutoApprovedDiscountLimitPct = 10.0;
 
   Future<void> loadStoreSettings({bool refresh = false}) async {
@@ -4682,20 +4693,41 @@ class InventoryController {
           paymentMode?.trim().toLowerCase() == 'gcash'
           ? normalizeGcashReference(paymentReference)
           : null;
-      final response = await supabase.rpc(
-        'complete_customer_order_v2',
-        params: <String, dynamic>{
-          'p_session_token': _requireSessionToken(),
-          'p_order_id': order.id,
-          'p_payment_mode': paymentMode,
-          'p_cash_given': cashGiven,
-          'p_change_amount': changeAmount,
-          'p_payment_reference': normalizedPaymentReference,
-          'p_gcash_account_slot': gcashAccountSlot,
-          'p_gcash_destination_name': gcashDestinationName,
-          'p_gcash_destination_number': gcashDestinationNumber,
-        },
-      );
+      final legacyParams = <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': order.id,
+        'p_payment_mode': paymentMode,
+        'p_cash_given': cashGiven,
+        'p_change_amount': changeAmount,
+        'p_payment_reference': normalizedPaymentReference,
+      };
+      dynamic response;
+      try {
+        response = await supabase.rpc(
+          'complete_customer_order_v2',
+          params: <String, dynamic>{
+            ...legacyParams,
+            'p_gcash_account_slot': gcashAccountSlot,
+            'p_gcash_destination_name': gcashDestinationName,
+            'p_gcash_destination_number': gcashDestinationNumber,
+          },
+        );
+      } on PostgrestException catch (error) {
+        final v2Unavailable =
+            (error.code == 'PGRST202' || error.code == '42883') &&
+            error.toString().contains('complete_customer_order_v2');
+        if (!v2Unavailable) rethrow;
+        if (paymentMode?.trim().toLowerCase() == 'gcash' &&
+            gcashAccountSlot == 'alternate') {
+          throw const AppUserFacingException(
+            'Backup GCash checkout needs the payment database update. Ask an administrator to apply it.',
+          );
+        }
+        response = await supabase.rpc(
+          'complete_customer_order_v1',
+          params: legacyParams,
+        );
+      }
       final result = Map<String, dynamic>.from(response as Map);
       if (result['reused'] == true) return null;
       final row = Map<String, dynamic>.from(result['order'] as Map);
