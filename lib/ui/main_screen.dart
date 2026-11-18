@@ -57,6 +57,7 @@ import 'helper_request_page.dart';
 import 'helper_me_page.dart';
 import 'store_map.dart';
 import '../services/realtime/realtime_sync_service.dart';
+import 'widgets/staff_role_header.dart';
 
 class MainScreen extends StatefulWidget {
   final InventoryController controller;
@@ -313,22 +314,37 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       path.startsWith('/main/') ||
       path == '/classification_test';
 
-  void _restoreMainSectionFromPath(String path) {
+  
+void _restoreMainSectionFromPath(String path) {
     if (!mounted || !_isMainSectionPath(path)) return;
+
     final requested = MainSection.fromPath(path);
     final resolved = MainSection.resolveForRole(requested, _sessionRole);
     final index = _mainSections.indexOf(resolved);
+
     if (requested != resolved || path != resolved.routePath) {
       replaceMainSectionPath(resolved.routePath);
     }
+
     if (index == _currentIndex) return;
+
     setState(() {
       _currentIndex = index;
       _isDetailView = false;
       _selectedItemId = null;
+
+      if (_sessionRole == 'helper') {
+        if (resolved == MainSection.history) {
+          _helperMobileTab = 2;
+        } else if (resolved == MainSection.queue) {
+          _helperMobileTab = 0;
+        }
+      }
     });
+
     _updateStaffPresenceModule();
   }
+
 
   void _selectMainIndex(
     int index, {
@@ -426,19 +442,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
 
     if (role == 'helper') {
-      switch (_currentIndex) {
-        case 0:
-          return 'Order Queue';
+      const modules = <String>[
+        'Order Queue',
+        'Store map',
+        'History',
+        'Stock request',
+      ];
 
-        case 1:
-          return 'Inventory';
-
-        case 2:
-          return 'History';
-
-        default:
-          return 'Main Screen';
-      }
+      return modules[_helperMobileTab.clamp(0, 3)];
     }
 
     // Staff / cashier.
@@ -2555,6 +2566,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             );
           }
         }
+        if (isHelper) {
+          return _buildHelperUnifiedWorkspace(
+            pages: pages,
+            orderQueueIndex: orderQueueIndex,
+            inventoryIndex: inventoryIndex,
+            staffHistoryIndex: staffHistoryIndex,
+            posIndex: posIndex,
+            transactionIndex: transactionIndex,
+          );
+        }
 
         if ((isHelper || isCashier) && isDesktop) {
           return Scaffold(
@@ -2842,6 +2863,231 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     locationName: _helperLocationName,
     storeAccessSettings: _scheduledStoreAccessSettings,
   );
+
+
+
+void _selectHelperUnifiedTab(
+    int tab, {
+    required int orderQueueIndex,
+    required int staffHistoryIndex,
+  }) {
+    if (!mounted || tab < 0 || tab > 3) return;
+
+    setState(() {
+      _helperMobileTab = tab;
+      if (tab != 0) {
+        _helperChecklistVisible = false;
+      }
+    });
+
+    final targetIndex = tab == 2 ? staffHistoryIndex : orderQueueIndex;
+
+    if (_currentIndex != targetIndex) {
+      _selectMainIndex(targetIndex);
+    }
+
+    const modules = <String>[
+      'Order Queue',
+      'Store map',
+      'History',
+      'Stock request',
+    ];
+
+    _staffPresenceService?.updateModule(modules[tab]);
+  }
+
+
+
+  Widget _buildHelperUnifiedAvailability() {
+    final presence = _staffPresenceService;
+    if (presence == null) return const SizedBox.shrink();
+
+    return AnimatedBuilder(
+      animation: presence,
+      builder: (context, _) => StreamBuilder<List<CustomerOrder>>(
+        stream: widget.controller.streamOrders(),
+        initialData: widget.controller.currentOrders,
+        builder: (context, snapshot) {
+          final activeOrders =
+              activePreparationWorkloads(
+                snapshot.data ?? widget.controller.currentOrders,
+              )[widget.controller.currentUserId] ??
+              0;
+
+          final availability = resolveStaffAvailability(
+            isOnline: presence.isStarted,
+            isOnBreak: presence.isOnBreak,
+            isHelper: true,
+            activeOrders: activeOrders,
+          );
+
+          final label = switch (availability) {
+            StaffAvailability.offline => 'Offline',
+            StaffAvailability.onBreak => 'On break',
+            StaffAvailability.busy => 'Busy',
+            StaffAvailability.available => 'Available',
+          };
+
+          final color = switch (availability) {
+            StaffAvailability.busy => const Color(0xFFC83D08),
+            StaffAvailability.available => const Color(0xFF168047),
+            _ => const Color(0xFF45413E),
+          };
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 2),
+            child: ActionChip(
+              tooltip: presence.isOnBreak
+                  ? 'Switch to Available'
+                  : 'Switch to On break',
+              onPressed: _changingHelperBreak || !presence.isStarted
+                  ? null
+                  : _toggleHelperBreak,
+              backgroundColor: color,
+              disabledColor: const Color(0xFF45413E),
+              side: BorderSide.none,
+              shape: const StadiumBorder(),
+              label: Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: _fontFam,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  
+Widget _buildHelperUnifiedWorkspace({
+    required List<Widget> pages,
+    required int orderQueueIndex,
+    required int inventoryIndex,
+    required int staffHistoryIndex,
+    required int posIndex,
+    required int transactionIndex,
+  }) {
+    void selectTab(int tab) {
+      _selectHelperUnifiedTab(
+        tab,
+        orderQueueIndex: orderQueueIndex,
+        staffHistoryIndex: staffHistoryIndex,
+      );
+    }
+
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
+    final selectedTab = _helperMobileTab.clamp(0, 3);
+
+    final helperPages = <Widget>[
+      pages[orderQueueIndex],
+      _buildHelperMapPage(),
+      pages[staffHistoryIndex],
+      HelperRequestPage(
+        controller: widget.controller,
+        approvalChanges: widget.realtimeSync.approvalRequestChanges,
+      ),
+    ];
+
+    return Scaffold(
+      backgroundColor: _mainBg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            StaffRoleHeader(
+              userName: widget.controller.currentUserName ?? 'Helper',
+              tabs: const ['Queue', 'Map', 'My orders', 'Requests'],
+              selectedTab: selectedTab,
+              onTabSelected: selectTab,
+
+              // Same profile modal used by Cashier.
+              onProfile: _showProfileDialog,
+
+              onLogout: () => unawaited(_handleLogout()),
+              showTabs: !_helperChecklistVisible,
+              availability: _buildHelperUnifiedAvailability(),
+              notifications: _buildNotificationControls(
+                orderQueueIndex: orderQueueIndex,
+                posIndex: posIndex,
+                transactionIndex: transactionIndex,
+                inventoryIndex: inventoryIndex,
+                iconColor: const Color(0xFF211F1D),
+                helperMobilePanel: isMobile,
+              ),
+            ),
+
+            Expanded(
+              child: IndexedStack(index: selectedTab, children: helperPages),
+            ),
+          ],
+        ),
+      ),
+
+      // Cashier-style bottom navigation on mobile only.
+      bottomNavigationBar: isMobile && !_helperChecklistVisible
+          ? NavigationBarTheme(
+              data: NavigationBarThemeData(
+                indicatorColor: _accent.withValues(alpha: 0.10),
+                labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>(
+                  (states) => TextStyle(
+                    fontFamily: _fontFam,
+                    fontSize: 11,
+                    fontWeight: states.contains(WidgetState.selected)
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    color: states.contains(WidgetState.selected)
+                        ? _accent
+                        : _inactiveText,
+                  ),
+                ),
+              ),
+              child: NavigationBar(
+                height: 66,
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.white,
+                selectedIndex: selectedTab,
+                labelBehavior:
+                    NavigationDestinationLabelBehavior.onlyShowSelected,
+                onDestinationSelected: selectTab,
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(LucideIcons.listChecks),
+                    selectedIcon: Icon(LucideIcons.listChecks, color: _accent),
+                    label: 'Queue',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(LucideIcons.map),
+                    selectedIcon: Icon(LucideIcons.map, color: _accent),
+                    label: 'Map',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(LucideIcons.history),
+                    selectedIcon: Icon(LucideIcons.history, color: _accent),
+                    label: 'My orders',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(LucideIcons.clipboardPlus),
+                    selectedIcon: Icon(
+                      LucideIcons.clipboardPlus,
+                      color: _accent,
+                    ),
+                    label: 'Requests',
+                  ),
+                ],
+              ),
+            )
+          : null,
+
+      floatingActionButton: !isMobile ? _debugToolsButtons() : null,
+    );
+  }
+
+
+
 
   Widget _buildHelperMobileNavigationBar({
     required int orderQueueIndex,
@@ -3507,11 +3753,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 7),
-                    const Text(
-                      'Store operations',
-                      style: TextStyle(color: Color(0xFF817A75), fontSize: 12),
-                    ),
                     const SizedBox(height: 20),
                     _sidebarHeading('Operations'),
                     _buildSidebarItem(
@@ -3763,13 +4004,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 borderRadius: BorderRadius.circular(11),
               ),
               alignment: Alignment.center,
-              child: const Text(
-                'I+',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                ),
+              child: const Icon(
+                LucideIcons.package,
+                color: Colors.white,
+                size: 21,
               ),
             ),
             const SizedBox(width: 20),

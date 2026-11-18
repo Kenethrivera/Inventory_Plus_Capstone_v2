@@ -275,7 +275,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
               child: Text(
                 'Your orders',
                 style: TextStyle(
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight: FontWeight.w800,
                   color: ink,
                   fontFamily: _fontFam,
@@ -317,7 +317,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             const Text(
               'Open orders',
               style: TextStyle(
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: FontWeight.w800,
                 color: ink,
                 fontFamily: _fontFam,
@@ -394,7 +394,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                     child: Text(
                       _mobileOrderId(order),
                       style: const TextStyle(
-                        fontSize: 20,
+                        fontSize: 15,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF171717),
                         fontFamily: _fontFam,
@@ -898,7 +898,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                 const Text(
                   'Order queue',
                   style: TextStyle(
-                    fontSize: 28,
+                    fontSize: 22,
                     fontWeight: FontWeight.w900,
                     color: Color(0xFF0F172A),
                     fontFamily: _fontFam,
@@ -1023,7 +1023,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
           Text(
             value,
             style: TextStyle(
-              fontSize: 28,
+              fontSize: 21,
               fontWeight: FontWeight.w900,
               color: isActive ? _primaryBlue : const Color(0xFF0F172A),
               fontFamily: _fontFam,
@@ -1147,7 +1147,7 @@ class _OrderCard extends StatelessWidget {
           '#ORD-$shortId',
           style: const TextStyle(
             fontWeight: FontWeight.w900,
-            fontSize: 18,
+            fontSize: 14,
             color: Color(0xFF0F172A),
             fontFamily: _fontFam,
           ),

@@ -379,7 +379,7 @@ class OrderDetailsDrawer extends StatelessWidget {
                       onOpenQueue();
                     },
                     icon: const Icon(LucideIcons.list, size: 16),
-                    label: const Text('Open order queue'),
+                    label: const Text('Open order details'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _orange,
                       textStyle: const TextStyle(fontSize: 13),

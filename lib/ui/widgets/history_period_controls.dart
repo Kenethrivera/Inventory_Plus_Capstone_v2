@@ -222,21 +222,57 @@ class HistoryPeriodControls extends StatelessWidget {
   final HistoryPeriodSelection selection;
   final ValueChanged<HistoryPeriodSelection> onChanged;
   final bool warmPalette;
+  final bool fullWidth;
 
   const HistoryPeriodControls({
     super.key,
     required this.selection,
     required this.onChanged,
     this.warmPalette = false,
+    this.fullWidth = false,
   });
 
-  @override
+  
+@override
   Widget build(BuildContext context) {
     final canMoveNext = selection.canMoveNext();
     final compact = MediaQuery.sizeOf(context).width < 420;
     final border = warmPalette ? const Color(0xFFE6E1DC) : _pickerBorder;
     final muted = warmPalette ? const Color(0xFF817A75) : _pickerMuted;
     final ink = warmPalette ? const Color(0xFF171717) : _pickerText;
+
+    final dateSelector = Tooltip(
+      message: selection.displayLabel,
+      child: InkWell(
+        onTap: () => _pickPeriod(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (!compact) ...[
+                Icon(Icons.calendar_today_outlined, size: 14, color: muted),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                compact
+                    ? selection.compactDisplayLabel
+                    : selection.displayLabel,
+                style: TextStyle(
+                  color: ink,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.arrow_drop_down, size: 17, color: muted),
+            ],
+          ),
+        ),
+      ),
+    );
+
     return Container(
       height: 36,
       decoration: BoxDecoration(
@@ -245,7 +281,7 @@ class HistoryPeriodControls extends StatelessWidget {
         border: Border.all(color: border),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
         children: [
           _PeriodArrow(
             tooltip: 'Previous ${selection.mode.label.toLowerCase()}',
@@ -254,40 +290,12 @@ class HistoryPeriodControls extends StatelessWidget {
             color: muted,
           ),
           const SizedBox(height: 18, child: VerticalDivider(width: 1)),
-          Tooltip(
-            message: selection.displayLabel,
-            child: InkWell(
-              onTap: () => _pickPeriod(context),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 9),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!compact) ...[
-                      Icon(
-                        Icons.calendar_today_outlined,
-                        size: 14,
-                        color: muted,
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    Text(
-                      compact
-                          ? selection.compactDisplayLabel
-                          : selection.displayLabel,
-                      style: TextStyle(
-                        color: ink,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(Icons.arrow_drop_down, size: 17, color: muted),
-                  ],
-                ),
-              ),
-            ),
-          ),
+
+          if (fullWidth)
+            Expanded(child: Center(child: dateSelector))
+          else
+            dateSelector,
+
           const SizedBox(height: 18, child: VerticalDivider(width: 1)),
           _PeriodArrow(
             tooltip: 'Next ${selection.mode.label.toLowerCase()}',
@@ -299,6 +307,7 @@ class HistoryPeriodControls extends StatelessWidget {
       ),
     );
   }
+
 
   Future<void> _pickPeriod(BuildContext context) async {
     DateTime? picked;

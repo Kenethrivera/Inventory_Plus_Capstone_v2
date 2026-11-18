@@ -53,6 +53,8 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
   ApprovalProofSelection? _photo;
   bool _picking = false;
   bool _submitting = false;
+  bool _showRequestForm = false;
+  InventoryApprovalStatus? _requestFilter;
   String? _productError;
   String? _quantityError;
   String? _photoError;
@@ -270,6 +272,7 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
         _photoError = null;
       });
       AppToast.success(context, '$typeLabel request submitted for review.');
+      setState(() => _showRequestForm = false);
       await _refresh();
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -288,11 +291,17 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
     }
   }
 
-  @override
+  
+@override
   Widget build(BuildContext context) {
+    if (!_showRequestForm) {
+      return _buildRequestDashboard();
+    }
+
     return StreamBuilder<List<InventoryItem>>(
       stream: widget.controller.streamInventory(),
       builder: (context, snapshot) {
+
         final items = [
           ...(snapshot.data ?? widget.controller.allItems),
         ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -309,6 +318,14 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(20, 28, 20, 30),
               children: [
+                TextButton.icon(
+                  onPressed: _submitting
+                      ? null
+                      : () => setState(() => _showRequestForm = false),
+                  icon: const Icon(Icons.arrow_back, size: 16),
+                  label: const Text('Back to requests'),
+                ),
+                const SizedBox(height: 12),
                 const Text(
                   'Stock request',
                   style: TextStyle(
@@ -470,6 +487,7 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
                         height: 48,
                         child: ElevatedButton(
                           onPressed: _submitting ? null : () => _submit(items),
+                          
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _orange,
                             foregroundColor: Colors.white,
@@ -517,6 +535,382 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
       },
     );
   }
+
+
+
+static const Color _dashboardBg = Color(0xFFF7F6F4);
+  static const Color _dashboardInk = Color(0xFF1B1A18);
+  static const Color _dashboardMuted = Color(0xFF80746E);
+  static const Color _dashboardBorder = Color(0xFFE8E1DA);
+
+  Widget _buildRequestDashboard() {
+    final mobile = MediaQuery.sizeOf(context).width < 600;
+
+    return ColoredBox(
+      color: _dashboardBg,
+      child: RefreshIndicator(
+        color: _orange,
+        onRefresh: _refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            mobile ? 16 : 24,
+            mobile ? 22 : 34,
+            mobile ? 16 : 24,
+            56,
+          ),
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 954),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'My requests',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w700,
+                                  color: _dashboardInk,
+                                ),
+                              ),
+                              SizedBox(height: 5),
+                              Text(
+                                'Restock and write-off requests you’ve sent.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _dashboardMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        FilledButton.icon(
+                          onPressed: () {
+                            setState(() => _showRequestForm = true);
+                          },
+                          icon: const Icon(Icons.add, size: 17),
+                          label: const Text('New'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _orange,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            minimumSize: const Size(0, 34),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 9,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 22),
+                    FutureBuilder<List<InventoryApprovalRequest>>(
+                      future: _history,
+                      builder: (context, snapshot) {
+                        final requests = [...?snapshot.data]
+                          ..sort(
+                            (a, b) => b.requestedAt.compareTo(a.requestedAt),
+                          );
+
+                        final visibleRequests = requests.where((request) {
+                          return _requestFilter == null ||
+                              request.status == _requestFilter;
+                        }).toList();
+
+                        int count(InventoryApprovalStatus? status) {
+                          if (status == null) return requests.length;
+                          return requests
+                              .where((r) => r.status == status)
+                              .length;
+                        }
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  _helperDashboardChip(
+                                    'All',
+                                    count(null),
+                                    null,
+                                  ),
+                                  for (final status
+                                      in InventoryApprovalStatus.values)
+                                    _helperDashboardChip(
+                                      status.label,
+                                      count(status),
+                                      status,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            if (snapshot.connectionState !=
+                                ConnectionState.done)
+                              const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(32),
+                                  child: CircularProgressIndicator(
+                                    color: _orange,
+                                  ),
+                                ),
+                              )
+                            else if (snapshot.hasError)
+                              _historyBox(
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Could not load your requests.',
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: _refresh,
+                                      child: const Text('Retry'),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else if (visibleRequests.isEmpty)
+                              _historyBox(
+                                Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Center(
+                                    child: Text(
+                                      _requestFilter == null
+                                          ? 'No requests yet.'
+                                          : 'No ${_requestFilter!.label.toLowerCase()} requests.',
+                                      style: const TextStyle(
+                                        color: _dashboardMuted,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else
+                              for (final request in visibleRequests) ...[
+                                _helperDashboardCard(request),
+                                const SizedBox(height: 9),
+                              ],
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _helperDashboardChip(
+    String label,
+    int count,
+    InventoryApprovalStatus? status,
+  ) {
+    final selected = _requestFilter == status;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 7),
+      child: InkWell(
+        onTap: () => setState(() => _requestFilter = status),
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? _orange : Colors.white,
+            border: Border.all(color: selected ? _orange : _dashboardBorder),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$label $count',
+            style: TextStyle(
+              fontSize: 12,
+              color: selected ? Colors.white : _dashboardInk,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _helperDashboardCard(InventoryApprovalRequest request) {
+    final reason = request.reason?.trim() ?? '';
+    final status = request.status;
+
+    final statusColor = switch (status) {
+      InventoryApprovalStatus.pending => const Color(0xFFB45309),
+      InventoryApprovalStatus.approved => const Color(0xFF15803D),
+      InventoryApprovalStatus.rejected => const Color(0xFFB42318),
+    };
+
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
+
+    final details = <String>[
+      request.type.label,
+      '${_quantity(request.quantity)} ${request.unit}',
+      if (reason.isNotEmpty) reason,
+      _helperDashboardTime(request.requestedAt),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 12 : 18,
+        vertical: 16,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: _dashboardBorder),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _helperDashboardThumbnail(request),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  request.productName.isEmpty
+                      ? 'Product request'
+                      : request.productName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _dashboardInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  details.join(' · '),
+                  maxLines: isMobile ? 3 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _dashboardMuted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+                if (request.note?.trim().isNotEmpty == true) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    request.note!.trim(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _dashboardMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.08),
+              border: Border.all(color: statusColor.withValues(alpha: 0.24)),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              request.displayStatus,
+              style: TextStyle(
+                color: statusColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _helperDashboardThumbnail(InventoryApprovalRequest request) {
+    final item = widget.controller.allItems
+        .where((product) => product.id == request.productId)
+        .firstOrNull;
+
+    return Container(
+      width: 44,
+      height: 44,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: _dashboardBg,
+        border: Border.all(color: _dashboardBorder),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: item?.imageUrl.isNotEmpty == true
+          ? Image.network(
+              item!.imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.inventory_2_outlined,
+                  size: 20,
+                  color: _dashboardMuted,
+                );
+              },
+            )
+          : const Icon(
+              Icons.inventory_2_outlined,
+              size: 20,
+              color: _dashboardMuted,
+            ),
+    );
+  }
+
+  String _helperDashboardTime(DateTime date) {
+    final elapsed = DateTime.now().difference(date);
+
+    if (elapsed.isNegative || elapsed.inMinutes < 1) {
+      return 'just now';
+    }
+    if (elapsed.inMinutes < 60) {
+      return '${elapsed.inMinutes} minutes ago';
+    }
+    if (elapsed.inHours < 24) {
+      return '${elapsed.inHours} hours ago';
+    }
+    if (elapsed.inDays < 7) {
+      return '${elapsed.inDays} days ago';
+    }
+
+    return '${date.month}/${date.day}/${date.year}';
+  }
+
+
+
 
   Widget _typeSelector() => Container(
     padding: const EdgeInsets.all(4),
@@ -800,8 +1194,8 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: _ink,
-                    fontSize: 13,
+                    color: _dashboardInk,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -816,21 +1210,24 @@ class _HelperRequestPageState extends State<HelperRequestPage> {
             ),
           ),
           const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+          
+Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             decoration: BoxDecoration(
-              color: statusBackground,
-              borderRadius: BorderRadius.circular(16),
+              color: statusColor.withValues(alpha: 0.08),
+              border: Border.all(color: statusColor.withValues(alpha: 0.26)),
+              borderRadius: BorderRadius.circular(7),
             ),
             child: Text(
-              status,
+              request.displayStatus,
               style: TextStyle(
                 color: statusColor,
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
+
         ],
       ),
     );

@@ -111,13 +111,7 @@ class OperationsOverview extends StatelessWidget {
                 _activity(todayOrders),
               ],
             );
-            final aside = Column(
-              children: [
-                _attention(alerts),
-                const SizedBox(height: 24),
-                _staff(),
-              ],
-            );
+            final aside = _attention(alerts);
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -602,8 +596,8 @@ class OperationsOverview extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
               child: _sectionTitle(
-                'Staff on the floor',
-                'Manage',
+                ' on the floor',
+                'Manage`dc1',
                 onStaff,
                 compact: true,
               ),

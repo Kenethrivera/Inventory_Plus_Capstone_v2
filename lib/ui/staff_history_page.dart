@@ -408,15 +408,6 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
               final horizontalPadding = constraints.maxWidth < 700
                   ? 14.0
                   : 24.0;
-              if (isMobile && _isHelper) {
-                return _buildHelperMobileHistory(
-                  orders: displayedOrders,
-                  loading: loading,
-                  error: snapshot.error,
-                  totalItems: result?.totalCount ?? _knownTotalCount,
-                  horizontalPadding: horizontalPadding,
-                );
-              }
               if (isMobile) {
                 return Center(
                   child: SizedBox(
@@ -1002,9 +993,11 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 600;
           final groups = <Widget>[
-            if (!_isHelper) _buildSectionSelector(),
+            if (!_isHelper) _buildSectionSelector(expanded: isNarrow),
             _HistorySegments(
+              expanded: isNarrow,
               options: const ['Daily', 'Weekly', 'Monthly'],
               selected: _periodLabel(),
               onSelected: (value) {
@@ -1019,9 +1012,11 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
             HistoryPeriodControls(
               selection: _periodSelection,
               onChanged: _updatePeriodSelection,
+              fullWidth: isNarrow,
             ),
             if (_historySection == 'Orders' || _isHelper)
               _HistorySegments(
+                expanded: isNarrow,
                 options: _filters,
                 selected: _selectedFilter,
                 onSelected: (value) {
@@ -1039,6 +1034,30 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
                   visualDensity: VisualDensity.compact,
                 )
               : null;
+
+          if (isNarrow) {
+            // One full-width segmented group per row on phones.
+            // The date picker keeps its intrinsic size to avoid overflow.
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var index = 0; index < groups.length; index++) ...[
+                  if (index > 0) const SizedBox(height: 9),
+                  SizedBox(width: double.infinity, child: groups[index]),
+                ],
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(child: _buildSearchField()),
+                    if (refresh != null) ...[
+                      const SizedBox(width: 4),
+                      refresh,
+                    ],
+                  ],
+                ),
+              ],
+            );
+          }
 
           if (constraints.maxWidth >= 1040) {
             return Row(
@@ -1071,7 +1090,8 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
     );
   }
 
-  Widget _buildSectionSelector() => _HistorySegments(
+  Widget _buildSectionSelector({bool expanded = false}) => _HistorySegments(
+    expanded: expanded,
     options: const ['Orders', 'Restocks'],
     selected: _historySection,
     darkSelection: true,
@@ -1728,70 +1748,104 @@ class _HistorySegments extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelected;
   final bool darkSelection;
+  final bool expanded;
 
   const _HistorySegments({
     required this.options,
     required this.selected,
     required this.onSelected,
     this.darkSelection = false,
+    this.expanded = false,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF2ECE7),
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Wrap(
-        children: options
-            .map((option) {
-              final active = option == selected;
-              return InkWell(
-                onTap: () => onSelected(option),
-                borderRadius: BorderRadius.circular(7),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
+  Widget _segment(String option) {
+    final active = option == selected;
+    return InkWell(
+      onTap: () => onSelected(option),
+      borderRadius: BorderRadius.circular(7),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          color: active
+              ? (darkSelection ? _darkText : Colors.white)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+          boxShadow: active && !darkSelection
+              ? const [
+                  BoxShadow(
+                    color: Color(0x120F172A),
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
                   ),
-                  decoration: BoxDecoration(
-                    color: active
-                        ? (darkSelection ? _darkText : Colors.white)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(7),
-                    boxShadow: active && !darkSelection
-                        ? const [
-                            BoxShadow(
-                              color: Color(0x120F172A),
-                              blurRadius: 4,
-                              offset: Offset(0, 1),
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Text(
-                    option,
-                    style: TextStyle(
-                      color: active && darkSelection
-                          ? Colors.white
-                          : active
-                          ? _darkText
-                          : _mutedText,
-                      fontSize: 11,
-                      fontWeight: active ? FontWeight.w800 : FontWeight.w600,
-                      fontFamily: _fontFam,
-                    ),
-                  ),
-                ),
-              );
-            })
-            .toList(growable: false),
+                ]
+              : null,
+        ),
+        child: Text(
+          option,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: active && darkSelection
+                ? Colors.white
+                : active
+                ? _darkText
+                : _mutedText,
+            fontSize: 11,
+            fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+            fontFamily: _fontFam,
+          ),
+        ),
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(3),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF2ECE7),
+      borderRadius: BorderRadius.circular(9),
+    ),
+    child: !expanded
+        ? Wrap(
+            children: [
+              for (final option in options) _segment(option),
+            ],
+          )
+        : LayoutBuilder(
+            builder: (context, constraints) {
+              // Avoid squashing four long labels on narrow phones.
+              if (options.length == 4 && constraints.maxWidth < 280) {
+                return Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: _segment(options[0])),
+                        Expanded(child: _segment(options[1])),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(child: _segment(options[2])),
+                        Expanded(child: _segment(options[3])),
+                      ],
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  for (final option in options)
+                    Expanded(child: _segment(option)),
+                ],
+              );
+            },
+          ),
+  );
 }
 
 class _StaffTableCell extends StatelessWidget {

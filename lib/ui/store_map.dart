@@ -3198,6 +3198,10 @@ class StoreMapState extends State<StoreMap>
                         widget.onElementSelected!(interactiveEl);
                       }
                     } else if (widget.mode == MapMode.view &&
+                        !widget.showItemPopup &&
+                        widget.onElementSelected != null) {
+                      widget.onElementSelected!(interactiveEl);
+                    } else if (widget.mode == MapMode.view &&
                         widget.showItemPopup) {
                       if (el.type != ElementType.door &&
                           el.type != ElementType.cashier &&

@@ -188,23 +188,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
                             ),
                           ],
                         ),
-                        OutlinedButton.icon(
-                          onPressed: loading || error != null || _exporting
-                              ? null
-                              : () => _export(visibleOrders, visibleStock),
-                          icon: const Icon(LucideIcons.download, size: 17),
-                          label: Text(_exporting ? 'Exporting…' : 'Export CSV'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _ink,
-                            backgroundColor: Colors.white,
-                            textStyle: const TextStyle(fontSize: 13),
-                            side: const BorderSide(color: _line),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 15,
-                            ),
-                          ),
-                        ),
+                        
                       ],
                     ),
                     const SizedBox(height: 27),
