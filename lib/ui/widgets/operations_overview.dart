@@ -324,7 +324,12 @@ class OperationsOverview extends StatelessWidget {
 
   Widget _orderCard(CustomerOrder order, String group) {
     final elapsed = _elapsedTime(DateTime.now().difference(order.createdAt));
-    final assignedStaff = orderAssignedStaffLabel(order);
+    final isSharedOrder = orderNeedsHelper(order) &&
+        order.items.any((item) => item.requiresLoading);
+    final assignedStaff = isSharedOrder
+        ? 'Helper: ${order.assignedHelperName?.trim().isNotEmpty == true ? order.assignedHelperName!.trim() : 'Unassigned'}\n'
+          'Bodegero: ${order.assignedBodegeroName?.trim().isNotEmpty == true ? order.assignedBodegeroName!.trim() : 'Unassigned'}'
+        : orderAssignedStaffLabel(order);
     final pickedCount = order.items
         .where(
           (item) => item.requiresLoading ? item.heavyVerified : item.picked,
@@ -411,7 +416,7 @@ class OperationsOverview extends StatelessWidget {
                           assignedStaff == 'Unassigned'
                       ? '$assignedStaff · tap to view'
                       : assignedStaff,
-                  maxLines: 1,
+                  maxLines: isSharedOrder ? 2 : 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color:
@@ -595,7 +600,10 @@ class OperationsOverview extends StatelessWidget {
   Widget _staff() => AnimatedBuilder(
     animation: presence ?? _silent,
     builder: (context, _) {
-      final people = presence?.activeStaff ?? const <Map<String, dynamic>>[];
+      final people = (presence?.activeStaff ?? const <Map<String, dynamic>>[])
+          .where((person) =>
+              person['user_role']?.toString().trim().toLowerCase() != 'admin')
+          .toList(growable: false);
       return _panel(
         Column(
           children: [

@@ -8,6 +8,7 @@ import '../services/realtime/realtime_sync_service.dart';
 import 'models/app_notification.dart';
 import 'notification_service.dart';
 import '../logic/inventory_approval.dart';
+import '../data/inventory.dart';
 
 class NotificationController extends ChangeNotifier {
   final NotificationService _service;
@@ -130,6 +131,24 @@ class NotificationController extends ChangeNotifier {
       await loadNotifications();
     } catch (e) {
       _recordError(e, operation: 'Notification creation failed');
+      notifyListeners();
+    }
+  }
+
+  Future<void> syncOrderDelayNotifications({
+    required String locationId,
+    required List<CustomerOrder> orders,
+    required DateTime now,
+  }) async {
+    try {
+      final changed = await _service.syncOrderDelayNotifications(
+        locationId: locationId,
+        orders: orders,
+        now: now,
+      );
+      if (changed) await _refreshNotifications();
+    } catch (error) {
+      _recordError(error, operation: 'Order delay notification update failed');
       notifyListeners();
     }
   }

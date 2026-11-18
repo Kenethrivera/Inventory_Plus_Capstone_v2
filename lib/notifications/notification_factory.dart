@@ -1,6 +1,7 @@
 import 'models/app_notification.dart';
 import 'models/notification_priority.dart';
 import 'models/notification_type.dart';
+import 'order_delay_policy.dart';
 
 class NotificationFactory {
   NotificationFactory._();
@@ -53,6 +54,31 @@ class NotificationFactory {
         'orderId': orderId,
         'createdByName': createdByName,
         'createdAt': createdAt.toUtc().toIso8601String(),
+      },
+    );
+  }
+
+  static AppNotification orderDelay({
+    required String locationId,
+    required OverdueOrderStage overdue,
+  }) {
+    final shortOrderId = _shortOrderId(overdue.orderId);
+    final minutes = overdue.elapsed.inMinutes;
+    return create(
+      locationId: locationId,
+      targetRoles: const ['admin'],
+      title: 'Order #$shortOrderId · ${overdue.stage.label}',
+      body:
+          'This order has spent $minutes minutes in '
+          '${overdue.stage.label.toLowerCase()}. Please check its progress.',
+      type: NotificationType.system,
+      priority: NotificationPriority.high,
+      payload: {
+        'category': 'orderDelay',
+        'orderId': overdue.orderId,
+        'stage': overdue.stage.name,
+        'startedAt': overdue.startedAt.toUtc().toIso8601String(),
+        'thresholdMinutes': 15,
       },
     );
   }

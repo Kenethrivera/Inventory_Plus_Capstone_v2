@@ -20,12 +20,18 @@ class OrdersActivityPage extends StatefulWidget {
     required this.isActive,
     required this.onOpenQueue,
     this.initialTab = 'Orders',
+    this.navigationRequest = 0,
+    this.targetOrderId,
+    this.targetOrderRequest = 0,
   });
 
   final InventoryController controller;
   final bool isActive;
   final ValueChanged<String> onOpenQueue;
   final String initialTab;
+  final int navigationRequest;
+  final String? targetOrderId;
+  final int targetOrderRequest;
 
   @override
   State<OrdersActivityPage> createState() => _OrdersActivityPageState();
@@ -54,10 +60,15 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   late Future<List<Map<String, dynamic>>> _stockFuture;
   StreamSubscription<HistoryInvalidation>? _updates;
   final _searchController = TextEditingController();
+  final _highlightKey = GlobalKey();
+  String? _pendingTargetOrderId;
+  String? _highlightedOrderId;
 
   @override
   void initState() {
     super.initState();
+    _pendingTargetOrderId = widget.targetOrderId;
+    _highlightedOrderId = widget.targetOrderId;
     _ordersFuture = widget.controller.loadActivityOrders();
     _stockFuture = widget.controller.loadAllTransactionHistory();
     _updates = widget.controller.historyInvalidations.listen((event) {
@@ -76,10 +87,34 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   @override
   void didUpdateWidget(covariant OrdersActivityPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive && !widget.isActive) {
+      _pendingTargetOrderId = null;
+      _highlightedOrderId = null;
+    }
     if (widget.initialTab != oldWidget.initialTab ||
+        widget.navigationRequest != oldWidget.navigationRequest ||
         (widget.isActive && !oldWidget.isActive)) {
       _tab = widget.initialTab;
-      if (widget.initialTab != oldWidget.initialTab) _page = 1;
+      if (widget.initialTab != oldWidget.initialTab ||
+          widget.navigationRequest != oldWidget.navigationRequest) {
+        _page = 1;
+        _pendingTargetOrderId = null;
+        _highlightedOrderId = null;
+      }
+    }
+    if ((widget.targetOrderId != oldWidget.targetOrderId ||
+            widget.targetOrderRequest != oldWidget.targetOrderRequest) &&
+        widget.targetOrderId != null) {
+      _pendingTargetOrderId = widget.targetOrderId;
+      _highlightedOrderId = widget.targetOrderId;
+      _tab = 'Orders';
+      _status = 'All statuses';
+      _staff = 'All staff';
+      _time = 'All time';
+      _search = '';
+      _searchController.clear();
+      _page = 1;
+      _ordersFuture = widget.controller.loadActivityOrders();
     }
     if (widget.controller != oldWidget.controller) {
       _page = 1;
@@ -134,6 +169,35 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
                   if (_actor(row).isNotEmpty) _actor(row),
               }.toList()..sort();
               final visibleOrders = _filterOrders(orders);
+              final pendingTarget = _pendingTargetOrderId;
+              final targetIndex = pendingTarget == null
+                  ? -1
+                  : visibleOrders.indexWhere((order) => order.id == pendingTarget);
+              final targetPage = targetIndex < 0
+                  ? null
+                  : targetIndex ~/ _pageSize + 1;
+              if (pendingTarget != null &&
+                  ordersSnapshot.connectionState == ConnectionState.done) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted || _pendingTargetOrderId != pendingTarget) return;
+                  setState(() {
+                    if (targetPage != null) _page = targetPage;
+                    if (targetPage == null) _highlightedOrderId = null;
+                    _pendingTargetOrderId = null;
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    final targetContext = _highlightKey.currentContext;
+                    if (targetContext != null) {
+                      Scrollable.ensureVisible(
+                        targetContext,
+                        duration: const Duration(milliseconds: 450),
+                        curve: Curves.easeInOutCubic,
+                        alignment: 0.25,
+                      );
+                    }
+                  });
+                });
+              }
               final visibleStock = _filterStock(stock);
               final rowCount = _tab == 'Stock movements'
                   ? visibleStock.length
@@ -142,7 +206,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
                 1,
                 (rowCount + _pageSize - 1) ~/ _pageSize,
               );
-              final currentPage = math.min(_page, pageCount);
+              final currentPage = math.min(targetPage ?? _page, pageCount);
               final firstRow = (currentPage - 1) * _pageSize;
               final pageOrders = visibleOrders
                   .skip(firstRow)
@@ -276,6 +340,8 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
     final selected = _tab == label;
     return InkWell(
       onTap: () => setState(() {
+        _pendingTargetOrderId = null;
+        _highlightedOrderId = null;
         _tab = label;
         _status = 'All statuses';
         _movementFilter = 'All movement types';
@@ -606,7 +672,11 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
             children: [
               OutlinedButton(
                 onPressed: page > 1
-                    ? () => setState(() => _page = page - 1)
+                    ? () => setState(() {
+                        _page = page - 1;
+                        _pendingTargetOrderId = null;
+                        _highlightedOrderId = null;
+                      })
                     : null,
                 style: buttonStyle,
                 child: const Text('Previous'),
@@ -620,7 +690,11 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
               ),
               OutlinedButton(
                 onPressed: page < pageCount
-                    ? () => setState(() => _page = page + 1)
+                    ? () => setState(() {
+                        _page = page + 1;
+                        _pendingTargetOrderId = null;
+                        _highlightedOrderId = null;
+                      })
                     : null,
                 style: buttonStyle,
                 child: const Text('Next'),
@@ -766,10 +840,12 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   Widget _mobileOrderCard(CustomerOrder order) {
     final status = _orderStatus(order);
     final statusColor = _statusColor(status);
+    final highlighted = order.id == _highlightedOrderId;
     return Material(
-      color: Colors.white,
+      key: highlighted ? _highlightKey : null,
+      color: highlighted ? const Color(0xFFFFF3EC) : Colors.white,
       shape: RoundedRectangleBorder(
-        side: const BorderSide(color: _line),
+        side: BorderSide(color: highlighted ? _orange : _line),
         borderRadius: BorderRadius.circular(14),
       ),
       clipBehavior: Clip.antiAlias,
@@ -935,6 +1011,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   );
 
   Widget _orderRow(CustomerOrder order, List<double> widths) {
+    final highlighted = order.id == _highlightedOrderId;
     final cells = _tab == 'Payments'
         ? <Widget>[
             _cell(_shortId(order.id), widths[0], bold: true, mono: true),
@@ -974,13 +1051,29 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
               right: true,
             ),
           ];
-    return InkWell(
-      onTap: () => _openOrderDetails(order),
-      child: SizedBox(height: 58, child: Row(children: cells)),
+    return Material(
+      key: highlighted ? _highlightKey : null,
+      color: highlighted ? const Color(0xFFFFF3EC) : Colors.transparent,
+      child: InkWell(
+        onTap: () => _openOrderDetails(order),
+        child: Container(
+          height: 58,
+          foregroundDecoration: BoxDecoration(
+            border: highlighted
+                ? const Border(left: BorderSide(color: _orange, width: 3))
+                : null,
+          ),
+          child: Row(children: cells),
+        ),
+      ),
     );
   }
 
-  void _openOrderDetails(CustomerOrder order) => OrderDetailsDrawer.show(
+  void _openOrderDetails(CustomerOrder order) {
+    if (_highlightedOrderId == order.id) {
+      setState(() => _highlightedOrderId = null);
+    }
+    OrderDetailsDrawer.show(
     context,
     order: order,
     inventory: widget.controller.allItems,
@@ -1004,7 +1097,8 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
         setState(() => _ordersFuture = widget.controller.loadActivityOrders());
       }
     },
-  );
+    );
+  }
 
   Future<List<({String id, String name})>> _loadHelpers() async {
     final staff = await widget.controller.fetchStaff();

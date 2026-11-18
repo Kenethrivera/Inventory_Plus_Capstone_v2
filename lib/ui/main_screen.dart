@@ -81,6 +81,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   String? _selectedItemId;
   String _txTargetTab = 'Sales History';
   String _ordersActivityTab = 'Orders';
+  String? _ordersActivityTargetOrderId;
+  int _ordersActivityTargetRequest = 0;
+  int _ordersActivityNavigationRequest = 0;
   String? _targetOrderId;
   String? _targetPosOrderId;
 
@@ -88,6 +91,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   bool _isCheckingStockAlerts = false;
   bool _isCheckingExportReminders = false;
+  bool _isCheckingOrderDelays = false;
+  Timer? _orderDelayTimer;
+  StreamSubscription<void>? _orderDelaySubscription;
   StaffPresenceService? _staffPresenceService;
   bool _changingHelperBreak = false;
   int _helperMobileTab = 0;
@@ -222,6 +228,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (role.toLowerCase() == 'bodegero') {
         unawaited(_notificationController!.loadNotifications());
       }
+      if (role.toLowerCase() == 'admin') {
+        unawaited(_notificationController!.loadNotifications());
+        _orderDelaySubscription = widget.realtimeSync.orderChanges.listen(
+          (_) => unawaited(_scanOrderDelayNotifications()),
+        );
+        _orderDelayTimer = Timer.periodic(
+          const Duration(minutes: 1),
+          (_) => unawaited(_scanOrderDelayNotifications()),
+        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_scanOrderDelayNotifications());
+        });
+      }
 
       widget.controller.onRestockRecorded =
           ({
@@ -286,6 +305,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _storeAccessEndTimer?.cancel();
     _storeLogoutCountdownTimer?.cancel();
+    _orderDelayTimer?.cancel();
+    unawaited(_orderDelaySubscription?.cancel());
     _storeLogoutDialogSetState = null;
     unawaited(_inventoryNotificationSubscription?.cancel());
     unawaited(_storeAccessSubscription?.cancel());
@@ -1429,6 +1450,32 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _scanOrderDelayNotifications() async {
+    if (_isCheckingOrderDelays || !widget.controller.isAdmin) return;
+    final notificationController = _notificationController;
+    final locationId = widget.controller.activeLocationId;
+    if (notificationController == null || locationId == null) return;
+
+    _isCheckingOrderDelays = true;
+    try {
+      final orders = await widget.controller.loadActiveOrdersForDelayNotifications();
+      if (!mounted || widget.controller.activeLocationId != locationId) return;
+      await notificationController.syncOrderDelayNotifications(
+        locationId: locationId,
+        orders: orders,
+        now: DateTime.now(),
+      );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Order delay notification scan failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      _isCheckingOrderDelays = false;
+    }
+  }
+
   Future<void> _scanInventoryStockAlerts() async {
     if (_isCheckingStockAlerts) return;
 
@@ -1527,6 +1574,22 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final orderId = notification.payload['orderId']?.toString();
     final currentRole = widget.controller.currentUserRole?.toLowerCase();
 
+    if (currentRole == 'admin' &&
+        (notification.type == NotificationType.newOrder ||
+            notification.type == NotificationType.orderAssigned ||
+            notification.type == NotificationType.orderPrepared ||
+            notification.type == NotificationType.orderCancelled ||
+            (notification.type == NotificationType.system &&
+                notification.payload['category'] == 'orderDelay'))) {
+      if (orderId == null || orderId.isEmpty) {
+        return 'Order ID not found in notification.';
+      }
+      final orders = await widget.controller.loadActivityOrders();
+      return orders.any((order) => order.id == orderId)
+          ? null
+          : 'This order no longer exists.';
+    }
+
     switch (notification.type) {
       case NotificationType.newOrder:
       case NotificationType.orderAssigned:
@@ -1565,30 +1628,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return null;
 
       case NotificationType.inventoryRestocked:
-        final role = widget.controller.currentUserRole?.toLowerCase();
-
-        if (role != 'admin') {
-          return 'Only administrators can open restock notifications.';
-        }
-
-        final productId = notification.payload['productId']?.toString();
-
-        if (productId == null || productId.isEmpty) {
-          return 'Product ID not found in notification.';
-        }
-
-        final items = [
-          ...widget.controller.filterInventory(query: '', category: 'All'),
-          ...widget.controller.filterDisabled(query: '', category: 'All'),
-        ];
-
-        final exists = items.any((item) => item.id.toString() == productId);
-
-        if (!exists) {
-          return 'This product no longer exists.';
-        }
-
-        return null;
+        return currentRole == 'admin'
+            ? null
+            : 'Only administrators can open restock notifications.';
 
       case NotificationType.orderPrepared:
         if (orderId == null || orderId.isEmpty) {
@@ -1619,12 +1661,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return null;
 
       case NotificationType.orderCancelled:
-        if (orderId != null && orderId.isNotEmpty) {
-          await _notificationController?.resolveOrderWorkflowNotification(
-            orderId: orderId,
-          );
-        }
-        return 'This order has been cancelled.';
+        return orderId == null || orderId.isEmpty
+            ? 'Order ID not found in notification.'
+            : null;
 
       case NotificationType.lowStock:
       case NotificationType.criticalStock:
@@ -1670,6 +1709,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
   }
 
+  bool _openAdminActivity(String tab, {String? orderId}) {
+    final activityIndex = _mainSections.indexOf(MainSection.ordersActivity);
+    if (activityIndex < 0) return false;
+    _selectMainIndex(
+      activityIndex,
+      updateState: () {
+        _ordersActivityTab = tab;
+        _ordersActivityNavigationRequest++;
+        _ordersActivityTargetOrderId = orderId;
+        if (orderId != null) _ordersActivityTargetRequest++;
+      },
+    );
+    return true;
+  }
+
   bool _isNotificationActionable(
     AppNotification notification, {
     required int orderQueueIndex,
@@ -1681,13 +1735,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     switch (notification.type) {
       case NotificationType.newOrder:
       case NotificationType.orderAssigned:
-        return orderQueueIndex >= 0 &&
+        return (widget.controller.currentUserRole?.toLowerCase() == 'admin' ||
+                orderQueueIndex >= 0) &&
             (payload['orderId']?.toString().isNotEmpty ?? false);
       case NotificationType.orderPrepared:
-        return posIndex >= 0 &&
+        return (widget.controller.currentUserRole?.toLowerCase() == 'admin' ||
+                posIndex >= 0) &&
             (payload['orderId']?.toString().isNotEmpty ?? false);
+      case NotificationType.orderCancelled:
+        return (payload['orderId']?.toString().isNotEmpty ?? false) &&
+            (_mainSections.contains(MainSection.ordersActivity) ||
+                _mainSections.contains(MainSection.history));
       case NotificationType.transaction:
-        return transactionIndex >= 0;
+        return ((payload['orderId']?.toString().isNotEmpty ?? false) &&
+                _mainSections.contains(MainSection.ordersActivity)) ||
+            transactionIndex >= 0;
       case NotificationType.exportReminder:
         final reportType = payload['reportType']?.toString();
         return reportType == 'inventory'
@@ -1702,24 +1764,31 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return inventoryIndex >= 0 &&
             (payload['itemId']?.toString().isNotEmpty ?? false);
       case NotificationType.inventoryRestocked:
-        return inventoryIndex >= 0 &&
-            widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
-            (payload['productId']?.toString().isNotEmpty ?? false);
+        return widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
+            _mainSections.contains(MainSection.ordersActivity);
       case NotificationType.system:
+        if (payload['category'] == 'orderDelay') {
+          return _mainSections.contains(MainSection.ordersActivity) &&
+              (payload['orderId']?.toString().isNotEmpty ?? false);
+        }
+        if (payload['category'] == 'storeAccess') {
+          return _mainSections.contains(MainSection.systemSettings);
+        }
         if (payload['category'] != 'inventoryApproval') return false;
         if (payload['status'] == 'pending') {
           return widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
               _mainSections.contains(MainSection.approvals);
         }
         final role = widget.controller.currentUserRole?.toLowerCase();
-        return payload['requestType'] == 'discount' &&
-            (role == 'staff' || role == 'cashier') &&
-            posIndex >= 0;
-      case NotificationType.orderCancelled:
+        return ((role == 'staff' || role == 'cashier') &&
+                _mainSections.contains(MainSection.cashierRequests)) ||
+            role == 'helper';
       case NotificationType.inventoryAdded:
       case NotificationType.inventoryUpdated:
       case NotificationType.inventoryDeleted:
-        return false;
+        return inventoryIndex >= 0 &&
+            (widget.controller.currentUserRole?.toLowerCase() == 'admin' ||
+                MediaQuery.sizeOf(context).width >= 600);
     }
   }
 
@@ -1740,6 +1809,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           return false;
         }
 
+        if (_openAdminActivity('Orders', orderId: orderId)) return true;
+
         if (orderQueueIndex < 0) {
           AppToast.error(
             context,
@@ -1750,7 +1821,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         _selectMainIndex(
           orderQueueIndex,
-          updateState: () => _targetOrderId = orderId,
+          updateState: () {
+            _targetOrderId = orderId;
+            if (widget.controller.currentUserRole?.toLowerCase() == 'helper' &&
+                MediaQuery.sizeOf(context).width < 600) {
+              _helperMobileTab = 0;
+            }
+          },
         );
         return true;
 
@@ -1759,6 +1836,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           AppToast.error(context, 'Order ID not found in notification.');
           return false;
         }
+
+        if (_openAdminActivity('Orders', orderId: orderId)) return true;
 
         if (posIndex < 0) {
           AppToast.error(context, 'POS is not available for this role.');
@@ -1772,6 +1851,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return true;
 
       case NotificationType.transaction:
+        if (orderId != null && orderId.isNotEmpty &&
+            _openAdminActivity('Orders', orderId: orderId)) {
+          return true;
+        }
+        if (_openAdminActivity('Payments')) return true;
         if (transactionIndex < 0) {
           AppToast.error(context, 'Transactions page is not available.');
           return false;
@@ -1792,6 +1876,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         }
 
         if (reportType == 'sales') {
+          if (_openAdminActivity('Payments')) return true;
           if (transactionIndex < 0) {
             AppToast.error(context, 'Transactions page is not available.');
             return false;
@@ -1864,57 +1949,79 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return true;
 
       case NotificationType.inventoryRestocked:
-        final productId = notification.payload['productId']?.toString();
+        return _openAdminActivity('Stock movements');
 
-        final role = widget.controller.currentUserRole?.toLowerCase();
+      case NotificationType.orderCancelled:
+        if (orderId == null || orderId.isEmpty) return false;
+        if (_openAdminActivity('Orders', orderId: orderId)) return true;
+        final historyIndex = _mainSections.indexOf(MainSection.history);
+        if (historyIndex < 0) return false;
+        _selectMainIndex(
+          historyIndex,
+          updateState: () {
+            if (widget.controller.currentUserRole?.toLowerCase() == 'helper' &&
+                MediaQuery.sizeOf(context).width < 600) {
+              _helperMobileTab = 2;
+            }
+          },
+        );
+        return true;
 
-        if (role != 'admin') {
-          AppToast.error(
-            context,
-            'Restock monitoring is available to administrators only.',
-          );
-          return false;
-        }
-
-        if (productId == null || productId.isEmpty) {
-          AppToast.error(context, 'Product information is missing.');
-          return false;
-        }
-
-        final items = [
-          ...widget.controller.filterInventory(query: '', category: 'All'),
-          ...widget.controller.filterDisabled(query: '', category: 'All'),
-        ];
-
-        final matches = items
-            .where((item) => item.id.toString() == productId)
-            .toList();
-
-        if (matches.isEmpty) {
-          AppToast.error(context, 'This product no longer exists.');
-          return false;
-        }
-
+      case NotificationType.inventoryAdded:
+      case NotificationType.inventoryUpdated:
+      case NotificationType.inventoryDeleted:
+        if (inventoryIndex < 0) return false;
         _selectMainIndex(inventoryIndex);
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          _handleSelectItem(matches.first);
-        });
-
+        final itemId = notification.payload['itemId']?.toString() ??
+            notification.payload['productId']?.toString();
+        if (notification.type != NotificationType.inventoryDeleted &&
+            itemId != null && itemId.isNotEmpty) {
+          final matches = [
+            ...widget.controller.filterInventory(query: '', category: 'All'),
+            ...widget.controller.filterDisabled(query: '', category: 'All'),
+          ].where((item) => item.id == itemId);
+          if (matches.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _handleSelectItem(matches.first);
+            });
+          }
+        }
         return true;
 
       case NotificationType.system:
+        if (notification.payload['category'] == 'orderDelay') {
+          return orderId != null && orderId.isNotEmpty &&
+              _openAdminActivity('Orders', orderId: orderId);
+        }
+        if (notification.payload['category'] == 'storeAccess') {
+          final settingsIndex = _mainSections.indexOf(MainSection.systemSettings);
+          if (settingsIndex < 0) return false;
+          _selectMainIndex(settingsIndex);
+          return true;
+        }
         if (notification.payload['category'] != 'inventoryApproval') {
           return false;
         }
-        if (notification.payload['requestType'] == 'discount' &&
-            notification.payload['status'] != 'pending' &&
-            posIndex >= 0) {
-          _selectMainIndex(posIndex);
+        if (notification.payload['status'] != 'pending' &&
+            widget.controller.currentUserRole?.toLowerCase() == 'helper') {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => HelperRequestPage(
+                controller: widget.controller,
+                approvalChanges: widget.realtimeSync.approvalRequestChanges,
+              ),
+            ),
+          );
           return true;
         }
-        if (notification.payload['status'] != 'pending') return false;
+        if (notification.payload['status'] != 'pending') {
+          final requestsIndex = _mainSections.indexOf(
+            MainSection.cashierRequests,
+          );
+          if (requestsIndex < 0) return false;
+          _selectMainIndex(requestsIndex);
+          return true;
+        }
         final approvalsIndex = _mainSections.indexOf(MainSection.approvals);
         if (approvalsIndex < 0) {
           AppToast.error(context, 'Pending Approvals is Admin-only.');
@@ -1923,8 +2030,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         _selectMainIndex(approvalsIndex);
         return true;
 
-      default:
-        return false;
     }
   }
 
@@ -2394,6 +2499,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               controller: widget.controller,
               isActive: _currentIndex == ordersActivityIndex,
               initialTab: _ordersActivityTab,
+              navigationRequest: _ordersActivityNavigationRequest,
+              targetOrderId: _ordersActivityTargetOrderId,
+              targetOrderRequest: _ordersActivityTargetRequest,
               onOpenQueue: (orderId) => _selectMainIndex(
                 orderQueueIndex,
                 updateState: () => _targetOrderId = orderId,
@@ -2624,10 +2732,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (isAdmin &&
-                    _staffPresenceService != null &&
-                    _currentIndex != dashboardIndex &&
-                    _currentIndex != ordersActivityIndex)
+                if (isAdmin && _staffPresenceService != null)
                   ActiveStaffButton(presenceService: _staffPresenceService!),
 
                 if (!kReleaseMode) ...[
@@ -2675,6 +2780,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   index: _currentIndex,
                   children: _lazyPageChildren(pages),
                 ),
+          floatingActionButton: isAdmin && _staffPresenceService != null
+              ? ActiveStaffButton(presenceService: _staffPresenceService!)
+              : null,
           bottomNavigationBar: isHelper
               ? _helperChecklistVisible
                     ? null

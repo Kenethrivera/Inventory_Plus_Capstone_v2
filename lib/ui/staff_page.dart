@@ -99,7 +99,10 @@ class _StaffPageState extends State<StaffPage> {
       (rows) {
         if (!mounted) return;
         setState(() {
-          _staff = rows;
+          _staff = rows
+              .where((person) =>
+                  person['role']?.toString().trim().toLowerCase() != 'admin')
+              .toList(growable: false);
           _loading = false;
           _error = widget.controller.staffConfigurationLoadFailed
               ? 'Could not load staff. Try again.'
@@ -244,10 +247,6 @@ class _StaffPageState extends State<StaffPage> {
   }
 
   int _sortStaff(Map<String, dynamic> a, Map<String, dynamic> b) {
-    final aRole = a['role']?.toString() ?? '';
-    final bRole = b['role']?.toString() ?? '';
-    if (aRole == 'admin' && bRole != 'admin') return -1;
-    if (bRole == 'admin' && aRole != 'admin') return 1;
     return (a['name']?.toString() ?? '').compareTo(b['name']?.toString() ?? '');
   }
 
@@ -356,7 +355,9 @@ class _StaffPageState extends State<StaffPage> {
     final horizontalPadding = MediaQuery.sizeOf(context).width < 600
         ? 16.0
         : 32.0;
-    final online = widget.presence?.activeStaff.length ?? 0;
+    final online = widget.presence?.activeStaff.where((person) =>
+            person['user_role']?.toString().trim().toLowerCase() != 'admin')
+        .length ?? 0;
     final rows = _filtered;
     if (_showPerformance) {
       return ColoredBox(
@@ -484,7 +485,6 @@ class _StaffPageState extends State<StaffPage> {
   Widget _roleFilter({double width = 180}) {
     const roles = [
       ('all', 'All roles'),
-      ('admin', 'Administrator'),
       ('staff', 'Cashier'),
       ('helper', 'Order helper'),
       ('bodegero', 'Bodegero'),
@@ -580,7 +580,10 @@ class _StaffPageState extends State<StaffPage> {
       final rows = await widget.controller.fetchStaff();
       if (mounted)
         setState(() {
-          _staff = rows;
+          _staff = rows
+              .where((person) =>
+                  person['role']?.toString().trim().toLowerCase() != 'admin')
+              .toList(growable: false);
           _loading = false;
         });
     } catch (error, stackTrace) {

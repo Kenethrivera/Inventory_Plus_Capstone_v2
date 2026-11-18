@@ -25,7 +25,6 @@ void main() {
       MainSection.ordersActivity,
       MainSection.analytics,
       MainSection.forecasting,
-      MainSection.classificationTest,
       MainSection.pos,
       MainSection.queue,
       MainSection.inventory,

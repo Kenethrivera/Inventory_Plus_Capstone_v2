@@ -3567,6 +3567,36 @@ class InventoryController {
     return refresh;
   }
 
+  /// Only active orders and fields needed by the Admin delay scan.
+  Future<List<CustomerOrder>> loadActiveOrdersForDelayNotifications() async {
+    final locationId = activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      return const <CustomerOrder>[];
+    }
+
+    const pageSize = 500;
+    final orders = <CustomerOrder>[];
+    for (var offset = 0; ; offset += pageSize) {
+      final rows = await supabase
+          .from('orders')
+          .select(
+            'id, status, created_at, updated_at, assigned_at, '
+            'prepared_at, assigned_helper_id, assigned_bodegero_id, items',
+          )
+          .eq('location_id', locationId)
+          .inFilter('status', ['pending', 'solo_picking', 'prepared'])
+          .order('created_at', ascending: false)
+          .order('id', ascending: false)
+          .range(offset, offset + pageSize - 1);
+      if (activeLocationId != locationId) {
+        throw StateError('Orders location changed while loading.');
+      }
+      orders.addAll(rows.map((row) => CustomerOrder.fromJson(row)));
+      if (rows.length < pageSize) break;
+    }
+    return List<CustomerOrder>.unmodifiable(orders);
+  }
+
   /// Orders shown in the admin Orders & activity tab. The operational orders
   /// table retains assignment and payment details that the history projection
   /// does not expose to the client.

@@ -131,7 +131,7 @@ class OrderDetailsDrawer extends StatelessWidget {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(30, 18, 22, 18),
+              padding: const EdgeInsets.fromLTRB(22, 18, 18, 18),
               child: Row(
                 children: [
                   Expanded(
@@ -177,7 +177,7 @@ class OrderDetailsDrawer extends StatelessWidget {
             const Divider(height: 1, color: _line),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(30, 24, 30, 28),
+                padding: const EdgeInsets.fromLTRB(22, 22, 22, 28),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -208,28 +208,107 @@ class OrderDetailsDrawer extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 20),
                     if (order.items.any((item) => item.requiresLoading)) ...[
-                      _heading('Heavy loading'),
-                      const SizedBox(height: 10),
-                      _summaryField(
-                        'Bodegero',
-                        order.assignedBodegeroName ?? 'Unassigned',
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        order.loadingVerifiedAt == null
-                            ? 'Loading verification pending'
-                            : 'Loaded onto truck · ${_date(order.loadingVerifiedAt!)}',
-                      ),
-                      if (order.loadingVerifiedAt != null &&
-                          loadLoadingProof != null)
-                        TextButton.icon(
-                          onPressed: () => _showLoadingProof(context),
-                          icon: const Icon(Icons.photo_outlined),
-                          label: const Text('View loading photo and counts'),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFAFAFA),
+                          border: Border.all(color: _line),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      const SizedBox(height: 30),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(child: _heading('Heavy loading')),
+                                if (order.loadingVerifiedAt != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE8F5EC),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: const Text('✓  Loaded',
+                                        style: TextStyle(
+                                          color: Color(0xFF15803D),
+                                          fontSize: 11,
+                                        )),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('Bodegero',
+                                          style: TextStyle(color: _muted, fontSize: 12)),
+                                      const SizedBox(height: 5),
+                                      Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 11,
+                                            backgroundColor: const Color(0xFFFFEBDD),
+                                            child: Text(
+                                              order.assignedBodegeroName?.trim().isNotEmpty == true
+                                                  ? order.assignedBodegeroName!.trim()[0].toUpperCase()
+                                                  : '?',
+                                              style: const TextStyle(color: _orange, fontSize: 11),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 7),
+                                          Expanded(
+                                            child: Text(
+                                              order.assignedBodegeroName?.trim().isNotEmpty == true
+                                                  ? order.assignedBodegeroName!.trim()
+                                                  : 'Unassigned',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(color: _ink, fontSize: 13, fontWeight: FontWeight.w600),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _summaryField(
+                                    'Loaded onto truck',
+                                    order.loadingVerifiedAt == null
+                                        ? 'Pending'
+                                        : _date(order.loadingVerifiedAt!),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (order.loadingVerifiedAt != null &&
+                                loadLoadingProof != null) ...[
+                              const SizedBox(height: 14),
+                              const Divider(height: 1, color: _line),
+                              const SizedBox(height: 5),
+                              TextButton.icon(
+                                onPressed: () => _showLoadingProof(context),
+                                icon: const Icon(Icons.photo_outlined, size: 17),
+                                label: const Text('View loading photo and counts'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: _orange,
+                                  padding: EdgeInsets.zero,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
                     ],
                     _heading('Items'),
                     const SizedBox(height: 12),
@@ -493,28 +572,9 @@ class OrderDetailsDrawer extends StatelessWidget {
   );
 
   Widget _itemRow(CustomerOrderItem item, InventoryItem? product) => Padding(
-    padding: const EdgeInsets.all(14),
+    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
     child: Row(
       children: [
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF6F4F2),
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: _line),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: product?.imageUrl.trim().isNotEmpty == true
-              ? Image.network(
-                  product!.imageUrl.trim(),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) =>
-                      const Icon(LucideIcons.package, size: 19, color: _muted),
-                )
-              : const Icon(LucideIcons.package, size: 19, color: _muted),
-        ),
-        const SizedBox(width: 13),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -529,42 +589,24 @@ class OrderDetailsDrawer extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              if (product?.sku.isNotEmpty == true)
+              if (item.quantity != 1)
                 Text(
-                  product!.sku,
+                  '${_quantity(item.quantity)} ${item.unit ?? product?.unit ?? 'pcs'}',
                   style: const TextStyle(color: _muted, fontSize: 12),
                 ),
             ],
           ),
         ),
         const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (item.lineTotal != null || item.unitPrice != null)
-              Text(
-                _money(item.lineTotal ?? item.quantity * item.unitPrice!),
-                style: const TextStyle(
-                  color: _ink,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            Text(
-              '${_quantity(item.quantity)} ${item.unit ?? product?.unit ?? 'pcs'}'
-              '${item.unitPrice == null ? '' : ' × ${_money(item.unitPrice!)}'}',
-              style: const TextStyle(color: _muted, fontSize: 12),
+        if (item.lineTotal != null || item.unitPrice != null)
+          Text(
+            _money(item.lineTotal ?? item.quantity * item.unitPrice!),
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
             ),
-          ],
-        ),
-        const SizedBox(width: 10),
-        Icon(
-          LucideIcons.checkCircle2,
-          size: 17,
-          color: item.picked || _isFullyPicked(order)
-              ? const Color(0xFF15803D)
-              : const Color(0xFFC8C2BD),
-        ),
+          ),
       ],
     ),
   );
