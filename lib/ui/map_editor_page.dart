@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/product_level.dart';
 import 'store_map.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
@@ -53,6 +54,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
   String? _draftUserId;
   bool _isLayoutReady = false;
   bool _isSaving = false;
+  bool _assignmentInFlight = false;
   bool _remoteChangePending = false;
   bool _remoteChangeToastShown = false;
   bool _layoutUiRefreshQueued = false;
@@ -1265,10 +1267,13 @@ class _MapEditorPageState extends State<MapEditorPage> {
                           _mode == MapMode.selection
                       ? _selectedAssignmentTargetId
                       : null,
-                  itemAssignmentEnabled: _viewStyle == MapViewStyle.twoD &&
+                                    itemAssignmentEnabled:
+                      _viewStyle == MapViewStyle.twoD &&
                       !_hasDirtyDraft &&
                       !_remoteChangePending &&
-                      !_isSaving,
+                      !_isSaving &&
+                      !_assignmentInFlight,
+                  onItemAssignmentRequested: _assignProduct,
                   onSelectionAssigned: _viewStyle == MapViewStyle.threeD
                       ? null
                       : () => setState(() => _selectedItemId = null),
@@ -2133,6 +2138,15 @@ class _MapEditorPageState extends State<MapEditorPage> {
                       final item = items[index];
                       final assignedTarget = targets[item.locationId];
                       final selected = _selectedItemId == item.id;
+                      final level = item.shelfLevel?.trim();
+                      final fixtureLabel = assignedTarget == null
+                          ? null
+                          : assignedTarget.label.isNotEmpty
+                          ? assignedTarget.label
+                          : '${_elementLabel(assignedTarget.type)} assigned';
+                      final assignmentLabel = assignedTarget == null
+                          ? 'Unassigned · ${item.sku}'
+                          : '$fixtureLabel${level != null && level.isNotEmpty ? ' · Level $level' : ''}';
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 7),
                         child: Material(
@@ -2176,14 +2190,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                                               ),
                                             ),
                                             Text(
-                                              assignedTarget
-                                                          ?.label
-                                                          .isNotEmpty ==
-                                                      true
-                                                  ? assignedTarget!.label
-                                                  : assignedTarget == null
-                                                  ? 'Unassigned · ${item.sku}'
-                                                  : '${_elementLabel(assignedTarget.type)} assigned',
+                                              assignmentLabel,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
@@ -2212,7 +2219,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
                                         onPressed:
                                             _hasDirtyDraft ||
                                                 _remoteChangePending ||
-                                                _isSaving
+                                                _isSaving ||
+                                                _assignmentInFlight
                                             ? null
                                             : () => unawaited(
                                                 _assignProduct(item.id, null),
@@ -2684,7 +2692,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                       ),
                       Text(
                         item.shelfLevel?.isNotEmpty == true
-                            ? item.shelfLevel!
+                            ? 'Level ${item.shelfLevel}'
                             : item.sku,
                         style: const TextStyle(
                           color: Color(0xFF827872),
@@ -2696,7 +2704,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                 ),
                 IconButton(
                   tooltip: 'Remove ${item.name} from this fixture',
-                  onPressed: _hasDirtyDraft || _remoteChangePending
+                  onPressed: _hasDirtyDraft ||
+                          _remoteChangePending ||
+                          _assignmentInFlight
                       ? null
                       : () => unawaited(_assignProduct(item.id, null)),
                   icon: const Icon(LucideIcons.x, size: 15),
@@ -2748,7 +2758,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
               onPressed:
                   _productToAssignId == null ||
                       _hasDirtyDraft ||
-                      _remoteChangePending
+                      _remoteChangePending ||
+                      _assignmentInFlight
                   ? null
                   : () => unawaited(
                       _assignProduct(_productToAssignId!, element.id),
@@ -2786,10 +2797,116 @@ class _MapEditorPageState extends State<MapEditorPage> {
           ),
   );
 
-  Future<void> _assignProduct(String itemId, String? elementId) async {
+  Future<String?> _askAssignmentLevel(
+    InventoryItem item,
+    MapElement element,
+  ) {
+    var level = item.shelfLevel?.trim() ?? '';
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, updateDialog) => AppDialog(
+          icon: LucideIcons.mapPin,
+          color: _primaryBlue,
+          title: 'Place product',
+          subtitle: item.name,
+          actions: [
+            OutlinedButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: isValidProductLevel(level)
+                  ? () => Navigator.pop(dialogContext, level)
+                  : null,
+              style: FilledButton.styleFrom(backgroundColor: _primaryBlue),
+              child: const Text('Place product'),
+            ),
+          ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Move to ${element.label.isEmpty ? _elementLabel(element.type) : element.label}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Level',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 7),
+              AppStyledDropdown<String>(
+                value: level,
+                decoration: _mapInputDecoration(),
+                items: [
+                  if (level.isNotEmpty && !isValidProductLevel(level))
+                    DropdownMenuItem<String>(
+                      value: level,
+                      enabled: false,
+                      child: Text('Invalid level: $level'),
+                    ),
+                  const DropdownMenuItem<String>(
+                    value: '',
+                    child: Text('No level'),
+                  ),
+                  for (var number = 1; number <= maxProductLevel; number++)
+                    DropdownMenuItem<String>(
+                      value: '$number',
+                      child: Text('Level $number'),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) updateDialog(() => level = value);
+                },
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Choose 1–10, or No level. Staff will see it in order queues.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF827872)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _assignProduct(String itemId, String? elementId) async {
+    if (_assignmentInFlight ||
+        _isSaving ||
+        _hasDirtyDraft ||
+        _remoteChangePending) {
+      return false;
+    }
+    final item = widget.controller.findAnyItemById(itemId);
+    if (item == null) {
+      AppToast.error(context, 'Product is no longer available.');
+      return false;
+    }
+    setState(() => _assignmentInFlight = true);
+    final previousLevel = item.shelfLevel?.trim() ?? '';
+    var levelSaved = false;
     try {
+      if (elementId != null) {
+        final element = _assignmentTargets[elementId];
+        if (element == null) {
+          AppToast.error(context, 'Choose a rack or shelf on the map.');
+          return false;
+        }
+        final level = await _askAssignmentLevel(item, element);
+        if (!mounted || level == null) return false;
+        if (level != previousLevel) {
+          await widget.controller.updateItemLevel(itemId, level);
+          levelSaved = true;
+        }
+      }
       await widget.controller.assignItemToLocation(itemId, elementId);
-      if (!mounted) return;
+      if (!mounted) return true;
       setState(() => _productToAssignId = null);
       AppToast.success(
         context,
@@ -2797,9 +2914,27 @@ class _MapEditorPageState extends State<MapEditorPage> {
             ? 'Product removed from this fixture.'
             : 'Product assigned.',
       );
+      return true;
     } catch (_) {
-      if (mounted)
-        AppToast.error(context, 'Could not update product assignment.');
+      var rollbackFailed = false;
+      if (levelSaved) {
+        try {
+          await widget.controller.updateItemLevel(itemId, previousLevel);
+        } catch (_) {
+          rollbackFailed = true;
+        }
+      }
+      if (mounted) {
+        AppToast.error(
+          context,
+          rollbackFailed
+              ? 'Product was not placed. Check its level in Inventory.'
+              : 'Could not update product assignment.',
+        );
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _assignmentInFlight = false);
     }
   }
 

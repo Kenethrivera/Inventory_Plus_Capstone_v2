@@ -109,8 +109,9 @@ class StaffPresenceService extends ChangeNotifier {
       unawaited(_runHeartbeat());
     });
 
-    // RealtimeSyncService emits the guaranteed initial canonical refresh.
-    // Keeping startup writes separate avoids fetching the same snapshot twice.
+    // Make the newly online staff member visible to automatic assignment now.
+    // The realtime refresh may have completed before this presence upsert.
+    await refreshActiveStaff();
   }
 
   Future<void> heartbeat({required String currentModule}) async {

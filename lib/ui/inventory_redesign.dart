@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/product_level.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_styled_dropdown.dart';
@@ -103,7 +104,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
   String _category = 'All';
   String _stockFilter = 'all';
   String _sortBy = 'nameAsc';
-  bool _showDisabled = false;
   int _page = 0;
   static const _perPage = 8;
 
@@ -124,8 +124,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
     var draftStatus = _stockFilter;
     var draftSort = _sortBy;
 
-    // Counts reflect the search, category, and disabled toggle outside
-    // this modal, so the Apply button previews the actual result total.
+    // Counts reflect the search and category outside this modal.
     final disabledItems = widget.controller.disabledItems;
     final disabledIds = disabledItems.map((item) => item.id).toSet();
     final matchingItems =
@@ -133,7 +132,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
           ...widget.controller.currentInventory.where(
             (item) => !disabledIds.contains(item.id),
           ),
-          if (_showDisabled) ...disabledItems,
+          ...disabledItems,
         ].where((item) {
           final query = _search.text.trim().toLowerCase();
           return (_category == 'All' || item.category == _category) &&
@@ -274,7 +273,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                                 ),
                               ),
                               _choicePill(
-                                "Out of stock  ${countForStatus('out')}",
+                                "Dead stock  ${countForStatus('out')}",
                                 draftStatus == 'out',
                                 () => updateDialog(() => draftStatus = 'out'),
                               ),
@@ -466,7 +465,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
   bool _matchesStatusFilter(InventoryItem item, String filter) {
     if (filter == 'all') return true;
     final disabled = widget.controller.isDisabled(item.id);
-    if (filter == 'inactive') return disabled;
     if (disabled) return false;
     final status = widget.controller.stockStatusFor(item);
     switch (filter) {
@@ -529,7 +527,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
     final selectedCategory = categories.contains(_category) ? _category : 'All';
     final source = <InventoryItem>[
       ...active,
-      if (_showDisabled || _stockFilter == 'inactive') ...disabled,
+      ...disabled,
     ];
     final query = _search.text.trim().toLowerCase();
     List<InventoryItem> filterItems(List<InventoryItem> candidates) {
@@ -844,47 +842,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                                     ),
                                   ),
                                 ),
-                                SizedBox(
-                                  width: controlWidth(190),
-                                  height: 44,
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => setState(() {
-                                      _showDisabled = !_showDisabled;
-                                      _page = 0;
-                                    }),
-                                    icon: Icon(
-                                      _showDisabled
-                                          ? LucideIcons.eye
-                                          : LucideIcons.eyeOff,
-                                      size: 16,
-                                    ),
-                                    label: Text(
-                                      'Show disabled (${disabled.length})',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: _showDisabled
-                                          ? _accent
-                                          : _slate,
-                                      backgroundColor: _showDisabled
-                                          ? const Color(0xFFFFF1E9)
-                                          : const Color(0xFFF8F7F5),
-                                      side: BorderSide(
-                                        color: _showDisabled
-                                            ? _accent
-                                            : _border,
-                                      ),
-                                      textStyle: const TextStyle(
-                                        fontFamily: _font,
-                                        fontSize: 11,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
-                                  ),
-                                ),
                               ],
                             );
                           },
@@ -1012,11 +969,8 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
     final query = _search.text.trim().toLowerCase();
     final filtered = allItems.where((item) {
       final inactive = disabledIds.contains(item.id);
-      final matchesStatus = switch (_stockFilter) {
-        'inactive' => inactive,
-        'all' || 'ok' => true,
-        _ => !inactive && _matchesStatusFilter(item, _stockFilter),
-      };
+      final matchesStatus = _stockFilter == 'all' ||
+          (!inactive && _matchesStatusFilter(item, _stockFilter));
       return matchesStatus &&
           (selectedCategory == 'All' || item.category == selectedCategory) &&
           (query.isEmpty ||
@@ -1049,7 +1003,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
       'out': active
           .where((i) => widget.controller.stockStatusFor(i) == StockStatus.out)
           .length,
-      'inactive': disabled.length,
     };
 
     return ColoredBox(
@@ -1123,13 +1076,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                       counts['critical']!,
                     ),
                     const SizedBox(width: 8),
-                    _inventoryStatusTab('Out of stock', 'out', counts['out']!),
-                    const SizedBox(width: 8),
-                    _inventoryStatusTab(
-                      'Inactive',
-                      'inactive',
-                      counts['inactive']!,
-                    ),
+                    _inventoryStatusTab('Dead stock', 'out', counts['out']!),
                   ],
                 );
                 final searchAndCategory = Row(
@@ -1368,8 +1315,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
     final shelf = item.shelfLevel?.trim();
     final parts = [
       fixture,
-      if (shelf != null && shelf.isNotEmpty)
-        int.tryParse(shelf) != null ? 'Level $shelf' : shelf,
+      if (shelf != null && shelf.isNotEmpty) 'Level $shelf',
     ].where((part) => part != null && part.trim().isNotEmpty).toList();
     return parts.isEmpty ? '—' : parts.join(' · ');
   }
@@ -1565,8 +1511,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
       'ok': 'In stock',
       'low': 'Low stock',
       'critical': 'Critical',
-      'out': 'Out of stock',
-      'inactive': 'Inactive',
+      'out': 'Dead stock',
     };
     final hasActiveFilters = _stockFilter != 'all' || selectedCategory != 'All';
     final activeFilters = [
@@ -2101,8 +2046,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
       ('ok', 'In stock'),
       ('low', 'Low stock'),
       ('critical', 'Critical'),
-      ('out', 'Out of stock'),
-      ('inactive', 'Inactive'),
+      ('out', 'Dead stock'),
     ];
 
     int matchingCount(String status, String category) => source.where((item) {
@@ -2588,7 +2532,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   final _colorController = TextEditingController();
   final _imageUrlController = TextEditingController();
   final _shelfController = TextEditingController();
-  final _binController = TextEditingController();
+  final ValueNotifier<int> _formRevision = ValueNotifier<int>(0);
   String _categoryValue = '';
   bool _requiresLoading = false;
   String? _locationValue;
@@ -2614,10 +2558,22 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     _colorController.text = widget.item.color ?? '';
     _imageUrlController.text = widget.item.imageUrl;
     _shelfController.text = widget.item.shelfLevel ?? '';
-    _binController.text = widget.item.binNumber ?? '';
     _categoryValue = widget.item.category;
     _requiresLoading = widget.item.requiresLoading;
     _locationValue = widget.item.locationId;
+    for (final controller in [
+      _nameController,
+      _priceController,
+      _descriptionController,
+      _manufacturerController,
+      _modelController,
+      _sizeController,
+      _colorController,
+      _imageUrlController,
+      _shelfController,
+    ]) {
+      controller.addListener(_onFormTextChanged);
+    }
     _subscribeToHistory();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_loadHistory());
@@ -2686,6 +2642,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     _historyRequestVersion++;
     unawaited(_historySubscription?.cancel());
     _historyNotifier.dispose();
+    _formRevision.dispose();
     _nameController.dispose();
     _priceController.dispose();
     _skuController.dispose();
@@ -2697,8 +2654,28 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     _colorController.dispose();
     _imageUrlController.dispose();
     _shelfController.dispose();
-    _binController.dispose();
     super.dispose();
+  }
+
+  void _onFormTextChanged() => _formRevision.value++;
+
+  bool _hasChanges(InventoryItem item) {
+    String clean(String? value) => (value ?? '').trim();
+    final price = double.tryParse(_priceController.text.trim());
+    return clean(_nameController.text) != clean(item.name) ||
+        price == null ||
+        price != item.price ||
+        clean(_descriptionController.text) != clean(item.description) ||
+        clean(_manufacturerController.text) != clean(item.manufacturer) ||
+        clean(_modelController.text) != clean(item.model) ||
+        clean(_sizeController.text) != clean(item.productSize) ||
+        clean(_colorController.text) != clean(item.color) ||
+        _categoryValue != item.category ||
+        clean(_shelfController.text) != clean(item.shelfLevel) ||
+        _requiresLoading != item.requiresLoading ||
+        _locationValue != item.locationId ||
+        _chosenImageBytes != null ||
+        clean(_imageUrlController.text) != clean(item.imageUrl);
   }
 
   void _startEdit(InventoryItem item) {
@@ -2713,7 +2690,6 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     _colorController.text = item.color ?? '';
     _imageUrlController.text = item.imageUrl;
     _shelfController.text = item.shelfLevel ?? '';
-    _binController.text = item.binNumber ?? '';
     _categoryValue = item.category;
     _requiresLoading = item.requiresLoading;
     _locationValue = item.locationId;
@@ -3050,10 +3026,15 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   }
 
   Future<void> _saveEdit(InventoryItem item) async {
-    if (_isSaving) return;
+    if (_isSaving || !_hasChanges(item)) return;
     final name = _nameController.text.trim();
     final price = double.tryParse(_priceController.text.trim());
     final imageUrl = _imageUrlController.text.trim();
+
+    if (!isValidProductLevel(_shelfController.text)) {
+      setState(() => _editError = 'Choose a level from 1 to 10 or No level.');
+      return;
+    }
 
     if (name.isEmpty || price == null || !price.isFinite || price < 0) {
       setState(() => _editError = 'Enter a product name and a valid price.');
@@ -3093,7 +3074,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         color: _colorController.text.trim(),
         category: _categoryValue,
         shelfLevel: _shelfController.text.trim(),
-        binNumber: _binController.text.trim(),
+        binNumber: item.binNumber,
         imageUrl: savedImageUrl,
         requiresLoading: _requiresLoading,
       );
@@ -3366,26 +3347,29 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                           ),
                           const SizedBox(width: 9),
                           Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _isSaving
-                                  ? null
-                                  : () => _saveEdit(item),
-                              icon: _isSaving
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Icon(LucideIcons.check, size: 15),
-                              label: Text(
-                                _isSaving ? 'Saving...' : 'Save changes',
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                backgroundColor: _accent,
+                            child: ValueListenableBuilder<int>(
+                              valueListenable: _formRevision,
+                              builder: (context, _, _) => ElevatedButton.icon(
+                                onPressed: _isSaving || !_hasChanges(item)
+                                    ? null
+                                    : () => _saveEdit(item),
+                                icon: _isSaving
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(LucideIcons.check, size: 15),
+                                label: Text(
+                                  _isSaving ? 'Saving...' : 'Save changes',
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  backgroundColor: _accent,
+                                ),
                               ),
                             ),
                           ),
@@ -3446,6 +3430,22 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                               ),
                               const SizedBox(width: 7),
                             ],
+                          ],
+                          if (disabled && widget.controller.isAdmin) ...[
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isSaving
+                                    ? null
+                                    : () => _restoreReferenceProduct(item),
+                                icon: const Icon(LucideIcons.rotateCcw, size: 14),
+                                label: const Text('Restore'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: _accent,
+                                  side: const BorderSide(color: _border),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 7),
                           ],
                           Expanded(
                             child: OutlinedButton(
@@ -3694,17 +3694,15 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                 ],
                 Row(
                   children: [
-                    if (canEdit)
+                    if (canEdit && disabled)
                       OutlinedButton(
                         onPressed: _isSaving
                             ? null
-                            : () => _toggleReferenceStatus(item, disabled),
+                            : () => _restoreReferenceProduct(item),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: _warmRed,
+                          foregroundColor: _warmOrange,
                         ),
-                        child: Text(
-                          disabled ? 'Restore product' : 'Disable product',
-                        ),
+                        child: const Text('Restore product'),
                       ),
                     const Spacer(),
                     OutlinedButton.icon(
@@ -3714,12 +3712,17 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                     ),
                     if (canEdit) ...[
                       const SizedBox(width: 10),
-                      FilledButton(
-                        onPressed: _isSaving ? null : () => _saveEdit(item),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF1C1C1C),
+                      ValueListenableBuilder<int>(
+                        valueListenable: _formRevision,
+                        builder: (context, _, _) => FilledButton(
+                          onPressed: _isSaving || !_hasChanges(item)
+                              ? null
+                              : () => _saveEdit(item),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF1C1C1C),
+                          ),
+                          child: Text(_isSaving ? 'Saving…' : 'Save changes'),
                         ),
-                        child: Text(_isSaving ? 'Saving…' : 'Save changes'),
                       ),
                     ],
                   ],
@@ -3753,6 +3756,87 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
               errorBuilder: (_, __, ___) =>
                   const Icon(LucideIcons.package, color: _warmMuted, size: 32),
             ),
+    );
+  }
+
+  Widget _productImageEditor(InventoryItem item, {required bool canEdit}) {
+    final hasImage = _chosenImageBytes != null ||
+        _imageUrlController.text.trim().isNotEmpty;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _warmBackground,
+        border: Border.all(color: _warmBorder),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _referencePhoto(item),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Product image',
+                      style: TextStyle(
+                        color: _ink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      hasImage ? 'Image preview' : 'No image added',
+                      style: const TextStyle(
+                        color: _warmMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (canEdit) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _isSaving ? null : _replaceEditImage,
+                  icon: const Icon(LucideIcons.imagePlus, size: 16),
+                  label: const Text('Replace image'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _warmOrange,
+                    side: const BorderSide(color: _warmOrange),
+                  ),
+                ),
+                if (hasImage)
+                  OutlinedButton.icon(
+                    onPressed: _isSaving ? null : _removeEditImage,
+                    icon: const Icon(LucideIcons.trash2, size: 16),
+                    label: const Text('Remove image'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _warmRed,
+                      side: const BorderSide(color: Color(0xFFFECACA)),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            const Text(
+              'Select Save changes to apply the image change.',
+              style: TextStyle(color: _warmMuted, fontSize: 11),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -3904,26 +3988,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
               : null,
         ),
         const SizedBox(height: 16),
-        if (canEdit) ...[
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              TextButton.icon(
-                onPressed: _isSaving ? null : _replaceEditImage,
-                icon: const Icon(LucideIcons.imagePlus, size: 16),
-                label: const Text('Replace image'),
-              ),
-              if (_chosenImageBytes != null ||
-                  _imageUrlController.text.trim().isNotEmpty)
-                TextButton.icon(
-                  onPressed: _isSaving ? null : _removeEditImage,
-                  icon: const Icon(LucideIcons.trash2, size: 16),
-                  label: const Text('Remove image'),
-                ),
-            ],
-          ),
-        ],
+        _productImageEditor(item, canEdit: canEdit),
         const SizedBox(height: 16),
         _referenceField(
           'Description',
@@ -3986,46 +4051,13 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
               element.type == ElementType.shelf,
         )
         .toList();
-    final currentFixture = fixtures
-        .where((element) => element.id == _locationValue)
-        .firstOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Aisle',
-                    style: TextStyle(fontSize: 12, color: _ink),
-                  ),
-                  const SizedBox(height: 7),
-                  InputDecorator(
-                    decoration: _referenceInputDecoration(),
-                    child: Text(
-                      currentFixture?.label ?? '—',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13, color: _ink),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _referenceField(
-                'Shelf',
-                _shelfController,
-                readOnly: !canEdit,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _referenceField('Bin', _binController, readOnly: !canEdit),
+              child: _referenceLevelField(canEdit),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -4033,7 +4065,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Map fixture',
+                    'Move to',
                     style: TextStyle(fontSize: 12, color: _ink),
                   ),
                   const SizedBox(height: 7),
@@ -4088,6 +4120,52 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
             showMobileToolbar: false,
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _referenceLevelField(bool canEdit) {
+    final level = _shelfController.text.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Level', style: TextStyle(fontSize: 12, color: _ink)),
+        const SizedBox(height: 7),
+        if (!canEdit)
+          InputDecorator(
+            decoration: _referenceInputDecoration(),
+            child: Text(
+              level.isEmpty ? 'No level' : 'Level $level',
+              style: const TextStyle(fontSize: 13, color: _ink),
+            ),
+          )
+        else
+          AppStyledDropdown<String>(
+            value: level,
+            decoration: _referenceInputDecoration(),
+            items: [
+              if (level.isNotEmpty && !isValidProductLevel(level))
+                DropdownMenuItem<String>(
+                  value: level,
+                  enabled: false,
+                  child: Text('Invalid level: $level'),
+                ),
+              const DropdownMenuItem<String>(
+                value: '',
+                child: Text('No level'),
+              ),
+              for (var number = 1; number <= maxProductLevel; number++)
+                DropdownMenuItem<String>(
+                  value: '$number',
+                  child: Text('Level $number'),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => _shelfController.text = value);
+              }
+            },
+          ),
       ],
     );
   }
@@ -4262,13 +4340,13 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     );
   }
 
-  Future<void> _toggleReferenceStatus(InventoryItem item, bool disabled) async {
+  Future<void> _restoreReferenceProduct(InventoryItem item) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AppDialog(
-        icon: disabled ? LucideIcons.rotateCcw : LucideIcons.packageX,
-        color: disabled ? _accent : _warmRed,
-        title: disabled ? 'Restore product?' : 'Disable product?',
+        icon: LucideIcons.rotateCcw,
+        color: _accent,
+        title: 'Restore product?',
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -4282,41 +4360,33 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             style: FilledButton.styleFrom(
-              backgroundColor: disabled ? _accent : _warmRed,
+              backgroundColor: _accent,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: Text(disabled ? 'Restore' : 'Disable'),
+            child: const Text('Restore'),
           ),
         ],
-        child: Text(
-          disabled
-              ? 'This product will return to the active inventory.'
-              : 'This product will be hidden from active inventory.',
-          style: const TextStyle(color: _slate, fontSize: 14, height: 1.5),
+        child: const Text(
+          'This product will return to the active inventory.',
+          style: TextStyle(color: _slate, fontSize: 14, height: 1.5),
         ),
       ),
     );
     if (confirmed != true || !mounted) return;
     setState(() => _isSaving = true);
     try {
-      if (disabled) {
-        await widget.controller.restoreItem(item.id);
-      } else {
-        await widget.controller.disableItem(item.id);
-      }
+      await widget.controller.restoreItem(item.id);
       if (!mounted) return;
-      AppToast.success(
-        context,
-        disabled ? 'Product restored' : 'Product disabled',
-      );
+      AppToast.success(context, 'Product restored');
       widget.onClose();
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         AppToast.error(
           context,
           AppErrorMapper.message(error, fallback: AppErrorCategory.dataSave),
         );
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -4392,34 +4462,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         const SizedBox(height: 13),
         _editField('Description', _descriptionController, maxLines: 3),
         const SizedBox(height: 18),
-        const Text(
-          'Product image',
-          style: TextStyle(
-            fontFamily: _font,
-            color: _ink,
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: _isSaving ? null : _replaceEditImage,
-          icon: const Icon(LucideIcons.imagePlus, size: 16),
-          label: const Text('Replace image'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _accent,
-            side: const BorderSide(color: _border),
-          ),
-        ),
-        if (_chosenImageBytes != null ||
-            _imageUrlController.text.trim().isNotEmpty) ...[
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: _isSaving ? null : _removeEditImage,
-            icon: const Icon(LucideIcons.trash2, size: 16),
-            label: const Text('Remove image'),
-          ),
-        ],
+        _productImageEditor(widget.item, canEdit: true),
         if (_editError != null) ...[
           const SizedBox(height: 12),
           Text(

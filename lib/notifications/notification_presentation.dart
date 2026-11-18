@@ -137,6 +137,14 @@ class NotificationPresentationResolver {
           label: 'Report',
         );
       case NotificationType.system:
+        if (notification.payload['category']?.toString() == 'orderDelay') {
+          return _style(
+            icon: LucideIcons.clock3,
+            badgeIcon: LucideIcons.triangleAlert,
+            color: _orange,
+            label: 'Delayed order',
+          );
+        }
         if (notification.payload['category']?.toString() == 'storeAccess') {
           return _storeAccessStyle(notification.payload['stage']?.toString());
         }

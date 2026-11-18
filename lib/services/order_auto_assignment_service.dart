@@ -65,7 +65,13 @@ class OrderAutoAssignmentService {
   }
 
   bool get _hasEligibleHelper {
-    return _presenceService.eligibleHelpersForAssignment.isNotEmpty;
+    final signedInHelperIsAvailable =
+        _presenceService.userRole.toLowerCase() == 'helper' &&
+        _presenceService.userId == _accountId &&
+        _presenceService.isStarted &&
+        !_presenceService.isOnBreak;
+    return signedInHelperIsAvailable ||
+        _presenceService.eligibleHelpersForAssignment.isNotEmpty;
   }
 
   bool get _hasUnassignedPendingOrder {
@@ -109,6 +115,7 @@ class OrderAutoAssignmentService {
             expectedAccountId: _accountId,
           );
       if (!_hasCurrentScope || assignments.isEmpty) return;
+      await _inventoryController.retryOrdersSnapshot();
       await onAssignments?.call(assignments);
     } catch (error, stackTrace) {
       // Keep the operational snapshot intact. A later order/presence event

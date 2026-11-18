@@ -12,8 +12,10 @@ class StaffRoleHeader extends StatelessWidget {
     required this.onTabSelected,
     required this.onProfile,
     required this.onLogout,
+    this.onInventory,
     this.availability,
     this.notifications,
+    this.extra,
     this.showTabs = true,
   });
 
@@ -23,8 +25,10 @@ class StaffRoleHeader extends StatelessWidget {
   final ValueChanged<int> onTabSelected;
   final VoidCallback onProfile;
   final VoidCallback onLogout;
+  final VoidCallback? onInventory;
   final Widget? availability;
   final Widget? notifications;
+  final Widget? extra;
   final bool showTabs;
 
   static const _orange = Color(0xFFC83D08);
@@ -230,6 +234,11 @@ Widget _avatar({bool mobile = false}) => CircleAvatar(
                     : const SizedBox.shrink(),
               ),
             ],
+            if (!mobile && extra != null) ...[
+              const SizedBox(width: 12),
+              extra!,
+            ],
+
             if (availability != null) ...[
               const SizedBox(width: 4),
               availability!,

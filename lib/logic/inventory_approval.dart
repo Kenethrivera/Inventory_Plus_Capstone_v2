@@ -238,7 +238,9 @@ class InventoryApprovalPageKey {
     required this.locationId,
     required this.status,
     required this.page,
-    this.pageSize = 20,
+    this.pageSize = 10,
+    this.requestedFrom,
+    this.requestedBefore,
   });
 
   final String accountId;
@@ -246,6 +248,8 @@ class InventoryApprovalPageKey {
   final InventoryApprovalStatus status;
   final int page;
   final int pageSize;
+  final DateTime? requestedFrom;
+  final DateTime? requestedBefore;
 
   @override
   bool operator ==(Object other) =>
@@ -254,11 +258,20 @@ class InventoryApprovalPageKey {
       other.locationId == locationId &&
       other.status == status &&
       other.page == page &&
-      other.pageSize == pageSize;
+      other.pageSize == pageSize &&
+      other.requestedFrom == requestedFrom &&
+      other.requestedBefore == requestedBefore;
 
   @override
-  int get hashCode =>
-      Object.hash(accountId, locationId, status, page, pageSize);
+  int get hashCode => Object.hash(
+    accountId,
+    locationId,
+    status,
+    page,
+    pageSize,
+    requestedFrom,
+    requestedBefore,
+  );
 }
 
 class InventoryApprovalPage {

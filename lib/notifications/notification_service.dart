@@ -3,6 +3,8 @@ import 'models/notification_type.dart';
 import 'notification_factory.dart';
 import 'notification_repository.dart';
 import '../logic/inventory_approval.dart';
+import '../data/inventory.dart';
+import 'order_delay_policy.dart';
 
 class NotificationService {
   final NotificationRepository _repository;
@@ -20,6 +22,50 @@ class NotificationService {
 
   Future<void> createNotification(AppNotification notification) async {
     await _enqueueWrite(() => _saveLifecycleAware(notification));
+  }
+
+  Future<bool> syncOrderDelayNotifications({
+    required String locationId,
+    required List<CustomerOrder> orders,
+    required DateTime now,
+  }) async {
+    var changed = false;
+    await _enqueueWrite(() async {
+      final currentStages = <String>{};
+      final overdue = <String, OverdueOrderStage>{};
+      for (final order in orders) {
+        final current = currentOrderDelayStage(order, now);
+        if (current != null) currentStages.add(current.identity);
+        final stage = overdueOrderStage(order, now);
+        if (stage != null) overdue[stage.identity] = stage;
+      }
+      final active = await _repository.fetchActiveLifecycleNotifications();
+      for (final notification in active) {
+        if (notification.type != NotificationType.system ||
+            notification.payload['category'] != 'orderDelay') {
+          continue;
+        }
+        final identity = _logicalIdentity(notification);
+        if (currentStages.contains(identity)) {
+          overdue.remove(identity);
+          continue;
+        }
+        await _repository.updateNotification(
+          notification.copyWith(isResolved: true, resolvedAt: now),
+        );
+        changed = true;
+      }
+      for (final stage in overdue.values) {
+        await _saveLifecycleAware(
+          NotificationFactory.orderDelay(
+            locationId: locationId,
+            overdue: stage,
+          ),
+        );
+        changed = true;
+      }
+    });
+    return changed;
   }
 
   Future<void> notifyNewOrder({
@@ -180,6 +226,13 @@ class NotificationService {
       case NotificationType.inventoryDeleted:
         return null;
       case NotificationType.system:
+        if (payload['category']?.toString() == 'orderDelay') {
+          final orderId = payload['orderId']?.toString();
+          final stage = payload['stage']?.toString();
+          return orderId == null || stage == null
+              ? null
+              : 'order-delay:$orderId:$stage';
+        }
         if (payload['category']?.toString() == 'inventoryApproval') {
           final requestId = payload['approvalRequestId']?.toString();
           return requestId == null ? null : 'inventory-approval:$requestId';

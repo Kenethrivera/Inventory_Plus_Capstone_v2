@@ -7,6 +7,9 @@ void main() {
   final migration = File(
     'database/phase_2a_inventory_approvals.sql',
   ).readAsStringSync();
+  final datePageMigration = File(
+    'database/approval_requests_page_v2.sql',
+  ).readAsStringSync();
   final controller = File(
     'lib/logic/inventory_controller.dart',
   ).readAsStringSync();
@@ -287,5 +290,42 @@ void main() {
     cache.markAllStale();
     expect(cache.read(key)?.stale, isTrue);
     expect(cache.read(key)?.totalPages, 1);
+  });
+
+  test('approval page cache separates date ranges and uses ten rows', () {
+    final from = DateTime(2026, 11, 18);
+    final allTime = InventoryApprovalPageKey(
+      accountId: '1',
+      locationId: 'store-a',
+      status: InventoryApprovalStatus.pending,
+      page: 1,
+    );
+    final today = InventoryApprovalPageKey(
+      accountId: '1',
+      locationId: 'store-a',
+      status: InventoryApprovalStatus.pending,
+      page: 1,
+      requestedFrom: from,
+      requestedBefore: from.add(const Duration(days: 1)),
+    );
+    expect(allTime.pageSize, 10);
+    expect(today, isNot(allTime));
+    expect(
+      InventoryApprovalPage(
+        key: today,
+        requests: const [],
+        totalCount: 21,
+        loadedAt: from,
+      ).totalPages,
+      3,
+    );
+    expect(
+      datePageMigration,
+      contains('request.requested_at >= p_requested_from'),
+    );
+    expect(
+      datePageMigration,
+      contains('request.requested_at < p_requested_before'),
+    );
   });
 }

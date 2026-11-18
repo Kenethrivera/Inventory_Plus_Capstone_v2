@@ -100,7 +100,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
         _alternateGcashNumberCtrl.text =
             row?['gcash_alt_number']?.toString() ?? '';
         _captureDashboardExtrasBaseline(
-          autoAssignOrders: row?['auto_assign_orders'] != false,
+          autoAssignOrders: true,
           maxHelperOrders:
               '${(row?['max_active_orders_per_helper'] as num?)?.toInt() ?? 3}',
         );
@@ -164,7 +164,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     });
     try {
       await widget.controller.saveSettingsDashboardExtras(
-        autoAssignOrders: baseline.autoAssignOrders,
+        autoAssignOrders: true,
         maxHelperOrders: maxHelperOrders,
         maxApprovedDiscount: maxApprovedDiscount,
         defaultCashierLimit: defaultLimit,
@@ -177,7 +177,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
       setState(() {
         _discountLimitBaseline = defaultLimit;
         _dashboardExtrasBaseline = (
-          autoAssignOrders: baseline.autoAssignOrders,
+          autoAssignOrders: true,
           maxHelperOrders: baseline.maxHelperOrders,
           maxApprovedDiscount: _maxApprovedDiscountCtrl.text.trim(),
           gcashAccountName: _gcashAccountCtrl.text.trim(),

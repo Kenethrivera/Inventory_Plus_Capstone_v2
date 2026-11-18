@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:inventory_plus/logic/inventory_approval.dart';
 import 'package:inventory_plus/notifications/models/app_notification.dart';
 import 'package:inventory_plus/notifications/models/notification_type.dart';
 import 'package:inventory_plus/notifications/notification_bell.dart';
@@ -15,7 +16,6 @@ import '../data/inventory.dart';
 import '../data/ai_insights_service.dart';
 import '../logic/inventory_controller.dart';
 import '../logic/helper_assignment.dart';
-import '../logic/inventory_approval.dart';
 import '../logic/staff_management.dart';
 import '../logic/staff_availability.dart';
 import '../navigation/main_section.dart';
@@ -40,7 +40,6 @@ import 'system_settings_page.dart';
 import 'transaction_history_page.dart';
 import 'cash_monitor_table_page.dart';
 import 'cashier_requests_page.dart';
-import 'queue_monitor_table_page.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/change_password_dialog.dart';
@@ -82,6 +81,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   String? _selectedItemId;
   String _txTargetTab = 'Sales History';
   String _ordersActivityTab = 'Orders';
+  String? _ordersActivityTargetOrderId;
+  int _ordersActivityTargetRequest = 0;
+  int _ordersActivityNavigationRequest = 0;
   String? _targetOrderId;
   String? _targetPosOrderId;
 
@@ -89,6 +91,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   bool _isCheckingStockAlerts = false;
   bool _isCheckingExportReminders = false;
+  bool _isCheckingOrderDelays = false;
+  Timer? _orderDelayTimer;
+  StreamSubscription<void>? _orderDelaySubscription;
   StaffPresenceService? _staffPresenceService;
   bool _changingHelperBreak = false;
   int _helperMobileTab = 0;
@@ -223,6 +228,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (role.toLowerCase() == 'bodegero') {
         unawaited(_notificationController!.loadNotifications());
       }
+      if (role.toLowerCase() == 'admin') {
+        unawaited(_notificationController!.loadNotifications());
+        _orderDelaySubscription = widget.realtimeSync.orderChanges.listen(
+          (_) => unawaited(_scanOrderDelayNotifications()),
+        );
+        _orderDelayTimer = Timer.periodic(
+          const Duration(minutes: 1),
+          (_) => unawaited(_scanOrderDelayNotifications()),
+        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_scanOrderDelayNotifications());
+        });
+      }
 
       widget.controller.onRestockRecorded =
           ({
@@ -287,6 +305,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _storeAccessEndTimer?.cancel();
     _storeLogoutCountdownTimer?.cancel();
+    _orderDelayTimer?.cancel();
+    unawaited(_orderDelaySubscription?.cancel());
     _storeLogoutDialogSetState = null;
     unawaited(_inventoryNotificationSubscription?.cancel());
     unawaited(_storeAccessSubscription?.cancel());
@@ -405,40 +425,23 @@ void _restoreMainSectionFromPath(String path) {
     }
 
     if (role == 'admin') {
-      switch (_currentIndex) {
-        case 0:
-          return 'Dashboard';
-
-        case 1:
-          return 'Forecasting';
-
-        case 2:
-          return 'Cash Monitor';
-
-        case 3:
-          return 'Queue Monitor';
-
-        case 4:
-          return 'Inventory';
-
-        case 5:
-          return 'Approval Center';
-
-        case 6:
-          return 'Staff';
-
-        case 7:
-          return 'Transactions';
-
-        case 8:
-          return 'Store Map';
-
-        case 9:
-          return 'System Settings';
-
-        default:
-          return 'Main Screen';
+      if (_currentIndex! < 0 || _currentIndex! >= _mainSections.length) {
+        return 'Main Screen';
       }
+      return switch (_mainSections[_currentIndex!]) {
+        MainSection.dashboard => 'Dashboard',
+        MainSection.ordersActivity => 'Orders & activity',
+        MainSection.analytics => 'Analytics',
+        MainSection.forecasting => 'Forecasting',
+        MainSection.pos => 'Cash Monitor',
+        MainSection.inventory => 'Inventory',
+        MainSection.approvals => 'Approval Center',
+        MainSection.performance => 'Staff',
+        MainSection.transactions => 'Transactions',
+        MainSection.storeMap => 'Store Map',
+        MainSection.systemSettings => 'System Settings',
+        _ => 'Main Screen',
+      };
     }
 
     if (role == 'helper') {
@@ -1440,6 +1443,33 @@ void _restoreMainSectionFromPath(String path) {
     }
   }
 
+  Future<void> _scanOrderDelayNotifications() async {
+    if (_isCheckingOrderDelays || !widget.controller.isAdmin) return;
+    final notificationController = _notificationController;
+    final locationId = widget.controller.activeLocationId;
+    if (notificationController == null || locationId == null) return;
+
+    _isCheckingOrderDelays = true;
+    try {
+      final orders = await widget.controller
+          .loadActiveOrdersForDelayNotifications();
+      if (!mounted || widget.controller.activeLocationId != locationId) return;
+      await notificationController.syncOrderDelayNotifications(
+        locationId: locationId,
+        orders: orders,
+        now: DateTime.now(),
+      );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Order delay notification scan failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      _isCheckingOrderDelays = false;
+    }
+  }
+
   Future<void> _scanInventoryStockAlerts() async {
     if (_isCheckingStockAlerts) return;
 
@@ -1538,6 +1568,22 @@ void _restoreMainSectionFromPath(String path) {
     final orderId = notification.payload['orderId']?.toString();
     final currentRole = widget.controller.currentUserRole?.toLowerCase();
 
+    if (currentRole == 'admin' &&
+        (notification.type == NotificationType.newOrder ||
+            notification.type == NotificationType.orderAssigned ||
+            notification.type == NotificationType.orderPrepared ||
+            notification.type == NotificationType.orderCancelled ||
+            (notification.type == NotificationType.system &&
+                notification.payload['category'] == 'orderDelay'))) {
+      if (orderId == null || orderId.isEmpty) {
+        return 'Order ID not found in notification.';
+      }
+      final orders = await widget.controller.loadActivityOrders();
+      return orders.any((order) => order.id == orderId)
+          ? null
+          : 'This order no longer exists.';
+    }
+
     switch (notification.type) {
       case NotificationType.newOrder:
       case NotificationType.orderAssigned:
@@ -1576,30 +1622,9 @@ void _restoreMainSectionFromPath(String path) {
         return null;
 
       case NotificationType.inventoryRestocked:
-        final role = widget.controller.currentUserRole?.toLowerCase();
-
-        if (role != 'admin') {
-          return 'Only administrators can open restock notifications.';
-        }
-
-        final productId = notification.payload['productId']?.toString();
-
-        if (productId == null || productId.isEmpty) {
-          return 'Product ID not found in notification.';
-        }
-
-        final items = [
-          ...widget.controller.filterInventory(query: '', category: 'All'),
-          ...widget.controller.filterDisabled(query: '', category: 'All'),
-        ];
-
-        final exists = items.any((item) => item.id.toString() == productId);
-
-        if (!exists) {
-          return 'This product no longer exists.';
-        }
-
-        return null;
+        return currentRole == 'admin'
+            ? null
+            : 'Only administrators can open restock notifications.';
 
       case NotificationType.orderPrepared:
         if (orderId == null || orderId.isEmpty) {
@@ -1630,12 +1655,9 @@ void _restoreMainSectionFromPath(String path) {
         return null;
 
       case NotificationType.orderCancelled:
-        if (orderId != null && orderId.isNotEmpty) {
-          await _notificationController?.resolveOrderWorkflowNotification(
-            orderId: orderId,
-          );
-        }
-        return 'This order has been cancelled.';
+        return orderId == null || orderId.isEmpty
+            ? 'Order ID not found in notification.'
+            : null;
 
       case NotificationType.lowStock:
       case NotificationType.criticalStock:
@@ -1681,6 +1703,21 @@ void _restoreMainSectionFromPath(String path) {
     }
   }
 
+  bool _openAdminActivity(String tab, {String? orderId}) {
+    final activityIndex = _mainSections.indexOf(MainSection.ordersActivity);
+    if (activityIndex < 0) return false;
+    _selectMainIndex(
+      activityIndex,
+      updateState: () {
+        _ordersActivityTab = tab;
+        _ordersActivityNavigationRequest++;
+        _ordersActivityTargetOrderId = orderId;
+        if (orderId != null) _ordersActivityTargetRequest++;
+      },
+    );
+    return true;
+  }
+
   bool _isNotificationActionable(
     AppNotification notification, {
     required int orderQueueIndex,
@@ -1692,13 +1729,21 @@ void _restoreMainSectionFromPath(String path) {
     switch (notification.type) {
       case NotificationType.newOrder:
       case NotificationType.orderAssigned:
-        return orderQueueIndex >= 0 &&
+        return (widget.controller.currentUserRole?.toLowerCase() == 'admin' ||
+                orderQueueIndex >= 0) &&
             (payload['orderId']?.toString().isNotEmpty ?? false);
       case NotificationType.orderPrepared:
-        return posIndex >= 0 &&
+        return (widget.controller.currentUserRole?.toLowerCase() == 'admin' ||
+                posIndex >= 0) &&
             (payload['orderId']?.toString().isNotEmpty ?? false);
+      case NotificationType.orderCancelled:
+        return (payload['orderId']?.toString().isNotEmpty ?? false) &&
+            (_mainSections.contains(MainSection.ordersActivity) ||
+                _mainSections.contains(MainSection.history));
       case NotificationType.transaction:
-        return transactionIndex >= 0;
+        return ((payload['orderId']?.toString().isNotEmpty ?? false) &&
+                _mainSections.contains(MainSection.ordersActivity)) ||
+            transactionIndex >= 0;
       case NotificationType.exportReminder:
         final reportType = payload['reportType']?.toString();
         return reportType == 'inventory'
@@ -1713,24 +1758,31 @@ void _restoreMainSectionFromPath(String path) {
         return inventoryIndex >= 0 &&
             (payload['itemId']?.toString().isNotEmpty ?? false);
       case NotificationType.inventoryRestocked:
-        return inventoryIndex >= 0 &&
-            widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
-            (payload['productId']?.toString().isNotEmpty ?? false);
+        return widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
+            _mainSections.contains(MainSection.ordersActivity);
       case NotificationType.system:
+        if (payload['category'] == 'orderDelay') {
+          return _mainSections.contains(MainSection.ordersActivity) &&
+              (payload['orderId']?.toString().isNotEmpty ?? false);
+        }
+        if (payload['category'] == 'storeAccess') {
+          return _mainSections.contains(MainSection.systemSettings);
+        }
         if (payload['category'] != 'inventoryApproval') return false;
         if (payload['status'] == 'pending') {
           return widget.controller.currentUserRole?.toLowerCase() == 'admin' &&
               _mainSections.contains(MainSection.approvals);
         }
         final role = widget.controller.currentUserRole?.toLowerCase();
-        return payload['requestType'] == 'discount' &&
-            (role == 'staff' || role == 'cashier') &&
-            posIndex >= 0;
-      case NotificationType.orderCancelled:
+        return ((role == 'staff' || role == 'cashier') &&
+                _mainSections.contains(MainSection.cashierRequests)) ||
+            role == 'helper';
       case NotificationType.inventoryAdded:
       case NotificationType.inventoryUpdated:
       case NotificationType.inventoryDeleted:
-        return false;
+        return inventoryIndex >= 0 &&
+            (widget.controller.currentUserRole?.toLowerCase() == 'admin' ||
+                MediaQuery.sizeOf(context).width >= 600);
     }
   }
 
@@ -1751,6 +1803,8 @@ void _restoreMainSectionFromPath(String path) {
           return false;
         }
 
+        if (_openAdminActivity('Orders', orderId: orderId)) return true;
+
         if (orderQueueIndex < 0) {
           AppToast.error(
             context,
@@ -1761,7 +1815,13 @@ void _restoreMainSectionFromPath(String path) {
 
         _selectMainIndex(
           orderQueueIndex,
-          updateState: () => _targetOrderId = orderId,
+          updateState: () {
+            _targetOrderId = orderId;
+            if (widget.controller.currentUserRole?.toLowerCase() == 'helper' &&
+                MediaQuery.sizeOf(context).width < 600) {
+              _helperMobileTab = 0;
+            }
+          },
         );
         return true;
 
@@ -1770,6 +1830,8 @@ void _restoreMainSectionFromPath(String path) {
           AppToast.error(context, 'Order ID not found in notification.');
           return false;
         }
+
+        if (_openAdminActivity('Orders', orderId: orderId)) return true;
 
         if (posIndex < 0) {
           AppToast.error(context, 'POS is not available for this role.');
@@ -1783,6 +1845,12 @@ void _restoreMainSectionFromPath(String path) {
         return true;
 
       case NotificationType.transaction:
+        if (orderId != null &&
+            orderId.isNotEmpty &&
+            _openAdminActivity('Orders', orderId: orderId)) {
+          return true;
+        }
+        if (_openAdminActivity('Payments')) return true;
         if (transactionIndex < 0) {
           AppToast.error(context, 'Transactions page is not available.');
           return false;
@@ -1803,6 +1871,7 @@ void _restoreMainSectionFromPath(String path) {
         }
 
         if (reportType == 'sales') {
+          if (_openAdminActivity('Payments')) return true;
           if (transactionIndex < 0) {
             AppToast.error(context, 'Transactions page is not available.');
             return false;
@@ -1875,57 +1944,84 @@ void _restoreMainSectionFromPath(String path) {
         return true;
 
       case NotificationType.inventoryRestocked:
-        final productId = notification.payload['productId']?.toString();
+        return _openAdminActivity('Stock movements');
 
-        final role = widget.controller.currentUserRole?.toLowerCase();
+      case NotificationType.orderCancelled:
+        if (orderId == null || orderId.isEmpty) return false;
+        if (_openAdminActivity('Orders', orderId: orderId)) return true;
+        final historyIndex = _mainSections.indexOf(MainSection.history);
+        if (historyIndex < 0) return false;
+        _selectMainIndex(
+          historyIndex,
+          updateState: () {
+            if (widget.controller.currentUserRole?.toLowerCase() == 'helper' &&
+                MediaQuery.sizeOf(context).width < 600) {
+              _helperMobileTab = 2;
+            }
+          },
+        );
+        return true;
 
-        if (role != 'admin') {
-          AppToast.error(
-            context,
-            'Restock monitoring is available to administrators only.',
-          );
-          return false;
-        }
-
-        if (productId == null || productId.isEmpty) {
-          AppToast.error(context, 'Product information is missing.');
-          return false;
-        }
-
-        final items = [
-          ...widget.controller.filterInventory(query: '', category: 'All'),
-          ...widget.controller.filterDisabled(query: '', category: 'All'),
-        ];
-
-        final matches = items
-            .where((item) => item.id.toString() == productId)
-            .toList();
-
-        if (matches.isEmpty) {
-          AppToast.error(context, 'This product no longer exists.');
-          return false;
-        }
-
+      case NotificationType.inventoryAdded:
+      case NotificationType.inventoryUpdated:
+      case NotificationType.inventoryDeleted:
+        if (inventoryIndex < 0) return false;
         _selectMainIndex(inventoryIndex);
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          _handleSelectItem(matches.first);
-        });
-
+        final itemId =
+            notification.payload['itemId']?.toString() ??
+            notification.payload['productId']?.toString();
+        if (notification.type != NotificationType.inventoryDeleted &&
+            itemId != null &&
+            itemId.isNotEmpty) {
+          final matches = [
+            ...widget.controller.filterInventory(query: '', category: 'All'),
+            ...widget.controller.filterDisabled(query: '', category: 'All'),
+          ].where((item) => item.id == itemId);
+          if (matches.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _handleSelectItem(matches.first);
+            });
+          }
+        }
         return true;
 
       case NotificationType.system:
+        if (notification.payload['category'] == 'orderDelay') {
+          return orderId != null &&
+              orderId.isNotEmpty &&
+              _openAdminActivity('Orders', orderId: orderId);
+        }
+        if (notification.payload['category'] == 'storeAccess') {
+          final settingsIndex = _mainSections.indexOf(
+            MainSection.systemSettings,
+          );
+          if (settingsIndex < 0) return false;
+          _selectMainIndex(settingsIndex);
+          return true;
+        }
         if (notification.payload['category'] != 'inventoryApproval') {
           return false;
         }
-        if (notification.payload['requestType'] == 'discount' &&
-            notification.payload['status'] != 'pending' &&
-            posIndex >= 0) {
-          _selectMainIndex(posIndex);
+        if (notification.payload['status'] != 'pending' &&
+            widget.controller.currentUserRole?.toLowerCase() == 'helper') {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => HelperRequestPage(
+                controller: widget.controller,
+                approvalChanges: widget.realtimeSync.approvalRequestChanges,
+              ),
+            ),
+          );
           return true;
         }
-        if (notification.payload['status'] != 'pending') return false;
+        if (notification.payload['status'] != 'pending') {
+          final requestsIndex = _mainSections.indexOf(
+            MainSection.cashierRequests,
+          );
+          if (requestsIndex < 0) return false;
+          _selectMainIndex(requestsIndex);
+          return true;
+        }
         final approvalsIndex = _mainSections.indexOf(MainSection.approvals);
         if (approvalsIndex < 0) {
           AppToast.error(context, 'Pending Approvals is Admin-only.');
@@ -1933,9 +2029,6 @@ void _restoreMainSectionFromPath(String path) {
         }
         _selectMainIndex(approvalsIndex);
         return true;
-
-      default:
-        return false;
     }
   }
 
@@ -2346,7 +2439,7 @@ void _restoreMainSectionFromPath(String path) {
 
         final int cashierRequestsIndex = isCashier ? pageIndex++ : -1;
 
-        final int orderQueueIndex = (isHelper || isAdmin) ? pageIndex++ : -1;
+        final int orderQueueIndex = isHelper ? pageIndex++ : -1;
 
         final int inventoryIndex = (isAdmin || isHelper) ? pageIndex++ : -1;
 
@@ -2405,10 +2498,9 @@ void _restoreMainSectionFromPath(String path) {
               controller: widget.controller,
               isActive: _currentIndex == ordersActivityIndex,
               initialTab: _ordersActivityTab,
-              onOpenQueue: (orderId) => _selectMainIndex(
-                orderQueueIndex,
-                updateState: () => _targetOrderId = orderId,
-              ),
+              navigationRequest: _ordersActivityNavigationRequest,
+              targetOrderId: _ordersActivityTargetOrderId,
+              targetOrderRequest: _ordersActivityTargetRequest,
             ),
           );
 
@@ -2464,19 +2556,7 @@ void _restoreMainSectionFromPath(String path) {
           );
         }
 
-        if (isAdmin) {
-          pages.add(
-            OrderQueueMonitorPage(
-              controller: widget.controller,
-              targetOrderId: _targetOrderId,
-              onOrderOpened: () {
-                if (mounted) {
-                  setState(() => _targetOrderId = null);
-                }
-              },
-            ),
-          );
-        } else if (isHelper) {
+        if (isHelper) {
           pages.add(
             OrderQueuePage(
               controller: widget.controller,
@@ -2546,12 +2626,8 @@ void _restoreMainSectionFromPath(String path) {
               onExported: () {
                 _scanExportReminderNotifications();
               },
-              onCompleteOrder: (orderId) {
-                _selectMainIndex(
-                  orderQueueIndex,
-                  updateState: () => _targetOrderId = orderId,
-                );
-              },
+              onCompleteOrder: (orderId) =>
+                  _openAdminActivity('Orders', orderId: orderId),
             ),
           );
 
@@ -2645,10 +2721,7 @@ void _restoreMainSectionFromPath(String path) {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (isAdmin &&
-                    _staffPresenceService != null &&
-                    _currentIndex != dashboardIndex &&
-                    _currentIndex != ordersActivityIndex)
+                if (isAdmin && _staffPresenceService != null)
                   ActiveStaffButton(presenceService: _staffPresenceService!),
 
                 if (!kReleaseMode) ...[
@@ -2696,6 +2769,9 @@ void _restoreMainSectionFromPath(String path) {
                   index: _currentIndex,
                   children: _lazyPageChildren(pages),
                 ),
+          floatingActionButton: isAdmin && _staffPresenceService != null
+              ? ActiveStaffButton(presenceService: _staffPresenceService!)
+              : null,
           bottomNavigationBar: isHelper
               ? _helperChecklistVisible
                     ? null
@@ -3131,161 +3207,26 @@ Widget _buildHelperUnifiedWorkspace({
     required int posIndex,
     required int transactionIndex,
     required int inventoryIndex,
-  }) {
-    final name = widget.controller.currentUserName ?? 'Helper';
-    final initials = name
-        .trim()
-        .split(RegExp(r'\s+'))
-        .take(2)
-        .map((part) => part.isEmpty ? '' : part[0].toUpperCase())
-        .join();
-    final presence = _staffPresenceService;
-    return AppBar(
-      automaticallyImplyLeading: false,
-      backgroundColor: const Color(0xFF211F1D),
-      foregroundColor: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      toolbarHeight: 74,
-      titleSpacing: 16,
-      title: Row(
-        children: [
-          CircleAvatar(
-            radius: 21,
-            backgroundColor: const Color(0xFF45413E),
-            child: Text(
-              initials,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: _fontFam,
-                  ),
-                ),
-                Text(
-                  _helperLocationName == null
-                      ? 'Helper'
-                      : 'Helper · $_helperLocationName',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFFC2BCB7),
-                    fontSize: 12,
-                    fontFamily: _fontFam,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+  }) => PreferredSize(
+    preferredSize: const Size.fromHeight(62),
+    child: StaffRoleHeader(
+      userName: widget.controller.currentUserName ?? 'Helper',
+      tabs: const [],
+      selectedTab: _helperMobileTab,
+      onTabSelected: (_) {},
+      onProfile: _showProfileDialog,
+      onLogout: () => unawaited(_handleLogout()),
+      availability: _helperAvailabilityChip(),
+      notifications: _buildNotificationControls(
+        orderQueueIndex: orderQueueIndex,
+        posIndex: posIndex,
+        transactionIndex: transactionIndex,
+        inventoryIndex: inventoryIndex,
+        helperMobilePanel: true,
       ),
-      actions: [
-        if (presence != null)
-          AnimatedBuilder(
-            animation: presence,
-            builder: (context, _) {
-              return StreamBuilder<List<CustomerOrder>>(
-                stream: widget.controller.streamOrders(),
-                initialData: widget.controller.currentOrders,
-                builder: (context, snapshot) {
-                  final activeOrders =
-                      activePreparationWorkloads(
-                        snapshot.data ?? widget.controller.currentOrders,
-                      )[widget.controller.currentUserId] ??
-                      0;
-                  final availability = resolveStaffAvailability(
-                    isOnline: presence.isStarted,
-                    isOnBreak: presence.isOnBreak,
-                    isHelper: true,
-                    activeOrders: activeOrders,
-                  );
-                  final onBreak = availability == StaffAvailability.onBreak;
-                  final label = switch (availability) {
-                    StaffAvailability.offline => 'Offline',
-                    StaffAvailability.onBreak => 'On break',
-                    StaffAvailability.busy => 'Busy',
-                    StaffAvailability.available => 'Available',
-                  };
-                  final backgroundColor = switch (availability) {
-                    StaffAvailability.busy => const Color(0xFFC83D08),
-                    StaffAvailability.available => const Color(0xFF168047),
-                    _ => const Color(0xFF45413E),
-                  };
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: ActionChip(
-                      tooltip: onBreak
-                          ? 'Switch to Available'
-                          : 'Switch to On break',
-                      onPressed: _changingHelperBreak || !presence.isStarted
-                          ? null
-                          : _toggleHelperBreak,
-                      backgroundColor: backgroundColor,
-                      disabledColor: const Color(0xFF45413E),
-                      side: BorderSide.none,
-                      shape: const StadiumBorder(),
-                      label: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 7),
-                          Text(
-                            label,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              fontFamily: _fontFam,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        _buildNotificationControls(
-          orderQueueIndex: orderQueueIndex,
-          posIndex: posIndex,
-          transactionIndex: transactionIndex,
-          inventoryIndex: inventoryIndex,
-          iconColor: Colors.white,
-          helperMobilePanel: true,
-        ),
-        IconButton(
-          tooltip: 'Log out',
-          onPressed: () => unawaited(_handleLogout()),
-          icon: const Icon(Icons.logout_outlined, size: 22),
-        ),
-        const SizedBox(width: 8),
-      ],
-    );
-  }
+      showTabs: false,
+    ),
+  );
 
   PreferredSizeWidget _buildMobileAppBar({
     required bool isAdmin,
@@ -3294,6 +3235,27 @@ Widget _buildHelperUnifiedWorkspace({
     required int transactionIndex,
     required int inventoryIndex,
   }) {
+    if (!isAdmin) {
+      return PreferredSize(
+        preferredSize: const Size.fromHeight(62),
+        child: StaffRoleHeader(
+          userName: widget.controller.currentUserName ?? 'Cashier',
+          tabs: const [],
+          selectedTab: _currentIndex ?? 0,
+          onTabSelected: (_) {},
+          onProfile: _showProfileDialog,
+          onLogout: () => unawaited(_handleLogout()),
+          onInventory: () => _selectMainIndex(inventoryIndex),
+          notifications: _buildNotificationControls(
+            orderQueueIndex: orderQueueIndex,
+            posIndex: posIndex,
+            transactionIndex: transactionIndex,
+            inventoryIndex: inventoryIndex,
+          ),
+          showTabs: false,
+        ),
+      );
+    }
     return AppBar(
       automaticallyImplyLeading: isAdmin,
       backgroundColor: Colors.white,
@@ -3818,6 +3780,92 @@ Widget _buildHelperUnifiedWorkspace({
       style: const TextStyle(color: Color(0xFFA59B95), fontSize: 12),
     ),
   );
+  Widget _helperAvailabilityChip() {
+    final presence = _staffPresenceService;
+    if (presence == null) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: presence,
+      builder: (context, _) => StreamBuilder<List<CustomerOrder>>(
+        stream: widget.controller.streamOrders(),
+        initialData: widget.controller.currentOrders,
+        builder: (context, snapshot) {
+          final activeOrders =
+              activePreparationWorkloads(
+                snapshot.data ?? widget.controller.currentOrders,
+              )[widget.controller.currentUserId] ??
+              0;
+          final availability = resolveStaffAvailability(
+            isOnline: presence.isStarted,
+            isOnBreak: presence.isOnBreak,
+            isHelper: true,
+            activeOrders: activeOrders,
+          );
+          final label = switch (availability) {
+            StaffAvailability.offline => 'Offline',
+            StaffAvailability.onBreak => 'On break',
+            StaffAvailability.busy => 'Busy',
+            StaffAvailability.available => 'Available',
+          };
+          final background = switch (availability) {
+            StaffAvailability.busy => const Color(0xFFC83D08),
+            StaffAvailability.available => const Color(0xFF168047),
+            _ => const Color(0xFF45413E),
+          };
+          return ActionChip(
+            tooltip: presence.isOnBreak
+                ? 'Switch to Available'
+                : 'Switch to On break',
+            onPressed: _changingHelperBreak || !presence.isStarted
+                ? null
+                : _toggleHelperBreak,
+            backgroundColor: background,
+            disabledColor: const Color(0xFF45413E),
+            side: BorderSide.none,
+            shape: const StadiumBorder(),
+            label: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                fontFamily: _fontFam,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _cashierStoreStatus() {
+    final window = _scheduledStoreAccessWindow;
+    final now = DateTime.now();
+    final isOpen =
+        window != null &&
+        !now.isBefore(window.opening) &&
+        now.isBefore(window.shiftEnd);
+    final nextOpening = window != null && now.isAfter(window.shiftEnd)
+        ? window.opening.add(const Duration(days: 1))
+        : window?.opening;
+    final label = window == null
+        ? 'Store hours unavailable'
+        : isOpen
+        ? 'Open · closes ${_dashboardTime(window.shiftEnd)}'
+        : 'Closed · opens ${_dashboardTime(nextOpening!)}';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.circle,
+          size: 9,
+          color: isOpen ? const Color(0xFF15803D) : const Color(0xFF9A8B80),
+        ),
+        const SizedBox(width: 7),
+        Text(label, style: const TextStyle(fontSize: 13)),
+      ],
+    );
+  }
+
   Widget _buildTopNavBar({
     required bool isHelper,
     required int orderQueueIndex,
@@ -3826,7 +3874,7 @@ Widget _buildHelperUnifiedWorkspace({
     required int transactionIndex,
     required int inventoryIndex,
     required int staffHistoryIndex,
-  }) {
+    }) {
     if (!isHelper) {
       return _buildCashierTopNavBar(
         posIndex: posIndex,
@@ -3837,120 +3885,30 @@ Widget _buildHelperUnifiedWorkspace({
         inventoryIndex: inventoryIndex,
       );
     }
-    return Container(
-      height: 60,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+
+    final targets = isHelper
+        ? [orderQueueIndex, inventoryIndex, staffHistoryIndex]
+        : [posIndex, staffHistoryIndex, cashierRequestsIndex];
+    return StaffRoleHeader(
+      userName:
+          widget.controller.currentUserName ??
+          (isHelper ? 'Helper' : 'Cashier'),
+      tabs: isHelper
+          ? const ['Order queue', 'Inventory', 'History']
+          : const ['Register', 'My orders', 'Requests'],
+      selectedTab: targets.indexOf(_currentIndex ?? -1),
+      onTabSelected: (index) => _selectMainIndex(targets[index]),
+      onProfile: _showProfileDialog,
+      onLogout: () => unawaited(_handleLogout()),
+      onInventory: () => _selectMainIndex(inventoryIndex),
+      availability: isHelper ? _helperAvailabilityChip() : null,
+      notifications: _buildNotificationControls(
+        orderQueueIndex: orderQueueIndex,
+        posIndex: posIndex,
+        transactionIndex: transactionIndex,
+        inventoryIndex: inventoryIndex,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Row(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: _accent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  LucideIcons.package,
-                  color: Colors.white,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Inventory Plus',
-                style: TextStyle(
-                  color: _darkText,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 22,
-                  fontFamily: _fontFam,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(width: 56),
-
-          StreamBuilder<List<CustomerOrder>>(
-            stream: widget.controller.streamOrders(),
-            builder: (context, snapshot) {
-              final currentUserId = widget.controller.currentUserId;
-
-              final pendingCount = snapshot.hasData
-                  ? snapshot.data!.where((order) {
-                      if (order.status != 'pending') {
-                        return false;
-                      }
-
-                      if (!isHelper) {
-                        return true;
-                      }
-
-                      final assignedId = order.assignedHelperId?.toString();
-
-                      // Helper sees unassigned orders
-                      // and orders assigned to them.
-                      return assignedId == null ||
-                          assignedId.isEmpty ||
-                          assignedId == currentUserId?.toString();
-                    }).length
-                  : 0;
-
-              return Row(
-                children: [
-                  if (isHelper)
-                    _buildTopNavTabItem(
-                      index: orderQueueIndex,
-                      icon: LucideIcons.fileText,
-                      label: 'Order queue',
-                      badgeCount: pendingCount,
-                    )
-                  else
-                    _buildTopNavTabItem(
-                      index: posIndex,
-                      icon: LucideIcons.shoppingCart,
-                      label: 'POS System',
-                    ),
-
-                  const SizedBox(width: 24),
-
-                  _buildTopNavTabItem(
-                    index: inventoryIndex,
-                    icon: LucideIcons.box,
-                    label: 'Inventory',
-                  ),
-
-                  const SizedBox(width: 24),
-
-                  _buildTopNavTabItem(
-                    index: staffHistoryIndex,
-                    icon: LucideIcons.history,
-                    label: 'History',
-                  ),
-                ],
-              );
-            },
-          ),
-
-          const Spacer(),
-
-          _buildNotificationControls(
-            orderQueueIndex: orderQueueIndex,
-            posIndex: posIndex,
-            transactionIndex: transactionIndex,
-            inventoryIndex: inventoryIndex,
-          ),
-
-          const SizedBox(width: 12),
-
-          _buildTopProfileChip(),
-        ],
-      ),
+      extra: isHelper ? null : _cashierStoreStatus(),
     );
   }
 
@@ -3976,8 +3934,8 @@ Widget _buildHelperUnifiedWorkspace({
       final storeStatus = window == null
           ? 'Store hours unavailable'
           : isOpen
-          ? 'Open · closes ${_dashboardTime(window.shiftEnd)}'
-          : 'Closed · opens ${_dashboardTime(nextOpening!)}';
+          ? 'Open ┬╖ closes ${_dashboardTime(window.shiftEnd)}'
+          : 'Closed ┬╖ opens ${_dashboardTime(nextOpening!)}';
       final name = widget.controller.currentUserName?.trim();
       final displayName = name == null || name.isEmpty ? 'Cashier' : name;
       final parts = displayName.split(RegExp(r'\s+'));
@@ -4189,62 +4147,6 @@ Widget _buildHelperUnifiedWorkspace({
     ),
   );
 
-  Widget _buildTopNavTabItem({
-    required int index,
-    required IconData icon,
-    required String label,
-    int? badgeCount,
-  }) {
-    final isSelected = _currentIndex == index;
-
-    return InkWell(
-      onTap: () => _selectMainIndex(index),
-      child: Container(
-        height: 72,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          border: isSelected
-              ? const Border(bottom: BorderSide(color: _accent, width: 3))
-              : null,
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: isSelected ? _accent : _inactiveText),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: _fontFam,
-                fontSize: 14,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                color: isSelected ? _accent : _inactiveText,
-              ),
-            ),
-            if (badgeCount != null && badgeCount > 0) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _accent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '$badgeCount',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: _fontFam,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildMobileProfileButton() {
     final name = widget.controller.currentUserName ?? 'User';
     final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
@@ -4304,75 +4206,6 @@ Widget _buildHelperUnifiedWorkspace({
               fontFamily: _fontFam,
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTopProfileChip() {
-    final name = widget.controller.currentUserName ?? 'User';
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
-
-    return InkWell(
-      onTap: _showProfileDialog,
-      borderRadius: BorderRadius.circular(30),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade200),
-          borderRadius: BorderRadius.circular(30),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: _accent,
-              child: Text(
-                initial,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  fontFamily: _fontFam,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontFamily: _fontFam,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: _darkText,
-                  ),
-                ),
-                Text(
-                  'On shift',
-                  style: TextStyle(
-                    fontFamily: _fontFam,
-                    fontSize: 11,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 6),
-            IconButton(
-              icon: const Icon(
-                LucideIcons.logOut,
-                size: 16,
-                color: Colors.redAccent,
-              ),
-              onPressed: _handleLogout,
-              constraints: const BoxConstraints(),
-              padding: EdgeInsets.zero,
-            ),
-          ],
         ),
       ),
     );

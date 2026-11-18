@@ -32,6 +32,7 @@ class ApprovalCenterPage extends StatefulWidget {
 class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   static const _blue = Color(0xFF2563EB);
   static const _font = 'Hellix';
+  static const _pageSize = 10;
   StreamSubscription<InventoryApprovalPage>? _subscription;
   InventoryApprovalStatus _status = InventoryApprovalStatus.pending;
   InventoryApprovalPage? _snapshot;
@@ -47,8 +48,10 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   String? _error;
   String? _selectedRequestId;
   InventoryApprovalType? _typeFilter;
+  String _dateFilter = 'All time';
+  DateTime? _requestedFrom;
+  DateTime? _requestedBefore;
   final TextEditingController _inlineNote = TextEditingController();
-
 
   @override
   void initState() {
@@ -82,14 +85,22 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   }
 
   void _acceptSnapshot(InventoryApprovalPage value) {
-    if (!mounted || value.key.status != _status || value.key.page != _page) {
+    if (!mounted ||
+        value.key.status != _status ||
+        value.key.page != _page ||
+        value.key.pageSize != _pageSize ||
+        value.key.requestedFrom != _requestedFrom ||
+        value.key.requestedBefore != _requestedBefore) {
       return;
     }
     if (identical(_lastAcceptedSnapshot, value)) return;
     _lastAcceptedSnapshot = value;
     setState(() {
       _snapshot = value;
-      _summary[value.key.status] = value.totalCount;
+      if (value.key.requestedFrom == null &&
+          value.key.requestedBefore == null) {
+        _summary[value.key.status] = value.totalCount;
+      }
       if (_selectedRequestId != null &&
           !value.requests.any((request) => request.id == _selectedRequestId)) {
         _selectedRequestId = null;
@@ -98,7 +109,9 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       _loading = false;
       _error = null;
     });
-    if (value.key.status == InventoryApprovalStatus.pending) {
+    if (value.key.status == InventoryApprovalStatus.pending &&
+        value.key.requestedFrom == null &&
+        value.key.requestedBefore == null) {
       widget.onPendingCountChanged?.call(value.totalCount);
     }
     unawaited(_loadSummary());
@@ -126,9 +139,16 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   }
 
   Future<void> _load({bool force = false}) async {
+    final status = _status;
+    final page = _page;
+    final requestedFrom = _requestedFrom;
+    final requestedBefore = _requestedBefore;
     final cached = widget.controller.cachedApprovalPage(
-      status: _status,
-      page: _page,
+      status: status,
+      page: page,
+      pageSize: _pageSize,
+      requestedFrom: requestedFrom,
+      requestedBefore: requestedBefore,
     );
     if (mounted) {
       setState(() {
@@ -140,8 +160,11 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     try {
       _acceptSnapshot(
         await widget.controller.activateApprovalPage(
-          status: _status,
-          page: _page,
+          status: status,
+          page: page,
+          pageSize: _pageSize,
+          requestedFrom: requestedFrom,
+          requestedBefore: requestedBefore,
           force: force,
         ),
       );
@@ -151,7 +174,13 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         error: error,
         stackTrace: stackTrace,
       );
-      if (!mounted) return;
+      if (!mounted ||
+          status != _status ||
+          page != _page ||
+          requestedFrom != _requestedFrom ||
+          requestedBefore != _requestedBefore) {
+        return;
+      }
       setState(() {
         _loading = false;
         _error = AppErrorMapper.message(
@@ -166,6 +195,28 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     if (status == _status) return;
     setState(() {
       _status = status;
+      _page = 1;
+      _snapshot = null;
+      _selectedRequestId = null;
+      _inlineNote.clear();
+    });
+    unawaited(_load());
+  }
+
+  void _changeDateFilter(String value) {
+    if (value == _dateFilter) return;
+    final now = DateTime.now();
+    setState(() {
+      _dateFilter = value;
+      _requestedFrom = switch (value) {
+        'Today' => DateTime(now.year, now.month, now.day),
+        'Last 7 days' => now.subtract(const Duration(days: 7)),
+        'Last 30 days' => now.subtract(const Duration(days: 30)),
+        _ => null,
+      };
+      _requestedBefore = value == 'Today'
+          ? DateTime(now.year, now.month, now.day + 1)
+          : null;
       _page = 1;
       _snapshot = null;
       _selectedRequestId = null;
@@ -990,12 +1041,11 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      _approvalStatusTabs(),
+      const SizedBox(height: 10),
       Row(
         children: [
-          Flexible(child: _approvalStatusTabs()),
-          const SizedBox(width: 12),
-          SizedBox(
-            height: 38,
+          Expanded(
             child: AppStyledDropdown<InventoryApprovalType?>(
               value: _typeFilter,
               isDense: true,
@@ -1016,6 +1066,33 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
                 _selectedRequestId = null;
                 _inlineNote.clear();
               }),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: AppStyledDropdown<String>(
+              value: _dateFilter,
+              isDense: true,
+              style: const TextStyle(
+                color: Color(0xFF171717),
+                fontSize: 13,
+                fontFamily: _font,
+              ),
+              items: const [
+                DropdownMenuItem(value: 'All time', child: Text('All time')),
+                DropdownMenuItem(value: 'Today', child: Text('Today')),
+                DropdownMenuItem(
+                  value: 'Last 7 days',
+                  child: Text('Last 7 days'),
+                ),
+                DropdownMenuItem(
+                  value: 'Last 30 days',
+                  child: Text('Last 30 days'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) _changeDateFilter(value);
+              },
             ),
           ),
         ],
@@ -1050,7 +1127,9 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
                 child: Center(
                   child: Text(
                     _typeFilter == null
-                        ? 'No ${_status.label.toLowerCase()} requests.'
+                        ? _dateFilter == 'All time'
+                            ? 'No ${_status.label.toLowerCase()} requests.'
+                            : 'No ${_status.label.toLowerCase()} requests for $_dateFilter.'
                         : 'No ${_typeFilter!.label.toLowerCase()} requests on this page.',
                     style: const TextStyle(
                       color: Color(0xFF827872),

@@ -254,6 +254,7 @@ class CustomerOrder {
   final List<CustomerOrderItem> items;
   final String status;
   final DateTime createdAt;
+  final DateTime? updatedAt;
   final DateTime? _canonicalEventAt;
   final double totalAmount;
   final double discountAmount;
@@ -299,6 +300,7 @@ class CustomerOrder {
     required this.items,
     required this.status,
     required this.createdAt,
+    this.updatedAt,
     DateTime? eventAt,
     this.totalAmount = 0.0,
     this.discountAmount = 0.0,
@@ -355,6 +357,7 @@ class CustomerOrder {
       id: json['id'].toString(),
       status: json['status'] ?? 'pending',
       createdAt: _parseDate(json['created_at']) ?? DateTime.now(),
+      updatedAt: _parseDate(json['updated_at']),
       eventAt: _parseDate(json['event_at']),
       totalAmount: (json['total_amount'] as num?)?.toDouble() ?? 0.0,
       discountAmount: (json['discount_amount'] as num?)?.toDouble() ?? 0.0,

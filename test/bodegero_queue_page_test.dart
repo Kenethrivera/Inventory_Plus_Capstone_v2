@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inventory_plus/data/inventory.dart';
@@ -33,6 +35,11 @@ class _QueueController extends InventoryController {
 
   @override
   Future<void> fetchMapLayout({bool force = false}) async {}
+
+  @override
+  Future<Map<String, dynamic>> startOrderLoadingClock(String orderId) async => {
+    'paused': false,
+  };
 
   @override
   Future<BodegeroLoadingHistoryPage> fetchMyLoadingHistory({
@@ -92,6 +99,78 @@ class _QueueController extends InventoryController {
   }) async {
     statusUpdateCalled = true;
   }
+}
+
+class _ClaimQueueController extends _QueueController {
+  _ClaimQueueController(super.order) {
+    activeLocationId = 'store-1';
+  }
+
+  final updates = StreamController<List<CustomerOrder>>.broadcast();
+  final moreOrders = <CustomerOrder>[];
+  Completer<void>? firstClaimGate;
+  CustomerOrder? claimedOrder;
+  bool failClaim = false;
+  int claimCount = 0;
+  int clockCount = 0;
+
+  @override
+  bool get hasUsableOrdersSnapshot => true;
+
+  @override
+  List<CustomerOrder> get currentOrders => [
+    claimedOrder ?? order,
+    ...moreOrders,
+  ];
+
+  @override
+  Stream<List<CustomerOrder>> get orderSnapshots => updates.stream;
+
+  @override
+  Stream<List<CustomerOrder>> streamOrders() => updates.stream;
+
+  @override
+  CustomerOrder? orderById(Object? orderId) =>
+      orderId?.toString() == order.id ? claimedOrder ?? order : null;
+
+  @override
+  Future<CustomerOrder> claimOrderLoading(String orderId) async {
+    claimCount++;
+    if (orderId == order.id) await firstClaimGate?.future;
+    if (failClaim) throw StateError('loading_claim_conflict');
+    final claimed = CustomerOrder.fromJson({
+      'id': orderId,
+      'status': 'pending',
+      'created_at': '2026-11-14T08:00:00Z',
+      'assigned_bodegero_id': 'bodegero-1',
+      'assigned_bodegero_name': 'Test Bodegero',
+      'items': [
+        {
+          'product_id': 'cement-1',
+          'product_name': 'Cement',
+          'quantity': 2,
+          'requires_loading': true,
+        },
+      ],
+    });
+    if (orderId == order.id) {
+      claimedOrder = claimed;
+    } else {
+      moreOrders.removeWhere((item) => item.id == orderId);
+      moreOrders.add(claimed);
+    }
+    updates.add(currentOrders);
+    return claimed;
+  }
+
+  @override
+  Future<Map<String, dynamic>> startOrderLoadingClock(String orderId) async {
+    clockCount++;
+    return {'paused': false};
+  }
+
+  @override
+  Future<void> retryOrdersSnapshot() async {}
 }
 
 class _Presence extends StaffPresenceService {
@@ -206,7 +285,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byTooltip('Notifications'), findsOneWidget);
-    expect(find.byTooltip('Log out'), findsOneWidget);
+    expect(find.byTooltip('Account menu'), findsOneWidget);
+    await tester.tap(find.byTooltip('Account menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('Log out'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -245,21 +327,174 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('On break'), findsOneWidget);
     expect(find.textContaining("You're on break"), findsOneWidget);
-    expect(
-      tester
-          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Claim'))
-          .onPressed,
-      isNull,
+    final openCard = find.ancestor(
+      of: find.text('#OPEN-123'),
+      matching: find.byType(InkWell),
     );
+    expect(tester.widget<InkWell>(openCard.first).onTap, isNull);
+    expect(find.text('Claim'), findsNothing);
     await tester.tap(find.byTooltip('Switch to Available'));
     await tester.pumpAndSettle();
     expect(find.text('Available'), findsOneWidget);
-    expect(
-      tester
-          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Claim'))
-          .onPressed,
-      isNotNull,
+    expect(tester.widget<InkWell>(openCard.first).onTap, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Opening an unassigned loading order claims and opens it', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final openOrder = CustomerOrder.fromJson({
+      'id': 'open-123456',
+      'status': 'pending',
+      'created_at': '2026-11-14T08:00:00Z',
+      'items': [
+        {
+          'product_id': 'cement-1',
+          'product_name': 'Cement',
+          'quantity': 2,
+          'requires_loading': true,
+        },
+      ],
+    });
+    final controller = _ClaimQueueController(openOrder);
+    addTearDown(controller.updates.close);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BodegeroQueuePage(controller: controller, onLogout: () {}),
+      ),
     );
+    await tester.pumpAndSettle();
+    expect(find.text('Claim'), findsNothing);
+
+    await tester.tap(find.text('#OPEN-123'));
+    await tester.pumpAndSettle();
+
+    expect(controller.claimCount, 1);
+    expect(controller.clockCount, 1);
+    expect(controller.claimedOrder?.assignedBodegeroId, 'bodegero-1');
+    expect(find.text('Load onto truck'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Available Bodegero claims a pending order after login', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final order = CustomerOrder.fromJson({
+      'id': 'auto-123456',
+      'status': 'pending',
+      'created_at': '2026-11-14T08:00:00Z',
+      'items': [
+        {
+          'product_id': 'cement-1',
+          'product_name': 'Cement',
+          'quantity': 2,
+          'requires_loading': true,
+        },
+      ],
+    });
+    final controller = _ClaimQueueController(order);
+    final presence = _Presence();
+    addTearDown(controller.updates.close);
+    addTearDown(presence.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BodegeroQueuePage(
+          controller: controller,
+          presenceService: presence,
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.claimCount, 1);
+    expect(controller.claimedOrder?.assignedBodegeroId, 'bodegero-1');
+    expect(controller.clockCount, 0);
+    expect(find.text('Start loading'), findsOneWidget);
+    expect(find.text('Claim'), findsNothing);
+  });
+
+  testWidgets('An order arriving during a claim is also claimed', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    CustomerOrder unassigned(String id) => CustomerOrder.fromJson({
+      'id': id,
+      'status': 'pending',
+      'created_at': '2026-11-14T08:00:00Z',
+      'items': [
+        {
+          'product_id': 'cement-1',
+          'product_name': 'Cement',
+          'quantity': 2,
+          'requires_loading': true,
+        },
+      ],
+    });
+    final controller = _ClaimQueueController(unassigned('first-order'))
+      ..firstClaimGate = Completer<void>();
+    final presence = _Presence();
+    addTearDown(controller.updates.close);
+    addTearDown(presence.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BodegeroQueuePage(
+          controller: controller,
+          presenceService: presence,
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(controller.claimCount, 1);
+
+    controller.moreOrders.add(unassigned('second-order'));
+    controller.updates.add(controller.currentOrders);
+    await tester.pump();
+    controller.firstClaimGate!.complete();
+    await tester.pumpAndSettle();
+
+    expect(controller.claimCount, 2);
+    expect(controller.moreOrders.single.assignedBodegeroId, 'bodegero-1');
+    expect(find.text('Start loading'), findsNWidgets(2));
+  });
+
+  testWidgets('A lost claim leaves the order unopened', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final openOrder = CustomerOrder.fromJson({
+      'id': 'open-123456',
+      'status': 'pending',
+      'created_at': '2026-11-14T08:00:00Z',
+      'items': [
+        {
+          'product_id': 'cement-1',
+          'product_name': 'Cement',
+          'quantity': 2,
+          'requires_loading': true,
+        },
+      ],
+    });
+    final controller = _ClaimQueueController(openOrder)..failClaim = true;
+    addTearDown(controller.updates.close);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BodegeroQueuePage(controller: controller, onLogout: () {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('#OPEN-123'));
+    await tester.pumpAndSettle();
+
+    expect(controller.claimCount, 1);
+    expect(controller.clockCount, 0);
+    expect(find.text('Load onto truck'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -267,8 +502,10 @@ void main() {
     testWidgets('Bodegero queue and checklist fit at ${size.width}px', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(size);
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -281,7 +518,24 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Your loading orders'), findsOneWidget);
-      expect(find.text('Open orders'), findsOneWidget);
+      expect(
+        MediaQuery.sizeOf(tester.element(find.byType(BodegeroQueuePage))).width,
+        size.width,
+      );
+      if (size.width < 900) {
+        expect(find.text('Open orders'), findsOneWidget);
+      } else {
+        expect(find.text('Queue'), findsOneWidget);
+        expect(find.text('Map'), findsOneWidget);
+        expect(find.text('History'), findsOneWidget);
+        expect(find.text('Request'), findsOneWidget);
+        expect(
+          tester
+              .widget<Scaffold>(find.byType(Scaffold).first)
+              .bottomNavigationBar,
+          isNull,
+        );
+      }
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.text('Start loading'));
@@ -290,6 +544,19 @@ void main() {
       expect(find.text('Load onto truck'), findsOneWidget);
       expect(find.text('Scan shelf QR'), findsOneWidget);
       expect(find.text('Truck loading proof'), findsOneWidget);
+      if (size.width >= 900) {
+        expect(find.text('Loading list · scan and count'), findsOneWidget);
+        expect(find.text('Store map · heavy item locations'), findsOneWidget);
+        expect(find.text('Queue'), findsOneWidget);
+        await tester.tap(find.byTooltip('Back to queue'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Map'));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('Store map'), findsOneWidget);
+        await tester.tap(find.text('Queue'));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('Your loading orders'), findsOneWidget);
+      }
       expect(tester.takeException(), isNull);
     });
   }
@@ -310,7 +577,13 @@ void main() {
     expect(find.text('Map'), findsOneWidget);
     expect(find.text('History'), findsOneWidget);
     expect(find.text('Request'), findsOneWidget);
-    expect(find.text('Me'), findsOneWidget);
+    expect(find.text('Me'), findsNothing);
+    expect(
+      tester
+          .widget<BottomNavigationBar>(find.byType(BottomNavigationBar))
+          .items,
+      hasLength(4),
+    );
 
     await tester.tap(find.text('History'));
     await tester.pumpAndSettle();
@@ -362,10 +635,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Stock request'), findsOneWidget);
 
-    await tester.tap(find.text('Me'));
+    await tester.tap(find.byTooltip('Account menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Profile'));
     await tester.pumpAndSettle();
     expect(find.text('Test Bodegero'), findsWidgets);
     expect(find.textContaining('Bodegero'), findsWidgets);
+    await tester.tap(find.text('Queue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Your loading orders'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

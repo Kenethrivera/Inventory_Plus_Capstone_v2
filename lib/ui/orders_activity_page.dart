@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../data/inventory.dart';
 import '../logic/history_pagination.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/order_assignment_status.dart';
 import '../logic/orders_activity_metrics.dart';
 import '../services/csv_export.dart';
 import 'widgets/order_details_drawer.dart';
@@ -18,14 +20,18 @@ class OrdersActivityPage extends StatefulWidget {
     super.key,
     required this.controller,
     required this.isActive,
-    required this.onOpenQueue,
     this.initialTab = 'Orders',
+    this.navigationRequest = 0,
+    this.targetOrderId,
+    this.targetOrderRequest = 0,
   });
 
   final InventoryController controller;
   final bool isActive;
-  final ValueChanged<String> onOpenQueue;
   final String initialTab;
+  final int navigationRequest;
+  final String? targetOrderId;
+  final int targetOrderRequest;
 
   @override
   State<OrdersActivityPage> createState() => _OrdersActivityPageState();
@@ -39,6 +45,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   static const _background = Color(0xFFF7F6F4);
   static const _tabs = ['Orders', 'Payments', 'Stock movements'];
   static const _pageSize = 10;
+  static const _stockCacheLimit = 24;
 
   late String _tab = widget.initialTab;
   String _status = 'All statuses';
@@ -50,16 +57,33 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   bool _exporting = false;
   bool _dirtyOrders = false;
   bool _dirtyStock = false;
+  bool _ordersLoaded = false;
   late Future<List<CustomerOrder>> _ordersFuture;
-  late Future<List<Map<String, dynamic>>> _stockFuture;
+  late Future<StockMovementPage> _stockFuture;
+  final Map<int, Future<StockMovementPage>> _stockPages = {};
+  int _stockQueryGeneration = 0;
+  Timer? _stockSearchDebounce;
+  bool _stockSearchPending = false;
+  final _jumpController = TextEditingController(text: '1');
   StreamSubscription<HistoryInvalidation>? _updates;
   final _searchController = TextEditingController();
+  final _highlightKey = GlobalKey();
+  String? _pendingTargetOrderId;
+  String? _highlightedOrderId;
 
   @override
   void initState() {
     super.initState();
-    _ordersFuture = widget.controller.loadActivityOrders();
-    _stockFuture = widget.controller.loadAllTransactionHistory();
+    _pendingTargetOrderId = widget.targetOrderId;
+    _highlightedOrderId = widget.targetOrderId;
+    _ordersLoaded = _tab != 'Stock movements';
+    _ordersFuture = _ordersLoaded
+        ? widget.controller.loadActivityOrders()
+        : Future.value(const <CustomerOrder>[]);
+    _stockFuture = Future.value(
+      const StockMovementPage(records: [], totalCount: 0),
+    );
+    if (_tab == 'Stock movements' && widget.isActive) _resetStockQuery();
     _updates = widget.controller.historyInvalidations.listen((event) {
       if (event.kind == HistoryInvalidationKind.orderHistory ||
           event.kind == HistoryInvalidationKind.scope) {
@@ -76,37 +100,167 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   @override
   void didUpdateWidget(covariant OrdersActivityPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive && !widget.isActive) {
+      _pendingTargetOrderId = null;
+      _highlightedOrderId = null;
+    }
     if (widget.initialTab != oldWidget.initialTab ||
+        widget.navigationRequest != oldWidget.navigationRequest ||
         (widget.isActive && !oldWidget.isActive)) {
       _tab = widget.initialTab;
-      if (widget.initialTab != oldWidget.initialTab) _page = 1;
+      if (widget.initialTab != oldWidget.initialTab ||
+          widget.navigationRequest != oldWidget.navigationRequest) {
+        _page = 1;
+        _jumpController.text = '1';
+        _pendingTargetOrderId = null;
+        _highlightedOrderId = null;
+      }
+      if (_tab == 'Stock movements') _resetStockQuery();
+      if (_tab != 'Stock movements' && (!_ordersLoaded || _dirtyOrders)) {
+        _ordersFuture = widget.controller.loadActivityOrders();
+        _ordersLoaded = true;
+        _dirtyOrders = false;
+      }
+    }
+    if ((widget.targetOrderId != oldWidget.targetOrderId ||
+            widget.targetOrderRequest != oldWidget.targetOrderRequest) &&
+        widget.targetOrderId != null) {
+      _pendingTargetOrderId = widget.targetOrderId;
+      _highlightedOrderId = widget.targetOrderId;
+      _tab = 'Orders';
+      _status = 'All statuses';
+      _staff = 'All staff';
+      _time = 'All time';
+      _search = '';
+      _searchController.clear();
+      _page = 1;
+      _jumpController.text = '1';
+      _ordersFuture = widget.controller.loadActivityOrders();
+      _ordersLoaded = true;
+      _dirtyOrders = false;
     }
     if (widget.controller != oldWidget.controller) {
       _page = 1;
-      _ordersFuture = widget.controller.loadActivityOrders();
-      _stockFuture = widget.controller.loadAllTransactionHistory();
+      _jumpController.text = '1';
+      _ordersLoaded = _tab != 'Stock movements';
+      _ordersFuture = _ordersLoaded
+          ? widget.controller.loadActivityOrders()
+          : Future.value(const <CustomerOrder>[]);
+      _dirtyOrders = false;
+      _resetStockQuery();
     } else if (widget.isActive && !oldWidget.isActive) {
       _refreshDirty();
     }
   }
 
   void _refreshDirty() {
-    if (!_dirtyOrders && !_dirtyStock) return;
+    if ((!_dirtyOrders || _tab == 'Stock movements') && !_dirtyStock) return;
     setState(() {
-      if (_dirtyOrders) _ordersFuture = widget.controller.loadActivityOrders();
-      if (_dirtyStock) {
-        _stockFuture = widget.controller.loadAllTransactionHistory();
+      if (_dirtyOrders && _tab != 'Stock movements') {
+        _ordersFuture = widget.controller.loadActivityOrders();
+        _ordersLoaded = true;
+        _dirtyOrders = false;
       }
-      _dirtyOrders = false;
-      _dirtyStock = false;
+      if (_dirtyStock) {
+        _resetStockQuery();
+        _dirtyStock = false;
+      }
     });
   }
 
   @override
   void dispose() {
     unawaited(_updates?.cancel());
+    _stockSearchDebounce?.cancel();
+    _jumpController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  (DateTime?, DateTime?) _stockPeriod() {
+    final now = DateTime.now();
+    return switch (_time) {
+      'Today' => (
+        DateTime(now.year, now.month, now.day),
+        DateTime(now.year, now.month, now.day + 1),
+      ),
+      'Last 7 days' => (now.subtract(const Duration(days: 7)), null),
+      'Last 30 days' => (now.subtract(const Duration(days: 30)), null),
+      _ => (null, null),
+    };
+  }
+
+  void _resetStockQuery() {
+    _stockSearchPending = false;
+    _stockQueryGeneration++;
+    _stockPages.clear();
+    _stockFuture = _tab == 'Stock movements' && widget.isActive
+        ? _loadStockPage(_page)
+        : Future.value(const StockMovementPage(records: [], totalCount: 0));
+  }
+
+  Future<StockMovementPage> _loadStockPage(int page) {
+    final cached = _stockPages[page];
+    if (cached != null) {
+      _stockPages.remove(page);
+      _stockPages[page] = cached;
+      return cached;
+    }
+    final generation = _stockQueryGeneration;
+    final (start, end) = _stockPeriod();
+    final future = widget.controller.loadStockMovementPage(
+      page: page,
+      pageSize: _pageSize,
+      movementType: _movementFilter,
+      search: _search,
+      periodStart: start,
+      periodEnd: end,
+    );
+    _stockPages[page] = future;
+    if (_stockPages.length > _stockCacheLimit) {
+      _stockPages.remove(_stockPages.keys.first);
+    }
+    future.then(
+      (result) {
+        if (!mounted ||
+            generation != _stockQueryGeneration ||
+            _tab != 'Stock movements' ||
+            !widget.isActive ||
+            page != _page) {
+          return;
+        }
+        final lastPage = math.max(
+          1,
+          (result.totalCount + _pageSize - 1) ~/ _pageSize,
+        );
+        if (page > lastPage) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && generation == _stockQueryGeneration) {
+              _changePage(lastPage);
+            }
+          });
+        } else if (page < lastPage) {
+          unawaited(
+            _loadStockPage(page + 1).then((_) {}, onError: (Object error) {}),
+          );
+        }
+      },
+      onError: (Object error) {
+        if (identical(_stockPages[page], future)) _stockPages.remove(page);
+      },
+    );
+    return future;
+  }
+
+  void _changePage(int page) {
+    if (page < 1) return;
+    setState(() {
+      _page = page;
+      _jumpController.text = '$page';
+      _pendingTargetOrderId = null;
+      _highlightedOrderId = null;
+      if (_tab == 'Stock movements') _stockFuture = _loadStockPage(page);
+    });
   }
 
   @override
@@ -114,145 +268,166 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
     color: _background,
     child: FutureBuilder<List<CustomerOrder>>(
       future: _ordersFuture,
-      builder: (context, ordersSnapshot) =>
-          FutureBuilder<List<Map<String, dynamic>>>(
-            future: _stockFuture,
-            builder: (context, stockSnapshot) {
-              final orders = ordersSnapshot.data ?? const <CustomerOrder>[];
-              final stock =
-                  stockSnapshot.data ?? const <Map<String, dynamic>>[];
-              final staff = <String>{
-                for (final order in orders) ...[
-                  if (order.createdByName?.trim().isNotEmpty == true)
-                    order.createdByName!,
-                  if (order.assignedHelperName?.trim().isNotEmpty == true)
-                    order.assignedHelperName!,
-                  if (order.assignedBodegeroName?.trim().isNotEmpty == true)
-                    order.assignedBodegeroName!,
-                ],
-                for (final row in stock)
-                  if (_actor(row).isNotEmpty) _actor(row),
-              }.toList()..sort();
-              final visibleOrders = _filterOrders(orders);
-              final visibleStock = _filterStock(stock);
-              final rowCount = _tab == 'Stock movements'
-                  ? visibleStock.length
-                  : visibleOrders.length;
-              final pageCount = math.max(
-                1,
-                (rowCount + _pageSize - 1) ~/ _pageSize,
-              );
-              final currentPage = math.min(_page, pageCount);
-              final firstRow = (currentPage - 1) * _pageSize;
-              final pageOrders = visibleOrders
-                  .skip(firstRow)
-                  .take(_pageSize)
-                  .toList(growable: false);
-              final pageStock = visibleStock
-                  .skip(firstRow)
-                  .take(_pageSize)
-                  .toList(growable: false);
-              final loading = _tab == 'Stock movements'
-                  ? stockSnapshot.connectionState != ConnectionState.done
-                  : ordersSnapshot.connectionState != ConnectionState.done;
-              final error = _tab == 'Stock movements'
-                  ? stockSnapshot.error
-                  : ordersSnapshot.error;
+      builder: (context, ordersSnapshot) => FutureBuilder<StockMovementPage>(
+        future: _stockFuture,
+        builder: (context, stockSnapshot) {
+          final orders = ordersSnapshot.data ?? const <CustomerOrder>[];
+          final stock =
+              stockSnapshot.data?.records ?? const <Map<String, dynamic>>[];
+          final staff = _tab == 'Stock movements'
+              ? <String>[]
+              : (<String>{
+                  for (final order in orders) ...[
+                    if (order.createdByName?.trim().isNotEmpty == true)
+                      order.createdByName!,
+                    if (order.assignedHelperName?.trim().isNotEmpty == true)
+                      order.assignedHelperName!,
+                    if (order.assignedBodegeroName?.trim().isNotEmpty == true)
+                      order.assignedBodegeroName!,
+                  ],
+                }.toList()..sort());
+          final visibleOrders = _tab == 'Stock movements'
+              ? <CustomerOrder>[]
+              : _filterOrders(orders);
+          final pendingTarget = _pendingTargetOrderId;
+          final targetIndex = pendingTarget == null
+              ? -1
+              : visibleOrders.indexWhere((order) => order.id == pendingTarget);
+          final targetPage = targetIndex < 0
+              ? null
+              : targetIndex ~/ _pageSize + 1;
+          if (pendingTarget != null &&
+              ordersSnapshot.connectionState == ConnectionState.done) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || _pendingTargetOrderId != pendingTarget) return;
+              setState(() {
+                if (targetPage != null) {
+                  _page = targetPage;
+                  _jumpController.text = '$targetPage';
+                }
+                if (targetPage == null) _highlightedOrderId = null;
+                _pendingTargetOrderId = null;
+              });
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                final targetContext = _highlightKey.currentContext;
+                if (targetContext != null) {
+                  Scrollable.ensureVisible(
+                    targetContext,
+                    duration: const Duration(milliseconds: 450),
+                    curve: Curves.easeInOutCubic,
+                    alignment: 0.25,
+                  );
+                }
+              });
+            });
+          }
+          final visibleStock = stock;
+          final rowCount = _tab == 'Stock movements'
+              ? stockSnapshot.data?.totalCount ?? 0
+              : visibleOrders.length;
+          final pageCount = math.max(
+            1,
+            (rowCount + _pageSize - 1) ~/ _pageSize,
+          );
+          final currentPage = math.min(targetPage ?? _page, pageCount);
+          final firstRow = (currentPage - 1) * _pageSize;
+          final pageOrders = visibleOrders
+              .skip(firstRow)
+              .take(_pageSize)
+              .toList(growable: false);
+          final pageStock = visibleStock;
+          final loading = _tab == 'Stock movements'
+              ? _stockSearchPending ||
+                    stockSnapshot.connectionState != ConnectionState.done
+              : ordersSnapshot.connectionState != ConnectionState.done;
+          final error = _tab == 'Stock movements'
+              ? stockSnapshot.error
+              : ordersSnapshot.error;
 
-              return SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(32, 32, 32, 48),
-                child: Column(
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(32, 32, 32, 48),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                                const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 20,
-                      runSpacing: 16,
-                      children: [
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Orders & activity',
-                              style: TextStyle(
-                                fontSize: 21,
-                                fontWeight: FontWeight.w700,
-                                color: _ink,
-                              ),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Every order from creation to release, plus payments and stock movements across the store.',
-                              style: TextStyle(fontSize: 13, color: _muted),
-                            ),
-                          ],
-                        ),
-                        
-                      ],
-                    ),
-                    const SizedBox(height: 27),
-                    DecoratedBox(
-                      decoration: const BoxDecoration(
-                        border: Border(bottom: BorderSide(color: _line)),
-                      ),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [for (final tab in _tabs) _tabButton(tab)],
-                        ),
+                    Text(
+                      'Orders & activity',
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w700,
+                        color: _ink,
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    _filters(staff),
-                    const SizedBox(height: 20),
-                    if (_tab == 'Payments' && !loading && error == null) ...[
-                      _paymentSummary(PaymentTotals.fromOrders(visibleOrders)),
-                      const SizedBox(height: 20),
-                    ],
-                    if (loading)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(48),
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
-                    else if (error != null)
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(28),
-                          child: Column(
-                            children: [
-                              const Text(
-                                'Could not load activity.',
-                                style: TextStyle(fontSize: 13),
-                              ),
-                              const SizedBox(height: 8),
-                              TextButton(
-                                style: TextButton.styleFrom(
-                                  textStyle: const TextStyle(fontSize: 13),
-                                ),
-                                onPressed: () => setState(() {
-                                  _ordersFuture = widget.controller
-                                      .loadActivityOrders();
-                                  _stockFuture = widget.controller
-                                      .loadAllTransactionHistory();
-                                }),
-                                child: const Text('Retry'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    else ...[
-                      _table(pageOrders, pageStock),
-                      _pagination(currentPage, pageCount, rowCount),
-                    ],
+                    SizedBox(height: 6),
+                    Text(
+                      'Every order from creation to release, plus payments and stock movements across the store.',
+                      style: TextStyle(fontSize: 13, color: _muted),
+                    ),
                   ],
                 ),
-              );
-            },
-          ),
+                const SizedBox(height: 27),
+                DecoratedBox(
+                  decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: _line)),
+                  ),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [for (final tab in _tabs) _tabButton(tab)],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _filters(staff),
+                const SizedBox(height: 20),
+                if (_tab == 'Payments' && !loading && error == null) ...[
+                  _paymentSummary(PaymentTotals.fromOrders(visibleOrders)),
+                  const SizedBox(height: 20),
+                ],
+                if (loading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(48),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (error != null)
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'Could not load activity.',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              textStyle: const TextStyle(fontSize: 13),
+                            ),
+                            onPressed: () => setState(() {
+                              _ordersFuture = widget.controller
+                                  .loadActivityOrders();
+                              _resetStockQuery();
+                            }),
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else ...[
+                  _table(pageOrders, pageStock),
+                  _pagination(currentPage, pageCount, rowCount),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
     ),
   );
 
@@ -260,12 +435,23 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
     final selected = _tab == label;
     return InkWell(
       onTap: () => setState(() {
+        _stockSearchDebounce?.cancel();
+        _stockSearchPending = false;
+        _pendingTargetOrderId = null;
+        _highlightedOrderId = null;
         _tab = label;
         _status = 'All statuses';
         _movementFilter = 'All movement types';
         _search = '';
         _page = 1;
+        _jumpController.text = '1';
         _searchController.clear();
+        if (label == 'Stock movements') _resetStockQuery();
+        if (label != 'Stock movements' && (!_ordersLoaded || _dirtyOrders)) {
+          _ordersFuture = widget.controller.loadActivityOrders();
+          _ordersLoaded = true;
+          _dirtyOrders = false;
+        }
       }),
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
@@ -295,10 +481,22 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
       final search = TextField(
         controller: _searchController,
         style: const TextStyle(fontSize: 13),
-        onChanged: (value) => setState(() {
-          _search = value.trim().toLowerCase();
-          _page = 1;
-        }),
+        onChanged: (value) {
+          setState(() {
+            _search = value.trim().toLowerCase();
+            _page = 1;
+            _jumpController.text = '1';
+            if (_tab == 'Stock movements') _stockSearchPending = true;
+          });
+          if (_tab == 'Stock movements') {
+            _stockSearchDebounce?.cancel();
+            _stockSearchDebounce = Timer(const Duration(milliseconds: 300), () {
+              if (mounted && _tab == 'Stock movements') {
+                setState(_resetStockQuery);
+              }
+            });
+          }
+        },
         decoration: InputDecoration(
           hintStyle: const TextStyle(fontSize: 13, color: _muted),
           hintText: _tab == 'Stock movements'
@@ -329,27 +527,22 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
           'Ready',
           'Completed',
           'Cancelled',
-          'Returned',
         ],
         (value) => setState(() {
           _status = value;
           _page = 1;
+          _jumpController.text = '1';
         }),
         compact ? null : 150,
       );
       final movementType = _dropdown(
         _movementFilter,
-        const [
-          'All movement types',
-          'Sale',
-          'Restock',
-          'Write-off',
-          'Adjustment',
-          'Return',
-        ],
+        const ['All movement types', 'Sale', 'Restock', 'Write-off'],
         (value) => setState(() {
           _movementFilter = value;
           _page = 1;
+          _jumpController.text = '1';
+          _resetStockQuery();
         }),
         compact ? null : 220,
       );
@@ -359,6 +552,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
         (value) => setState(() {
           _staff = value;
           _page = 1;
+          _jumpController.text = '1';
         }),
         compact ? null : 175,
       );
@@ -368,6 +562,8 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
         (value) => setState(() {
           _time = value;
           _page = 1;
+          _jumpController.text = '1';
+          if (_tab == 'Stock movements') _resetStockQuery();
         }),
         compact ? null : 140,
       );
@@ -567,53 +763,95 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   Widget _pagination(int page, int pageCount, int rowCount) {
     final first = rowCount == 0 ? 0 : (page - 1) * _pageSize + 1;
     final last = math.min(page * _pageSize, rowCount);
-    final buttonStyle = OutlinedButton.styleFrom(
-      foregroundColor: _ink,
-      textStyle: const TextStyle(fontSize: 13),
-      side: const BorderSide(color: _line),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+    final count = Text(
+      '$first–$last of $rowCount',
+      style: const TextStyle(color: _muted, fontSize: 13),
+    );
+    final controls = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Previous page',
+          onPressed: page > 1 ? () => _changePage(page - 1) : null,
+          icon: const Icon(LucideIcons.chevronLeft, size: 18),
+          color: _ink,
+        ),
+        Tooltip(
+          message: 'Enter a page number and press Enter',
+          child: SizedBox(
+            width: 58,
+            height: 38,
+            child: TextField(
+              controller: _jumpController,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.go,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0xFFFFF1E8),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 9),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: const BorderSide(color: _orange),
+                ),
+              ),
+              onSubmitted: (_) => _jumpToPage(pageCount),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 7),
+          child: Text(
+            'of $pageCount',
+            style: const TextStyle(color: _muted, fontSize: 13),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Next page',
+          onPressed: page < pageCount ? () => _changePage(page + 1) : null,
+          icon: const Icon(LucideIcons.chevronRight, size: 18),
+          color: _ink,
+        ),
+      ],
     );
     return Padding(
       padding: const EdgeInsets.only(top: 14),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 16,
-        runSpacing: 10,
-        children: [
-          Text(
-            'Showing $first–$last of $rowCount',
-            style: const TextStyle(color: _muted, fontSize: 13),
-          ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              OutlinedButton(
-                onPressed: page > 1
-                    ? () => setState(() => _page = page - 1)
-                    : null,
-                style: buttonStyle,
-                child: const Text('Previous'),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  'Page $page of $pageCount',
-                  style: const TextStyle(color: _muted, fontSize: 13),
-                ),
-              ),
-              OutlinedButton(
-                onPressed: page < pageCount
-                    ? () => setState(() => _page = page + 1)
-                    : null,
-                style: buttonStyle,
-                child: const Text('Next'),
-              ),
-            ],
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 620) {
+            return Column(
+              children: [count, const SizedBox(height: 8), controls],
+            );
+          }
+          return SizedBox(
+            height: 44,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Align(alignment: Alignment.centerLeft, child: count),
+                controls,
+              ],
+            ),
+          );
+        },
       ),
     );
+  }
+
+  void _jumpToPage(int pageCount) {
+    final requested = int.tryParse(_jumpController.text.trim());
+    _changePage(requested == null ? _page : requested.clamp(1, pageCount));
   }
 
   Widget _table(List<CustomerOrder> orders, List<Map<String, dynamic>> stock) {
@@ -634,8 +872,8 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
         'Type',
         'Change',
         'Balance',
-        'By',
-        'Note',
+        'Staff',
+        'Reason / note',
       ],
       _ => const [
         'Order',
@@ -650,23 +888,57 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
     };
     final List<double> baseWidths = switch (_tab) {
       'Payments' => const [190.0, 155, 70, 110, 190, 155, 110, 125],
-      'Stock movements' => const [170.0, 270, 135, 95, 95, 160, 280],
+      'Stock movements' => const [145.0, 245, 110, 85, 85, 220, 275],
       _ => const [190.0, 155, 70, 110, 155, 155, 110, 125],
     };
     final rows = _tab == 'Stock movements' ? stock.length : orders.length;
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 600) {
-          return _mobileRecords(orders, stock);
-        }
         final baseTotal = baseWidths.fold<double>(
           0,
           (sum, width) => sum + width,
         );
-        final tableWidth = math.max(baseTotal, constraints.maxWidth);
+        if (constraints.maxWidth <
+            (_tab == 'Stock movements' ? baseTotal + 2 : 600)) {
+          return _mobileRecords(orders, stock);
+        }
+        final tableWidth = _tab == 'Stock movements'
+            ? constraints.maxWidth - 2
+            : math.max(baseTotal, constraints.maxWidth);
         final widths = baseWidths
             .map((width) => width * tableWidth / baseTotal)
             .toList();
+        final tableBody = SizedBox(
+          width: tableWidth,
+          child: Column(
+            children: [
+              Container(
+                height: 44,
+                color: const Color(0xFFFAF9F8),
+                child: Row(
+                  children: [
+                    for (var i = 0; i < headers.length; i++)
+                      _cell(headers[i], widths[i], color: _muted, size: 12),
+                  ],
+                ),
+              ),
+              if (rows == 0)
+                const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Text(
+                    'No records match these filters.',
+                    style: TextStyle(color: _muted, fontSize: 13),
+                  ),
+                ),
+              for (var i = 0; i < rows; i++) ...[
+                const Divider(height: 1, color: _line),
+                _tab == 'Stock movements'
+                    ? _stockRow(stock[i], widths)
+                    : _orderRow(orders[i], widths),
+              ],
+            ],
+          ),
+        );
         return Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -674,40 +946,12 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
             borderRadius: BorderRadius.circular(14),
           ),
           clipBehavior: Clip.antiAlias,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: tableWidth,
-              child: Column(
-                children: [
-                  Container(
-                    height: 44,
-                    color: const Color(0xFFFAF9F8),
-                    child: Row(
-                      children: [
-                        for (var i = 0; i < headers.length; i++)
-                          _cell(headers[i], widths[i], color: _muted, size: 12),
-                      ],
-                    ),
-                  ),
-                  if (rows == 0)
-                    const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Text(
-                        'No records match these filters.',
-                        style: TextStyle(color: _muted, fontSize: 13),
-                      ),
-                    ),
-                  for (var i = 0; i < rows; i++) ...[
-                    const Divider(height: 1, color: _line),
-                    _tab == 'Stock movements'
-                        ? _stockRow(stock[i], widths)
-                        : _orderRow(orders[i], widths),
-                  ],
-                ],
-              ),
-            ),
-          ),
+          child: _tab == 'Stock movements'
+              ? tableBody
+              : SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: tableBody,
+                ),
         );
       },
     );
@@ -750,10 +994,12 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   Widget _mobileOrderCard(CustomerOrder order) {
     final status = _orderStatus(order);
     final statusColor = _statusColor(status);
+    final highlighted = order.id == _highlightedOrderId;
     return Material(
-      color: Colors.white,
+      key: highlighted ? _highlightKey : null,
+      color: highlighted ? const Color(0xFFFFF3EC) : Colors.white,
       shape: RoundedRectangleBorder(
-        side: const BorderSide(color: _line),
+        side: BorderSide(color: highlighted ? _orange : _line),
         borderRadius: BorderRadius.circular(14),
       ),
       clipBehavior: Clip.antiAlias,
@@ -884,24 +1130,35 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
             ],
           ),
           const SizedBox(height: 11),
-          _mobileField('By', _actor(row).isEmpty ? '—' : _actor(row)),
+          _mobileField(
+            type == 'Write-off' ? 'Requested by' : 'By',
+            _stockRequester(row),
+          ),
+          if (type == 'Write-off') ...[
+            const SizedBox(height: 11),
+            _mobileField('Approved by', _stockApprover(row)),
+          ],
           if (_stockNote(row) != '—') ...[
             const SizedBox(height: 11),
-            _mobileField('Note', _stockNote(row)),
+            _mobileField(
+              type == 'Write-off' ? 'Reason / note' : 'Note',
+              _stockNote(row),
+              maxLines: 3,
+            ),
           ],
         ],
       ),
     );
   }
 
-  Widget _mobileField(String label, String value) => Column(
+  Widget _mobileField(String label, String value, {int maxLines = 1}) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(label, style: const TextStyle(color: _muted, fontSize: 11)),
       const SizedBox(height: 3),
       Text(
         value,
-        maxLines: 1,
+        maxLines: maxLines,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(color: _ink, fontSize: 13),
       ),
@@ -919,6 +1176,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   );
 
   Widget _orderRow(CustomerOrder order, List<double> widths) {
+    final highlighted = order.id == _highlightedOrderId;
     final cells = _tab == 'Payments'
         ? <Widget>[
             _cell(_shortId(order.id), widths[0], bold: true, mono: true),
@@ -958,37 +1216,49 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
               right: true,
             ),
           ];
-    return InkWell(
-      onTap: () => _openOrderDetails(order),
-      child: SizedBox(height: 58, child: Row(children: cells)),
+    return Material(
+      key: highlighted ? _highlightKey : null,
+      color: highlighted ? const Color(0xFFFFF3EC) : Colors.transparent,
+      child: InkWell(
+        onTap: () => _openOrderDetails(order),
+        child: Container(
+          height: 58,
+          foregroundDecoration: BoxDecoration(
+            border: highlighted
+                ? const Border(left: BorderSide(color: _orange, width: 3))
+                : null,
+          ),
+          child: Row(children: cells),
+        ),
+      ),
     );
   }
 
-  void _openOrderDetails(CustomerOrder order) => OrderDetailsDrawer.show(
-    context,
-    order: order,
-    inventory: widget.controller.allItems,
-    onOpenQueue: () => widget.onOpenQueue(order.id),
-    orderUpdates: widget.controller.orderSnapshots,
-    loadLoadingProof: widget.controller.getOrderLoadingProof,
-    loadHelpers: _loadHelpers,
-    onAssignHelper: (current, helperId) async {
-      await widget.controller.assignOrderToHelper(
-        orderId: current.id,
-        helperId: helperId,
-        expectedHelperId: current.assignedHelperId,
-      );
-      if (mounted) {
-        setState(() => _ordersFuture = widget.controller.loadActivityOrders());
-      }
-    },
-    onCancelOrder: (current) async {
-      await widget.controller.cancelOrder(current);
-      if (mounted) {
-        setState(() => _ordersFuture = widget.controller.loadActivityOrders());
-      }
-    },
-  );
+  void _openOrderDetails(CustomerOrder order) {
+    if (_highlightedOrderId == order.id) {
+      setState(() => _highlightedOrderId = null);
+    }
+    OrderDetailsDrawer.show(
+      context,
+      order: order,
+      inventory: widget.controller.allItems,
+      orderUpdates: widget.controller.orderSnapshots,
+      loadLoadingProof: widget.controller.getOrderLoadingProof,
+      loadHelpers: _loadHelpers,
+      onAssignHelper: (current, helperId) async {
+        await widget.controller.assignOrderToHelper(
+          orderId: current.id,
+          helperId: helperId,
+          expectedHelperId: current.assignedHelperId,
+        );
+        if (mounted) {
+          setState(
+            () => _ordersFuture = widget.controller.loadActivityOrders(),
+          );
+        }
+      },
+    );
+  }
 
   Future<List<({String id, String name})>> _loadHelpers() async {
     final staff = await widget.controller.fetchStaff();
@@ -1035,9 +1305,48 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
             widths[4],
             right: true,
           ),
-          _cell(_actor(row), widths[5]),
-          _cell(_stockNote(row), widths[6], color: _muted),
+          _stockStaffCell(row, widths[5]),
+          Tooltip(
+            message: _stockNote(row),
+            child: _cell(_stockNote(row), widths[6], color: _muted),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _stockStaffCell(Map<String, dynamic> row, double width) {
+    if (row['transaction_type'] != 'write_off') {
+      return _cell(_stockRequester(row), width);
+    }
+    final requester = _stockRequester(row);
+    final approver = _stockApprover(row);
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Tooltip(
+          message: 'Requested by $requester\nApproved by $approver',
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Requested: $requester',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: _ink, fontSize: 12),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Approved: $approver',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: _muted, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1200,10 +1509,23 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   ) async {
     setState(() => _exporting = true);
     try {
+      final exportStock = _tab == 'Stock movements'
+          ? _filterStock(await widget.controller.loadAllTransactionHistory())
+          : stock;
       final rows = switch (_tab) {
         'Stock movements' => <List<String>>[
-          ['Time', 'Product', 'SKU', 'Type', 'Change', 'Balance', 'By', 'Note'],
-          for (final row in stock)
+          [
+            'Time',
+            'Product',
+            'SKU',
+            'Type',
+            'Change',
+            'Balance',
+            'By / requested by',
+            'Approved by',
+            'Note / reason',
+          ],
+          for (final row in exportStock)
             [
               row['created_at']?.toString() ?? '',
               (row['products'] as Map<String, dynamic>?)?['product_name']
@@ -1214,7 +1536,8 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
               _movement(row['transaction_type']?.toString() ?? ''),
               row['quantity_change']?.toString() ?? '',
               row['new_quantity']?.toString() ?? '',
-              _actor(row),
+              _stockRequester(row),
+              _stockApprover(row),
               _stockNote(row),
             ],
         ],
@@ -1298,26 +1621,37 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   }
 
   static String _orderStatus(CustomerOrder order) =>
-      switch (order.status.toLowerCase()) {
-        'solo_picking' => 'Preparing',
-        'pending'
-            when order.assignedHelperId != null &&
-                order.items.any((item) => item.picked) =>
-          'Preparing',
-        'pending' when order.assignedHelperId != null => 'Assigned',
-        'pending' => 'Waiting',
-        'prepared' => 'Ready',
-        'completed' => 'Completed',
-        'cancelled' => 'Cancelled',
-        'returned' => 'Returned',
-        _ => order.status,
-      };
+      orderActivityStatusLabel(order);
   static String _shortId(String id) =>
       id.length > 12 ? id.substring(0, 8).toUpperCase() : id;
   static String _actor(Map<String, dynamic> row) =>
       row['user_name']?.toString() ??
       (row['profiles'] as Map<String, dynamic>?)?['name']?.toString() ??
       '';
+  static String _stockRequester(Map<String, dynamic> row) {
+    final requester = row['requested_by_name']?.toString().trim();
+    final actor = _actor(row).trim();
+    return requester?.isNotEmpty == true
+        ? requester!
+        : actor.isEmpty
+        ? '—'
+        : actor;
+  }
+
+  static String _stockApprover(Map<String, dynamic> row) {
+    if (row['transaction_type'] != 'write_off') return '—';
+    final approver = row['approved_by_name']?.toString().trim();
+    if (approver?.isNotEmpty == true) return approver!;
+    final note = row['note']?.toString() ?? '';
+    final match = RegExp(
+      r'Approved by (.+)$',
+      caseSensitive: false,
+    ).firstMatch(note);
+    if (match != null) return match.group(1)!.trim();
+    final actor = _actor(row).trim();
+    return actor.isEmpty ? '—' : actor;
+  }
+
   static String _movement(String value) => switch (value) {
     'checkout' || 'stock_out' => 'Sale',
     'stock_in' || 'add' => 'Restock',
@@ -1327,6 +1661,21 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
     _ => value.replaceAll('_', ' '),
   };
   static String _stockNote(Map<String, dynamic> row) {
+    if (row['transaction_type'] == 'write_off') {
+      final reason = row['write_off_reason']?.toString().trim() ?? '';
+      final detail = row['write_off_note']?.toString().trim() ?? '';
+      if (reason.isNotEmpty) {
+        return detail.isEmpty ? reason : '$reason · $detail';
+      }
+      final legacy = row['note']?.toString().trim() ?? '';
+      final clean = legacy
+          .replaceFirst(
+            RegExp(r':?\s*Approved by .+$', caseSensitive: false),
+            '',
+          )
+          .trim();
+      return clean.isEmpty ? '—' : clean;
+    }
     final note = row['note']?.toString().trim();
     if (note != null && note.isNotEmpty) return note;
     return switch (row['transaction_type']?.toString()) {

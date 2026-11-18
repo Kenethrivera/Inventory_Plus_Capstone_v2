@@ -3,9 +3,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../services/staff_presence_service.dart';
 
-const Color _primaryBlue = Color(0xFF2563EB);
-const Color _darkText = Color(0xFF0F172A);
-const Color _mutedText = Color(0xFF64748B);
+const Color _themeOrange = Color(0xFFC83D08);
+const Color _darkText = Color(0xFF201D1A);
+const Color _mutedText = Color(0xFF827B75);
 const String _fontFam = 'Hellix';
 
 class ActiveStaffButton extends StatefulWidget {
@@ -121,7 +121,7 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
         children: [
           FloatingActionButton(
             heroTag: 'active_staff_button',
-            backgroundColor: _primaryBlue,
+            backgroundColor: _themeOrange,
             foregroundColor: Colors.white,
             elevation: 8,
             onPressed: _toggleOverlay,
@@ -161,10 +161,10 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: const Color(0xFFE7E1DB)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.16),
+            color: Colors.black.withValues(alpha: 0.16),
             blurRadius: 30,
             offset: const Offset(0, 14),
           ),
@@ -180,7 +180,7 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
                 ? const Padding(
                     padding: EdgeInsets.all(32),
                     child: Center(
-                      child: CircularProgressIndicator(color: _primaryBlue),
+                      child: CircularProgressIndicator(color: _themeOrange),
                     ),
                   )
                 : SingleChildScrollView(
@@ -218,10 +218,10 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: _primaryBlue.withOpacity(0.1),
+              color: _themeOrange.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(13),
             ),
-            child: const Icon(LucideIcons.users, color: _primaryBlue, size: 19),
+            child: const Icon(LucideIcons.users, color: _themeOrange, size: 19),
           ),
           const SizedBox(width: 12),
           const Expanded(
@@ -269,7 +269,7 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
       children: [
         Row(
           children: [
-            Icon(icon, size: 16, color: _primaryBlue),
+            Icon(icon, size: 16, color: _themeOrange),
             const SizedBox(width: 8),
             Text(
               title,
@@ -284,13 +284,13 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: _primaryBlue.withOpacity(0.1),
+                color: _themeOrange.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
                 users.length.toString(),
                 style: const TextStyle(
-                  color: _primaryBlue,
+                  color: _themeOrange,
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
                   fontFamily: _fontFam,
@@ -305,9 +305,9 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: const Color(0xFFFAF8F6),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
+              border: Border.all(color: const Color(0xFFE7E1DB)),
             ),
             child: Text(
               emptyMessage,
@@ -335,9 +335,9 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: const Color(0xFFFAF8F6),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: const Color(0xFFE7E1DB)),
       ),
       child: Row(
         children: [
@@ -346,11 +346,11 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
             children: [
               CircleAvatar(
                 radius: 18,
-                backgroundColor: _primaryBlue.withOpacity(0.12),
+                backgroundColor: _themeOrange.withValues(alpha: 0.12),
                 child: Text(
                   initial,
                   style: const TextStyle(
-                    color: _primaryBlue,
+                    color: _themeOrange,
                     fontWeight: FontWeight.w900,
                     fontFamily: _fontFam,
                   ),
@@ -408,7 +408,7 @@ class _ActiveStaffButtonState extends State<ActiveStaffButton> {
               Text(
                 role,
                 style: const TextStyle(
-                  color: _primaryBlue,
+                  color: _themeOrange,
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
                   fontFamily: _fontFam,

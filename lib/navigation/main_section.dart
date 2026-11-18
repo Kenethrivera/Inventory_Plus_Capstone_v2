@@ -6,7 +6,7 @@ enum MainSection {
   classificationTest('classification-test', <String>{'admin'}),
   pos('pos', <String>{'admin', 'staff', 'cashier'}),
   cashierRequests('requests', <String>{'staff', 'cashier'}),
-  queue('queue', <String>{'admin', 'helper', 'bodegero'}),
+  queue('queue', <String>{'helper', 'bodegero'}),
   inventory('inventory', <String>{'admin', 'helper'}),
   approvals('approvals', <String>{'admin'}),
   performance('performance', <String>{'admin'}),
@@ -52,7 +52,6 @@ enum MainSection {
           analytics,
           forecasting,
           pos,
-          queue,
           inventory,
           approvals,
           performance,
@@ -75,6 +74,9 @@ enum MainSection {
   static MainSection defaultForRole(String role) => forRole(role).first;
 
   static MainSection resolveForRole(MainSection? requested, String role) {
+    if (role.toLowerCase() == 'admin' && requested == queue) {
+      return ordersActivity;
+    }
     final sections = forRole(role);
     return requested != null &&
             requested.allowsRole(role) &&

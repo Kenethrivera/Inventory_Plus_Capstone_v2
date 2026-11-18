@@ -59,7 +59,6 @@ void main() {
           body: OrderDetailsDrawer(
             order: _order(hasLightItem: false),
             inventory: const [],
-            onOpenQueue: () {},
             loadLoadingProof: (_) async => {
               'truck_plate': '2321',
               'loaded_quantities': {'cement-1': 2},
@@ -71,6 +70,7 @@ void main() {
     );
 
     expect(find.text('Not required'), findsOneWidget);
+    expect(find.text('Open order queue'), findsNothing);
     await tester.ensureVisible(find.text('View loading photo and counts'));
     await tester.tap(find.text('View loading photo and counts'));
     await tester.pumpAndSettle();

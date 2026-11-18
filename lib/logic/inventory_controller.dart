@@ -15,6 +15,7 @@ import 'bodegero_loading_history.dart';
 import 'history_pagination.dart';
 import 'inventory_approval.dart';
 import 'payment_reference.dart';
+import 'product_level.dart';
 import 'rolling_stock_threshold.dart';
 import 'staff_performance.dart';
 import 'staff_management.dart';
@@ -64,6 +65,13 @@ class OrderHistoryData {
 
   final List<Map<String, dynamic>> orders;
   final Map<String, String> profileNamesById;
+}
+
+class StockMovementPage {
+  const StockMovementPage({required this.records, required this.totalCount});
+
+  final List<Map<String, dynamic>> records;
+  final int totalCount;
 }
 
 class StockThresholdSettings {
@@ -1444,7 +1452,9 @@ class InventoryController {
   InventoryApprovalPage? cachedApprovalPage({
     required InventoryApprovalStatus status,
     required int page,
-    int pageSize = 20,
+    int pageSize = 10,
+    DateTime? requestedFrom,
+    DateTime? requestedBefore,
   }) {
     final accountId = currentUserId;
     final locationId = activeLocationId;
@@ -1456,6 +1466,8 @@ class InventoryController {
         status: status,
         page: page,
         pageSize: pageSize,
+        requestedFrom: requestedFrom,
+        requestedBefore: requestedBefore,
       ),
     );
   }
@@ -1757,7 +1769,9 @@ class InventoryController {
   Future<InventoryApprovalPage> activateApprovalPage({
     InventoryApprovalStatus status = InventoryApprovalStatus.pending,
     int page = 1,
-    int pageSize = 20,
+    int pageSize = 10,
+    DateTime? requestedFrom,
+    DateTime? requestedBefore,
     bool force = false,
   }) {
     if (!isAdmin) {
@@ -1774,6 +1788,8 @@ class InventoryController {
       status: status,
       page: page < 1 ? 1 : page,
       pageSize: pageSize,
+      requestedFrom: requestedFrom,
+      requestedBefore: requestedBefore,
     );
     _activeApprovalPageKey = key;
     final cached = _approvalPageCache.read(key);
@@ -1794,12 +1810,20 @@ class InventoryController {
     request =
         () async {
           final response = await supabase.rpc(
-            'approval_requests_page_v1',
+            key.requestedFrom == null && key.requestedBefore == null
+                ? 'approval_requests_page_v1'
+                : 'approval_requests_page_v2',
             params: <String, dynamic>{
               'p_session_token': _requireSessionToken(),
               'p_status': key.status.databaseValue,
               'p_page': key.page,
               'p_page_size': key.pageSize,
+              if (key.requestedFrom != null || key.requestedBefore != null) ...{
+                'p_requested_from':
+                    key.requestedFrom?.toUtc().toIso8601String(),
+                'p_requested_before':
+                    key.requestedBefore?.toUtc().toIso8601String(),
+              },
             },
           );
           if (key.accountId != currentUserId ||
@@ -2299,6 +2323,52 @@ class InventoryController {
         _publishInventorySnapshot();
       }
     } catch (e) {}
+  }
+
+  Future<void> updateItemLevel(String itemId, String level) async {
+    if (!isAdmin) {
+      throw StateError('Only Admin accounts may change product levels.');
+    }
+    final index = _items.indexWhere((item) => item.id == itemId);
+    if (index < 0) throw StateError('Product not found.');
+    final locationId = activeLocationId;
+    if (locationId == null) throw StateError('No active store location.');
+    final normalizedLevel = level.trim();
+    if (!isValidProductLevel(normalizedLevel)) {
+      throw ArgumentError('Level must be a whole number from 1 to 10.');
+    }
+    final item = _items[index];
+    if (normalizedLevel == (item.shelfLevel ?? '').trim()) return;
+
+    if (useStage6b7SecureProductAccess) {
+      await supabase.rpc(
+        'product_shelf_bin_update_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_product_id': itemId,
+          'p_shelf_level': normalizedLevel,
+          'p_bin_number': item.binNumber,
+        },
+      );
+    } else {
+      await supabase
+          .from('products')
+          .update({
+            'shelf_level': normalizedLevel.isEmpty ? null : normalizedLevel,
+          })
+          .eq('id', itemId)
+          .eq('location_id', locationId);
+    }
+    if (activeLocationId != locationId) {
+      throw StateError('Store location changed while saving the level.');
+    }
+    final currentIndex = _items.indexWhere((entry) => entry.id == itemId);
+    if (currentIndex >= 0) {
+      _items[currentIndex] = _items[currentIndex].copyWith(
+        shelfLevel: normalizedLevel,
+      );
+      _publishInventorySnapshot();
+    }
   }
 
   List<InventoryItem> get unassignedItems => _items
@@ -3108,6 +3178,138 @@ class InventoryController {
     });
   }
 
+  Future<StockMovementPage> loadStockMovementPage({
+    required int page,
+    int pageSize = 10,
+    String movementType = 'All movement types',
+    String search = '',
+    DateTime? periodStart,
+    DateTime? periodEnd,
+  }) async {
+    final locationId = activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      return const StockMovementPage(records: [], totalCount: 0);
+    }
+    try {
+      final result = await supabase.rpc(
+        'stock_movements_page_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_page': page,
+          'p_page_size': pageSize,
+          'p_filter': movementType.toLowerCase(),
+          'p_search': search.trim(),
+          'p_period_start': periodStart?.toUtc().toIso8601String(),
+          'p_period_end': periodEnd?.toUtc().toIso8601String(),
+        },
+      );
+      if (activeLocationId != locationId) {
+        throw StateError('Stock movement location changed.');
+      }
+      final data = Map<String, dynamic>.from(result as Map);
+      return StockMovementPage(
+        records: List<Map<String, dynamic>>.unmodifiable(
+          (data['records'] as List<dynamic>? ?? const []).map(
+            (row) => Map<String, dynamic>.from(row as Map),
+          ),
+        ),
+        totalCount: (data['total_count'] as num?)?.toInt() ?? 0,
+      );
+    } on PostgrestException catch (error) {
+      if (error.code != 'PGRST202') rethrow;
+      // Keep ordinary page navigation fast on installations that have not
+      // applied the RPC migration yet.
+      if (search.trim().isEmpty) {
+        var query = supabase
+            .from('transaction_history')
+            .select('*, products(product_name, sku), profiles(name, role)')
+            .eq('location_id', locationId);
+        query = switch (movementType) {
+          'Sale' => query.inFilter('transaction_type', [
+            'checkout',
+            'stock_out',
+          ]),
+          'Restock' => query.inFilter('transaction_type', ['stock_in', 'add']),
+          'Write-off' => query.eq('transaction_type', 'write_off'),
+          _ => query,
+        };
+        if (periodStart != null) {
+          query = query.gte(
+            'created_at',
+            periodStart.toUtc().toIso8601String(),
+          );
+        }
+        if (periodEnd != null) {
+          query = query.lt('created_at', periodEnd.toUtc().toIso8601String());
+        }
+        final response = await query
+            .order('created_at', ascending: false)
+            .order('id', ascending: false)
+            .range((page - 1) * pageSize, page * pageSize - 1)
+            .count(CountOption.exact);
+        if (activeLocationId != locationId) {
+          throw StateError('Stock movement location changed.');
+        }
+        return StockMovementPage(
+          records: List<Map<String, dynamic>>.unmodifiable(
+            List<Map<String, dynamic>>.from(response.data),
+          ),
+          totalCount: response.count,
+        );
+      }
+      // Cross-table product/SKU/note search needs the migration's query.
+      final history = await loadAllTransactionHistory();
+      final normalizedSearch = search.trim().toLowerCase();
+      final filtered = history
+          .where((row) {
+            final created = DateTime.tryParse(
+              row['created_at']?.toString() ?? '',
+            );
+            if (created == null ||
+                (periodStart != null && created.isBefore(periodStart)) ||
+                (periodEnd != null && !created.isBefore(periodEnd))) {
+              return false;
+            }
+            final type = row['transaction_type']?.toString() ?? '';
+            final matchesType = switch (movementType) {
+              'Sale' => type == 'checkout' || type == 'stock_out',
+              'Restock' => type == 'stock_in' || type == 'add',
+              'Write-off' => type == 'write_off',
+              _ => true,
+            };
+            if (!matchesType) return false;
+            if (normalizedSearch.isEmpty) return true;
+            final product = row['products'] as Map<String, dynamic>?;
+            return [
+              product?['product_name'],
+              product?['sku'],
+              row['note'],
+              type,
+              switch (type) {
+                'checkout' || 'stock_out' => 'Sale',
+                'stock_in' || 'add' => 'Restock',
+                'write_off' => 'Write-off',
+                'manual_adjustment' => 'Adjustment',
+                'order_cancelled' => 'Return',
+                _ => type,
+              },
+            ].any(
+              (value) =>
+                  value?.toString().toLowerCase().contains(normalizedSearch) ==
+                  true,
+            );
+          })
+          .toList(growable: false);
+      final offset = (page - 1) * pageSize;
+      return StockMovementPage(
+        records: List<Map<String, dynamic>>.unmodifiable(
+          filtered.skip(offset).take(pageSize),
+        ),
+        totalCount: filtered.length,
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> loadAnalyticsSummary({
     required DateTime periodStart,
     required DateTime periodEnd,
@@ -3565,6 +3767,36 @@ class InventoryController {
 
     _orderHistoryRefreshInFlight = refresh;
     return refresh;
+  }
+
+  /// Only active orders and fields needed by the Admin delay scan.
+  Future<List<CustomerOrder>> loadActiveOrdersForDelayNotifications() async {
+    final locationId = activeLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      return const <CustomerOrder>[];
+    }
+
+    const pageSize = 500;
+    final orders = <CustomerOrder>[];
+    for (var offset = 0; ; offset += pageSize) {
+      final rows = await supabase
+          .from('orders')
+          .select(
+            'id, status, created_at, updated_at, assigned_at, '
+            'prepared_at, assigned_helper_id, assigned_bodegero_id, items',
+          )
+          .eq('location_id', locationId)
+          .inFilter('status', ['pending', 'solo_picking', 'prepared'])
+          .order('created_at', ascending: false)
+          .order('id', ascending: false)
+          .range(offset, offset + pageSize - 1);
+      if (activeLocationId != locationId) {
+        throw StateError('Orders location changed while loading.');
+      }
+      orders.addAll(rows.map((row) => CustomerOrder.fromJson(row)));
+      if (rows.length < pageSize) break;
+    }
+    return List<CustomerOrder>.unmodifiable(orders);
   }
 
   /// Orders shown in the admin Orders & activity tab. The operational orders

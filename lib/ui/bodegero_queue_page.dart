@@ -1,13 +1,15 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../data/inventory.dart';
 import '../logic/inventory_controller.dart';
+import '../logic/loading_proof_photo_picker_io.dart'
+    if (dart.library.html) '../logic/loading_proof_photo_picker_web.dart'
+    as loading_proof_photo;
 import '../logic/order_work_progress.dart';
 import '../logic/staff_availability.dart';
 import '../notifications/models/app_notification.dart';
@@ -20,6 +22,7 @@ import 'helper_me_page.dart';
 import 'helper_request_page.dart';
 import 'scanner_search_page.dart';
 import 'store_map.dart';
+import 'widgets/staff_role_header.dart';
 
 const _ink = Color(0xFF171717);
 const _orange = Color(0xFFC83D08);
@@ -54,15 +57,21 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   final _quantityControllers = <String, TextEditingController>{};
   late Stream<List<CustomerOrder>> _ordersStream;
   late Stream<List<CustomerOrder>> _availabilityOrdersStream;
+  StreamSubscription<List<CustomerOrder>>? _autoClaimSubscription;
+  bool _autoClaimInFlight = false;
+  bool _autoClaimQueued = false;
+  bool _autoClaimErrorShown = false;
   String? _selectedOrderId;
   String _search = '';
   Uint8List? _photoJpeg;
   CustomerOrder? _completedOrder;
   bool _busy = false;
+  bool _photoPreparing = false;
   bool _clockBusy = false;
   bool _loadingPaused = false;
   bool _changingBreak = false;
   int _tabIndex = 0;
+  int _lastMainTabIndex = 0;
   final Set<int> _visitedTabs = {0};
 
   @override
@@ -70,7 +79,81 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     super.initState();
     _ordersStream = widget.controller.streamOrders();
     _availabilityOrdersStream = widget.controller.streamOrders();
+    _bindAutoClaim();
     unawaited(_loadMap());
+  }
+
+  void _bindAutoClaim() {
+    widget.presenceService?.addListener(_scheduleAutoClaim);
+    _autoClaimSubscription = widget.controller.orderSnapshots.listen(
+      (_) => _scheduleAutoClaim(),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleAutoClaim());
+  }
+
+  void _scheduleAutoClaim() {
+    if (!mounted) return;
+    if (_autoClaimInFlight) {
+      _autoClaimQueued = true;
+      return;
+    }
+    final presence = widget.presenceService;
+    if (presence == null ||
+        !presence.isStarted ||
+        presence.isOnBreak ||
+        !widget.controller.hasUsableOrdersSnapshot ||
+        widget.controller.currentUserId != presence.userId ||
+        widget.controller.activeLocationId != presence.locationId) {
+      return;
+    }
+    unawaited(_autoClaimPendingOrders());
+  }
+
+  Future<void> _autoClaimPendingOrders() async {
+    _autoClaimInFlight = true;
+    final attemptedOrderIds = <String>{};
+    try {
+      do {
+        _autoClaimQueued = false;
+        final orders =
+            widget.controller.currentOrders
+                .where(
+                  (order) =>
+                      !attemptedOrderIds.contains(order.id) &&
+                      (order.status == 'pending' ||
+                          order.status == 'solo_picking') &&
+                      order.assignedBodegeroId == null &&
+                      order.loadingVerifiedAt == null &&
+                      order.items.any((item) => item.requiresLoading),
+                )
+                .toList()
+              ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        for (final order in orders) {
+          final presence = widget.presenceService;
+          if (!mounted ||
+              presence == null ||
+              !presence.isStarted ||
+              presence.isOnBreak) {
+            break;
+          }
+          attemptedOrderIds.add(order.id);
+          try {
+            await widget.controller.claimOrderLoading(order.id);
+          } catch (error) {
+            // The database rejects claims that another Bodegero won first.
+            debugPrint('[Bodegero queue] Automatic claim skipped: $error');
+            if (!error.toString().contains('loading_claim_conflict') &&
+                !_autoClaimErrorShown &&
+                mounted) {
+              _autoClaimErrorShown = true;
+              _message('Automatic order assignment failed: $error');
+            }
+          }
+        }
+      } while (_autoClaimQueued && mounted);
+    } finally {
+      _autoClaimInFlight = false;
+    }
   }
 
   Future<void> _loadMap() async {
@@ -85,15 +168,21 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   @override
   void didUpdateWidget(covariant BodegeroQueuePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller) {
+    if (oldWidget.controller != widget.controller ||
+        oldWidget.presenceService != widget.presenceService) {
+      oldWidget.presenceService?.removeListener(_scheduleAutoClaim);
+      unawaited(_autoClaimSubscription?.cancel());
       _ordersStream = widget.controller.streamOrders();
       _availabilityOrdersStream = widget.controller.streamOrders();
+      _bindAutoClaim();
       unawaited(_loadMap());
     }
   }
 
   @override
   void dispose() {
+    widget.presenceService?.removeListener(_scheduleAutoClaim);
+    unawaited(_autoClaimSubscription?.cancel());
     _truckController.dispose();
     _searchController.dispose();
     for (final controller in _quantityControllers.values) {
@@ -192,7 +281,44 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   );
 
   Future<bool> _open(CustomerOrder order) async {
-    if (_clockBusy) return false;
+    if (_busy || _clockBusy) return false;
+    order = widget.controller.orderById(order.id) ?? order;
+    if ((order.status != 'pending' && order.status != 'solo_picking') ||
+        order.loadingVerifiedAt != null ||
+        !order.items.any((item) => item.requiresLoading)) {
+      _message('This loading order is no longer available.');
+      return false;
+    }
+    if (order.assignedBodegeroId != null &&
+        order.assignedBodegeroId != widget.controller.currentUserId) {
+      _message('This order is already assigned to another Bodegero.');
+      return false;
+    }
+    if (order.assignedBodegeroId == null) {
+      if (widget.presenceService?.isOnBreak == true) {
+        _message('Switch to Available before opening a new order.');
+        return false;
+      }
+      setState(() => _busy = true);
+      try {
+        order = await widget.controller.claimOrderLoading(order.id);
+        if (!mounted) return false;
+      } catch (error) {
+        _message(
+          error.toString().contains('loading_claim_conflict')
+              ? 'This order was just assigned to another Bodegero.'
+              : 'Could not open this order: $error',
+        );
+        try {
+          await widget.controller.retryOrdersSnapshot();
+        } catch (_) {
+          // Realtime can still refresh the queue after a claim conflict.
+        }
+        return false;
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+    }
     setState(() => _clockBusy = true);
     try {
       final clock = await widget.controller.startOrderLoadingClock(order.id);
@@ -265,12 +391,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       return false;
     }
     setState(() => _tabIndex = 0);
-    if (order.assignedBodegeroId == null) {
-      await _claim(order);
-    } else {
-      return _open(order);
-    }
-    return true;
+    return _open(order);
   }
 
   Future<void> _scan(CustomerOrder order, CustomerOrderItem expected) async {
@@ -303,62 +424,29 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     );
   }
 
-  Future<void> _claim(CustomerOrder order) async {
-    if (widget.presenceService?.isOnBreak == true) {
-      _message('Switch to Available before claiming a new order.');
-      return;
-    }
-    setState(() => _busy = true);
-    try {
-      final claimed = await widget.controller.claimOrderLoading(order.id);
-      if (!mounted) return;
-      if (await _open(claimed)) {
-        _message('Heavy order assigned to you. Scan each shelf QR.');
-      }
-    } catch (error) {
-      _message('Could not claim this order: $error');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   Future<void> _capturePhoto() async {
+    if (_photoPreparing) return;
+    setState(() => _photoPreparing = true);
     try {
-      final image = await ImagePicker().pickImage(source: ImageSource.camera);
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        maxWidth: kIsWeb ? null : 960,
+        maxHeight: kIsWeb ? null : 960,
+        imageQuality: kIsWeb ? null : 65,
+      );
       if (image == null) return;
-      final decoded = img.decodeImage(await image.readAsBytes());
-      if (decoded == null) throw StateError('The photo could not be opened.');
-      final resized = decoded.width > 1280 || decoded.height > 1280
-          ? img.copyResize(
-              decoded,
-              width: decoded.width >= decoded.height ? 1280 : null,
-              height: decoded.height > decoded.width ? 1280 : null,
-            )
-          : decoded;
-      var quality = 72;
-      var bytes = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
-      while (bytes.length > 1048576 && quality > 40) {
-        quality -= 8;
-        bytes = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
-      }
-      if (bytes.length > 1048576) {
-        final smaller = img.copyResize(
-          resized,
-          width: resized.width >= resized.height ? 960 : null,
-          height: resized.height > resized.width ? 960 : null,
-        );
-        bytes = Uint8List.fromList(img.encodeJpg(smaller, quality: 48));
-      }
-      if (bytes.length > 1048576) {
-        throw StateError('Photo is too large. Retake it at lower resolution.');
-      }
+      final bytes = await loading_proof_photo
+          .prepareLoadingProofPhotoFromPicker(image);
       if (mounted) setState(() => _photoJpeg = bytes);
     } catch (error) {
       _message('Photo capture failed: $error');
+    } finally {
+      if (mounted) setState(() => _photoPreparing = false);
     }
   }
 
   Future<void> _finish(CustomerOrder order) async {
+    if (_photoPreparing) return;
     if (_loadingPaused) {
       _message('Resume loading before confirming the truck proof.');
       return;
@@ -438,88 +526,61 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         ? 'Store shelf'
         : matching.first.label.trim();
     final level = product.shelfLevel?.trim();
-    return level == null || level.isEmpty ? fixture : '$fixture · Shelf $level';
+    return level == null || level.isEmpty ? fixture : '$fixture · Level $level';
   }
 
   PreferredSizeWidget _header() {
     final name = widget.controller.currentUserName?.trim() ?? 'Bodegero';
-    final initials = name
-        .split(RegExp(r'\s+'))
-        .take(2)
-        .map((part) => part.isEmpty ? '' : part[0].toUpperCase())
-        .join();
-    return AppBar(
-      automaticallyImplyLeading: false,
-      backgroundColor: const Color(0xFF211F1D),
-      foregroundColor: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      toolbarHeight: 74,
-      titleSpacing: 16,
-      title: Row(
-        children: [
-          CircleAvatar(
-            radius: 21,
-            backgroundColor: const Color(0xFF45413E),
-            child: Text(
-              initials,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                fontFamily: _font,
+    final desktop = MediaQuery.sizeOf(context).width >= 900;
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(67),
+      child: StaffRoleHeader(
+        userName: name,
+        tabs: const ['Queue', 'Map', 'History', 'Request'],
+        selectedTab: _tabIndex,
+        onTabSelected: _selectTab,
+        onProfile: () {
+          setState(() {
+            _tabIndex = 4;
+            _visitedTabs.add(4);
+          });
+          widget.onModuleChanged?.call('Profile');
+        },
+        onLogout: widget.onLogout,
+        availability: widget.presenceService == null
+            ? null
+            : _availabilityChip(widget.presenceService!),
+        notifications: NotificationProvider.maybeOf(context) == null
+            ? null
+            : NotificationBell(
+                iconColor: _ink,
+                helperMobilePanel: true,
+                isActionable: (notification) =>
+                    (notification.type == NotificationType.newOrder ||
+                        notification.type == NotificationType.orderAssigned) &&
+                    (notification.payload['orderId']?.toString().isNotEmpty ??
+                        false),
+                onNotificationSelected: _openNotifiedLoadingOrder,
               ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: _font,
-                  ),
-                ),
-                const Text(
-                  'Bodegero · Heavy loading',
-                  style: TextStyle(
-                    color: Color(0xFFC2BCB7),
-                    fontSize: 12,
-                    fontFamily: _font,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        showTabs: desktop,
       ),
-      actions: [
-        if (widget.presenceService case final presence?)
-          _availabilityChip(presence),
-        if (NotificationProvider.maybeOf(context) != null)
-          NotificationBell(
-            iconColor: Colors.white,
-            helperMobilePanel: true,
-            isActionable: (notification) =>
-                (notification.type == NotificationType.newOrder ||
-                    notification.type == NotificationType.orderAssigned) &&
-                (notification.payload['orderId']?.toString().isNotEmpty ??
-                    false),
-            onNotificationSelected: _openNotifiedLoadingOrder,
-          ),
-        IconButton(
-          tooltip: 'Log out',
-          onPressed: widget.onLogout,
-          icon: const Icon(Icons.logout_outlined, size: 22),
-        ),
-        const SizedBox(width: 8),
-      ],
+    );
+  }
+
+  void _selectTab(int index) {
+    setState(() {
+      _tabIndex = index;
+      _lastMainTabIndex = index;
+      _visitedTabs.add(index);
+    });
+    widget.onModuleChanged?.call(
+      const [
+        'Heavy loading',
+        'Store map',
+        'Loading history',
+        'Stock request',
+        'Profile',
+      ][index],
     );
   }
 
@@ -655,58 +716,54 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   Widget _openCard(CustomerOrder order) {
     final items = _heavyItems(order);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: _line),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _shortId(order),
-                  style: const TextStyle(
-                    color: _ink,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
-                    fontFamily: _font,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  '${items.length} heavy ${items.length == 1 ? 'item' : 'items'} · ${items.map((item) => item.productName).join(', ')}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 12,
-                    fontFamily: _font,
-                  ),
-                ),
-              ],
-            ),
+        onTap: _busy || _clockBusy || widget.presenceService?.isOnBreak == true
+            ? null
+            : () => unawaited(_open(order)),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: _line),
+            borderRadius: BorderRadius.circular(16),
           ),
-          const SizedBox(width: 10),
-          FilledButton(
-            onPressed: _busy || widget.presenceService?.isOnBreak == true
-                ? null
-                : () => _claim(order),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF211F1D),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(9),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _shortId(order),
+                      style: const TextStyle(
+                        color: _ink,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        fontFamily: _font,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '${items.length} heavy ${items.length == 1 ? 'item' : 'items'} · ${items.map((item) => item.productName).join(', ')}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _muted,
+                        fontSize: 12,
+                        fontFamily: _font,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            child: Text(_busy ? 'Claiming…' : 'Claim'),
+              const SizedBox(width: 10),
+              const Icon(LucideIcons.chevronRight, size: 18, color: _orange),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -732,6 +789,9 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        if (constraints.maxWidth >= 900) {
+          return _desktopQueue(assigned, open);
+        }
         final compact = constraints.maxWidth < 600;
         return ListView(
           padding: EdgeInsets.fromLTRB(
@@ -871,7 +931,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Unassigned heavy orders can be claimed here.',
+                      'Open an unassigned heavy order to start loading.',
                       style: TextStyle(
                         color: _muted,
                         fontSize: 13,
@@ -898,6 +958,126 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       },
     );
   }
+
+  Widget _desktopQueue(
+    List<CustomerOrder> assigned,
+    List<CustomerOrder> open,
+  ) => ListView(
+    padding: const EdgeInsets.fromLTRB(48, 48, 48, 64),
+    children: [
+      Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1600),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (widget.presenceService?.isOnBreak == true) ...[
+                const Text(
+                  "You're on break. Switch to Available for new loading orders.",
+                  style: TextStyle(color: _muted, fontSize: 15),
+                ),
+                const SizedBox(height: 24),
+              ],
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Your loading orders',
+                      style: TextStyle(
+                        color: _ink,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        fontFamily: _font,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${assigned.length} assigned',
+                    style: const TextStyle(
+                      color: _muted,
+                      fontSize: 16,
+                      fontFamily: _font,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _search = value),
+                decoration: InputDecoration(
+                  hintText: 'Search order # or product',
+                  prefixIcon: const Icon(LucideIcons.search),
+                  suffixIcon: _search.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Clear search',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _search = '');
+                          },
+                          icon: const Icon(Icons.close),
+                        ),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: _line),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              if (assigned.isEmpty)
+                _emptyCard('No heavy loading tasks assigned.'),
+              if (assigned.isNotEmpty)
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final cardWidth = (constraints.maxWidth - 20) / 2;
+                    return Wrap(
+                      spacing: 20,
+                      runSpacing: 20,
+                      children: [
+                        for (final order in assigned)
+                          SizedBox(
+                            width: cardWidth,
+                            child: _assignedCard(order),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              if (open.isNotEmpty) ...[
+                const SizedBox(height: 40),
+                Text(
+                  'Open orders ${open.length}',
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    fontFamily: _font,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final cardWidth = (constraints.maxWidth - 20) / 2;
+                    return Wrap(
+                      spacing: 20,
+                      runSpacing: 20,
+                      children: [
+                        for (final order in open)
+                          SizedBox(width: cardWidth, child: _openCard(order)),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
 
   Widget _emptyCard(String title, {String? detail}) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
@@ -1141,10 +1321,16 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           ),
         ),
         OutlinedButton.icon(
-          onPressed: _busy || _loadingPaused ? null : _capturePhoto,
+          onPressed: _busy || _photoPreparing || _loadingPaused
+              ? null
+              : _capturePhoto,
           icon: const Icon(LucideIcons.camera, size: 18),
           label: Text(
-            _photoJpeg == null ? 'Capture loaded goods' : 'Retake photo',
+            _photoPreparing
+                ? 'Preparing photo…'
+                : _photoJpeg == null
+                ? 'Capture loaded goods'
+                : 'Retake photo',
           ),
           style: OutlinedButton.styleFrom(
             foregroundColor: _orange,
@@ -1184,6 +1370,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     final photoReady = _photoJpeg != null;
     final canFinish =
         order.assignedBodegeroId != null &&
+        !_photoPreparing &&
         !_loadingPaused &&
         allScanned &&
         countsMatch &&
@@ -1191,6 +1378,8 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         photoReady;
     final nextLabel = _busy
         ? 'Saving loading proof…'
+        : _photoPreparing
+        ? 'Preparing photo…'
         : _loadingPaused
         ? 'Resume loading to finish'
         : !allScanned
@@ -1424,6 +1613,219 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     );
   }
 
+  Widget _desktopChecklist(CustomerOrder order) {
+    final items = _heavyItems(order);
+    final progress = OrderWorkProgress.fromOrder(order);
+    final scanned = items.where((item) => item.heavyVerified).length;
+    final allScanned = scanned == items.length;
+    final canFinish =
+        order.assignedBodegeroId != null &&
+        !_photoPreparing &&
+        !_loadingPaused &&
+        allScanned &&
+        _countsMatch(items) &&
+        _truckController.text.trim().isNotEmpty &&
+        _photoJpeg != null;
+    final nextLabel = _busy
+        ? 'Saving loading proof…'
+        : _photoPreparing
+        ? 'Preparing photo…'
+        : _loadingPaused
+        ? 'Resume loading to finish'
+        : !allScanned
+        ? 'Scan ${items.length - scanned} more ${items.length - scanned == 1 ? 'item' : 'items'}'
+        : !_countsMatch(items)
+        ? 'Confirm loaded quantities'
+        : _truckController.text.trim().isEmpty || _photoJpeg == null
+        ? 'Add truck and photo'
+        : 'Confirm loaded onto truck';
+    final markers = <PickStopMarker>[];
+    for (var i = 0; i < items.length; i++) {
+      final locationId = widget.controller
+          .findAnyItemById(items[i].productId)
+          ?.locationId;
+      if (locationId != null && locationId.isNotEmpty) {
+        markers.add(
+          PickStopMarker(
+            locationId: locationId,
+            number: i + 1,
+            label: _location(items[i]),
+          ),
+        );
+      }
+    }
+    final unverified = items.where((item) => !item.heavyVerified);
+    final highlightId = unverified.isEmpty
+        ? null
+        : widget.controller
+              .findAnyItemById(unverified.first.productId)
+              ?.locationId;
+
+    return Column(
+      children: [
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(40, 22, 40, 22),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Back to queue',
+                onPressed: _busy
+                    ? null
+                    : () => setState(() => _selectedOrderId = null),
+                icon: const Icon(LucideIcons.arrowLeft),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _shortId(order),
+                      style: const TextStyle(
+                        fontSize: 25,
+                        fontWeight: FontWeight.w800,
+                        color: _ink,
+                        fontFamily: _font,
+                      ),
+                    ),
+                    const Text(
+                      'Load onto truck',
+                      style: TextStyle(color: _muted, fontSize: 16),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$scanned/${items.length}',
+                style: const TextStyle(
+                  fontSize: 23,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 24),
+              OutlinedButton(
+                onPressed: _busy || _clockBusy
+                    ? null
+                    : () => _toggleLoadingPause(order),
+                child: Text(
+                  _loadingPaused ? 'Resume loading' : 'Pause loading',
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(40, 32, 40, 48),
+            children: [
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1600),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Store map · heavy item locations',
+                                style: TextStyle(
+                                  color: _ink,
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              SizedBox(
+                                height: 560,
+                                child: widget.controller.storeLayout.isEmpty
+                                    ? const Center(
+                                        child: Text('Store map unavailable.'),
+                                      )
+                                    : StoreMap(
+                                        controller: widget.controller,
+                                        mode: MapMode.view,
+                                        viewStyle: MapViewStyle.twoD,
+                                        highlightId: highlightId,
+                                        pickStopMarkers: markers,
+                                        showProductCounts: false,
+                                        showItemPopup: false,
+                                        showMobileToolbar: false,
+                                        showZoomControls: true,
+                                        zoomAccentColor: _orange,
+                                        itemAssignmentEnabled: false,
+                                        fitEntireMap: true,
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 24),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'Loading list · scan and count',
+                              style: TextStyle(
+                                color: _ink,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            if (progress.isMixed) ...[
+                              Text(
+                                'Shared order · Helper: ${progress.helperSummary}',
+                                style: const TextStyle(color: _muted),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+                            for (var i = 0; i < items.length; i++)
+                              _itemCard(order, items[i], i + 1),
+                            const SizedBox(height: 8),
+                            _proofCard(),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(40, 16, 40, 20),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: _line)),
+          ),
+          child: FilledButton(
+            onPressed: canFinish && !_busy ? () => _finish(order) : null,
+            style: FilledButton.styleFrom(
+              backgroundColor: _orange,
+              disabledBackgroundColor: const Color(0xFFE9B79F),
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(52),
+            ),
+            child: Text(nextLabel),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _completion(CustomerOrder order) => Center(
     child: Padding(
       padding: const EdgeInsets.all(24),
@@ -1525,7 +1927,11 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       for (final order in orders) {
         if (order.id == _selectedOrderId) selected = order;
       }
-      return selected == null ? _queue(orders) : _checklist(selected);
+      return selected == null
+          ? _queue(orders)
+          : MediaQuery.sizeOf(context).width >= 900
+          ? _desktopChecklist(selected)
+          : _checklist(selected);
     },
   );
 
@@ -1562,7 +1968,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   );
 
   Widget _bottomNavigation() => BottomNavigationBar(
-    currentIndex: _tabIndex,
+    currentIndex: _tabIndex == 4 ? _lastMainTabIndex : _tabIndex,
     type: BottomNavigationBarType.fixed,
     backgroundColor: Colors.white,
     selectedItemColor: _orange,
@@ -1570,21 +1976,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     selectedFontSize: 11,
     unselectedFontSize: 11,
     showUnselectedLabels: true,
-    onTap: (index) {
-      setState(() {
-        _tabIndex = index;
-        _visitedTabs.add(index);
-      });
-      widget.onModuleChanged?.call(
-        const [
-          'Heavy loading',
-          'Store map',
-          'Loading history',
-          'Stock request',
-          'Profile',
-        ][index],
-      );
-    },
+    onTap: _selectTab,
     items: const [
       BottomNavigationBarItem(
         icon: Icon(LucideIcons.listChecks),
@@ -1599,7 +1991,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         icon: Icon(LucideIcons.clipboardPlus),
         label: 'Request',
       ),
-      BottomNavigationBarItem(icon: Icon(LucideIcons.userRound), label: 'Me'),
     ],
   );
 
@@ -1629,7 +2020,9 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
             : const SizedBox.shrink(),
       ],
     ),
-    bottomNavigationBar: _tabIndex == 0 && _selectedOrderId != null
+    bottomNavigationBar:
+        MediaQuery.sizeOf(context).width >= 900 ||
+            (_tabIndex == 0 && _selectedOrderId != null)
         ? null
         : _bottomNavigation(),
   );
