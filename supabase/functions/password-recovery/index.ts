@@ -183,6 +183,9 @@ Deno.serve(async (request) => {
       const { data, error } = await admin.rpc(recoveryFunction, {
         p_reset_token: token, p_new_password: password,
       });
+      if (error?.message?.toLowerCase().includes('new password matches current password')) {
+        return reply({ success: false, reason: 'password_reused' }, 409);
+      }
       if (error) throw error;
       return reply({ success: data === true });
     }

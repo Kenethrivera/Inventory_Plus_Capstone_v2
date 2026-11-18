@@ -261,6 +261,9 @@ class CustomerOrder {
   final double cashGiven;
   final double changeAmount;
   final String? paymentReference;
+  final String? gcashDestinationSlot;
+  final String? gcashDestinationName;
+  final String? gcashDestinationNumber;
 
   final String? createdById;
   final String? createdByName;
@@ -303,6 +306,9 @@ class CustomerOrder {
     this.cashGiven = 0.0,
     this.changeAmount = 0.0,
     this.paymentReference,
+    this.gcashDestinationSlot,
+    this.gcashDestinationName,
+    this.gcashDestinationNumber,
     this.createdById,
     this.createdByName,
     this.assignedHelperId,
@@ -356,6 +362,9 @@ class CustomerOrder {
       cashGiven: (json['cash_given'] as num?)?.toDouble() ?? 0.0,
       changeAmount: (json['change_amount'] as num?)?.toDouble() ?? 0.0,
       paymentReference: json['payment_reference']?.toString(),
+      gcashDestinationSlot: json['gcash_destination_slot']?.toString(),
+      gcashDestinationName: json['gcash_destination_name']?.toString(),
+      gcashDestinationNumber: json['gcash_destination_number']?.toString(),
 
       createdById: json['created_by_id']?.toString(),
       createdByName: json['created_by_name']?.toString(),

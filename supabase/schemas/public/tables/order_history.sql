@@ -28,6 +28,9 @@ CREATE TABLE "public"."order_history" (
   "change_amount"        numeric,
   "snapshot_updated_at"  timestamp with time zone NOT NULL DEFAULT now(),
   "payment_reference"    text,
+  "gcash_destination_slot" text,
+  "gcash_destination_name" text,
+  "gcash_destination_number" text,
   CONSTRAINT "order_history_pkey" PRIMARY KEY (order_id)
 );
 

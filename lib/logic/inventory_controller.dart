@@ -291,28 +291,44 @@ class InventoryController {
   Timer? _rollingSalesExpiryTimer;
 
   String gcashQrUrl = '';
-  bool gcashEnabled = true;
+  String gcashAccountName = '';
+  String gcashNumber = '';
+  String alternateGcashQrUrl = '';
+  String alternateGcashAccountName = '';
+  String alternateGcashNumber = '';
+
+  bool get hasAlternateGcashAccount =>
+      alternateGcashQrUrl.isNotEmpty &&
+      alternateGcashAccountName.isNotEmpty &&
+      alternateGcashNumber.isNotEmpty;
+
   double cashierAutoApprovedDiscountLimitPct = 10.0;
 
-  Future<void> loadStoreSettings() async {
-    if (_paymentSettingsLoaded) return;
+  Future<void> loadStoreSettings({bool refresh = false}) async {
+    if (_paymentSettingsLoaded && !refresh) return;
     await _refreshPaymentSettings();
   }
 
-  Future<void> updateGcashQrUrl(String newUrl) async {
+  Future<void> updateGcashQrUrl(String newUrl, {bool alternate = false}) async {
     if (activeLocationId == null) {
       throw StateError('Payment settings require an active location.');
     }
     try {
       await supabase.rpc(
-        'update_store_payment_settings_v1',
+        alternate
+            ? 'update_secondary_gcash_qr_v1'
+            : 'update_store_payment_settings_v1',
         params: <String, dynamic>{
           'p_session_token': _requireSessionToken(),
           'p_gcash_qr_url': newUrl,
         },
       );
 
-      gcashQrUrl = newUrl;
+      if (alternate) {
+        alternateGcashQrUrl = newUrl;
+      } else {
+        gcashQrUrl = newUrl;
+      }
       _paymentSettingsLoaded = true;
       _publishRuntimeSettings();
     } catch (error, stackTrace) {
@@ -334,6 +350,7 @@ class InventoryController {
   Future<String> replaceGcashQrAsset(
     Uint8List bytes, {
     required String operationId,
+    bool alternate = false,
   }) async {
     final locationId = activeLocationId;
     if (locationId == null || locationId.isEmpty) {
@@ -359,7 +376,10 @@ class InventoryController {
           'Unable to complete the upload. Please try again.',
         );
       }
-      previousUrl = await _fetchPersistedGcashQrUrl(locationId);
+      previousUrl = await _fetchPersistedGcashQrUrl(
+        locationId,
+        alternate: alternate,
+      );
       await supabase.storage
           .from('store_assets')
           .uploadBinary(
@@ -377,14 +397,21 @@ class InventoryController {
       }
 
       try {
-        await updateGcashQrUrl(newUrl);
+        await updateGcashQrUrl(newUrl, alternate: alternate);
       } catch (_) {
         // A lost response may hide a committed settings update. Reconcile the
         // canonical reference before deciding whether the staged object is an
         // orphan or the active QR.
-        final persistedUrl = await _tryFetchPersistedGcashQrUrl(locationId);
+        final persistedUrl = await _tryFetchPersistedGcashQrUrl(
+          locationId,
+          alternate: alternate,
+        );
         if (persistedUrl != newUrl) rethrow;
-        gcashQrUrl = newUrl;
+        if (alternate) {
+          alternateGcashQrUrl = newUrl;
+        } else {
+          gcashQrUrl = newUrl;
+        }
         _paymentSettingsLoaded = true;
         _publishRuntimeSettings();
       }
@@ -415,18 +442,25 @@ class InventoryController {
     }
   }
 
-  Future<String> _fetchPersistedGcashQrUrl(String locationId) async {
+  Future<String> _fetchPersistedGcashQrUrl(
+    String locationId, {
+    bool alternate = false,
+  }) async {
+    final column = alternate ? 'gcash_alt_qr_url' : 'gcash_qr_url';
     final response = await supabase
         .from('store_settings')
-        .select('gcash_qr_url')
+        .select(column)
         .eq('location_id', locationId)
         .maybeSingle();
-    return response?['gcash_qr_url']?.toString() ?? '';
+    return response?[column]?.toString() ?? '';
   }
 
-  Future<String?> _tryFetchPersistedGcashQrUrl(String locationId) async {
+  Future<String?> _tryFetchPersistedGcashQrUrl(
+    String locationId, {
+    bool alternate = false,
+  }) async {
     try {
-      return await _fetchPersistedGcashQrUrl(locationId);
+      return await _fetchPersistedGcashQrUrl(locationId, alternate: alternate);
     } catch (error, stackTrace) {
       AppLogger.error(
         'GCash QR reference verification failed',
@@ -447,13 +481,19 @@ class InventoryController {
         _managedGcashObjectPath(candidateUrl, locationId: locationId);
     if (candidatePath == null) return;
 
-    final currentUrl = await _tryFetchPersistedGcashQrUrl(locationId);
-    if (currentUrl == null || currentUrl == candidateUrl) return;
-    final currentPath = _managedGcashObjectPath(
-      currentUrl,
-      locationId: locationId,
+    final primaryUrl = await _tryFetchPersistedGcashQrUrl(locationId);
+    final alternateUrl = await _tryFetchPersistedGcashQrUrl(
+      locationId,
+      alternate: true,
     );
-    if (currentPath == candidatePath) return;
+    if (primaryUrl == null || alternateUrl == null) return;
+    if (primaryUrl == candidateUrl || alternateUrl == candidateUrl) return;
+    for (final currentUrl in [primaryUrl, alternateUrl]) {
+      if (_managedGcashObjectPath(currentUrl, locationId: locationId) ==
+          candidatePath) {
+        return;
+      }
+    }
 
     try {
       await supabase.storage.from('store_assets').remove([candidatePath]);
@@ -538,25 +578,25 @@ class InventoryController {
     required int maxHelperOrders,
     required double maxApprovedDiscount,
     required double defaultCashierLimit,
-    required bool acceptGcash,
     required String gcashAccountName,
     required String gcashNumber,
+    required String alternateGcashAccountName,
+    required String alternateGcashNumber,
   }) async {
     await supabase.rpc(
-      'update_settings_dashboard_v1',
+      'update_settings_dashboard_v2',
       params: {
         'p_session_token': _requireSessionToken(),
         'p_auto_assign_orders': autoAssignOrders,
         'p_max_helper_orders': maxHelperOrders,
         'p_max_approved_discount': maxApprovedDiscount,
         'p_default_cashier_limit': defaultCashierLimit,
-        'p_gcash_enabled': acceptGcash,
         'p_gcash_account_name': gcashAccountName.trim(),
         'p_gcash_number': gcashNumber.trim(),
-        'p_cashier_limits': <String, double>{},
+        'p_gcash_alt_account_name': alternateGcashAccountName.trim(),
+        'p_gcash_alt_number': alternateGcashNumber.trim(),
       },
     );
-    gcashEnabled = acceptGcash;
     cashierAutoApprovedDiscountLimitPct = defaultCashierLimit;
     _paymentSettingsLoaded = false;
     await _refreshPaymentSettings();
@@ -800,7 +840,11 @@ class InventoryController {
     _clearStaffConfigurationSnapshot();
     _clearApprovalState();
     gcashQrUrl = '';
-    gcashEnabled = true;
+    gcashAccountName = '';
+    gcashNumber = '';
+    alternateGcashQrUrl = '';
+    alternateGcashAccountName = '';
+    alternateGcashNumber = '';
     cashierAutoApprovedDiscountLimitPct = 10.0;
     _paymentSettingsLoaded = false;
     _publishRuntimeSettings();
@@ -961,14 +1005,17 @@ class InventoryController {
         response = await supabase
             .from('store_settings')
             .select(
-              'gcash_qr_url, cashier_auto_approved_discount_limit_pct, gcash_enabled',
+              'gcash_qr_url, gcash_account_name, gcash_number, '
+              'gcash_alt_qr_url, gcash_alt_account_name, gcash_alt_number, '
+              'cashier_auto_approved_discount_limit_pct',
             )
             .eq('location_id', locationId)
             .maybeSingle();
       } catch (_) {
         response = await supabase
             .from('store_settings')
-            .select('gcash_qr_url, cashier_auto_approved_discount_limit_pct')
+            .select('gcash_qr_url, gcash_account_name, gcash_number, '
+                'cashier_auto_approved_discount_limit_pct')
             .eq('location_id', locationId)
             .maybeSingle();
       }
@@ -976,7 +1023,11 @@ class InventoryController {
         return;
       }
       gcashQrUrl = response?['gcash_qr_url']?.toString() ?? '';
-      gcashEnabled = response?['gcash_enabled'] != false;
+      gcashAccountName = response?['gcash_account_name']?.toString() ?? '';
+      gcashNumber = response?['gcash_number']?.toString() ?? '';
+      alternateGcashQrUrl = response?['gcash_alt_qr_url']?.toString() ?? '';
+      alternateGcashAccountName = response?['gcash_alt_account_name']?.toString() ?? '';
+      alternateGcashNumber = response?['gcash_alt_number']?.toString() ?? '';
       cashierAutoApprovedDiscountLimitPct =
           (response?['cashier_auto_approved_discount_limit_pct'] as num?)
               ?.toDouble() ??
@@ -4616,6 +4667,9 @@ class InventoryController {
     double? cashGiven,
     double? changeAmount,
     String? paymentReference,
+    String? gcashAccountSlot,
+    String? gcashDestinationName,
+    String? gcashDestinationNumber,
   }) async {
     _processingOrders ??= {};
 
@@ -4629,7 +4683,7 @@ class InventoryController {
           ? normalizeGcashReference(paymentReference)
           : null;
       final response = await supabase.rpc(
-        'complete_customer_order_v1',
+        'complete_customer_order_v2',
         params: <String, dynamic>{
           'p_session_token': _requireSessionToken(),
           'p_order_id': order.id,
@@ -4637,6 +4691,9 @@ class InventoryController {
           'p_cash_given': cashGiven,
           'p_change_amount': changeAmount,
           'p_payment_reference': normalizedPaymentReference,
+          'p_gcash_account_slot': gcashAccountSlot,
+          'p_gcash_destination_name': gcashDestinationName,
+          'p_gcash_destination_number': gcashDestinationNumber,
         },
       );
       final result = Map<String, dynamic>.from(response as Map);

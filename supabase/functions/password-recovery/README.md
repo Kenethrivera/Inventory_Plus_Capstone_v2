@@ -4,6 +4,8 @@ Apply `database/phase_password_recovery.sql`, then `database/phase_password_reco
 
 For a project that already has security questions deployed, apply `database/phase_password_recovery_three_questions.sql` before deploying the updated Edge function. Existing two-question challenges expire during the upgrade; saved questions and answer hashes remain in place.
 
+Apply `database/phase_password_recovery_no_password_reuse.sql` and redeploy this Edge function to reject a reset that repeats the current password.
+
 Set these Edge Function secrets for email delivery using the existing EmailJS template:
 
 - `EMAILJS_SERVICE_ID`

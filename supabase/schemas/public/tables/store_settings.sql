@@ -9,8 +9,12 @@ CREATE TABLE "public"."store_settings" (
   "gcash_enabled"                           boolean NOT NULL DEFAULT true,
   "gcash_account_name"                      text NOT NULL DEFAULT '',
   "gcash_number"                            text NOT NULL DEFAULT '',
+  "gcash_alt_account_name"                  text NOT NULL DEFAULT '',
+  "gcash_alt_number"                        text NOT NULL DEFAULT '',
+  "gcash_alt_qr_url"                        text NOT NULL DEFAULT '',
   "gcash_merchant_id"                       text NOT NULL DEFAULT '',
   CONSTRAINT "store_settings_max_discount_check" CHECK (max_approved_discount_pct BETWEEN 0 AND 100),
+  CONSTRAINT "store_settings_gcash_always_enabled_check" CHECK (gcash_enabled = true),
   CONSTRAINT "store_settings_helper_limit_check" CHECK (max_active_orders_per_helper BETWEEN 1 AND 30),
   CONSTRAINT "store_settings_cashier_discount_limit_check"
     CHECK (((cashier_auto_approved_discount_limit_pct >= (0)::numeric) AND (cashier_auto_approved_discount_limit_pct <= (100)::numeric))),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -37,6 +38,8 @@ class ChangePasswordDialog extends StatefulWidget {
 
 class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
   static const Duration _verificationDebounce = Duration(milliseconds: 600);
+  static const _brand = Color(0xFFC83D08);
+  static const _brandDark = Color(0xFF9D320F);
 
   final TextEditingController _currentPasswordController =
       TextEditingController();
@@ -72,6 +75,14 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
       _hasLowercase &&
       _hasDigit &&
       _hasSymbol;
+
+  int get _metCount => [
+    _hasMinLength,
+    _hasUppercase,
+    _hasLowercase,
+    _hasDigit,
+    _hasSymbol,
+  ].where((met) => met).length;
 
   bool get _currentPasswordIsVerified =>
       _currentPasswordState == _CurrentPasswordState.correct;
@@ -225,6 +236,10 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
           _currentPasswordState = _CurrentPasswordState.correct;
           _isSaving = false;
         });
+        AppToast.error(
+          context,
+          'Your new password must be different from your current password.',
+        );
       case ChangePasswordResult.invalidNewPassword:
         setState(() {
           _domainNewPasswordInvalid = true;
@@ -418,8 +433,520 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
     );
   }
 
+  Widget _forcedRequirementRow(String label, bool met) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(
+            met ? Icons.check_circle : Icons.circle_outlined,
+            size: 15,
+            color: met ? Colors.white : Colors.white.withValues(alpha: 0.55),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: met ? 1 : 0.75),
+                fontSize: 12,
+                fontWeight: met ? FontWeight.w700 : FontWeight.w400,
+                fontFamily: 'Outfit',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _forcedCompactRequirementRow(String label, bool met) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 5),
+      child: Row(
+        children: [
+          Icon(
+            met ? Icons.check_circle : Icons.circle_outlined,
+            size: 14,
+            color: met ? const Color(0xFF15803D) : const Color(0xFF817A75),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF675A52),
+                fontSize: 11,
+                fontFamily: 'Outfit',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForcedInfoPanel({bool compact = false}) {
+    return Container(
+      color: _brandDark,
+      padding: EdgeInsets.all(compact ? 24 : 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: const Icon(LucideIcons.lockKeyhole, color: _brand, size: 23),
+          ),
+          SizedBox(height: compact ? 16 : 30),
+          Text(
+            'Reset password',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 24 : 30,
+              fontWeight: FontWeight.w800,
+              fontFamily: 'Outfit',
+            ),
+          ),
+          SizedBox(height: compact ? 8 : 14),
+          Text(
+            'Your password was reset by an administrator. Enter the temporary password, then set a new one.',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 13 : 16,
+              height: 1.55,
+              fontFamily: 'Outfit',
+            ),
+          ),
+          if (!compact) ...[
+            const SizedBox(height: 50),
+            Row(
+              children: [
+                Container(
+                  width: 31,
+                  height: 31,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: Colors.white),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Text(
+                    '3',
+                    style: TextStyle(
+                      color: _brandDark,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Outfit',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Set new password',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Outfit',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'YOUR PASSWORD NEEDS',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1,
+                fontFamily: 'Outfit',
+              ),
+            ),
+            const SizedBox(height: 10),
+            _forcedRequirementRow('At least 8 characters', _hasMinLength),
+            _forcedRequirementRow('One uppercase letter (A-Z)', _hasUppercase),
+            _forcedRequirementRow('One lowercase letter (a-z)', _hasLowercase),
+            _forcedRequirementRow('One number (0-9)', _hasDigit),
+            _forcedRequirementRow('One symbol (!@#\$%^&*)', _hasSymbol),
+            _forcedRequirementRow(
+              'Different from temporary password',
+              _differsFromVerifiedCurrent,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForcedStrengthMeter() {
+    const labels = ['', 'Weak', 'Weak', 'Fair', 'Almost there', 'Strong'];
+    final met = _metCount;
+    return Row(
+      children: [
+        Expanded(
+          child: Row(
+            children: List.generate(5, (index) {
+              return Expanded(
+                child: Container(
+                  margin: EdgeInsets.only(right: index < 4 ? 4 : 0),
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: index < met ? _brand : const Color(0xFFF1EAE4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 78,
+          child: Text(
+            labels[met],
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: _brand,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              fontFamily: 'Outfit',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildForcedField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    required bool obscure,
+    required ValueChanged<String> onChanged,
+    required VoidCallback toggleVisibility,
+    bool invalid = false,
+  }) {
+    final borderColor = invalid
+        ? const Color(0xFFDC2626)
+        : const Color(0xFFD8D0C9);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF0F172A),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Outfit',
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          key: ValueKey(label),
+          controller: controller,
+          obscureText: obscure,
+          enabled: !_isSaving && !_isLoggingOut,
+          onChanged: onChanged,
+          style: const TextStyle(
+            color: Color(0xFF0F172A),
+            fontSize: 14,
+            fontFamily: 'Outfit',
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(
+              color: Color(0xFF9A948E),
+              fontFamily: 'Outfit',
+            ),
+            prefixIcon: Icon(icon, color: const Color(0xFF817A75), size: 18),
+            suffixIcon: IconButton(
+              icon: Icon(
+                obscure ? LucideIcons.eyeOff : LucideIcons.eye,
+                color: const Color(0xFF817A75),
+                size: 18,
+              ),
+              onPressed: toggleVisibility,
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: borderColor),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: borderColor),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: invalid ? borderColor : _brand,
+                width: 1.5,
+              ),
+            ),
+            contentPadding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildForcedFormPanel({bool compact = false}) {
+    final currentInvalid =
+        _currentPasswordState == _CurrentPasswordState.incorrect;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        compact ? 24 : 50,
+        24,
+        compact ? 24 : 50,
+        42,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 46),
+          const Text(
+            'SET NEW PASSWORD',
+            style: TextStyle(
+              color: Color(0xFF675A52),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1,
+              fontFamily: 'Outfit',
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Set new password',
+            style: TextStyle(
+              color: Color(0xFF171717),
+              fontSize: 25,
+              fontWeight: FontWeight.w800,
+              fontFamily: 'Outfit',
+            ),
+          ),
+          const SizedBox(height: 30),
+          _buildForcedField(
+            controller: _currentPasswordController,
+            label: 'Temporary password',
+            hint: 'Enter temporary password',
+            icon: LucideIcons.lock,
+            obscure: _obscureCurrent,
+            invalid: currentInvalid,
+            onChanged: _onCurrentPasswordChanged,
+            toggleVisibility: () =>
+                setState(() => _obscureCurrent = !_obscureCurrent),
+          ),
+          if (_currentPasswordState != _CurrentPasswordState.empty) ...[
+            const SizedBox(height: 8),
+            Text(
+              switch (_currentPasswordState) {
+                _CurrentPasswordState.pending =>
+                  'Verifying temporary password…',
+                _CurrentPasswordState.correct => 'Temporary password verified.',
+                _CurrentPasswordState.incorrect =>
+                  'Incorrect temporary password.',
+                _CurrentPasswordState.empty => '',
+              },
+              style: TextStyle(
+                color: currentInvalid
+                    ? const Color(0xFFB42318)
+                    : _currentPasswordIsVerified
+                    ? const Color(0xFF15803D)
+                    : const Color(0xFF756D67),
+                fontSize: 12,
+                fontFamily: 'Outfit',
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          _buildForcedField(
+            controller: _newPasswordController,
+            label: 'New password',
+            hint: 'Min. 8 characters',
+            icon: LucideIcons.lock,
+            obscure: _obscureNew,
+            invalid:
+                _domainNewPasswordInvalid ||
+                (_currentPasswordIsVerified &&
+                    _newPasswordController.text.isNotEmpty &&
+                    !_differsFromVerifiedCurrent),
+            onChanged: _onNewPasswordChanged,
+            toggleVisibility: () => setState(() => _obscureNew = !_obscureNew),
+          ),
+          const SizedBox(height: 10),
+          _buildForcedStrengthMeter(),
+          if (compact) ...[
+            const SizedBox(height: 10),
+            _forcedCompactRequirementRow(
+              'At least 8 characters',
+              _hasMinLength,
+            ),
+            _forcedCompactRequirementRow(
+              'Uppercase and lowercase letters',
+              _hasUppercase && _hasLowercase,
+            ),
+            _forcedCompactRequirementRow(
+              'One number and one symbol',
+              _hasDigit && _hasSymbol,
+            ),
+            _forcedCompactRequirementRow(
+              'Different from temporary password',
+              _differsFromVerifiedCurrent,
+            ),
+          ],
+          const SizedBox(height: 18),
+          _buildForcedField(
+            controller: _confirmPasswordController,
+            label: 'Confirm new password',
+            hint: 'Re-enter new password',
+            icon: LucideIcons.lockKeyhole,
+            obscure: _obscureConfirm,
+            invalid: _confirmPasswordIsInvalid,
+            onChanged: _onConfirmPasswordChanged,
+            toggleVisibility: () =>
+                setState(() => _obscureConfirm = !_obscureConfirm),
+          ),
+          if (_confirmPasswordIsInvalid) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Passwords do not match.',
+              style: TextStyle(
+                color: Color(0xFFB42318),
+                fontSize: 12,
+                fontFamily: 'Outfit',
+              ),
+            ),
+          ],
+          const SizedBox(height: 40),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 14,
+            runSpacing: 10,
+            children: [
+              OutlinedButton(
+                onPressed: widget.onLogout == null || _isSaving || _isLoggingOut
+                    ? null
+                    : _logout,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF171717),
+                  side: const BorderSide(color: Color(0xFFD8D0C9)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
+                  ),
+                ),
+                child: _isLoggingOut
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text(
+                        'Logout',
+                        style: TextStyle(
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+              ),
+              ElevatedButton(
+                onPressed: _canSubmit ? _submit : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _brand,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 30,
+                    vertical: 16,
+                  ),
+                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        'Update password',
+                        style: TextStyle(
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForcedPasswordDialog(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final wide = screenWidth >= 960;
+    return Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      insetPadding: EdgeInsets.all(screenWidth < 600 ? 12 : 20),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: wide ? 900 : min(560.0, screenWidth - 24),
+        ),
+        child: SingleChildScrollView(
+          child: wide
+              ? IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(width: 375, child: _buildForcedInfoPanel()),
+                      Expanded(child: _buildForcedFormPanel()),
+                    ],
+                  ),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildForcedInfoPanel(compact: true),
+                    _buildForcedFormPanel(compact: true),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.forced) {
+      return PopScope(
+        canPop: false,
+        child: _buildForcedPasswordDialog(context),
+      );
+    }
     final newPasswordHasInput = _newPasswordController.text.isNotEmpty;
     final currentInvalid =
         _currentPasswordState == _CurrentPasswordState.incorrect;

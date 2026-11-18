@@ -48,6 +48,7 @@ import 'widgets/startup_restoration_surface.dart';
 import '../services/staff_presence_service.dart';
 import '../services/order_auto_assignment_service.dart';
 import 'widgets/active_staff_button.dart';
+import 'widgets/admin_store_status_clock.dart';
 import '../services/store_access_service.dart';
 import '../services/main_section_url.dart';
 import 'staff_history_page.dart';
@@ -109,6 +110,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   final Completer<void> _deferredControllerData = Completer<void>();
   final Set<int> _mountedPageIndexes = <int>{};
   Timer? _storeAccessEndTimer;
+  StoreAccessSettings? _adminStoreHoursSettings;
   StoreAccessSettings? _scheduledStoreAccessSettings;
   StoreAccessWindow? _scheduledStoreAccessWindow;
   String? _storeAccessScheduleKey;
@@ -463,6 +465,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         settings.locationId != accessService.locationId) {
       return;
     }
+    if (!mounted) return;
+    setState(() => _adminStoreHoursSettings = settings);
 
     final now = DateTime.now();
     _storeAccessEndTimer?.cancel();
@@ -2276,7 +2280,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
 
     if (_isDetailView && selectedItem != null) {
-      return ItemDetailPage(
+      final detailPage = ItemDetailPage(
         item: selectedItem,
         controller: widget.controller,
         onBack: _handleBackToMain,
@@ -2289,6 +2293,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             _scanInventoryStockAlerts();
           });
         },
+      );
+      if (_sessionRole != 'admin') return detailPage;
+      return Scaffold(
+        backgroundColor: _mainBg,
+        body: Column(
+          children: [
+            _buildAdminTopBar(
+              orderQueueIndex: _mainSections.indexOf(MainSection.queue),
+              posIndex: _mainSections.indexOf(MainSection.pos),
+              transactionIndex: _mainSections.indexOf(MainSection.transactions),
+              inventoryIndex: _mainSections.indexOf(MainSection.inventory),
+            ),
+            Expanded(child: detailPage),
+          ],
+        ),
       );
     }
 
@@ -2583,9 +2602,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 Expanded(
                   child: Column(
                     children: [
-                      if (_currentIndex == dashboardIndex ||
-                          _currentIndex == ordersActivityIndex)
-                        _buildDashboardTopBar(
+                      if (isAdmin)
+                        _buildAdminTopBar(
                           orderQueueIndex: orderQueueIndex,
                           posIndex: posIndex,
                           transactionIndex: transactionIndex,
@@ -3079,8 +3097,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         const SizedBox(width: 8),
       ],
       bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(1.0),
-        child: Container(color: Colors.grey.shade200, height: 1.0),
+        preferredSize: Size.fromHeight(isAdmin ? 33 : 1),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isAdmin)
+              SizedBox(
+                height: 32,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: AdminStoreStatusClock(
+                    resolveWindow: _resolveAdminStoreHoursWindow,
+                    closureReason: _adminClosureReason,
+                    compact: true,
+                  ),
+                ),
+              ),
+            Container(color: const Color(0xFFE8E3DF), height: 1),
+          ],
+        ),
       ),
     );
   }
@@ -3363,26 +3398,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     },
   );
 
-  Widget _buildDashboardTopBar({
+  Widget _buildAdminTopBar({
     required int orderQueueIndex,
     required int posIndex,
     required int transactionIndex,
     required int inventoryIndex,
   }) {
-    final window = _scheduledStoreAccessWindow;
-    final now = DateTime.now();
-    final isOpen =
-        window != null &&
-        !now.isBefore(window.opening) &&
-        now.isBefore(window.shiftEnd);
-    final nextOpening = window != null && now.isAfter(window.shiftEnd)
-        ? window.opening.add(const Duration(days: 1))
-        : window?.opening;
-    final status = window == null
-        ? 'Store overview'
-        : isOpen
-        ? 'Open · closes ${_dashboardTime(window.shiftEnd)}'
-        : 'Closed · opens ${_dashboardTime(nextOpening!)}';
     return Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -3392,16 +3413,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       ),
       child: Row(
         children: [
-          const Icon(Icons.circle, size: 10, color: Color(0xFFA8A29E)),
-          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              status,
-              style: const TextStyle(
-                color: Color(0xFF171717),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
+            child: AdminStoreStatusClock(
+              resolveWindow: _resolveAdminStoreHoursWindow,
+              closureReason: _adminClosureReason,
             ),
           ),
           _buildNotificationControls(
@@ -3413,6 +3428,24 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  StoreAccessWindow? _resolveAdminStoreHoursWindow(DateTime now) {
+    final settings = _adminStoreHoursSettings;
+    final service = _storeAccessService;
+    if (settings == null || service == null) return null;
+    final window = service.resolveAccessWindow(settings, now: now);
+    if (now.isBefore(window.shiftEnd)) return window;
+    // The access grace period can extend past closing. Show the next opening.
+    return service.resolveAccessWindow(
+      settings,
+      now: window.accessEnd.add(const Duration(seconds: 1)),
+    );
+  }
+
+  String? _adminClosureReason(DateTime now) {
+    final day = _adminStoreHoursSettings?.hoursForWeekday(now.weekday);
+    return day?.closed == true ? day!.closedReason : null;
   }
 
   String _dashboardTime(DateTime value) {

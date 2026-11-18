@@ -6,9 +6,10 @@ typedef _DashboardExtrasBaseline = ({
   bool autoAssignOrders,
   String maxHelperOrders,
   String maxApprovedDiscount,
-  bool gcashEnabled,
   String gcashAccountName,
   String gcashNumber,
+  String alternateGcashAccountName,
+  String alternateGcashNumber,
 });
 
 enum _SettingsSection { stock, hours, pos }
@@ -27,9 +28,10 @@ extension _SettingsDashboard on _SystemSettingsPageState {
       autoAssignOrders: autoAssignOrders,
       maxHelperOrders: maxHelperOrders,
       maxApprovedDiscount: _maxApprovedDiscountCtrl.text.trim(),
-      gcashEnabled: _gcashEnabled,
       gcashAccountName: _gcashAccountCtrl.text.trim(),
       gcashNumber: _gcashNumberCtrl.text.trim(),
+      alternateGcashAccountName: _alternateGcashAccountCtrl.text.trim(),
+      alternateGcashNumber: _alternateGcashNumberCtrl.text.trim(),
     );
   }
 
@@ -37,7 +39,10 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     return switch (_selectedSettingsSection) {
       _SettingsSection.stock => _thresholdDraftDirty,
       _SettingsSection.hours => _storeAccessDraftDirty,
-      _SettingsSection.pos => _posDetailsDirty || _pendingGcashQrBytes != null,
+      _SettingsSection.pos =>
+        _posDetailsDirty ||
+        _pendingGcashQrBytes != null ||
+        _pendingAlternateGcashQrBytes != null,
     };
   }
 
@@ -53,9 +58,11 @@ extension _SettingsDashboard on _SystemSettingsPageState {
   bool get _gcashDetailsDirty {
     final baseline = _dashboardExtrasBaseline;
     return baseline != null &&
-        (_gcashEnabled != baseline.gcashEnabled ||
-            _gcashAccountCtrl.text.trim() != baseline.gcashAccountName ||
-            _gcashNumberCtrl.text.trim() != baseline.gcashNumber);
+        (_gcashAccountCtrl.text.trim() != baseline.gcashAccountName ||
+            _gcashNumberCtrl.text.trim() != baseline.gcashNumber ||
+            _alternateGcashAccountCtrl.text.trim() !=
+                baseline.alternateGcashAccountName ||
+            _alternateGcashNumberCtrl.text.trim() != baseline.alternateGcashNumber);
   }
 
   bool get _dashboardSaving =>
@@ -76,8 +83,8 @@ extension _SettingsDashboard on _SystemSettingsPageState {
           .from('store_settings')
           .select(
             'auto_assign_orders, max_active_orders_per_helper, '
-            'max_approved_discount_pct, gcash_enabled, gcash_account_name, '
-            'gcash_number',
+            'max_approved_discount_pct, gcash_account_name, '
+            'gcash_number, gcash_alt_account_name, gcash_alt_number',
           )
           .eq('location_id', locationId)
           .maybeSingle();
@@ -86,9 +93,12 @@ extension _SettingsDashboard on _SystemSettingsPageState {
         _maxApprovedDiscountCtrl.text = _formatPct(
           (row?['max_approved_discount_pct'] as num?)?.toDouble() ?? 25,
         );
-        _gcashEnabled = row?['gcash_enabled'] != false;
         _gcashAccountCtrl.text = row?['gcash_account_name']?.toString() ?? '';
         _gcashNumberCtrl.text = row?['gcash_number']?.toString() ?? '';
+        _alternateGcashAccountCtrl.text =
+            row?['gcash_alt_account_name']?.toString() ?? '';
+        _alternateGcashNumberCtrl.text =
+            row?['gcash_alt_number']?.toString() ?? '';
         _captureDashboardExtrasBaseline(
           autoAssignOrders: row?['auto_assign_orders'] != false,
           maxHelperOrders:
@@ -101,7 +111,8 @@ extension _SettingsDashboard on _SystemSettingsPageState {
       if (!mounted) return;
       setState(() {
         _isLoadingDashboardExtras = false;
-        _dashboardError = 'New settings require the Settings SQL migration.';
+        _dashboardError =
+            'GCash account settings require the latest database migration.';
       });
     }
   }
@@ -128,6 +139,25 @@ extension _SettingsDashboard on _SystemSettingsPageState {
       setState(() => _dashboardError = 'Review the order and discount limits.');
       return false;
     }
+    final alternateName = _alternateGcashAccountCtrl.text.trim();
+    final alternateNumber = _alternateGcashNumberCtrl.text.trim();
+    if (alternateName.isEmpty != alternateNumber.isEmpty) {
+      setState(() => _dashboardError =
+          'Enter both the alternate GCash account name and number.');
+      return false;
+    }
+    if (alternateNumber.isNotEmpty &&
+        !RegExp(r'^09\d{9}$').hasMatch(alternateNumber)) {
+      setState(() => _dashboardError =
+          'Enter an 11-digit alternate GCash number starting with 09.');
+      return false;
+    }
+    if (alternateNumber.isNotEmpty &&
+        alternateNumber == _gcashNumberCtrl.text.trim()) {
+      setState(() => _dashboardError =
+          'Use a different GCash number for the alternate account.');
+      return false;
+    }
     setState(() {
       _isSavingDashboard = true;
       _dashboardError = null;
@@ -138,9 +168,10 @@ extension _SettingsDashboard on _SystemSettingsPageState {
         maxHelperOrders: maxHelperOrders,
         maxApprovedDiscount: maxApprovedDiscount,
         defaultCashierLimit: defaultLimit,
-        acceptGcash: _gcashEnabled,
         gcashAccountName: _gcashAccountCtrl.text,
         gcashNumber: _gcashNumberCtrl.text,
+        alternateGcashAccountName: _alternateGcashAccountCtrl.text,
+        alternateGcashNumber: _alternateGcashNumberCtrl.text,
       );
       if (!mounted) return false;
       setState(() {
@@ -149,9 +180,11 @@ extension _SettingsDashboard on _SystemSettingsPageState {
           autoAssignOrders: baseline.autoAssignOrders,
           maxHelperOrders: baseline.maxHelperOrders,
           maxApprovedDiscount: _maxApprovedDiscountCtrl.text.trim(),
-          gcashEnabled: _gcashEnabled,
           gcashAccountName: _gcashAccountCtrl.text.trim(),
           gcashNumber: _gcashNumberCtrl.text.trim(),
+          alternateGcashAccountName:
+              _alternateGcashAccountCtrl.text.trim(),
+          alternateGcashNumber: _alternateGcashNumberCtrl.text.trim(),
         );
       });
       _showToast('Settings saved');
@@ -186,10 +219,18 @@ extension _SettingsDashboard on _SystemSettingsPageState {
         await _saveStoreAccessSettings();
         return;
       case _SettingsSection.pos:
+        if (_pendingAlternateGcashQrBytes != null &&
+            (_alternateGcashAccountCtrl.text.trim().isEmpty ||
+             _alternateGcashNumberCtrl.text.trim().isEmpty)) {
+          setState(() => _dashboardError =
+              'Enter the alternate GCash account name and number before saving its QR.');
+          return;
+        }
         if (_posDetailsDirty && !await _saveDashboardExtras()) {
           return;
         }
-        await _savePendingGcashQr();
+        if (!await _savePendingGcashQr()) return;
+        if (!await _savePendingGcashQr(alternate: true)) return;
         return;
     }
   }
@@ -216,19 +257,23 @@ extension _SettingsDashboard on _SystemSettingsPageState {
         }
         final gcash = _dashboardExtrasBaseline;
         if (gcash != null) {
-          _gcashEnabled = gcash.gcashEnabled;
           _gcashAccountCtrl.text = gcash.gcashAccountName;
           _gcashNumberCtrl.text = gcash.gcashNumber;
+          _alternateGcashAccountCtrl.text = gcash.alternateGcashAccountName;
+          _alternateGcashNumberCtrl.text = gcash.alternateGcashNumber;
         }
         _pendingGcashQrBytes = null;
         _pendingGcashQrFingerprint = null;
         _pendingGcashQrOperationId = null;
+        _pendingAlternateGcashQrBytes = null;
+        _pendingAlternateGcashQrFingerprint = null;
+        _pendingAlternateGcashQrOperationId = null;
         break;
     }
     setState(() => _dashboardError = null);
   }
 
-  Future<void> _chooseGcashQr() async {
+  Future<void> _chooseGcashQr({bool alternate = false}) async {
     try {
       final file = await ImagePicker().pickImage(source: ImageSource.gallery);
       if (file == null) return;
@@ -238,9 +283,15 @@ extension _SettingsDashboard on _SystemSettingsPageState {
       final croppedBytes = await showSquareImageCropDialog(context, bytes);
       if (croppedBytes == null || !mounted) return;
       setState(() {
-        _pendingGcashQrBytes = croppedBytes;
-        _pendingGcashQrFingerprint = null;
-        _pendingGcashQrOperationId = null;
+        if (alternate) {
+          _pendingAlternateGcashQrBytes = croppedBytes;
+          _pendingAlternateGcashQrFingerprint = null;
+          _pendingAlternateGcashQrOperationId = null;
+        } else {
+          _pendingGcashQrBytes = croppedBytes;
+          _pendingGcashQrFingerprint = null;
+          _pendingGcashQrOperationId = null;
+        }
         _dashboardError = null;
       });
     } catch (error, stackTrace) {
@@ -260,32 +311,55 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     }
   }
 
-  Future<void> _savePendingGcashQr() async {
-    final bytes = _pendingGcashQrBytes;
-    if (bytes == null || !mounted) return;
+  Future<bool> _savePendingGcashQr({bool alternate = false}) async {
+    final bytes = alternate
+        ? _pendingAlternateGcashQrBytes
+        : _pendingGcashQrBytes;
+    if (bytes == null) return true;
+    if (!mounted) return false;
     setState(() => _isUploadingQr = true);
     try {
       final fingerprint = widget.controller.gcashQrAssetFingerprint(bytes);
+      final pendingFingerprint = alternate
+          ? _pendingAlternateGcashQrFingerprint
+          : _pendingGcashQrFingerprint;
+      final pendingOperationId = alternate
+          ? _pendingAlternateGcashQrOperationId
+          : _pendingGcashQrOperationId;
       final operationId =
-          _pendingGcashQrFingerprint == fingerprint &&
-              _pendingGcashQrOperationId != null
-          ? _pendingGcashQrOperationId!
+          pendingFingerprint == fingerprint && pendingOperationId != null
+          ? pendingOperationId
           : widget.controller.newOperationId('gcash-qr');
-      _pendingGcashQrFingerprint = fingerprint;
-      _pendingGcashQrOperationId = operationId;
+      if (alternate) {
+        _pendingAlternateGcashQrFingerprint = fingerprint;
+        _pendingAlternateGcashQrOperationId = operationId;
+      } else {
+        _pendingGcashQrFingerprint = fingerprint;
+        _pendingGcashQrOperationId = operationId;
+      }
       final uploadedUrl = await widget.controller.replaceGcashQrAsset(
         bytes,
         operationId: operationId,
+        alternate: alternate,
       );
       if (uploadedUrl.isEmpty) throw StateError('Could not save the QR image.');
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
-        _pendingGcashQrBytes = null;
-        _pendingGcashQrFingerprint = null;
-        _pendingGcashQrOperationId = null;
+        if (alternate) {
+          _pendingAlternateGcashQrBytes = null;
+          _pendingAlternateGcashQrFingerprint = null;
+          _pendingAlternateGcashQrOperationId = null;
+        } else {
+          _pendingGcashQrBytes = null;
+          _pendingGcashQrFingerprint = null;
+          _pendingGcashQrOperationId = null;
+        }
         _dashboardError = null;
       });
-      _showToast('GCash QR image saved');
+      _showToast(alternate
+          ? 'Alternate GCash QR image saved'
+          : 'GCash QR image saved');
+      return true;
     } catch (error, stackTrace) {
       AppLogger.error(
         'GCash QR upload failed',
@@ -300,6 +374,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
           ),
         );
       }
+      return false;
     } finally {
       if (mounted) setState(() => _isUploadingQr = false);
     }
@@ -541,8 +616,13 @@ extension _SettingsDashboard on _SystemSettingsPageState {
             'GCash payments',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 16),
-          _gcashSection(),
+          const SizedBox(height: 5),
+          const Text(
+            'Set up both accounts here. Cashiers can show the backup only when needed.',
+            style: TextStyle(color: _muted, fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          _gcashAccountPager(),
         ],
       ),
     };
@@ -558,8 +638,8 @@ extension _SettingsDashboard on _SystemSettingsPageState {
         children: [
           Padding(
             padding: EdgeInsets.all(mobile ? 12 : 26),
-            child: LayoutBuilder(
-              builder: (context, limits) {
+            child: Builder(
+              builder: (context) {
                 final heading = Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -577,8 +657,6 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                             color: _ink,
                           ),
                         ),
-                        if (_selectedSettingsSection == _SettingsSection.pos)
-                          _gcashStatusBadge(),
                       ],
                     ),
                     const SizedBox(height: 5),
@@ -592,45 +670,25 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                     ),
                   ],
                 );
-                if (_selectedSettingsSection != _SettingsSection.pos) {
-                  if (mobile &&
-                      _selectedSettingsSection == _SettingsSection.hours) {
-                    return Row(
-                      children: [
-                        Expanded(child: heading),
-                        TextButton(
-                          onPressed: _copyMondayToAll,
-                          style: TextButton.styleFrom(
-                            foregroundColor: _orange,
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                          ),
-                          child: const Text(
-                            'Copy Mon to all',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-                  return heading;
-                }
-                if (limits.maxWidth < 420) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                if (mobile && _selectedSettingsSection == _SettingsSection.hours) {
+                  return Row(
                     children: [
-                      heading,
-                      const SizedBox(height: 12),
-                      _gcashToggle(),
+                      Expanded(child: heading),
+                      TextButton(
+                        onPressed: _copyMondayToAll,
+                        style: TextButton.styleFrom(
+                          foregroundColor: _orange,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                        ),
+                        child: const Text(
+                          'Copy Mon to all',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
                     ],
                   );
                 }
-                return Row(
-                  children: [
-                    Expanded(child: heading),
-                    const SizedBox(width: 14),
-                    _gcashToggle(),
-                  ],
-                );
+                return heading;
               },
             ),
           ),
@@ -691,43 +749,6 @@ extension _SettingsDashboard on _SystemSettingsPageState {
       ),
     );
   }
-
-  Widget _gcashStatusBadge() => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-    decoration: BoxDecoration(
-      color: _gcashEnabled ? const Color(0xFFEAF8EF) : const Color(0xFFF1EFEC),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      _gcashEnabled ? 'Accepting' : 'Off',
-      style: TextStyle(
-        color: _gcashEnabled ? const Color(0xFF15803D) : _muted,
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  );
-
-  Widget _gcashToggle() => ConstrainedBox(
-    constraints: const BoxConstraints(maxWidth: 250),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Flexible(
-          child: Text(
-            'Accept GCash at the register',
-            style: TextStyle(fontSize: 12),
-          ),
-        ),
-        const SizedBox(width: 6),
-        Checkbox(
-          value: _gcashEnabled,
-          activeColor: _orange,
-          onChanged: (value) => setState(() => _gcashEnabled = value ?? false),
-        ),
-      ],
-    ),
-  );
 
   Widget _numberField(
     String label,
@@ -857,15 +878,46 @@ extension _SettingsDashboard on _SystemSettingsPageState {
           openingTime: monday.openingTime,
           closingTime: monday.closingTime,
           closed: monday.closed,
+          closedReason: monday.closedReason,
         );
+        _closedReasonCtrls[day]!.text = monday.closedReason;
       }
     });
   }
 
+  void _setDayClosed(int day, StoreDayHours schedule, bool closed) {
+    setState(() {
+      if (!closed) _closedReasonCtrls[day]!.clear();
+      _weeklyHoursDraft[day] = schedule.copyWith(
+        closed: closed,
+        closedReason: closed ? _closedReasonCtrls[day]!.text : '',
+      );
+    });
+  }
+
+  Widget _closureReasonField(int day, StoreDayHours schedule) => Padding(
+    padding: const EdgeInsets.only(top: 8, bottom: 4),
+    child: TextField(
+      key: ValueKey('closed-reason-$day'),
+      controller: _closedReasonCtrls[day],
+      maxLength: 120,
+      onChanged: (value) => setState(() {
+        _weeklyHoursDraft[day] = schedule.copyWith(closedReason: value);
+      }),
+      decoration: const InputDecoration(
+        labelText: 'Reason for closing',
+        hintText: 'e.g. Holiday or maintenance',
+        border: OutlineInputBorder(),
+        isDense: true,
+        counterText: '',
+      ),
+    ),
+  );
+
   Widget _hoursSection({bool mobile = false}) {
     if (mobile) return _mobileHoursSection();
     return LayoutBuilder(
-      builder: (context, constraints) => constraints.maxWidth < 540
+      builder: (context, constraints) => constraints.maxWidth < 640
           ? _mobileHoursSection()
           : _desktopHoursSection(),
     );
@@ -884,6 +936,21 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            children: const [
+              Expanded(flex: 2, child: Text('Day', style: TextStyle(color: _muted))),
+              Expanded(flex: 2, child: Text('Open', style: TextStyle(color: _muted))),
+              SizedBox(width: 10),
+              Expanded(flex: 2, child: Text('Close', style: TextStyle(color: _muted))),
+              SizedBox(width: 10),
+              Expanded(flex: 2, child: Text('Closed', style: TextStyle(color: _muted))),
+              SizedBox(width: 10),
+              Expanded(flex: 3, child: Text('Reason', style: TextStyle(color: _muted))),
+            ],
+          ),
+        ),
         for (var day = 1; day <= 7; day++)
           Builder(
             builder: (context) {
@@ -898,15 +965,19 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                 decoration: const BoxDecoration(
                   border: Border(bottom: BorderSide(color: _line)),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Row(children: [
                     Expanded(
+                      flex: 2,
                       child: Text(
                         names[day - 1],
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
                     Expanded(
+                      flex: 2,
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -921,21 +992,23 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                                 );
                                 if (value == null || !mounted) return;
                                 setState(
-                                  () => _weeklyHoursDraft[day] = StoreDayHours(
+                                  () => _weeklyHoursDraft[day] = schedule.copyWith(
                                     openingTime: _formatClockTime(value),
-                                    closingTime: schedule.closingTime,
                                   ),
                                 );
                               },
-                        child: Text(
-                          _formatDisplayTime(
-                            _parseClockTime(schedule.openingTime),
-                          ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(_formatDisplayTime(_parseClockTime(schedule.openingTime))),
+                            const Icon(Icons.access_time_outlined, size: 18),
+                          ],
                         ),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
+                      flex: 2,
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -950,38 +1023,41 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                                 );
                                 if (value == null || !mounted) return;
                                 setState(
-                                  () => _weeklyHoursDraft[day] = StoreDayHours(
-                                    openingTime: schedule.openingTime,
+                                  () => _weeklyHoursDraft[day] = schedule.copyWith(
                                     closingTime: _formatClockTime(value),
                                   ),
                                 );
                               },
-                        child: Text(
-                          _formatDisplayTime(
-                            _parseClockTime(schedule.closingTime),
-                          ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(_formatDisplayTime(_parseClockTime(schedule.closingTime))),
+                            const Icon(Icons.access_time_outlined, size: 18),
+                          ],
                         ),
                       ),
                     ),
                     const SizedBox(width: 10),
-                    SizedBox(
-                      width: 110,
+                    Expanded(
+                      flex: 2,
                       child: Row(
                         children: [
                           Checkbox(
                             value: schedule.closed,
-                            onChanged: (value) => setState(() {
-                              _weeklyHoursDraft[day] = StoreDayHours(
-                                openingTime: schedule.openingTime,
-                                closingTime: schedule.closingTime,
-                                closed: value ?? false,
-                              );
-                            }),
+                            onChanged: (value) => _setDayClosed(day, schedule, value ?? false),
                           ),
                           const Text('Closed'),
                         ],
                       ),
                     ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 3,
+                      child: schedule.closed
+                          ? _closureReasonField(day, schedule)
+                          : const SizedBox.shrink(),
+                    ),
+                    ]),
                   ],
                 ),
               );
@@ -1040,6 +1116,18 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return Column(
       children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              SizedBox(width: 36, child: Text('Day', style: TextStyle(fontSize: 11, color: _muted))),
+              Expanded(child: Text('Open', style: TextStyle(fontSize: 11, color: _muted))),
+              SizedBox(width: 18),
+              Expanded(child: Text('Close', style: TextStyle(fontSize: 11, color: _muted))),
+              SizedBox(width: 76, child: Text('Closed', style: TextStyle(fontSize: 11, color: _muted))),
+            ],
+          ),
+        ),
         for (var day = 1; day <= 7; day++)
           _mobileDayRow(
             day,
@@ -1107,7 +1195,9 @@ extension _SettingsDashboard on _SystemSettingsPageState {
         decoration: const BoxDecoration(
           border: Border(bottom: BorderSide(color: _line)),
         ),
-        child: Row(
+        child: Column(
+          children: [
+            Row(
           children: [
             SizedBox(
               width: 36,
@@ -1136,13 +1226,8 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                     child: Checkbox(
                       value: schedule.closed,
                       visualDensity: VisualDensity.compact,
-                      onChanged: (value) => setState(() {
-                        _weeklyHoursDraft[day] = StoreDayHours(
-                          openingTime: schedule.openingTime,
-                          closingTime: schedule.closingTime,
-                          closed: value ?? false,
-                        );
-                      }),
+                      onChanged: (value) =>
+                          _setDayClosed(day, schedule, value ?? false),
                     ),
                   ),
                   const Flexible(
@@ -1154,6 +1239,9 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                 ],
               ),
             ),
+          ],
+        ),
+            if (schedule.closed) _closureReasonField(day, schedule),
           ],
         ),
       );
@@ -1172,14 +1260,13 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                 );
                 if (value == null || !mounted) return;
                 setState(() {
-                  _weeklyHoursDraft[day] = StoreDayHours(
+                  _weeklyHoursDraft[day] = schedule.copyWith(
                     openingTime: opening
                         ? _formatClockTime(value)
                         : schedule.openingTime,
                     closingTime: opening
                         ? schedule.closingTime
                         : _formatClockTime(value),
-                    closed: schedule.closed,
                   );
                 });
               },
@@ -1191,14 +1278,24 @@ extension _SettingsDashboard on _SystemSettingsPageState {
           padding: EdgeInsets.zero,
           shape: const StadiumBorder(),
         ),
-        child: Text(
-          _formatDisplayTime(
-            _parseClockTime(
-              opening ? schedule.openingTime : schedule.closingTime,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Flexible(
+              child: Text(
+                _formatDisplayTime(
+                  _parseClockTime(
+                    opening ? schedule.openingTime : schedule.closingTime,
+                  ),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12),
+              ),
             ),
-          ),
-          maxLines: 1,
-          style: const TextStyle(fontSize: 12),
+            const SizedBox(width: 4),
+            const Icon(Icons.access_time_outlined, size: 14),
+          ],
         ),
       );
 
@@ -1313,6 +1410,46 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     ],
   );
 
+  Widget _gcashAccountPager() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            for (var page = 0; page < 2; page++) ...[
+              if (page > 0) const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => setState(() => _selectedGcashSettingsPage = page),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _selectedGcashSettingsPage == page
+                        ? _orange
+                        : _ink,
+                    side: BorderSide(
+                      color: _selectedGcashSettingsPage == page
+                          ? _orange
+                          : _line,
+                    ),
+                  ),
+                  child: Text(
+                    page == 0 ? 'GCash 1 · Primary' : 'GCash 2 · Backup',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_selectedGcashSettingsPage == 0)
+          _gcashSection()
+        else
+          _alternateGcashSection(),
+      ],
+    );
+  }
+
   Widget _gcashSection() => LayoutBuilder(
     builder: (context, limits) {
       final details = Column(
@@ -1399,6 +1536,54 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     },
   );
 
+  Widget _alternateGcashSection() => LayoutBuilder(
+    builder: (context, limits) {
+      final details = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Account name',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 7),
+          TextField(
+            controller: _alternateGcashAccountCtrl,
+            onChanged: (_) => setState(() {}),
+            decoration: _gcashInputDecoration(),
+          ),
+          const SizedBox(height: 20),
+          const Text('GCash number',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 7),
+          TextField(
+            controller: _alternateGcashNumberCtrl,
+            onChanged: (_) => setState(() {}),
+            keyboardType: TextInputType.phone,
+            decoration: _gcashInputDecoration(),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Save the name, number, and QR so cashiers can use this account as a backup.',
+            style: TextStyle(color: _muted, fontSize: 12),
+          ),
+        ],
+      );
+      final qr = _gcashQrColumn(alternate: true);
+      if (limits.maxWidth < 400) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [details, const SizedBox(height: 26), qr],
+        );
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: details),
+          const SizedBox(width: 24),
+          Expanded(child: qr),
+        ],
+      );
+    },
+  );
+
   InputDecoration _gcashInputDecoration() => InputDecoration(
     isDense: true,
     filled: true,
@@ -1415,16 +1600,20 @@ extension _SettingsDashboard on _SystemSettingsPageState {
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(9)),
   );
 
-  Widget _gcashQrColumn() {
-    final pending = _pendingGcashQrBytes;
-    final qrUrl = widget.controller.gcashQrUrl;
+  Widget _gcashQrColumn({bool alternate = false}) {
+    final pending = alternate
+        ? _pendingAlternateGcashQrBytes
+        : _pendingGcashQrBytes;
+    final qrUrl = alternate
+        ? widget.controller.alternateGcashQrUrl
+        : widget.controller.gcashQrUrl;
     final hasQr = pending != null || qrUrl.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          'QR shown at checkout',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        Text(
+          alternate ? 'GCash 2 QR image' : 'GCash 1 QR image',
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 7),
         Container(
@@ -1434,14 +1623,14 @@ extension _SettingsDashboard on _SystemSettingsPageState {
             border: Border.all(color: _line),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: AspectRatio(
-            aspectRatio: 1,
+          child: SizedBox(
+            height: 260,
             child: pending != null
-                ? Image.memory(pending, fit: BoxFit.cover)
+                ? Image.memory(pending, fit: BoxFit.contain)
                 : qrUrl.isNotEmpty
                 ? Image.network(
                     qrUrl,
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain,
                     errorBuilder: (_, _, _) => const Center(
                       child: Text(
                         'QR image unavailable',
@@ -1466,7 +1655,9 @@ extension _SettingsDashboard on _SystemSettingsPageState {
         ),
         const SizedBox(height: 9),
         OutlinedButton(
-          onPressed: _dashboardSaving ? null : _chooseGcashQr,
+          onPressed: _dashboardSaving
+              ? null
+              : () => _chooseGcashQr(alternate: alternate),
           style: OutlinedButton.styleFrom(
             foregroundColor: _orange,
             side: const BorderSide(color: _orange),

@@ -147,7 +147,7 @@ class AuthService {
     final challengeId = data['challengeId']?.toString() ?? '';
     if (ids.isEmpty) {
       throw const AppUserFacingException(
-        'Security question verification could not start. Check the Admin username and saved setup, or try again later.',
+        'If you are staff, ask your administrator to reset your password.',
       );
     }
     if (challengeId.isEmpty || ids.length != 3) {
@@ -177,16 +177,55 @@ class AuthService {
     String password, {
     bool securityQuestions = false,
   }) async {
-    final response = await _supabase.functions.invoke(
-      'password-recovery',
-      body: {
-        'action': 'complete',
-        'resetToken': resetToken,
-        'password': password,
-        'method': securityQuestions ? 'questions' : 'code',
-      },
-    );
+    late final FunctionResponse response;
+    try {
+      response = await _supabase.functions.invoke(
+        'password-recovery',
+        body: {
+          'action': 'complete',
+          'resetToken': resetToken,
+          'password': password,
+          'method': securityQuestions ? 'questions' : 'code',
+        },
+      );
+    } on FunctionException catch (error) {
+      final details = error.details;
+      final reason = details is Map ? details['reason']?.toString() : null;
+      final serverError = details is Map ? details['error']?.toString() : null;
+      if (reason == 'password_reused' ||
+          (serverError?.toLowerCase().contains(
+                'new password matches current password',
+              ) ??
+              false)) {
+        throw const AppUserFacingException(
+          'Your new password must be different from your current password.',
+        );
+      }
+      if (error.status >= 500) {
+        throw const AppUserFacingException(
+          'Password reset could not be completed. Try a password different from your current one. If it still fails, ask your administrator to check password recovery.',
+        );
+      }
+      if (error.status == 429) {
+        throw const AppUserFacingException(
+          'Too many password reset attempts. Wait a few minutes and try again.',
+        );
+      }
+      if (error.status == 401 || error.status == 403 || error.status == 404) {
+        throw const AppUserFacingException(
+          'Password recovery is unavailable. Ask your administrator to check the recovery service.',
+        );
+      }
+      throw const AppUserFacingException(
+        'Password reset was rejected. Start again with a new code or security questions.',
+      );
+    }
     final data = response.data;
+    if (data is Map && data['reason'] == 'password_reused') {
+      throw const AppUserFacingException(
+        'Your new password must be different from your current password.',
+      );
+    }
     return data is Map && data['success'] == true;
   }
 }

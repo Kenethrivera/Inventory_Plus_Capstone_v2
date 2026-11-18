@@ -38,6 +38,8 @@ class _CompletedPayment {
     required this.cashReceived,
     required this.change,
     required this.reference,
+    required this.gcashDestinationName,
+    required this.gcashDestinationNumber,
     required this.times,
   });
 
@@ -45,6 +47,8 @@ class _CompletedPayment {
   final double cashReceived;
   final double change;
   final String? reference;
+  final String? gcashDestinationName;
+  final String? gcashDestinationNumber;
   final ({DateTime createdAt, DateTime completedAt}) times;
 }
 
@@ -396,6 +400,8 @@ class _PosCartPageState extends State<PosCartPage> {
         order,
         paymentMode: payment.paymentMode,
         paymentReference: payment.reference,
+        gcashDestinationName: payment.gcashDestinationName,
+        gcashDestinationNumber: payment.gcashDestinationNumber,
         cashReceived: payment.cashReceived,
         change: payment.change,
         orderedAt: times.createdAt,
@@ -1027,7 +1033,17 @@ class _PosCartPageState extends State<PosCartPage> {
     required int itemsCount,
     required double totalQty,
   }) async {
+    await widget.controller.loadStoreSettings(refresh: true);
+    if (!mounted) return null;
+    final primaryGcashAccountName = widget.controller.gcashAccountName;
+    final primaryGcashNumber = widget.controller.gcashNumber;
+    final primaryGcashQrUrl = widget.controller.gcashQrUrl;
+    final backupGcashAccountName = widget.controller.alternateGcashAccountName;
+    final backupGcashNumber = widget.controller.alternateGcashNumber;
+    final backupGcashQrUrl = widget.controller.alternateGcashQrUrl;
+    final backupAvailable = widget.controller.hasAlternateGcashAccount;
     String paymentMode = 'Cash';
+    bool useBackupGcash = false;
     final cashCtrl = TextEditingController();
     double cashReceived = 0.0;
     final refCtrl = TextEditingController();
@@ -1126,9 +1142,26 @@ class _PosCartPageState extends State<PosCartPage> {
             );
           }
 
+          void selectGcashDestination(bool backup) {
+            setDialogState(() {
+              useBackupGcash = backup;
+              refCtrl.clear();
+              referenceError = null;
+              paymentError = null;
+            });
+          }
+
           Future<void> submitPayment() async {
             String? reference;
             if (paymentMode == 'GCash') {
+              final selectedQr = useBackupGcash
+                  ? backupGcashQrUrl
+                  : primaryGcashQrUrl;
+              if (selectedQr.isEmpty) {
+                setDialogState(() => paymentError =
+                    'No QR is configured for this GCash account.');
+                return;
+              }
               try {
                 reference = normalizeGcashReference(refCtrl.text);
               } on FormatException catch (error) {
@@ -1157,6 +1190,17 @@ class _PosCartPageState extends State<PosCartPage> {
                 cashGiven: submittedCash,
                 changeAmount: submittedChange,
                 paymentReference: reference,
+                gcashAccountSlot: paymentMode == 'GCash'
+                    ? (useBackupGcash ? 'alternate' : 'primary')
+                    : null,
+                gcashDestinationName: paymentMode == 'GCash'
+                    ? (useBackupGcash
+                          ? backupGcashAccountName
+                          : primaryGcashAccountName)
+                    : null,
+                gcashDestinationNumber: paymentMode == 'GCash'
+                    ? (useBackupGcash ? backupGcashNumber : primaryGcashNumber)
+                    : null,
               );
               if (!dialogContext.mounted) return;
               if (times == null) {
@@ -1174,6 +1218,14 @@ class _PosCartPageState extends State<PosCartPage> {
                   cashReceived: submittedCash,
                   change: submittedChange,
                   reference: reference,
+                  gcashDestinationName: paymentMode == 'GCash'
+                      ? (useBackupGcash
+                            ? backupGcashAccountName
+                            : primaryGcashAccountName)
+                      : null,
+                  gcashDestinationNumber: paymentMode == 'GCash'
+                      ? (useBackupGcash ? backupGcashNumber : primaryGcashNumber)
+                      : null,
                   times: times,
                 ),
               );
@@ -1342,8 +1394,7 @@ class _PosCartPageState extends State<PosCartPage> {
                         children: [
                           buildPaymentTile('Cash', LucideIcons.banknote),
                           const SizedBox(width: 8),
-                          if (widget.controller.gcashEnabled)
-                            buildPaymentTile('GCash', LucideIcons.smartphone),
+                          buildPaymentTile('GCash', LucideIcons.smartphone),
                         ],
                       ),
 
@@ -1536,9 +1587,63 @@ class _PosCartPageState extends State<PosCartPage> {
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              widget.controller.gcashQrUrl.isNotEmpty
+                              if (backupAvailable) ...[
+                                Wrap(
+                                  alignment: WrapAlignment.center,
+                                  spacing: 8,
+                                  children: [
+                                    ChoiceChip(
+                                      label: const Text('Primary QR'),
+                                      selected: !useBackupGcash,
+                                      onSelected: isSubmitting || orderAlreadyCompleted
+                                          ? null
+                                          : (_) => selectGcashDestination(false),
+                                    ),
+                                    ChoiceChip(
+                                      label: const Text('Backup QR'),
+                                      selected: useBackupGcash,
+                                      onSelected: isSubmitting || orderAlreadyCompleted
+                                          ? null
+                                          : (_) => selectGcashDestination(true),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'Use the backup if the primary receiving account cannot accept payment.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 11, color: _cashierAccent),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              if ((useBackupGcash
+                                      ? backupGcashAccountName
+                                      : primaryGcashAccountName)
+                                  .isNotEmpty)
+                                Text(
+                                  useBackupGcash
+                                      ? backupGcashAccountName
+                                      : primaryGcashAccountName,
+                                  style: const TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                              if ((useBackupGcash
+                                      ? backupGcashNumber
+                                      : primaryGcashNumber)
+                                  .isNotEmpty)
+                                Text(
+                                  useBackupGcash
+                                      ? backupGcashNumber
+                                      : primaryGcashNumber,
+                                ),
+                              const SizedBox(height: 12),
+                              (useBackupGcash
+                                      ? backupGcashQrUrl
+                                      : primaryGcashQrUrl)
+                                  .isNotEmpty
                                   ? GcashQrImage(
-                                      imageUrl: widget.controller.gcashQrUrl,
+                                      imageUrl: useBackupGcash
+                                          ? backupGcashQrUrl
+                                          : primaryGcashQrUrl,
                                     )
                                   : Container(
                                       height: 180,
@@ -2283,6 +2388,8 @@ class _PosCartPageState extends State<PosCartPage> {
     CustomerOrder o, {
     String? paymentMode,
     String? paymentReference,
+    String? gcashDestinationName,
+    String? gcashDestinationNumber,
     double? cashReceived,
     double? change,
     DateTime? orderedAt,
@@ -2704,6 +2811,20 @@ class _PosCartPageState extends State<PosCartPage> {
                                   child: formLine(
                                     'GCash Reference Number: ',
                                     paymentReference!,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                          ],
+                          if (paymentMode == 'GCash' &&
+                              gcashDestinationNumber?.isNotEmpty == true) ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: formLine(
+                                    'GCash paid to: ',
+                                    '${gcashDestinationName?.isNotEmpty == true ? '$gcashDestinationName · ' : ''}$gcashDestinationNumber',
                                   ),
                                 ),
                               ],

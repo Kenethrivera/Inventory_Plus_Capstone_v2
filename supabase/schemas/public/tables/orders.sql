@@ -33,10 +33,14 @@ CREATE TABLE "public"."orders" (
   "assigned_by_admin_id"         text,
   "assigned_by_admin_name"       text,
   "payment_reference"            text,
+  "gcash_destination_slot"       text,
+  "gcash_destination_name"       text,
+  "gcash_destination_number"     text,
   "discount_approval_request_id" uuid,
   "checkout_operation_id"        text,
   CONSTRAINT "orders_location_id_fkey" FOREIGN KEY (location_id) REFERENCES public.locations(id) ON DELETE CASCADE,
   CONSTRAINT "orders_pkey" PRIMARY KEY (id),
+  CONSTRAINT "orders_gcash_destination_slot_check" CHECK (gcash_destination_slot IS NULL OR gcash_destination_slot IN ('primary', 'alternate')),
   CONSTRAINT "orders_status_check" CHECK ((status = ANY (ARRAY['pending'::text, 'prepared'::text, 'completed'::text, 'solo_picking'::text, 'cancelled'::text]))),
   CONSTRAINT "orders_created_by_fkey" FOREIGN KEY (created_by) REFERENCES public.profiles(id) ON DELETE SET NULL,
   CONSTRAINT "orders_prepared_by_fkey" FOREIGN KEY (prepared_by) REFERENCES public.profiles(id) ON DELETE SET NULL
@@ -45,6 +49,9 @@ CREATE TABLE "public"."orders" (
 CREATE INDEX idx_orders_assigned_helper_id ON public.orders USING btree (assigned_helper_id);
 
 CREATE INDEX idx_orders_completed_by_id ON public.orders USING btree (completed_by_id);
+
+CREATE INDEX orders_gcash_destination_history_idx ON public.orders USING btree (location_id, gcash_destination_slot, completed_at DESC)
+  WHERE (status = 'completed' AND lower(TRIM(BOTH FROM payment_mode)) = 'gcash');
 
 CREATE INDEX idx_orders_created_by_id ON public.orders USING btree (created_by_id);
 

@@ -47,10 +47,18 @@ class SystemSettingsPage extends StatefulWidget {
 class _SystemSettingsPageState extends State<SystemSettingsPage> {
   _SettingsSection _selectedSettingsSection = _SettingsSection.stock;
   Map<int, StoreDayHours> _weeklyHoursDraft = {};
+  final Map<int, TextEditingController> _closedReasonCtrls = {
+    for (var day = 1; day <= 7; day++) day: TextEditingController(),
+  };
   final _maxApprovedDiscountCtrl = TextEditingController(text: '25');
-  bool _gcashEnabled = true;
   final _gcashAccountCtrl = TextEditingController();
   final _gcashNumberCtrl = TextEditingController();
+  final _alternateGcashAccountCtrl = TextEditingController();
+  final _alternateGcashNumberCtrl = TextEditingController();
+  int _selectedGcashSettingsPage = 0;
+  Uint8List? _pendingAlternateGcashQrBytes;
+  String? _pendingAlternateGcashQrOperationId;
+  String? _pendingAlternateGcashQrFingerprint;
   _DashboardExtrasBaseline? _dashboardExtrasBaseline;
   bool _isLoadingDashboardExtras = true;
   bool _isSavingDashboard = false;
@@ -164,12 +172,17 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     unawaited(_staffSubscription?.cancel());
     _beforeMinutesCtrl.dispose();
     _afterMinutesCtrl.dispose();
+    for (final controller in _closedReasonCtrls.values) {
+      controller.dispose();
+    }
     _lowPercentCtrl.dispose();
     _criticalPercentCtrl.dispose();
     _discountLimitCtrl.dispose();
     _maxApprovedDiscountCtrl.dispose();
     _gcashAccountCtrl.dispose();
     _gcashNumberCtrl.dispose();
+    _alternateGcashAccountCtrl.dispose();
+    _alternateGcashNumberCtrl.dispose();
     super.dispose();
   }
 
@@ -216,7 +229,8 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
           final previous = baseline.hoursForWeekday(entry.key);
           return entry.value.openingTime != previous.openingTime ||
               entry.value.closingTime != previous.closingTime ||
-              entry.value.closed != previous.closed;
+              entry.value.closed != previous.closed ||
+              entry.value.closedReason.trim() != previous.closedReason.trim();
         });
   }
 
@@ -232,7 +246,9 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
           final a = left.hoursForWeekday(day);
           final b = right.hoursForWeekday(day);
           return a.openingTime == b.openingTime &&
-              a.closingTime == b.closingTime && a.closed == b.closed;
+              a.closingTime == b.closingTime &&
+              a.closed == b.closed &&
+              a.closedReason.trim() == b.closedReason.trim();
         });
   }
 
@@ -328,9 +344,19 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             settings.staffAccessAfterMinutes &&
         _restrictStaffLogin == settings.restrictStaffLogin &&
         _allowAdminAnytime == settings.allowAdminAnytime;
+    final incomingWeeklyMatchesDraft = List.generate(7, (index) => index + 1)
+        .every((day) {
+          final incoming = settings.hoursForWeekday(day);
+          final draft = _weeklyHoursDraft[day];
+          return draft != null &&
+              incoming.openingTime == draft.openingTime &&
+              incoming.closingTime == draft.closingTime &&
+              incoming.closed == draft.closed &&
+              incoming.closedReason.trim() == draft.closedReason.trim();
+        });
     final protectDraft =
         _storeAccessDraftDirty &&
-        !(_isSavingStoreAccess && incomingMatchesDraft);
+        !(_isSavingStoreAccess && incomingMatchesDraft && incomingWeeklyMatchesDraft);
     if (protectDraft) {
       if (changed) {
         if (!_storeAccessConflictNotified) {
@@ -354,6 +380,9 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       _weeklyHoursDraft = {
         for (var day = 1; day <= 7; day++) day: settings.hoursForWeekday(day),
       };
+      for (var day = 1; day <= 7; day++) {
+        _closedReasonCtrls[day]!.text = settings.hoursForWeekday(day).closedReason;
+      }
       _beforeMinutesCtrl.text = settings.staffAccessBeforeMinutes.toString();
       _afterMinutesCtrl.text = settings.staffAccessAfterMinutes.toString();
       _restrictStaffLogin = settings.restrictStaffLogin;
@@ -803,6 +832,17 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
     if (_weeklyHoursDraft.values.every((day) => day.closed)) {
       setState(() => _storeAccessError = 'Keep at least one day open.');
+      return;
+    }
+
+    final missingReasonDay = _weeklyHoursDraft.entries
+        .where((entry) => entry.value.closed && entry.value.closedReason.trim().isEmpty)
+        .map((entry) => entry.key)
+        .firstOrNull;
+    if (missingReasonDay != null) {
+      const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      setState(() => _storeAccessError =
+          'Add a reason for closing ${dayNames[missingReasonDay - 1]}.');
       return;
     }
 

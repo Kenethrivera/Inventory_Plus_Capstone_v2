@@ -61,11 +61,11 @@ class _ToastViewState extends State<_ToastView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() => _visible = true);
     });
-    _hideTimer = Timer(const Duration(milliseconds: 2500), () {
+    _hideTimer = Timer(const Duration(seconds: 5), () {
       if (mounted) setState(() => _visible = false);
     });
     _removeTimer = Timer(
-      const Duration(milliseconds: 2800),
+      const Duration(milliseconds: 5300),
       widget.onDismissed,
     );
   }

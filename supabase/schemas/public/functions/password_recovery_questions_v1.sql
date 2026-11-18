@@ -158,9 +158,19 @@ begin
     and reset_expires_at > now() and consumed_at is null
   for update;
   if not found then return false; end if;
+  if exists (
+    select 1 from public.profiles
+    where id = v_challenge.profile_id
+      and password = encode(extensions.digest(
+        convert_to(p_new_password, 'UTF8'), 'sha256'), 'hex')
+  ) then
+    raise exception 'New password matches current password.';
+  end if;
   update public.profiles
   set password = encode(extensions.digest(convert_to(p_new_password, 'UTF8'), 'sha256'), 'hex')
   where id = v_challenge.profile_id and role = 'admin' and is_active
+    and password <> encode(extensions.digest(
+      convert_to(p_new_password, 'UTF8'), 'sha256'), 'hex')
   returning username into v_username;
   if not found then return false; end if;
   perform private.reset_auth_rate_limit_v1(

@@ -9,23 +9,39 @@ class StoreDayHours {
   final String openingTime;
   final String closingTime;
   final bool closed;
+  final String closedReason;
 
   const StoreDayHours({
     required this.openingTime,
     required this.closingTime,
     this.closed = false,
+    this.closedReason = '',
   });
+
+  StoreDayHours copyWith({
+    String? openingTime,
+    String? closingTime,
+    bool? closed,
+    String? closedReason,
+  }) => StoreDayHours(
+    openingTime: openingTime ?? this.openingTime,
+    closingTime: closingTime ?? this.closingTime,
+    closed: closed ?? this.closed,
+    closedReason: closedReason ?? this.closedReason,
+  );
 
   factory StoreDayHours.fromMap(Map<String, dynamic> map) => StoreDayHours(
     openingTime: map['open']?.toString() ?? '08:00:00',
     closingTime: map['close']?.toString() ?? '21:00:00',
     closed: map['closed'] == true,
+    closedReason: map['closed_reason']?.toString() ?? '',
   );
 
   Map<String, dynamic> toMap() => {
     'open': openingTime,
     'close': closingTime,
     'closed': closed,
+    'closed_reason': closed ? closedReason.trim() : '',
   };
 }
 

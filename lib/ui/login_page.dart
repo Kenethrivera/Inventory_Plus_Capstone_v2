@@ -78,7 +78,10 @@ class _LoginPageState extends State<LoginPage> {
       final userProfile = await _authService.login(username, password);
 
       if (userProfile == null) {
-        _showLoginError(AppErrorMapper.invalidCredentials);
+        _showLoginError(
+          'If you are staff and forgot your password, ask your administrator to reset it.',
+          showToast: true,
+        );
         return;
       }
 
@@ -179,9 +182,12 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  void _showLoginError(String message) {
+  void _showLoginError(String message, {bool showToast = false}) {
     if (!mounted) return;
     setState(() => _loginError = message);
+    if (showToast) {
+      AppToast.error(context, message);
+    }
   }
 
   void _clearLoginError() {
@@ -260,188 +266,206 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showPolicyDialog({required bool isPrivacy}) {
-    final compact = MediaQuery.sizeOf(context).width < 600;
+    final title = isPrivacy ? 'Privacy Policy' : 'Terms of Service';
+    final paragraphs = isPrivacy
+        ? const [
+            'Inventory Plus is committed to protecting your personal information.',
+            'We process your data in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines.',
+            'We collect, use, and store your data solely for inventory management and system authentication purposes.',
+          ]
+        : const [
+            'By accessing and using Inventory Plus, you accept and agree to be bound by the terms and provisions of this agreement.',
+            'Any participation in this service will constitute acceptance of this agreement.',
+            'These terms are governed by the laws of the Republic of the Philippines.',
+          ];
+
     showDialog<void>(
       context: context,
-      barrierColor: const Color(0xCC292420),
-      builder: (dialogContext) => Dialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        insetPadding: EdgeInsets.symmetric(
-          horizontal: compact ? 12 : 16,
-          vertical: compact ? 12 : 24,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Outfit',
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Close',
+              onPressed: () => Navigator.pop(dialogContext),
+              icon: const Icon(LucideIcons.x, size: 18),
+            ),
+          ],
         ),
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(compact ? 18 : 24),
-        ),
-        child: SizedBox(
-          width: 700,
+        content: SizedBox(
+          width: 480,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    compact ? 20 : 34,
-                    compact ? 20 : 28,
-                    compact ? 20 : 34,
-                    compact ? 18 : 26,
+                for (final paragraph in paragraphs) ...[
+                  Text(
+                    paragraph,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      fontFamily: 'Outfit',
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: compact ? 44 : 54,
-                        height: compact ? 44 : 54,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFEEE5),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Icon(
-                          isPrivacy
-                              ? LucideIcons.shieldCheck
-                              : LucideIcons.fileText,
-                          color: _brand,
-                          size: 23,
-                        ),
-                      ),
-                      SizedBox(width: compact ? 12 : 18),
-                      Expanded(
-                        child: Text(
-                          isPrivacy ? 'Privacy Policy' : 'Terms of Service',
-                          style: TextStyle(
-                            color: Color(0xFF171717),
-                            fontSize: compact ? 20 : 25,
-                            fontWeight: FontWeight.w800,
-                            fontFamily: 'Outfit',
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Close',
-                        onPressed: () => Navigator.pop(dialogContext),
-                        style: IconButton.styleFrom(
-                          backgroundColor: const Color(0xFFF5F3F1),
-                          fixedSize: Size.square(compact ? 44 : 54),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(13),
-                          ),
-                        ),
-                        icon: const Icon(
-                          LucideIcons.x,
-                          color: Color(0xFF292522),
-                          size: 19,
-                        ),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            style: TextButton.styleFrom(foregroundColor: _brand),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final form = FocusTraversalGroup(
+      policy: OrderedTraversalPolicy(),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Welcome back',
+              style: TextStyle(
+                color: Color(0xFF171717),
+                fontSize: 27,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'Outfit',
+              ),
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              'Sign in to manage your store.',
+              style: TextStyle(
+                color: Color(0xFF756F69),
+                fontSize: 13,
+                fontFamily: 'Outfit',
+              ),
+            ),
+            const SizedBox(height: 28),
+
+            if (_loginError != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
-                const Divider(height: 1, color: Color(0xFFEDE8E3)),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    compact ? 20 : 34,
-                    compact ? 24 : 30,
-                    compact ? 20 : 34,
-                    0,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isPrivacy
-                            ? 'Inventory Plus is committed to protecting your personal information.'
-                            : 'By accessing and using Inventory Plus, you accept and agree to be bound by the terms and provisions of this agreement.',
-                        style: TextStyle(
-                          color: Color(0xFF171717),
-                          fontSize: compact ? 17 : 20,
-                          fontWeight: FontWeight.w700,
-                          height: 1.5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  border: Border.all(color: const Color(0xFFFECACA)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 1),
+                      child: Icon(
+                        LucideIcons.circleAlert,
+                        color: Color(0xFFDC2626),
+                        size: 17,
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        _loginError!,
+                        style: const TextStyle(
+                          color: Color(0xFF991B1B),
+                          fontSize: 12.5,
+                          height: 1.35,
+                          fontWeight: FontWeight.w600,
                           fontFamily: 'Outfit',
                         ),
                       ),
-                      const SizedBox(height: 22),
-                      Text(
-                        isPrivacy
-                            ? 'We process your data in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines.'
-                            : 'Any participation in this service will constitute acceptance of this agreement.',
-                        style: TextStyle(
-                          color: Color(0xFF292522),
-                          fontSize: compact ? 15 : 18,
-                          height: 1.55,
-                          fontFamily: 'Outfit',
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.all(compact ? 16 : 20),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFBF8F5),
-                          border: Border.all(color: const Color(0xFFEDE6DF)),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: isPrivacy
-                            ? Text.rich(
-                                const TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: 'How we use it: ',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text:
-                                          'We collect, use, and store your data solely for inventory management and system authentication purposes.',
-                                    ),
-                                  ],
-                                ),
-                                style: TextStyle(
-                                  color: Color(0xFF292522),
-                                  fontSize: compact ? 15 : 17,
-                                  height: 1.5,
-                                  fontFamily: 'Outfit',
-                                ),
-                              )
-                            : Text(
-                                'These terms are governed by the laws of the Republic of the Philippines.',
-                                style: TextStyle(
-                                  color: Color(0xFF292522),
-                                  fontSize: compact ? 15 : 17,
-                                  height: 1.5,
-                                  fontFamily: 'Outfit',
-                                ),
-                              ),
-                      ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            const Text(
+              "Username",
+              style: TextStyle(
+                color: Color(0xFF0F172A),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Outfit',
+              ),
+            ),
+            const SizedBox(height: 8),
+            FocusTraversalOrder(
+              order: const NumericFocusOrder(1),
+              child: _buildTextField(
+                controller: _usernameController,
+                hint: "Enter your username",
+                icon: LucideIcons.user,
+                isPassword: false,
+                focusNode: _usernameFocusNode,
+                onSubmitted: (_) =>
+                    FocusScope.of(context).requestFocus(_passwordFocusNode),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Password',
+                  style: TextStyle(
+                    color: Color(0xFF171717),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Outfit',
                   ),
                 ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    compact ? 20 : 34,
-                    compact ? 32 : 48,
-                    compact ? 20 : 34,
-                    compact ? 20 : 30,
-                  ),
+                const SizedBox(width: 8),
+                Flexible(
                   child: Align(
                     alignment: Alignment.centerRight,
-                    child: SizedBox(
-                      width: 120,
-                      height: 56,
-                      child: FilledButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _brand,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(3),
+                      child: TextButton(
+                        onPressed: _showForgotPasswordModal,
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: const Text(
-                          'Close',
+                          'Forgot password?',
+                          textAlign: TextAlign.right,
                           style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                            color: _brand,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
                             fontFamily: 'Outfit',
                           ),
                         ),
@@ -451,240 +475,103 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final form = Form(
-      key: _formKey,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Welcome back',
-            style: TextStyle(
-              color: Color(0xFF171717),
-              fontSize: 27,
-              fontWeight: FontWeight.w800,
-              fontFamily: 'Outfit',
-            ),
-          ),
-          const SizedBox(height: 5),
-          const Text(
-            'Sign in to manage your store.',
-            style: TextStyle(
-              color: Color(0xFF756F69),
-              fontSize: 13,
-              fontFamily: 'Outfit',
-            ),
-          ),
-          const SizedBox(height: 28),
-
-          if (_loginError != null) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF2F2),
-                border: Border.all(color: const Color(0xFFFECACA)),
-                borderRadius: BorderRadius.circular(10),
+            const SizedBox(height: 8),
+            FocusTraversalOrder(
+              order: const NumericFocusOrder(2),
+              child: _buildTextField(
+                controller: _passwordController,
+                hint: "Enter your password",
+                icon: LucideIcons.lock,
+                isPassword: true,
+                focusNode: _passwordFocusNode,
+                onSubmitted: _isLoginLimited ? null : (_) => _handleLogin(),
+                suffix: IconButton(
+                  icon: Icon(
+                    _isPasswordVisible ? LucideIcons.eyeOff : LucideIcons.eye,
+                    color: Colors.grey.shade500,
+                    size: 18,
+                  ),
+                  onPressed: () =>
+                      setState(() => _isPasswordVisible = !_isPasswordVisible),
+                ),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+
+            const SizedBox(height: 20),
+
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _isLoading || _isLoginLimited ? null : _handleLogin,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _brand,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        'Sign in',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Outfit',
+                        ),
+                      ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+            Align(
+              alignment: Alignment.center,
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 6,
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.only(top: 1),
-                    child: Icon(
-                      LucideIcons.circleAlert,
-                      color: Color(0xFFDC2626),
-                      size: 17,
+                  TextButton(
+                    onPressed: () => _showPolicyDialog(isPrivacy: false),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF756F69),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      'Terms of Service',
+                      style: TextStyle(fontSize: 12, fontFamily: 'Outfit'),
                     ),
                   ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      _loginError!,
-                      style: const TextStyle(
-                        color: Color(0xFF991B1B),
-                        fontSize: 12.5,
-                        height: 1.35,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Outfit',
-                      ),
+                  const Text('·', style: TextStyle(color: Color(0xFF9A948E))),
+                  TextButton(
+                    onPressed: () => _showPolicyDialog(isPrivacy: true),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF756F69),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      'Privacy Policy',
+                      style: TextStyle(fontSize: 12, fontFamily: 'Outfit'),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
           ],
-
-          const Text(
-            "Username",
-            style: TextStyle(
-              color: Color(0xFF0F172A),
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'Outfit',
-            ),
-          ),
-          const SizedBox(height: 8),
-          _buildTextField(
-            controller: _usernameController,
-            hint: "Enter your username",
-            icon: LucideIcons.user,
-            isPassword: false,
-            focusNode: _usernameFocusNode,
-            onSubmitted: (_) =>
-                FocusScope.of(context).requestFocus(_passwordFocusNode),
-          ),
-
-          const SizedBox(height: 20),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Password',
-                style: TextStyle(
-                  color: Color(0xFF171717),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Outfit',
-                ),
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _showForgotPasswordModal,
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: const Text(
-                      'Forgot password?',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: _brand,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Outfit',
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _buildTextField(
-            controller: _passwordController,
-            hint: "Enter your password",
-            icon: LucideIcons.lock,
-            isPassword: true,
-            focusNode: _passwordFocusNode,
-            onSubmitted: _isLoginLimited ? null : (_) => _handleLogin(),
-            suffix: IconButton(
-              icon: Icon(
-                _isPasswordVisible ? LucideIcons.eyeOff : LucideIcons.eye,
-                color: Colors.grey.shade500,
-                size: 18,
-              ),
-              onPressed: () =>
-                  setState(() => _isPasswordVisible = !_isPasswordVisible),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              onPressed: _isLoading || _isLoginLimited ? null : _handleLogin,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _brand,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                elevation: 0,
-              ),
-              child: _isLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Text(
-                      'Sign in',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Outfit',
-                      ),
-                    ),
-            ),
-          ),
-
-          const SizedBox(height: 32),
-          Divider(color: Colors.grey.shade200, height: 1),
-          const SizedBox(height: 24),
-
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              TextButton(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                onPressed: () => _showPolicyDialog(isPrivacy: false),
-                child: Text(
-                  "Terms of Service",
-                  style: TextStyle(
-                    color: Colors.grey.shade500,
-                    fontSize: 12,
-                    fontFamily: 'Outfit',
-                  ),
-                ),
-              ),
-              Text(
-                "   •   ",
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-              ),
-              TextButton(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                onPressed: () => _showPolicyDialog(isPrivacy: true),
-                child: Text(
-                  "Privacy Policy",
-                  style: TextStyle(
-                    color: Colors.grey.shade500,
-                    fontSize: 12,
-                    fontFamily: 'Outfit',
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
     return Scaffold(
@@ -853,12 +740,6 @@ class _LoginPageState extends State<LoginPage> {
         final text = value?.trim() ?? '';
         if (text.isEmpty) {
           return isPassword ? 'Password is required' : 'Username is required';
-        }
-        if (isPassword && text.length < 6) {
-          return 'Password must be at least 6 characters';
-        }
-        if (!isPassword && text.length < 3) {
-          return 'Username must be at least 3 characters';
         }
         return null;
       },
@@ -1347,6 +1228,49 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
     } catch (error, stackTrace) {
       AppLogger.error(
         'Password recovery resend failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        AppToast.error(
+          context,
+          AppErrorMapper.message(error, fallback: AppErrorCategory.server),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _switchToSms() async {
+    final username = _recoveryUsername;
+    if (_isLoading || username == null) return;
+    setState(() => _isLoading = true);
+    final requestedAt = _now;
+    try {
+      final challengeId = await _authService.requestPasswordRecovery(
+        username,
+        'sms',
+      );
+      if (!mounted) return;
+      setState(() {
+        _recoveryChannel = 'sms';
+        _recoveryChallengeId = challengeId;
+        _recoveryResetToken = null;
+        _questionIds = const [];
+        _questionError = null;
+        for (final answer in _questionAnswers) {
+          answer.clear();
+        }
+        _controller.clear();
+        _startOtpClock(requestedAt);
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode1.requestFocus();
+      });
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Switch to SMS recovery failed',
         error: error,
         stackTrace: stackTrace,
       );
@@ -2017,16 +1941,6 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
                       : const Color(0xFFB42318),
                 ),
               ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: _isLoading
-                    ? null
-                    : () {
-                        _goBackOrCancel();
-                        setState(() => _recoveryChannel = 'sms');
-                      },
-                child: const Text('Send an SMS code instead'),
-              ),
             ] else ...[
               _buildModalField(
                 controller: _controller,
@@ -2147,78 +2061,117 @@ class _ForgotPasswordModalState extends State<ForgotPasswordModal> {
 
           const SizedBox(height: 40),
 
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 14,
-            runSpacing: 10,
-            children: [
-              OutlinedButton(
-                onPressed: _isLoading ? null : _goBackOrCancel,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF171717),
-                  side: const BorderSide(color: Color(0xFFD8D0C9)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+          Builder(
+            builder: (context) {
+              final showSmsSwitch =
+                  _step == 1 && _recoveryChannel == 'questions';
+              final actions = <Widget>[
+                OutlinedButton(
+                  onPressed: _isLoading ? null : _goBackOrCancel,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF171717),
+                    side: const BorderSide(color: Color(0xFFD8D0C9)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
                   ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
-                  ),
-                ),
-                child: Text(
-                  _step == 0 ? "Cancel" : "Back",
-                  style: const TextStyle(
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              ElevatedButton(
-                onPressed:
-                    _isLoading ||
-                        (_step == 1 &&
-                            _recoveryChannel == 'questions' &&
-                            _questionAttemptsLeft == 0)
-                    ? null
-                    : _nextStep,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _blue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 30,
-                    vertical: 16,
+                  child: Text(
+                    _step == 0 ? "Cancel" : "Back",
+                    style: const TextStyle(
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
+                ElevatedButton(
+                  onPressed:
+                      _isLoading ||
+                          (_step == 1 &&
+                              _recoveryChannel == 'questions' &&
+                              _questionAttemptsLeft == 0)
+                      ? null
+                      : _nextStep,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _blue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 30,
+                      vertical: 16,
+                    ),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          _step == 0
+                              ? _recoveryChannel == 'questions'
+                                    ? 'Continue'
+                                    : 'Send code'
+                              : _step == 1
+                              ? _recoveryChannel == 'questions'
+                                    ? 'Verify'
+                                    : 'Verify code'
+                              : 'Update password',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Outfit',
+                          ),
                         ),
-                      )
-                    : Text(
-                        _step == 0
-                            ? _recoveryChannel == 'questions'
-                                  ? 'Continue'
-                                  : 'Send code'
-                            : _step == 1
-                            ? _recoveryChannel == 'questions'
-                                  ? 'Verify answers'
-                                  : 'Verify code'
-                            : 'Update password',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Outfit',
-                        ),
-                      ),
-              ),
-            ],
+                ),
+              ];
+              final smsSwitch = TextButton(
+                onPressed: _isLoading ? null : _switchToSms,
+                style: TextButton.styleFrom(foregroundColor: _blue),
+                child: const Text(
+                  'Send an SMS code instead',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
+              );
+              if (!showSmsSwitch) {
+                return Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 14,
+                  runSpacing: 10,
+                  children: actions,
+                );
+              }
+              if (MediaQuery.sizeOf(context).width < 600) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Wrap(spacing: 14, runSpacing: 10, children: actions),
+                    smsSwitch,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  actions[0],
+                  const SizedBox(width: 14),
+                  actions[1],
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: smsSwitch,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),
