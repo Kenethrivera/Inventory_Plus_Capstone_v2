@@ -97,6 +97,8 @@ class StoreMap extends StatefulWidget {
   final List<MapElement>? layout;
   final bool itemAssignmentEnabled;
   final VoidCallback? onSelectionAssigned;
+  final Future<bool> Function(String itemId, String elementId)?
+  onItemAssignmentRequested;
   final Function(MapElement)? onElementSelected;
   final ValueChanged<MapElement?>? onManageSelectionChanged;
   final VoidCallback? onLayoutEdited;
@@ -125,6 +127,7 @@ class StoreMap extends StatefulWidget {
     this.layout,
     this.itemAssignmentEnabled = true,
     this.onSelectionAssigned,
+    this.onItemAssignmentRequested,
     this.onElementSelected,
     this.onManageSelectionChanged,
     this.onLayoutEdited,
@@ -3172,17 +3175,28 @@ class StoreMapState extends State<StoreMap>
                         );
                         return;
                       }
-                      await widget.controller.assignItemToLocation(
-                        widget.selectedItemId!,
-                        interactiveEl.id,
-                      );
+                      final assign = widget.onItemAssignmentRequested;
+                      if (assign != null) {
+                        final assigned = await assign(
+                          widget.selectedItemId!,
+                          interactiveEl.id,
+                        );
+                        if (!assigned) return;
+                      } else {
+                        await widget.controller.assignItemToLocation(
+                          widget.selectedItemId!,
+                          interactiveEl.id,
+                        );
+                      }
 
                       if (mounted) {
                         if (widget.onSelectionAssigned != null) {
                           widget.onSelectionAssigned!();
                         }
                         setState(() {});
-                        AppToast.success(context, "Item assigned to location!");
+                        if (assign == null) {
+                          AppToast.success(context, "Item assigned to location!");
+                        }
                       }
                     } else if (widget.mode == MapMode.pick) {
                       if (el.type == ElementType.door ||

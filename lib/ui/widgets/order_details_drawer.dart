@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../data/inventory.dart';
+import '../../logic/order_assignment_status.dart';
 import '../order_assignee_label.dart';
 import 'app_dialog.dart';
 import 'app_styled_dropdown.dart';
@@ -14,7 +15,6 @@ class OrderDetailsDrawer extends StatelessWidget {
     super.key,
     required this.order,
     required this.inventory,
-    required this.onOpenQueue,
     this.loadHelpers,
     this.onAssignHelper,
     this.onCancelOrder,
@@ -23,7 +23,6 @@ class OrderDetailsDrawer extends StatelessWidget {
 
   final CustomerOrder order;
   final List<InventoryItem> inventory;
-  final VoidCallback onOpenQueue;
   final Future<List<({String id, String name})>> Function()? loadHelpers;
   final Future<void> Function(CustomerOrder order, String helperId)?
   onAssignHelper;
@@ -40,7 +39,6 @@ class OrderDetailsDrawer extends StatelessWidget {
     BuildContext context, {
     required CustomerOrder order,
     required List<InventoryItem> inventory,
-    required VoidCallback onOpenQueue,
     Stream<List<CustomerOrder>>? orderUpdates,
     Future<List<({String id, String name})>> Function()? loadHelpers,
     Future<void> Function(CustomerOrder order, String helperId)? onAssignHelper,
@@ -73,7 +71,6 @@ class OrderDetailsDrawer extends StatelessWidget {
                     ? current.first
                     : order,
                 inventory: inventory,
-                onOpenQueue: onOpenQueue,
                 loadHelpers: loadHelpers,
                 onAssignHelper: onAssignHelper,
                 onCancelOrder: onCancelOrder,
@@ -95,25 +92,12 @@ class OrderDetailsDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = switch (order.status.toLowerCase()) {
-      'solo_picking' => 'Preparing',
-      'pending'
-          when order.assignedHelperId != null &&
-              order.items.any((item) => item.picked) =>
-        'Preparing',
-      'pending' when order.assignedHelperId != null => 'Assigned',
-      'pending' => 'Waiting',
-      'prepared' => 'Ready',
-      'completed' => 'Completed',
-      'cancelled' => 'Cancelled',
-      'returned' => 'Returned',
-      _ => order.status,
-    };
-    final statusColor = switch (order.status.toLowerCase()) {
-      'prepared' => const Color(0xFF15803D),
-      'completed' => _ink,
-      'cancelled' || 'returned' => const Color(0xFFDC2626),
-      'pending' when order.assignedHelperId != null => const Color(0xFF2556DB),
+    final status = orderActivityStatusLabel(order);
+    final statusColor = switch (status) {
+      'Ready' => const Color(0xFF15803D),
+      'Completed' => _ink,
+      'Cancelled' || 'Returned' => const Color(0xFFDC2626),
+      'Assigned' => const Color(0xFF2556DB),
       _ => _orange,
     };
     final products = <String, InventoryItem>{
@@ -438,36 +422,20 @@ class OrderDetailsDrawer extends StatelessWidget {
                 ),
               ),
             ),
-            const Divider(height: 1, color: _line),
-            if (onCancelOrder != null || onAssignHelper != null)
+            if (onCancelOrder != null ||
+                (onAssignHelper != null &&
+                    order.status.toLowerCase() == 'pending' &&
+                    orderNeedsHelper(order) &&
+                    order.assignedHelperId == null)) ...[
+              const Divider(height: 1, color: _line),
               _OrderActions(
                 key: ValueKey(order.id),
                 order: order,
                 loadHelpers: loadHelpers,
                 onAssignHelper: onAssignHelper,
                 onCancelOrder: onCancelOrder,
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.fromLTRB(30, 12, 30, 12),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      onOpenQueue();
-                    },
-                    icon: const Icon(LucideIcons.list, size: 16),
-                    label: const Text('Open order queue'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _orange,
-                      textStyle: const TextStyle(fontSize: 13),
-                      side: const BorderSide(color: _line),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
               ),
+            ],
           ],
         ),
       ),

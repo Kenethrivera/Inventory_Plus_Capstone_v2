@@ -55,10 +55,15 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   final Map<String, Set<String>> _pickedTracker = {};
   bool _progressSyncWarningShown = false;
   final Set<String> _claimingOrderIds = <String>{};
+  StreamSubscription<List<CustomerOrder>>? _autoClaimSubscription;
+  bool _autoClaimInFlight = false;
+  bool _autoClaimQueued = false;
+  bool _autoClaimErrorShown = false;
 
   @override
   void initState() {
     super.initState();
+    _bindAutoClaim();
 
     _pendingAutoOpenId = widget.targetOrderId;
 
@@ -69,6 +74,86 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
       if (mounted) setState(() {});
     });
     unawaited(_loadMapLayout());
+  }
+
+  void _bindAutoClaim() {
+    widget.presenceService?.addListener(_scheduleAutoClaim);
+    _autoClaimSubscription = widget.controller.orderSnapshots.listen(
+      (_) => _scheduleAutoClaim(),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleAutoClaim());
+  }
+
+  void _scheduleAutoClaim() {
+    if (!mounted) return;
+    if (_autoClaimInFlight) {
+      _autoClaimQueued = true;
+      return;
+    }
+    final presence = widget.presenceService;
+    if (presence == null ||
+        !presence.isStarted ||
+        presence.isOnBreak ||
+        !widget.controller.hasUsableOrdersSnapshot ||
+        widget.controller.currentUserId != presence.userId ||
+        widget.controller.activeLocationId != presence.locationId) {
+      return;
+    }
+    unawaited(_autoClaimPendingOrders());
+  }
+
+  Future<void> _autoClaimPendingOrders() async {
+    _autoClaimInFlight = true;
+    final attemptedOrderIds = <String>{};
+    try {
+      do {
+        _autoClaimQueued = false;
+        final orders =
+            widget.controller.currentOrders
+                .where(
+                  (order) =>
+                      !attemptedOrderIds.contains(order.id) &&
+                      order.status == 'pending' &&
+                      order.assignedHelperId == null &&
+                      order.items.any((item) => !item.requiresLoading),
+                )
+                .toList()
+              ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        for (final order in orders) {
+          final presence = widget.presenceService;
+          if (!mounted ||
+              presence == null ||
+              !presence.isStarted ||
+              presence.isOnBreak) {
+            break;
+          }
+          attemptedOrderIds.add(order.id);
+          try {
+            final claimed = await widget.controller.claimOrderForCurrentHelper(
+              order.id,
+            );
+            if (!claimed &&
+                widget.controller.orderById(order.id)?.assignedHelperId ==
+                    null &&
+                !_autoClaimErrorShown &&
+                mounted) {
+              _autoClaimErrorShown = true;
+              AppToast.error(context, 'Automatic order assignment failed.');
+            }
+          } catch (error) {
+            if (!_autoClaimErrorShown && mounted) {
+              _autoClaimErrorShown = true;
+              AppToast.error(
+                context,
+                'Automatic order assignment failed: $error',
+              );
+            }
+          }
+        }
+      } while (_autoClaimQueued && mounted);
+    } finally {
+      _autoClaimInFlight = false;
+    }
   }
 
   Future<void> _loadMapLayout() async {
@@ -82,6 +167,12 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   @override
   void didUpdateWidget(OrderQueuePage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller ||
+        widget.presenceService != oldWidget.presenceService) {
+      oldWidget.presenceService?.removeListener(_scheduleAutoClaim);
+      unawaited(_autoClaimSubscription?.cancel());
+      _bindAutoClaim();
+    }
 
     if (widget.targetOrderId != null &&
         widget.targetOrderId != oldWidget.targetOrderId) {
@@ -91,6 +182,8 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   @override
   void dispose() {
+    widget.presenceService?.removeListener(_scheduleAutoClaim);
+    unawaited(_autoClaimSubscription?.cancel());
     _timer?.cancel();
     unawaited(_layoutSubscription?.cancel());
     _searchController.dispose();
@@ -199,6 +292,8 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
         context,
         'This order could not be claimed. It may already be assigned.',
       );
+    } else {
+      _openAssignedOrderChecklist(order);
     }
   }
 
@@ -336,7 +431,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
         ),
         const SizedBox(height: 3),
         const Text(
-          'Not yet assigned. Claim one if you have capacity.',
+          'Unassigned orders are added to your queue automatically.',
           style: TextStyle(fontSize: 13, color: muted, fontFamily: _fontFam),
         ),
         const SizedBox(height: 16),
@@ -504,62 +599,58 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   Widget _mobileOpenCard(CustomerOrder order) {
     final claiming = _claimingOrderIds.contains(order.id);
     final total = order.items.where((item) => !item.requiresLoading).length;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xFFE1DCD5)),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _mobileOrderId(order),
-                  style: const TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF171717),
-                    fontFamily: _fontFam,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  '$total ${total == 1 ? 'item' : 'items'}${_mobileOrderLocations(order)} · ${_timeAgo(order.createdAt)}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF736B65),
-                    fontFamily: _fontFam,
-                  ),
-                ),
-              ],
-            ),
+        onTap: claiming || widget.presenceService?.isOnBreak == true
+            ? null
+            : () => unawaited(_claimOrder(order)),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFE1DCD5)),
+            borderRadius: BorderRadius.circular(16),
           ),
-          const SizedBox(width: 10),
-          FilledButton(
-            onPressed: claiming ? null : () => _claimOrder(order),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF211F1D),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(9),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _mobileOrderId(order),
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF171717),
+                        fontFamily: _fontFam,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '$total ${total == 1 ? 'item' : 'items'}${_mobileOrderLocations(order)} · ${_timeAgo(order.createdAt)}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF736B65),
+                        fontFamily: _fontFam,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            child: Text(
-              claiming ? 'Claiming…' : 'Claim',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontFamily: _fontFam,
+              const SizedBox(width: 10),
+              const Icon(
+                LucideIcons.chevronRight,
+                size: 18,
+                color: Color(0xFFC83D08),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1598,7 +1689,7 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
     final level = item.shelfLevel?.trim();
     return level == null || level.isEmpty
         ? fixtureName
-        : '$fixtureName · Shelf $level';
+        : '$fixtureName · Level $level';
   }
 
   Widget _buildMobileChecklist(BuildContext context) {

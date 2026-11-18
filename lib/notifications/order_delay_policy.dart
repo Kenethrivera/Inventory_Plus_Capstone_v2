@@ -1,4 +1,5 @@
 import '../data/inventory.dart';
+import '../logic/order_assignment_status.dart';
 
 enum OrderDelayStage {
   waitingForStaff('Waiting for staff'),
@@ -49,12 +50,7 @@ OverdueOrderStage? currentOrderDelayStage(CustomerOrder order, DateTime now) {
     stage = OrderDelayStage.readyForRelease;
     startedAt = order.preparedAt ?? order.updatedAt ?? order.createdAt;
   } else if (status == 'pending' || status == 'solo_picking') {
-    final hasLightItems = order.items.any((item) => !item.requiresLoading);
-    final waiting =
-        status == 'pending' &&
-        (hasLightItems
-            ? order.assignedHelperId == null
-            : order.assignedBodegeroId == null);
+    final waiting = orderIsWaitingForStaff(order);
     if (waiting) {
       stage = OrderDelayStage.waitingForStaff;
       startedAt = order.createdAt;

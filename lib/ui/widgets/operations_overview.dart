@@ -6,6 +6,7 @@ import '../../logic/inventory_approval.dart';
 import '../../logic/staff_availability.dart';
 import '../../services/staff_presence_service.dart';
 import '../order_assignee_label.dart';
+import '../../logic/order_assignment_status.dart';
 import 'order_details_drawer.dart';
 
 /// The admin landing page. All figures come from the current store snapshots.
@@ -69,13 +70,7 @@ class OperationsOverview extends StatelessWidget {
     final gcash = sales - cash;
     final pending = orders.where((o) => o.status == 'pending').toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    final waiting = pending
-        .where(
-          (o) => orderNeedsHelper(o)
-              ? o.assignedHelperId == null
-              : o.assignedBodegeroId == null,
-        )
-        .toList();
+    final waiting = pending.where(orderIsWaitingForStaff).toList();
     final preparing = pending.where((o) => !waiting.contains(o)).toList();
     final ready = orders.where((o) => o.status == 'prepared').toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -345,7 +340,6 @@ class OperationsOverview extends StatelessWidget {
             context,
             order: order,
             inventory: items,
-            onOpenQueue: onOrders,
             orderUpdates: orderUpdates,
             loadLoadingProof: loadLoadingProof,
           ),

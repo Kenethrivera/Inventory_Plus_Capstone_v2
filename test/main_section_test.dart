@@ -26,7 +26,6 @@ void main() {
       MainSection.analytics,
       MainSection.forecasting,
       MainSection.pos,
-      MainSection.queue,
       MainSection.inventory,
       MainSection.approvals,
       MainSection.performance,
@@ -84,5 +83,9 @@ void main() {
       MainSection.queue,
     );
     expect(MainSection.resolveForRole(null, 'admin'), MainSection.dashboard);
+    expect(
+      MainSection.resolveForRole(MainSection.fromPath('/main/queue'), 'admin'),
+      MainSection.ordersActivity,
+    );
   });
 }
