@@ -51,6 +51,7 @@ from .forecast_performance import ForecastPerformanceEvaluator
 from .job_materialization import (
     ForecastJobMaterializer,
     SupabaseForecastJobRepository,
+    forecast_model_identity,
 )
 from .recommendation_persistence import (
     SupabaseRecommendationPersistenceAdapter,
@@ -274,9 +275,10 @@ def create_app(
     @app.post("/v1/forecasting/jobs/bootstrap")
     def bootstrap_forecast_jobs(
         product_id: str = Query(..., min_length=36, max_length=36),
+        model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"] = "blend",
         authorization: str | None = Header(default=None),
     ) -> dict[str, object]:
-        """Explicitly prepare one product's default job within the admin scope."""
+        """Prepare one requested model for one Admin-scoped product."""
         if job_materializer is None:
             raise HTTPException(
                 status_code=503,
@@ -290,22 +292,24 @@ def create_app(
                     requested_location_id=None,
                 )
 
+                requested_model = "blend" if model == "calibrated_blend" else model
                 if snapshot_repository is not None:
+                    identity = forecast_model_identity(service, requested_model)
                     # A completed snapshot is reusable only for the deployed
                     # model/configuration identity and current source revisions.
                     saved = snapshot_repository.product(
-                        location_id=profile.location_id, product_id=str(UUID(product_id)), model_key="blend",
+                        location_id=profile.location_id, product_id=str(UUID(product_id)), model_key=requested_model,
                     )
                     for item in saved.get("items", []):
                         snap = item.get("snapshot") or {}
                         model_identity = snap.get("requested_model") or {}
-                        identity = job_materializer._identity
                         if (item.get("status") == "completed"
                             and model_identity.get("key") == identity.model_key
                             and model_identity.get("version") == identity.model_version
                             and model_identity.get("config_digest") == identity.config_digest
                             and model_identity.get("implementation_digest") == identity.implementation_digest
-                            and snap.get("horizon_days") == 28 and snap.get("history_window_days") == 365):
+                            and snap.get("horizon_days") == 28
+                            and snap.get("history_window_days") == (1095 if requested_model == "seasonal_experimental" else 365)):
                             return {"business_date": snap["as_of_business_date"], "active_products": 1,
                                     "prepared": 0, "queued": 0, "duplicate": 1, "stale": 0, "skipped": 0,
                                     "jobs": [{"status": "succeeded", "outcome": "available"}],
@@ -316,6 +320,7 @@ def create_app(
                     session_token=token,
                     now=now(),
                     product_id=product_id,
+                    model_key=requested_model,
                 )
                 return {
                     "business_date": report.business_date.isoformat(),

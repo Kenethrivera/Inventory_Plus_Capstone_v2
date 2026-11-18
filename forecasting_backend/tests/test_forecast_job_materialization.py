@@ -26,6 +26,7 @@ from app.forecasting import (
     ForecastProduct,
     HistoricalDemandDataset,
     LightGBMForecaster,
+    LightGBMConfig,
     Mean28Forecaster,
 )
 
@@ -75,6 +76,13 @@ def _model_service():
         _blend=CalibratedBlendForecaster(),
         _lightgbm=LightGBMForecaster(),
         _mean28=Mean28Forecaster(),
+        _seasonal_experimental=SimpleNamespace(
+            MODEL_VERSION="1",
+            config=LightGBMConfig(),
+            include_seasonal_features=True,
+            zero_never_sold_forecasts=True,
+            resolver=SimpleNamespace(CALENDAR_VERSION="test-calendar-v1"),
+        ),
     )
 
 
@@ -290,6 +298,46 @@ class ForecastJobMaterializationTests(unittest.TestCase):
         self.assertEqual(first.queued, 1)
         self.assertEqual(second.duplicate, 1)
         self.assertEqual(len(self.repository.jobs), 1)
+
+    def test_each_requested_model_has_its_own_deduplicated_identity(self):
+        materializer = self._materializer()
+        for model_key, history_days in (
+            ("mean28", 365),
+            ("lightgbm", 365),
+            ("blend", 365),
+            ("seasonal_experimental", 1095),
+        ):
+            if history_days == 1095:
+                original = self.catalog.histories[PRODUCT_A]
+                self.catalog.histories[PRODUCT_A] = HistoricalDemandDataset.from_real_observations(
+                    product=original.product,
+                    history_start=AS_OF.date() - timedelta(days=history_days),
+                    history_end=original.history_end,
+                    observations=original.observations,
+                    availability_evidence=original.availability_evidence,
+                )
+            first = materializer.bootstrap(
+                profile=self.profile, session_token="test-token", now=AS_OF,
+                product_id=PRODUCT_A, model_key=model_key,
+            )
+            second = materializer.bootstrap(
+                profile=self.profile, session_token="test-token", now=AS_OF,
+                product_id=PRODUCT_A, model_key=model_key,
+            )
+            self.assertEqual((first.queued, second.duplicate), (1, 1))
+            self.assertEqual(self.catalog.load_calls[-1][2], history_days)
+        self.assertEqual(len(self.repository.jobs), 4)
+        self.assertEqual(
+            {job["requested_model_key"]: job["history_window_days"]
+             for job in self.repository.jobs.values()},
+            {"mean28": 365, "lightgbm": 365, "blend": 365,
+             "seasonal_experimental": 1095},
+        )
+        for job in self.repository.jobs.values():
+            identity = forecast_model_identity(self.service, job["requested_model_key"])
+            self.assertEqual(job["requested_model_version"], identity.model_version)
+            self.assertEqual(job["requested_model_config_digest"], identity.config_digest)
+            self.assertEqual(job["requested_implementation_digest"], identity.implementation_digest)
 
     def test_single_product_bootstrap_does_not_prepare_other_active_products(self):
         self.catalog.histories[PRODUCT_B] = _history(PRODUCT_B)
