@@ -55,3 +55,7 @@ AGENTS.md
 # Supabase local/generated files
 supabase/.temp/
 supabase/schemas/.pgdelta-export.json
+
+# Forecasting local secrets and runtime files
+forecasting_backend/.env
+forecasting_backend/.runtime/

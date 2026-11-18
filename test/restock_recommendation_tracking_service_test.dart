@@ -33,7 +33,11 @@ InventoryApprovalRequest restockRequest({
 
 class RecordingForecastApi implements ForecastingApiService {
   @override
-  Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken}) => throw UnsupportedError('not used');
+  Future<Map<String, dynamic>> prepareForecast({
+    String? model,
+    required String productId,
+    required String sessionToken,
+  }) => throw UnsupportedError('not used');
   RecordingForecastApi({
     ForecastAnalysis? analysis,
     this.analysisError,

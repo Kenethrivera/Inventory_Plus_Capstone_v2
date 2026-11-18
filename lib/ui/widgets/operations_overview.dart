@@ -603,7 +603,7 @@ class OperationsOverview extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
               child: _sectionTitle(
                 'Staff on the floor',
-                'Manage ↗',
+                'Manage',
                 onStaff,
                 compact: true,
               ),
