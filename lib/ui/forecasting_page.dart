@@ -39,6 +39,18 @@ const _trackingAccentSoft = Color(0xFFFFF3EA);
 const _trackingSubtle = Color(0xFFF9FAFB);
 const _forecastOverviewTrace = bool.fromEnvironment('FORECAST_OVERVIEW_TRACE');
 
+// Selection policy only: numerical forecasting and job identity stay server-side.
+List<ForecastSnapshotItem> reactiveForecastCandidates(
+    List<ForecastSnapshotItem> rows, {required String model, required String? locationId}) {
+  if (!const {'mean28', 'lightgbm', 'seasonal_experimental'}.contains(model)) return const [];
+  final scoped = rows.where((item) => item.locationId == locationId).toList(growable: false);
+  if (scoped.any((item) => const {'queued', 'running'}.contains(item.job['status']))) return const [];
+  return scoped.where((item) =>
+      (item.status == 'stale' || item.status == 'no_forecast') &&
+      !const {'failed', 'cancelled'}.contains(item.job['status']))
+      .take(model == 'seasonal_experimental' ? 1 : 5).toList(growable: false);
+}
+
 enum _ForecastingView { overview, product, tracking }
 
 enum _TrackingSection { records, accuracy }
@@ -172,6 +184,73 @@ class _ForecastingPageState extends State<ForecastingPage> {
     });
   }
 
+  Timer? _overviewStatusTimer;
+  int _overviewStatusPolls = 0;
+  final Set<String> _reactiveRequests = {};
+  String? _reactiveMessage;
+
+  Future<void> _reactivelyPrepare(List<ForecastSnapshotItem> rows,
+      {required bool overview}) async {
+    final model = _selectedModel;
+    if (model == 'blend' || model == 'calibrated_blend') return;
+    final location = widget.controller.activeLocationId;
+    final session = _currentSessionDigest();
+    final selection = overview ? _snapshotOverviewRequestKey : _snapshotProductRequestKey;
+    final view = _selectedView;
+    bool stillSelected() => mounted && widget.isActive && view == _selectedView &&
+        model == _selectedModel && session == _currentSessionDigest() &&
+        location == widget.controller.activeLocationId &&
+        selection == (overview ? _snapshotOverviewRequestKey : _snapshotProductRequestKey);
+    final candidates = reactiveForecastCandidates(rows, model: model, locationId: location);
+    var prepared = false;
+    for (final item in candidates) {
+      if (!stillSelected()) break;
+      final day = DateTime.now().toUtc().add(const Duration(hours: 8)).toIso8601String().substring(0, 10);
+      final key = '$location|$session|$model|${item.productId}|$day|${item.snapshot?['result_id']}';
+      if (!_reactiveRequests.add(key)) continue;
+      if (_reactiveRequests.length > 200) _reactiveRequests.remove(_reactiveRequests.first);
+      try {
+        final report = await _api().prepareForecast(productId: item.productId,
+          sessionToken: widget.controller.currentSessionToken, model: model);
+        if (!stillSelected()) return;
+        final accepted = (report['queued'] as num? ?? 0) + (report['duplicate'] as num? ?? 0);
+        prepared = prepared || accepted > 0;
+        if (accepted == 0) setState(() => _reactiveMessage =
+            'Forecast preparation did not queue this product. Review its available inputs and preparation diagnostics.');
+      } on ForecastApiException catch (error) {
+        if (stillSelected()) setState(() => _reactiveMessage = error.message);
+      } catch (_) {
+        if (stillSelected()) setState(() => _reactiveMessage =
+            'Forecast preparation is unavailable. Refresh to check saved results.');
+      }
+    }
+    if (!stillSelected() || !prepared) return;
+    if (overview) {
+      _overviewStatusPolls = model == 'seasonal_experimental' ? 40 : 20;
+      _scheduleOverviewStatus(force: true);
+    } else {
+      _forecastStatusPolls = model == 'seasonal_experimental' ? 120 : 60;
+      _forecastStatusTimer?.cancel();
+      _forecastStatusTimer = Timer(const Duration(seconds: 5), () {
+        if (stillSelected()) unawaited(_loadAnalysis(forceRefresh: true));
+      });
+    }
+  }
+
+  void _scheduleOverviewStatus({bool force = false}) {
+    _overviewStatusTimer?.cancel();
+    final rows = _snapshotOverview?.items ?? const <ForecastSnapshotItem>[];
+    if (!force && !rows.any((row) => const {'queued', 'running'}.contains(row.job['status']))) return;
+    if (_overviewStatusPolls <= 0) return;
+    final key = _snapshotOverviewRequestKey;
+    _overviewStatusTimer = Timer(const Duration(seconds: 15), () {
+      if (!mounted || !widget.isActive || _selectedView != _ForecastingView.overview ||
+          key != _snapshotOverviewRequestKey) return;
+      _overviewStatusPolls--;
+      unawaited(_loadSnapshotOverview(forceRefresh: true));
+    });
+  }
+
   bool _stale = false;
   List<RecommendationTrackingItem> _recommendations = const [];
   String? _recommendationTrackingError;
@@ -248,6 +327,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
   /// A later activation or explicit refresh can then own fresh loading state.
   void _invalidatePendingRequests() {
     _forecastStatusTimer?.cancel();
+    _overviewStatusTimer?.cancel();
+    _overviewStatusPolls = 0;
+    _reactiveMessage = null;
     _forecastStatusPolls = 0;
     if (_overviewLoading) _snapshotOverviewRequestKey = null;
     if (_loading) _snapshotProductRequestKey = null;
@@ -848,7 +930,10 @@ class _ForecastingPageState extends State<ForecastingPage> {
           _stale = result.status == 'stale';
         });
         if (result.status == 'completed') _snapshotOverviewRequestKey = null;
+        if (_forecastStatusPolls == 0 && !forceRefresh &&
+            const {'queued', 'running'}.contains(result.job['status'])) _forecastStatusPolls = 60;
         _scheduleForecastStatus(result);
+        unawaited(_reactivelyPrepare([result], overview: false));
         return;
       }
       final result = await _requestAnalysis(
@@ -894,6 +979,12 @@ class _ForecastingPageState extends State<ForecastingPage> {
     }
   }
 
+  List<ForecastSnapshotItem> _selectedOverviewPageItems(ForecastSnapshotPage page) {
+    final scopes = _savedScopes(page, _items);
+    final scope = scopes.where((value) => value.key == _selectedOverviewScopeKey).firstOrNull;
+    return page.items.where((item) => scope == null || scope.productIds.contains(item.productId)).toList(growable: false);
+  }
+
   Future<void> _loadSnapshotOverview({bool forceRefresh = false}) async {
     if (!mounted || !widget.isActive) return;
     final locationId = widget.controller.activeLocationId;
@@ -903,7 +994,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
     }
     final requestKey =
         '$locationId|${_currentSessionDigest()}|$_selectedModel|'
-        '$_snapshotPageNumber|$_snapshotUnit|$_snapshotSearch';
+        '$_snapshotPageNumber|$_snapshotUnit|$_snapshotSearch|$_selectedOverviewScopeKey';
     if (!forceRefresh &&
         _snapshotOverviewRequestKey == requestKey &&
         (_overviewLoading ||
@@ -923,6 +1014,8 @@ class _ForecastingPageState extends State<ForecastingPage> {
       _overviewTotalCount = _items.length;
     });
     try {
+      final scope = _snapshotOverview == null ? null : _savedScopes(_snapshotOverview!, _items)
+          .where((value) => value.key == _selectedOverviewScopeKey).firstOrNull;
       final page = await _api().loadSnapshotOverview(
         locationId: locationId,
         sessionToken: widget.controller.currentSessionToken,
@@ -931,6 +1024,8 @@ class _ForecastingPageState extends State<ForecastingPage> {
         pageSize: 25,
         unit: _snapshotUnit,
         search: _snapshotSearch,
+        scopeCategory: scope?.kind == _OverviewScopeKind.category ? scope!.label : null,
+        scopeProductId: scope?.kind == _OverviewScopeKind.product ? scope!.productIds.first : null,
       );
       if (!mounted || generation != _overviewGeneration) return;
       if (page.items.any((item) => item.locationId != locationId)) {
@@ -950,6 +1045,12 @@ class _ForecastingPageState extends State<ForecastingPage> {
             .length;
         _overviewTotalCount = page.totalCount;
       });
+      if (_overviewStatusPolls == 0 && !forceRefresh && page.items.any(
+          (item) => const {'queued', 'running'}.contains(item.job['status']))) {
+        _overviewStatusPolls = 20;
+      }
+      _scheduleOverviewStatus();
+      unawaited(_reactivelyPrepare(_selectedOverviewPageItems(page), overview: true));
     } on ForecastApiException catch (error) {
       if (!mounted || generation != _overviewGeneration) return;
       setState(() {
@@ -1417,6 +1518,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
 
   @override
   void dispose() {
+    _overviewStatusTimer?.cancel();
     _forecastStatusTimer?.cancel();
     _overviewGeneration++;
     _detailGeneration++;
@@ -1495,9 +1597,14 @@ class _ForecastingPageState extends State<ForecastingPage> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       if (_useSavedForecasts) ...[
+        if (_reactiveMessage != null) Padding(
+          padding: const EdgeInsets.only(bottom: 8), child: Text(_reactiveMessage!,
+            style: const TextStyle(fontSize: 12, color: _forecastMuted))),
         ForecastOverviewDashboard(
           snapshot: _snapshotOverview == null ? null : _savedPortfolio(_snapshotOverview!),
           savedPage: _snapshotOverview,
+          analyses: {for (final item in _snapshotOverview?.items ?? const <ForecastSnapshotItem>[])
+            if (item.analysis != null) item.productId: item.analysis!},
           selectedModel: _selectedModel,
           products: _items.where((item) => item.locationId == null ||
               item.locationId == widget.controller.activeLocationId).toList(growable: false),
@@ -1522,7 +1629,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
                   }
                 }
               }
-              if (_snapshotUnit != chosen.unit || _snapshotSearch != search) {
+              if (chosen.key == value) {
                 _snapshotUnit = chosen.unit;
                 _snapshotSearch = search;
                 _snapshotPageNumber = 1;
@@ -1545,15 +1652,17 @@ class _ForecastingPageState extends State<ForecastingPage> {
               onPressed: _overviewLoading || page.page <= 1 ? null : () {
                 _snapshotPageNumber--; unawaited(_loadSnapshotOverview());
               }, icon: const Icon(LucideIcons.chevronLeft)),
-            Text('Page ${page.page} of ${max(1, page.pageCount)}'),
+            Flexible(child: Text(
+              page.items.isEmpty
+                  ? 'Showing 0 of ${page.totalCount} products matching the current filter · Page ${page.page} of ${max(1, page.pageCount)}'
+                  : 'Showing ${(page.page - 1) * page.pageSize + 1}–${min(page.totalCount, (page.page - 1) * page.pageSize + page.items.length)} of ${page.totalCount} products matching the current filter · Page ${page.page} of ${max(1, page.pageCount)}',
+              style: const TextStyle(fontSize: 12, color: _forecastMuted),
+            )),
             IconButton(tooltip: 'Next page',
               onPressed: _overviewLoading || page.page >= page.pageCount ? null : () {
                 _snapshotPageNumber++; unawaited(_loadSnapshotOverview());
               }, icon: const Icon(LucideIcons.chevronRight)),
-            const Spacer(),
-            IconButton(tooltip: 'Refresh saved forecasts',
-              onPressed: _overviewLoading ? null : () => _loadSnapshotOverview(forceRefresh: true),
-              icon: const Icon(LucideIcons.refreshCw)),
+
           ]),
       ]
       else ...[
@@ -1912,6 +2021,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
 
   void _changeModel(String value) {
     _forecastStatusTimer?.cancel();
+    _overviewStatusTimer?.cancel();
+    _overviewStatusPolls = 0;
+    _reactiveMessage = null;
     _forecastStatusPolls = 0;
     _overviewGeneration++;
     _detailGeneration++;
@@ -1934,6 +2046,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
 
   void _selectProduct(String productId, {required bool loadForecast}) {
     _forecastStatusTimer?.cancel();
+    _overviewStatusTimer?.cancel();
+    _overviewStatusPolls = 0;
+    _reactiveMessage = null;
     _forecastStatusPolls = 0;
     if (productId == _selectedProductId) {
       if (loadForecast &&
@@ -1993,6 +2108,13 @@ class _ForecastingPageState extends State<ForecastingPage> {
   }
 
   void _openProductForecast(String productId) {
+    if (!_items.any((item) => item.id == productId)) return;
+    if (_useSavedForecasts &&
+        !(_snapshotOverview?.items.any((item) =>
+            item.productId == productId &&
+            item.locationId == widget.controller.activeLocationId) ?? false)) {
+      return;
+    }
     _selectProduct(productId, loadForecast: true);
     setState(() => _selectedView = _ForecastingView.product);
   }
@@ -3316,7 +3438,17 @@ PortfolioForecastSnapshot _savedPortfolio(ForecastSnapshotPage page) {
         byUnit: byUnit(current.where((item) => (item.product['category']?.toString() ?? 'Uncategorized') == category).toList()),
         productCount: current.where((item) => (item.product['category']?.toString() ?? 'Uncategorized') == category).length,
         coldStartProducts: 0)],
-    priorities: const [], totalProducts: page.totalCount,
+    priorities: ([for (final item in page.items)
+      if (item.status == 'completed' && item.analysis != null &&
+          item.analysis!.recommendation.status != 'sufficient_inventory')
+        ReplenishmentPriority(productId: item.productId, productName: item.productName,
+          category: item.product['category']?.toString() ?? 'Uncategorized',
+          status: item.analysis!.recommendation.status, inventoryUnit: item.unit,
+          suggestedQuantity: item.analysis!.recommendation.suggestedInventoryQuantity)]
+      ..sort((a, b) {
+        final rank = (a.status == 'recommend_order' ? 0 : 1).compareTo(b.status == 'recommend_order' ? 0 : 1);
+        return rank == 0 ? a.productName.compareTo(b.productName) : rank;
+      })), totalProducts: page.totalCount,
     forecastedProducts: current.length, coldStartProducts: 0,
     models: const {}, provenance: const {}, reliabilityWarnings: const [],
     generatedAt: dates.isEmpty ? DateTime.now() : dates.last,
@@ -4362,19 +4494,39 @@ class ForecastOverviewDashboard extends StatelessWidget {
       key: const Key('forecast-overview-dashboard'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (savedPage?.items.any((item) => item.status == 'stale') == true)
-          const _Notice(color: Colors.orange, icon: LucideIcons.clock,
-            text: 'Includes stale saved forecasts. Charts retain their original forecast dates; these are not current store-wide demand estimates.'),
         if (savedPage != null)
-          Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(
-            'Partial page coverage: ${savedPage!.items.where((item) => item.status == "completed").length} current forecasts on this page; ${savedPage!.totalCount} matching products. Totals below cover this page only.',
-            style: const TextStyle(fontSize: 12, color: _forecastMuted))),
+          Padding(padding: const EdgeInsets.only(bottom: 12), child: Wrap(
+            spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                '${_snapshotModelLabel(selectedModel ?? 'blend')} · '
+                '${savedPage!.items.where((item) => item.status == "completed").length} current · '
+                '${savedPage!.items.where((item) => item.status == "stale").length} stale · '
+                '${savedPage!.items.where((item) => item.job['status'] == 'queued').length} queued · '
+                '${savedPage!.items.where((item) => item.job['status'] == 'running').length} processing · '
+                '${savedPage!.items.where((item) => item.job['status'] == 'failed').length} failed · '
+                '${savedPage!.items.where((item) => item.status == 'no_forecast').length} missing · '
+                '${savedPage!.items.where((item) => const {'cancelled', 'superseded'}.contains(item.status)).length} cancelled/superseded · '
+                '${savedPage!.items.length} on this page · ${savedPage!.totalCount} products matching the current filter. Demand totals cover this page only.',
+                style: const TextStyle(fontSize: 12, color: _forecastMuted),
+              ),
+              _ForecastDefinition(
+                label: 'Forecast coverage information',
+                definition: '${savedPage!.items.any((item) => item.status == 'stale') ? 'Some saved forecasts are stale.' : savedPage!.items.every((item) => item.status == 'completed') && savedPage!.items.isNotEmpty ? 'All displayed forecasts are current.' : 'Some forecasts are missing, unavailable, or pending.'} Totals cover only the selected products on this page, not the entire store. Charts retain original saved forecast dates.',
+                iconOnly: true,
+              ),
+              IconButton(tooltip: 'Refresh saved forecasts', onPressed: loading ? null : onRetry,
+                icon: const Icon(LucideIcons.refreshCw, size: 18)),
+            ],
+          )),
         if (stale)
-          const _Notice(
-            color: Colors.orange,
-            icon: LucideIcons.refreshCw,
-            text:
-                'Inventory changed after this outlook was generated. Refresh before planning.',
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: _ForecastDefinition(
+              label: 'Outdated forecast information',
+              definition: 'Some saved forecasts may be outdated. Charts retain their original forecast dates and should not be interpreted as current store-wide demand estimates.',
+              iconOnly: true,
+            ),
           ),
         if (error != null)
           _Notice(
@@ -4404,9 +4556,18 @@ class ForecastOverviewDashboard extends StatelessWidget {
         const SizedBox(height: 24),
         LayoutBuilder(
           builder: (context, constraints) {
+            final availableScopes = savedPage == null
+                ? _buildOverviewScopes(products, analyses)
+                : _savedScopes(savedPage!, products);
+            final selectedScope = availableScopes.where((scope) =>
+                scope.key == selectedScopeKey).firstOrNull ?? availableScopes.firstOrNull;
             final priorities = _PlanningPriorityCard(
-              unavailable: savedPage != null && analyses.isEmpty,
-              analyses: analyses,
+              pageScoped: savedPage != null,
+              unavailable: savedPage != null || products.where((item) =>
+                  selectedScope == null || selectedScope.productIds.contains(item.id))
+                  .any((item) => !analyses.containsKey(item.id)),
+              priorities: value.priorities.where((item) =>
+                  selectedScope == null || selectedScope.productIds.contains(item.productId)).toList(growable: false),
               onSelectProduct: onSelectProduct,
             );
             final supporting = Column(
@@ -4414,9 +4575,10 @@ class ForecastOverviewDashboard extends StatelessWidget {
                 _CategoryOutlookCard(snapshot: value, window: selectedWindow),
                 const SizedBox(height: 16),
                 _SalesEvidenceCard(
+                  savedCoverage: loading ? null : savedPage?.salesHistoryCoverage,
                   evidenceAvailable: savedPage == null,
                   analyses: analyses.values.toList(growable: false),
-                  products: products,
+                  products: products.where((item) => selectedScope == null || selectedScope.productIds.contains(item.id)).toList(growable: false),
                 ),
               ],
             );
@@ -4575,7 +4737,7 @@ class _StoreOutlookCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Expected demand · ${selectedWindow == ForecastWindow.next7Days ? 'Short-term (7 days)' : 'Planning (28 days)'}',
+                    'Expected demand${savedPage == null ? '' : ' on this page'} · ${selectedWindow == ForecastWindow.next7Days ? 'Short-term (7 days)' : 'Planning (28 days)'}',
                     style: const TextStyle(fontSize: 13, color: _forecastMuted),
                   ),
                   const SizedBox(height: 4),
@@ -4583,7 +4745,7 @@ class _StoreOutlookCard extends StatelessWidget {
                     TextSpan(
                       children: [
                         TextSpan(
-                          text: selected == null || points.isEmpty ? '—' : _quantity(total),
+                          text: selected == null || points.isEmpty ? '—' : _overviewQuantity(total, selected.unit),
                           style: const TextStyle(
                             fontSize: 36,
                             fontWeight: FontWeight.w600,
@@ -4646,7 +4808,10 @@ class _StoreOutlookCard extends StatelessWidget {
 }
 
 class _SalesEvidenceCard extends StatefulWidget {
-  const _SalesEvidenceCard({required this.analyses, required this.products, this.evidenceAvailable = true});
+  const _SalesEvidenceCard({required this.analyses, required this.products,
+    this.evidenceAvailable = true, this.savedCoverage});
+
+  final Map<String, dynamic>? savedCoverage;
 
   final bool evidenceAvailable;
 
@@ -4662,8 +4827,38 @@ class _SalesEvidenceCardState extends State<_SalesEvidenceCard> {
 
   @override
   Widget build(BuildContext context) {
+    final coverage = widget.savedCoverage;
+    if (coverage != null && coverage['available'] == true &&
+        const ['total', 'no_sales', 'limited', 'sufficient', 'not_evaluated']
+            .every((key) => coverage[key] is num)) {
+      final unevaluated = (coverage['not_evaluated'] as num).toInt();
+      final noSales = (coverage['no_sales'] as num).toInt();
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(color: Colors.white, border: Border.all(color: _forecastLine),
+          borderRadius: BorderRadius.circular(12)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Sales History Coverage', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Text('$noSales no recorded sales · ${coverage['limited']} limited history · '
+            '${coverage['sufficient']} sufficient history · $unevaluated not evaluated',
+            style: const TextStyle(fontSize: 12, color: _forecastMuted)),
+          if (noSales == 0 && unevaluated == 0 && (coverage['total'] as num) > 0)
+            const Text('All products have recorded sales.'),
+          const SizedBox(height: 6),
+          const Text('Across the selected scope and frozen historical window, excluding today. Completed-sales evidence establishes no-sales counts; current saved metadata establishes model eligibility. Incomplete evidence remains not evaluated.',
+            style: TextStyle(fontSize: 11, color: _forecastMuted)),
+        ]),
+      );
+    }
+    final productsById = {
+      for (final product in widget.products) product.id: product,
+    };
+    final scopedAnalyses = widget.analyses.where(
+      (analysis) => productsById.containsKey(analysis.product.productId),
+    ).toList(growable: false);
     final noRecordedSales =
-        widget.analyses
+        scopedAnalyses
             .where(
               (analysis) =>
                   analysis.forecast.isColdStart &&
@@ -4674,7 +4869,7 @@ class _SalesEvidenceCardState extends State<_SalesEvidenceCard> {
             (left, right) => left.product.name.compareTo(right.product.name),
           );
     final limitedHistory =
-        widget.analyses
+        scopedAnalyses
             .where(
               (analysis) =>
                   analysis.forecast.isColdStart &&
@@ -4684,15 +4879,18 @@ class _SalesEvidenceCardState extends State<_SalesEvidenceCard> {
           ..sort(
             (left, right) => left.product.name.compareTo(right.product.name),
           );
-    final productsById = {
-      for (final product in widget.products) product.id: product,
-    };
-    final evaluatedIds = widget.analyses
+    final sufficientHistory = scopedAnalyses.where(
+      (analysis) => !analysis.forecast.isColdStart,
+    ).length;
+    final evaluatedIds = scopedAnalyses
         .map((analysis) => analysis.product.productId)
         .toSet();
     final unavailable = widget.products
         .where((product) => !evaluatedIds.contains(product.id))
         .length;
+    final completeScope = widget.evidenceAvailable && unavailable == 0 &&
+        widget.products.isNotEmpty && scopedAnalyses.every((analysis) =>
+            !analysis.synthetic && analysis.forecast.provenance == 'real');
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -4704,7 +4902,7 @@ class _SalesEvidenceCardState extends State<_SalesEvidenceCard> {
         children: [
           InkWell(
             key: const Key('forecast-sales-gaps-toggle'),
-            onTap: noRecordedSales.isEmpty
+            onTap: !completeScope || noRecordedSales.isEmpty
                 ? null
                 : () => setState(() => _expanded = !_expanded),
             borderRadius: BorderRadius.circular(12),
@@ -4714,7 +4912,7 @@ class _SalesEvidenceCardState extends State<_SalesEvidenceCard> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
-                    widget.evidenceAvailable ? '${noRecordedSales.length}' : '?',
+                    completeScope ? '${noRecordedSales.length}' : '—',
                     style: const TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.w600,
@@ -4727,7 +4925,7 @@ class _SalesEvidenceCardState extends State<_SalesEvidenceCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Products with no recorded sales',
+                          'Sales History Coverage',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -4736,13 +4934,17 @@ class _SalesEvidenceCardState extends State<_SalesEvidenceCard> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          widget.evidenceAvailable ? 'In stock, but no completed sales evidence is available.' : 'Sales evidence is available in the product forecast; this summary does not include it.',
+                          !completeScope
+                              ? 'Sales history coverage is currently unavailable.'
+                              : noRecordedSales.isEmpty
+                                  ? 'All products have recorded sales.'
+                                  : '${noRecordedSales.length} with no recorded sales in the selected scope.',
                           style: TextStyle(fontSize: 11, color: _forecastMuted),
                         ),
                       ],
                     ),
                   ),
-                  if (noRecordedSales.isNotEmpty)
+                  if (completeScope && noRecordedSales.isNotEmpty)
                     Icon(
                       _expanded
                           ? LucideIcons.chevronUp
@@ -4754,7 +4956,7 @@ class _SalesEvidenceCardState extends State<_SalesEvidenceCard> {
               ),
             ),
           ),
-          if (_expanded)
+          if (_expanded && completeScope)
             Container(
               decoration: const BoxDecoration(
                 border: Border(top: BorderSide(color: _forecastHairline)),
@@ -4806,13 +5008,15 @@ class _SalesEvidenceCardState extends State<_SalesEvidenceCard> {
                 ],
               ),
             ),
-          if (limitedHistory.isNotEmpty || unavailable > 0)
+          if (completeScope || (widget.evidenceAvailable && unavailable > 0))
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 10, 24, 13),
               child: Text(
                 [
-                  if (limitedHistory.isNotEmpty)
-                    '${limitedHistory.length} with insufficient history',
+                  if (completeScope) ...[
+                    '${limitedHistory.length} with limited sales history',
+                    '$sufficientHistory with sufficient sales history',
+                  ],
                   if (unavailable > 0) '$unavailable not evaluated',
                 ].join(' · '),
                 style: const TextStyle(fontSize: 10, color: _forecastFaint),
@@ -6700,7 +6904,7 @@ class _CategoryDemandRow extends StatelessWidget {
         SizedBox(
           width: 72,
           child: Text(
-            _quantity(unit.quantityFor(window)),
+            _overviewQuantity(unit.quantityFor(window), unit.unit),
             textAlign: TextAlign.right,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
@@ -6718,54 +6922,26 @@ class _CategoryDemandRow extends StatelessWidget {
   );
 }
 
-class _PlanningPriorityCard extends StatefulWidget {
+class _PlanningPriorityCard extends StatelessWidget {
   const _PlanningPriorityCard({
     this.unavailable = false,
-    this.analyses = const <String, ForecastAnalysis>{},
+    this.priorities = const <ReplenishmentPriority>[],
     this.onSelectProduct,
+    this.pageScoped = false,
   });
 
   final bool unavailable;
-  final Map<String, ForecastAnalysis> analyses;
+  final bool pageScoped;
+  final List<ReplenishmentPriority> priorities;
   final ValueChanged<String>? onSelectProduct;
 
   @override
-  State<_PlanningPriorityCard> createState() => _PlanningPriorityCardState();
-}
-
-class _PlanningPriorityCardState extends State<_PlanningPriorityCard> {
-  bool _showAll = false;
-
-  @override
   Widget build(BuildContext context) {
-    final priorities =
-        widget.analyses.values
-            .where(
-              (analysis) =>
-                  (analysis
-                          .preliminaryRestockingInsight
-                          .suggestedRestockQuantity ??
-                      0) >
-                  0,
-            )
-            .toList(growable: false)
-          ..sort((left, right) {
-            final leftInsight = left.preliminaryRestockingInsight;
-            final rightInsight = right.preliminaryRestockingInsight;
-            final leftRatio = (leftInsight.predictedDemand ?? 0) <= 0
-                ? 0.0
-                : (leftInsight.suggestedRestockQuantity ?? 0) /
-                      leftInsight.predictedDemand!;
-            final rightRatio = (rightInsight.predictedDemand ?? 0) <= 0
-                ? 0.0
-                : (rightInsight.suggestedRestockQuantity ?? 0) /
-                      rightInsight.predictedDemand!;
-            final urgency = rightRatio.compareTo(leftRatio);
-            return urgency != 0
-                ? urgency
-                : left.product.name.compareTo(right.product.name);
-          });
-    final visible = _showAll ? priorities : priorities.take(5).toList();
+    // PortfolioForecastAggregator already orders supported recommendation
+    // states by priority. The compact snapshot page has no live guidance.
+    final actionable = priorities.where((priority) =>
+        priority.status == 'recommend_order' ||
+        priority.status == 'needs_review').take(5).toList(growable: false);
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -6775,134 +6951,52 @@ class _PlanningPriorityCardState extends State<_PlanningPriorityCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 18, 18, 13),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Restock priorities',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: _forecastInk,
-                    ),
-                  ),
-                ),
-                if (priorities.length > 5)
-                  TextButton(
-                    key: const Key('forecast-restock-show-all'),
-                    onPressed: () => setState(() => _showAll = !_showAll),
-                    style: TextButton.styleFrom(
-                      foregroundColor: _forecastMuted,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 4,
-                      ),
-                    ),
-                    child: Text(
-                      _showAll ? 'Show top 5' : 'View all recommendations',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 18, 18, 13),
+            child: Text('Restock priorities',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600,
+                  color: _forecastInk)),
           ),
-          if (priorities.isEmpty)
+          if (pageScoped)
+            const Padding(padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Text('Current-stock guidance for up to five current forecasts on this page. Other products have not been evaluated here.',
+                style: TextStyle(fontSize: 11, color: _forecastMuted))),
+          if (actionable.isEmpty)
             Padding(
-              padding: EdgeInsets.fromLTRB(24, 4, 24, 24),
+              padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
               child: Text(
-                widget.unavailable ? 'Current restock priorities are unavailable in the summary response. Open a product for current-stock guidance.' : 'No positive preliminary restock suggestions are available.',
-                style: TextStyle(color: _forecastMuted),
+                unavailable
+                    ? 'Current restock priorities are unavailable in the summary response. Open a product for current-stock guidance.'
+                    : 'No actionable restock recommendations are available.',
+                style: const TextStyle(color: _forecastMuted),
               ),
             )
-          else
-            LayoutBuilder(
-              builder: (context, constraints) {
-                const minimumTableWidth = 520.0;
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: max(minimumTableWidth, constraints.maxWidth),
-                    child: Column(
-                      children: [
-                        const ColoredBox(
-                          color: _forecastBackground,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 8,
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  flex: 39,
-                                  child: Text(
-                                    'Product',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: _forecastMuted,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 17,
-                                  child: Text(
-                                    'On hand',
-                                    textAlign: TextAlign.right,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: _forecastMuted,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 24,
-                                  child: Text(
-                                    'Suggested restock',
-                                    textAlign: TextAlign.right,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: _forecastMuted,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 20,
-                                  child: Text(
-                                    'Action',
-                                    textAlign: TextAlign.right,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: _forecastMuted,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        for (final analysis in visible)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
-                            child: _RestockPriorityRow(
-                              analysis: analysis,
-                              onOpen: widget.onSelectProduct == null
-                                  ? null
-                                  : () => widget.onSelectProduct!(
-                                      analysis.product.productId,
-                                    ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+          else ...[
+            const ColoredBox(
+              color: _forecastBackground,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                child: Row(children: [
+                  Expanded(flex: 3, child: Text('PRODUCT',
+                    style: TextStyle(fontSize: 11, color: _forecastMuted))),
+                  Expanded(flex: 4, child: Text('STATUS',
+                    style: TextStyle(fontSize: 11, color: _forecastMuted))),
+                  SizedBox(width: 94, child: Text('ACTION',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(fontSize: 11, color: _forecastMuted))),
+                ]),
+              ),
             ),
+            for (final priority in actionable)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _RestockPriorityRow(
+                  priority: priority,
+                  onOpen: onSelectProduct == null
+                      ? null : () => onSelectProduct!(priority.productId),
+                ),
+              ),
+          ],
         ],
       ),
     );
@@ -6910,96 +7004,125 @@ class _PlanningPriorityCardState extends State<_PlanningPriorityCard> {
 }
 
 class _RestockPriorityRow extends StatelessWidget {
-  const _RestockPriorityRow({required this.analysis, required this.onOpen});
+  const _RestockPriorityRow({required this.priority, required this.onOpen});
 
-  final ForecastAnalysis analysis;
+  final ReplenishmentPriority priority;
   final VoidCallback? onOpen;
 
   @override
   Widget build(BuildContext context) {
-    final insight = analysis.preliminaryRestockingInsight;
-    final onHand = insight.availableInventory;
-    final suggestion = insight.suggestedRestockQuantity;
-    final product = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          analysis.product.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: _forecastInk,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          '28-day demand exceeds saleable stock',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 12, color: _forecastMuted),
-        ),
-      ],
-    );
-    final action = OutlinedButton(
-      onPressed: onOpen,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: _forecastBody,
-        side: const BorderSide(color: _forecastLine),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        minimumSize: const Size(0, 34),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-      child: const Text('View details'),
-    );
+    final statusLabel = priority.status == 'recommend_order'
+        ? 'Restock Suggested' : 'Review Replenishment';
+    final definition = _restockStatusDefinitions[statusLabel]!;
     return Container(
-      constraints: const BoxConstraints(minHeight: 68),
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      constraints: const BoxConstraints(minHeight: 58),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: _forecastHairline)),
       ),
-      child: Row(
-        children: [
-          Expanded(flex: 39, child: product),
-          Expanded(
-            flex: 17,
-            child: Semantics(
-              label: 'On hand',
-              child: Text(
-                _withUnit(onHand, insight.inventoryUnit),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
-                style: const TextStyle(fontSize: 13, color: _forecastBody),
-              ),
+      child: Row(children: [
+        Expanded(flex: 3, child: Text(priority.productName,
+          maxLines: 2, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+              color: _forecastInk))),
+        const SizedBox(width: 8),
+        Expanded(flex: 4, child: Align(
+          alignment: Alignment.centerLeft,
+          child: _ForecastDefinition(label: statusLabel,
+              definition: definition),
+        )),
+        const SizedBox(width: 4),
+        SizedBox(width: 94, child: Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: onOpen,
+            style: TextButton.styleFrom(
+              foregroundColor: _forecastAccentDark,
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              minimumSize: const Size(0, 34),
             ),
+            child: const Text('View details', maxLines: 2,
+              textAlign: TextAlign.right,
+              style: TextStyle(fontSize: 11)),
           ),
-          Expanded(
-            flex: 24,
-            child: Semantics(
-              label: 'Suggested restock',
-              child: Text(
-                _withUnit(suggestion, insight.inventoryUnit),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: _forecastInk,
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 20,
-            child: Align(alignment: Alignment.centerRight, child: action),
-          ),
-        ],
-      ),
+        )),
+      ]),
     );
   }
+}
+
+const _restockStatusDefinitions = <String, String>{
+  'Restock Suggested': 'The existing restocking logic indicates that additional inventory may be needed based on available stock, forecast demand, and replenishment settings.',
+  'Review Replenishment': 'This product requires administrative review of its replenishment condition. Additional stock is not necessarily required.',
+  'Approaching Suggested Stock Level': 'Current inventory is nearing an established replenishment threshold. Review the product\'s stock and forecast details.',
+  'Monitor Stock Level': 'Continue monitoring this product\'s inventory. An immediate restocking recommendation has not been established.',
+  'Review Recommendation': 'Review the preliminary restock recommendation and its supporting forecast before taking action.',
+  'Recommendation Unavailable': 'A reliable recommendation is currently unavailable. Open Product Forecast to review the available information and limitations.',
+};
+
+class _ForecastDefinition extends StatelessWidget {
+  const _ForecastDefinition({
+    required this.label,
+    required this.definition,
+    this.iconOnly = false,
+  });
+
+  final String label;
+  final String definition;
+  final bool iconOnly;
+
+  @override
+  Widget build(BuildContext context) => MenuAnchor(
+    alignmentOffset: const Offset(0, 6),
+    style: const MenuStyle(
+      backgroundColor: WidgetStatePropertyAll(Colors.white),
+      surfaceTintColor: WidgetStatePropertyAll(Colors.transparent),
+      elevation: WidgetStatePropertyAll(8),
+      padding: WidgetStatePropertyAll(EdgeInsets.zero),
+      shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(8)),
+        side: BorderSide(color: _forecastLine),
+      )),
+    ),
+    menuChildren: [
+      ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: max(160, min(290, MediaQuery.sizeOf(context).width - 24)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Text(definition, softWrap: true,
+            style: const TextStyle(fontSize: 12, height: 1.4,
+                color: _forecastBody)),
+        ),
+      ),
+    ],
+    builder: (context, controller, child) => Semantics(
+      button: true,
+      label: iconOnly ? label : '$label. Show definition',
+      hint: definition,
+      child: MouseRegion(
+        onEnter: (_) { if (!controller.isOpen) controller.open(); },
+        child: InkWell(
+          onTap: () => controller.open(),
+          borderRadius: BorderRadius.circular(4),
+          child: iconOnly
+              ? const Padding(
+                  padding: EdgeInsets.all(3),
+                  child: Icon(LucideIcons.info, size: 17,
+                    color: _forecastAccent),
+                )
+              : Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Text(label, maxLines: 3, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: _forecastBody,
+                      decoration: TextDecoration.underline,
+                      decorationStyle: TextDecorationStyle.dotted)),
+                ),
+        ),
+      ),
+    ),
+  );
 }
 
 class IndustryOutlookPanel extends StatelessWidget {
@@ -11243,6 +11366,17 @@ String _quantity(double? value) {
   if (value == null) return 'Not recorded';
   if (value == value.roundToDouble()) return value.toStringAsFixed(0);
   return value.toStringAsFixed(2);
+}
+
+String _overviewQuantity(double? value, String? unit) {
+  if (value == null) return 'Not recorded';
+  if (!value.isFinite) return 'Unavailable';
+  if (value > 0 && value <= 9007199254740991 &&
+      const {'pcs', 'pc', 'piece', 'pieces'}
+          .contains(unit?.trim().toLowerCase())) {
+    return '≈${value.toStringAsFixed(0)}';
+  }
+  return _quantity(value);
 }
 
 String _withUnit(double? value, String? unit) =>

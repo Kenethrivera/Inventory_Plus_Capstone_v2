@@ -46,8 +46,10 @@ class ForecastSnapshotReadRepository:
         page_size: int,
         unit: str | None = None,
         search: str | None = None,
+        category: str | None = None,
+        product_id: str | None = None,
     ) -> dict[str, Any]:
-        return self._rpc({
+        payload = {
             "p_location_id": location_id,
             "p_product_id": None,
             "p_model_key": model_key,
@@ -56,7 +58,28 @@ class ForecastSnapshotReadRepository:
             "p_unit": unit,
             "p_search": search,
             "p_include_bundle": False,
-        })
+        }
+        payload.update(p_scope_category=category, p_scope_product_id=product_id)
+        return self._rpc(payload, function="forecast_snapshot_page_v2")
+
+    def history_coverage(self, *, location_id: str, model_key: str,
+                         unit: str | None = None, search: str | None = None,
+                         category: str | None = None, product_id: str | None = None) -> dict[str, Any]:
+        try:
+            response = self._client.post(
+                f"{self._url}/rest/v1/rpc/forecast_history_coverage_v2",
+                headers=self._headers,
+                json={"p_location_id": location_id, "p_model_key": model_key,
+                      "p_unit": unit, "p_search": search,
+                      "p_category": category, "p_product_id": product_id},
+            )
+            response.raise_for_status()
+            value = response.json()
+            if not isinstance(value, dict):
+                raise ValueError("invalid coverage")
+            return value
+        except (httpx.HTTPError, ValueError) as error:
+            raise DataUnavailableError("Sales history coverage is unavailable") from error
 
     def product(
         self, *, location_id: str, product_id: str, model_key: str
@@ -72,10 +95,10 @@ class ForecastSnapshotReadRepository:
             "p_include_bundle": True,
         })
 
-    def _rpc(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def _rpc(self, payload: dict[str, Any], *, function: str = "forecast_snapshot_page_v1") -> dict[str, Any]:
         try:
             response = self._client.post(
-                f"{self._url}/rest/v1/rpc/forecast_snapshot_page_v1",
+                f"{self._url}/rest/v1/rpc/{function}",
                 headers=self._headers,
                 json=payload,
             )

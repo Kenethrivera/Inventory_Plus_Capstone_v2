@@ -613,6 +613,7 @@ void main() {
           jsonEncode(<String, dynamic>{
             'page': 2,
             'page_size': 25,
+            'sales_history_coverage': {'available': true, 'total': 27, 'no_sales': 0, 'limited': 2, 'sufficient': 5, 'not_evaluated': 20},
             'total_count': 27,
             'page_count': 2,
             'items': <Object>[],
@@ -630,6 +631,7 @@ void main() {
       pageSize: 25,
       unit: 'pcs',
       search: 'cement',
+      scopeCategory: 'Materials',
     );
 
     expect(captured.method, 'GET');
@@ -639,6 +641,8 @@ void main() {
     expect(captured.url.queryParameters['unit'], 'pcs');
     expect(captured.url.queryParameters['search'], 'cement');
     expect(captured.headers['authorization'], 'Bearer opaque-session-token');
+    expect(page.salesHistoryCoverage?['not_evaluated'], 20);
+    expect(captured.url.queryParameters['scope_category'], 'Materials');
     expect(page.totalCount, 27);
     expect(page.pageCount, 2);
   });
