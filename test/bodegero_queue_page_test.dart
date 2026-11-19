@@ -924,6 +924,15 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Send request'), findsOneWidget);
+    final imageImport = find.text('Import supporting image');
+    await tester.ensureVisible(imageImport);
+    await tester.tap(imageImport);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Take photo'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.byType(LoadingProofCameraPage), findsOneWidget);
+    expect(find.byType(Dialog), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

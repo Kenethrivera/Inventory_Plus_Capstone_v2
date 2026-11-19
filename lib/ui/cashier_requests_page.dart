@@ -13,6 +13,7 @@ import 'scanner_search_page.dart';
 import 'widgets/app_styled_dropdown.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/approval_proof_picker.dart';
+import 'widgets/loading_proof_camera_page.dart';
 
 const _bg = Color(0xFFF7F6F4);
 const _ink = Color(0xFF1B1A18);
@@ -850,9 +851,27 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
     if (source == null || !mounted) return;
     setState(() => _picking = true);
     try {
-      final file = await _picker.pickImage(source: source, imageQuality: 85);
+      final XFile? file;
+      if (source == ImageSource.camera) {
+        file = await Navigator.push<XFile>(
+          context,
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => const LoadingProofCameraPage(),
+          ),
+        );
+      } else {
+        file = await _picker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 85,
+        );
+      }
       if (file == null) return;
-      final mime = _mimeType(file);
+      // camera_web returns a blob URL without a .jpg file name.
+      final mime = source == ImageSource.camera ? 'image/jpeg' : _mimeType(file);
+      final fileName = source == ImageSource.camera
+          ? 'request_photo_${DateTime.now().millisecondsSinceEpoch}.jpg'
+          : file.name;
       if (mime == null) {
         throw const FormatException('Use a JPG, PNG, WebP, or GIF image.');
       }
@@ -864,7 +883,7 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
         setState(() {
           _photo = ApprovalProofSelection(
             bytes: bytes,
-            fileName: file.name,
+            fileName: fileName,
             mimeType: mime,
           );
           _photoError = null;

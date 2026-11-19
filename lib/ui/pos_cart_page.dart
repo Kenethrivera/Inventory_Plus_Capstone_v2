@@ -4619,7 +4619,7 @@ class _PosCartPageState extends State<PosCartPage> {
                           0;
                       return _buildPrimaryPosAction(
                         icon: LucideIcons.clock,
-                        label: 'Pending Orders',
+                        label: 'Orders',
                         badgeCount: pendingCount,
                         onPressed: () => _showPendingOrdersModal(context),
                       );
@@ -5334,7 +5334,7 @@ class _PosCartPageState extends State<PosCartPage> {
                             ? 'Request Approval'
                             : mobileFullPage
                             ? 'Process Order'
-                            : (_soloMode ? 'Process & Pack' : 'Send to Helper'),
+                            : (_soloMode ? 'Process & Pack' : 'Process Order'),
                         style: const TextStyle(
                           fontSize: 13,
                           color: Colors.white,

@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/app_error_mapper.dart';
 import '../../services/app_logger.dart';
 import 'app_toast.dart';
+import 'qr_web_torch_stub.dart'
+    if (dart.library.html) 'qr_web_torch_web.dart'
+    as web_torch;
+
+const _scannerOrange = Color(0xFFC83D08);
+const _scannerOrangeBright = Color(0xFFEA580C);
 
 class QRScanner extends StatefulWidget {
   final Function(String) onScan;
@@ -19,6 +26,12 @@ class _QRScannerState extends State<QRScanner>
   late AnimationController _controller;
   late Animation<double> _animation;
   bool _hasScanned = false;
+  bool _isWebTorchOn = false;
+  String? _candidateCode;
+  DateTime? _candidateSince;
+  DateTime? _lastCandidateSeen;
+  static const _confirmationTime = Duration(milliseconds: 600);
+  static const _maxDetectionGap = Duration(milliseconds: 1200);
   MobileScannerErrorCode? _lastLoggedError;
   final MobileScannerController _scannerController = MobileScannerController();
 
@@ -41,6 +54,9 @@ class _QRScannerState extends State<QRScanner>
     super.didUpdateWidget(oldWidget);
     if (widget.isScanning && !oldWidget.isScanning) {
       _hasScanned = false;
+      _candidateCode = null;
+      _candidateSince = null;
+      _lastCandidateSeen = null;
       _controller.repeat(reverse: true);
     } else if (!widget.isScanning) {
       _controller.stop();
@@ -56,7 +72,15 @@ class _QRScannerState extends State<QRScanner>
 
   Future<void> _toggleFlashlight() async {
     try {
-      await _scannerController.toggleTorch();
+      if (kIsWeb) {
+        await web_torch.setQrWebTorch(!_isWebTorchOn);
+        if (mounted) setState(() => _isWebTorchOn = !_isWebTorchOn);
+      } else {
+        if (_scannerController.value.torchState == TorchState.unavailable) {
+          throw UnsupportedError('This camera has no flashlight.');
+        }
+        await _scannerController.toggleTorch();
+      }
     } catch (error, stackTrace) {
       AppLogger.error(
         'Scanner flashlight failed',
@@ -69,6 +93,44 @@ class _QRScannerState extends State<QRScanner>
     }
   }
 
+  Future<void> _flipCamera() async {
+    try {
+      if (kIsWeb && mounted) setState(() => _isWebTorchOn = false);
+      _candidateCode = null;
+      _candidateSince = null;
+      _lastCandidateSeen = null;
+      await _scannerController.switchCamera();
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Scanner camera flip failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) AppToast.error(context, 'Could not switch camera.');
+    }
+  }
+
+  void _handleDetection(BarcodeCapture capture) {
+    if (_hasScanned) return;
+    final now = DateTime.now();
+    for (final barcode in capture.barcodes) {
+      final code = barcode.rawValue?.trim();
+      if (code == null || code.isEmpty) continue;
+      if (_candidateCode != code ||
+          _lastCandidateSeen == null ||
+          now.difference(_lastCandidateSeen!) > _maxDetectionGap) {
+        _candidateCode = code;
+        _candidateSince = now;
+      }
+      _lastCandidateSeen = now;
+      if (now.difference(_candidateSince!) >= _confirmationTime) {
+        _hasScanned = true;
+        widget.onScan(code);
+      }
+      break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox.expand(
@@ -78,6 +140,11 @@ class _QRScannerState extends State<QRScanner>
             MobileScanner(
               controller: _scannerController,
               fit: BoxFit.cover,
+              scanWindow: Rect.fromCenter(
+                center: MediaQuery.sizeOf(context).center(Offset.zero),
+                width: 250,
+                height: 250,
+              ),
               errorBuilder: (context, error, child) {
                 if (_lastLoggedError != error.errorCode) {
                   _lastLoggedError = error.errorCode;
@@ -123,19 +190,7 @@ class _QRScannerState extends State<QRScanner>
                   ),
                 );
               },
-              onDetect: (capture) {
-                if (_hasScanned) return;
-
-                final List<Barcode> barcodes = capture.barcodes;
-                for (final barcode in barcodes) {
-                  final String? code = barcode.rawValue;
-                  if (code != null) {
-                    _hasScanned = true;
-                    widget.onScan(code);
-                    break;
-                  }
-                }
-              },
+              onDetect: _handleDetection,
             )
           else
             Container(color: Colors.black),
@@ -147,30 +202,52 @@ class _QRScannerState extends State<QRScanner>
           if (widget.isScanning &&
               MediaQuery.sizeOf(context).shortestSide < 600)
             Positioned(
+              left: 20,
               right: 20,
               bottom: 120,
               child: ValueListenableBuilder<MobileScannerState>(
                 valueListenable: _scannerController,
                 builder: (context, state, _) {
-                  if (!state.isInitialized ||
-                      state.torchState == TorchState.unavailable) {
-                    return const SizedBox.shrink();
-                  }
-                  final isOn = state.torchState == TorchState.on;
-                  return IconButton.filled(
-                    tooltip: isOn
-                        ? 'Turn flashlight off'
-                        : 'Turn flashlight on',
-                    onPressed: _toggleFlashlight,
-                    style: IconButton.styleFrom(
-                      backgroundColor: isOn
-                          ? const Color(0xFFFBBF24)
-                          : Colors.black87,
-                      foregroundColor: isOn ? Colors.black : Colors.white,
-                    ),
-                    icon: Icon(
-                      isOn ? Icons.flashlight_on : Icons.flashlight_off,
-                    ),
+                  final isOn = kIsWeb
+                      ? _isWebTorchOn
+                      : state.torchState == TorchState.on;
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton.filled(
+                        tooltip: isOn
+                            ? 'Turn flashlight off'
+                            : 'Turn flashlight on',
+                        onPressed: state.isInitialized
+                            ? _toggleFlashlight
+                            : null,
+                        style: IconButton.styleFrom(
+                          backgroundColor: isOn
+                              ? _scannerOrangeBright
+                              : _scannerOrange,
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size(52, 52),
+                        ),
+                        icon: Icon(
+                          isOn ? Icons.flashlight_on : Icons.flashlight_off,
+                        ),
+                      ),
+                      IconButton.filled(
+                        tooltip: 'Flip camera',
+                        onPressed:
+                            state.isInitialized &&
+                                (state.availableCameras == null ||
+                                    state.availableCameras! > 1)
+                            ? _flipCamera
+                            : null,
+                        style: IconButton.styleFrom(
+                          backgroundColor: _scannerOrange,
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size(52, 52),
+                        ),
+                        icon: const Icon(Icons.cameraswitch_outlined),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -244,10 +321,10 @@ class _QRScannerState extends State<QRScanner>
     return Container(
       height: 2,
       decoration: BoxDecoration(
-        color: const Color(0xFF2563EB),
+        color: _scannerOrangeBright,
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2563EB).withValues(alpha: 0.6),
+            color: _scannerOrangeBright.withValues(alpha: 0.6),
             blurRadius: 8,
             spreadRadius: 2,
           ),
@@ -275,16 +352,16 @@ class _QRScannerState extends State<QRScanner>
         decoration: BoxDecoration(
           border: Border(
             top: isTop
-                ? const BorderSide(color: Color(0xFF2563EB), width: 4)
+                ? const BorderSide(color: _scannerOrangeBright, width: 4)
                 : BorderSide.none,
             bottom: !isTop
-                ? const BorderSide(color: Color(0xFF2563EB), width: 4)
+                ? const BorderSide(color: _scannerOrangeBright, width: 4)
                 : BorderSide.none,
             left: isLeft
-                ? const BorderSide(color: Color(0xFF2563EB), width: 4)
+                ? const BorderSide(color: _scannerOrangeBright, width: 4)
                 : BorderSide.none,
             right: !isLeft
-                ? const BorderSide(color: Color(0xFF2563EB), width: 4)
+                ? const BorderSide(color: _scannerOrangeBright, width: 4)
                 : BorderSide.none,
           ),
           borderRadius: BorderRadius.only(

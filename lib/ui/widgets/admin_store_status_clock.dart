@@ -83,10 +83,10 @@ class _AdminStoreStatusClockState extends State<AdminStoreStatusClock>
     final status = window == null
         ? 'Store hours unavailable'
         : isOpen
-        ? 'Open · closes ${_formatTime(window.shiftEnd)}'
+        ? 'Open - closes ${_formatTime(window.shiftEnd)}'
         : reason.isEmpty
-        ? 'Closed · opens ${_formatTime(window.opening)}'
-        : 'Closed · $reason · opens ${_formatTime(window.opening)}';
+        ? 'Closed - opens ${_formatTime(window.opening)}'
+        : 'Closed - $reason - opens ${_formatTime(window.opening)}';
     final fontSize = widget.compact ? 12.0 : 14.0;
     return Row(
       children: [

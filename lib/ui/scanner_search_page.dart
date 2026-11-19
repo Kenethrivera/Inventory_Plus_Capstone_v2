@@ -21,7 +21,6 @@ class ScannerSearchPage extends StatefulWidget {
 
 class _ScannerSearchPageState extends State<ScannerSearchPage> {
   bool _isScanning = true;
-  InventoryItem? _scannedItem;
 
 
   void _handleRealScan(String scannedValue) async {
@@ -38,20 +37,12 @@ class _ScannerSearchPageState extends State<ScannerSearchPage> {
       widget.onSelectItem(foundItem);
     } catch (_) {
       // If firstWhere throws, no item was found. Show an error and reset.
+      if (!mounted) return;
       AppToast.error(context, 'No inventory item matches this code.');
-      _resetScanner();
-      // Add a small delay before re-enabling scanning to prevent rapid-fire errors.
+      // Keep detection paused while the user reads the error toast.
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) setState(() => _isScanning = true);
     }
-  }
-
-  // This method was accidentally removed. It's needed to reset the scanner after an error.
-  void _resetScanner() {
-    setState(() {
-      _scannedItem = null; // Though not used for display, good for state clarity
-      _isScanning = true;
-    });
   }
 
   @override
@@ -142,7 +133,7 @@ class _ScannerSearchPageState extends State<ScannerSearchPage> {
           ),
           const SizedBox(height: 4),
           Text(
-            "Align the code within the frame",
+            "Hold the code in the frame briefly",
             style: TextStyle(
                 color: Colors.white.withOpacity(0.8),
                 fontSize: 14,

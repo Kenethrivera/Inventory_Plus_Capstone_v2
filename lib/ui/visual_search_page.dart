@@ -6,7 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:camera/camera.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, compute, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, compute, defaultTargetPlatform, TargetPlatform;
 import 'package:image/image.dart' as img;
 import '../../data/inventory.dart';
 import '../../logic/inventory_controller.dart';
@@ -18,6 +19,7 @@ import 'package:flutter/services.dart';
 import 'package:inventory_plus/services/app_error_mapper.dart';
 import 'package:inventory_plus/services/app_logger.dart';
 import 'package:inventory_plus/ui/widgets/app_error_dialog.dart';
+import 'package:inventory_plus/ui/widgets/app_toast.dart';
 
 const Color _primaryAccent = Color(0xFFC83D08);
 const Color _lightAccent = Color(0xFFEA580C);
@@ -46,12 +48,11 @@ class _VisualSearchPageState extends State<VisualSearchPage>
   bool _isCameraInitialized = false;
   bool _isFlashOn = false;
 
-  // Phones get a top-to-bottom scan line; everything else (web/desktop)
-  // keeps the left-to-right sweep. This avoids dart:io so the file builds on Web.
-  bool get _isMobilePlatform =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+  bool get _isMobileScanner =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      (mounted &&
+          (MediaQuery.maybeSizeOf(context)?.width ?? double.infinity) < 600);
 
   // --- Live mode ---
   bool _isLiveMode = false;
@@ -78,18 +79,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
   // Web guide box: square, tuned for a laptop webcam at typical distance.
   static const double _alignBoxFactor = 0.65;
 
-  // Mobile guide box is only a framing aid; mobile scans use the complete
-  // captured camera frame. Keep the portrait rectangle for elongated tools.
-  static const double _mobileCropWidth = 0.85;
-  static const double _mobileCropHeight = 0.62;
-
-  double get _boxWFactor =>
-      _isMobilePlatform ? _mobileCropWidth : _alignBoxFactor;
-  double get _boxHFactor =>
-      _isMobilePlatform ? _mobileCropHeight : _alignBoxFactor;
-
   String _liveStatusText = "Point camera at a tool";
-
 
   // --- YOLO-FIRST live mode ---
   // Give local inference several attempts, but stop immediately for a strong
@@ -149,6 +139,10 @@ class _VisualSearchPageState extends State<VisualSearchPage>
     try {
       _cameras = await availableCameras();
       if (_cameras != null && _cameras!.isNotEmpty) {
+        final rearIndex = _cameras!.indexWhere(
+          (camera) => camera.lensDirection == CameraLensDirection.back,
+        );
+        if (rearIndex >= 0) _selectedCameraIndex = rearIndex;
         await _setCamera(_selectedCameraIndex);
       } else {
         final error = StateError('No camera devices are available.');
@@ -164,10 +158,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
         error: e,
         stackTrace: stackTrace,
       );
-      await _showCameraErrorDialog(
-        e,
-        onRetry: () => unawaited(_initCamera()),
-      );
+      await _showCameraErrorDialog(e, onRetry: () => unawaited(_initCamera()));
     }
   }
 
@@ -251,9 +242,11 @@ class _VisualSearchPageState extends State<VisualSearchPage>
       ),
     );
   }
-Future<void> _toggleFlash() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized)
+
+  Future<void> _toggleFlash() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
       return;
+    }
     try {
       if (_isFlashOn) {
         await _cameraController!.setFlashMode(FlashMode.off);
@@ -268,9 +261,80 @@ Future<void> _toggleFlash() async {
         error: e,
         stackTrace: stackTrace,
       );
+      if (mounted) {
+        AppToast.error(context, 'Flashlight is not available on this camera.');
+      }
     }
   }
 
+  Future<void> _flipCamera() async {
+    if (_cameras == null || _cameras!.length < 2 || _isAnalyzing) return;
+    final currentDirection = _cameras![_selectedCameraIndex].lensDirection;
+    final oppositeIndex = _cameras!.indexWhere(
+      (camera) => camera.lensDirection != currentDirection,
+    );
+    _selectedCameraIndex = oppositeIndex >= 0
+        ? oppositeIndex
+        : (_selectedCameraIndex + 1) % _cameras!.length;
+    setState(() {
+      _isCameraInitialized = false;
+      _isFlashOn = false;
+    });
+    await _setCamera(_selectedCameraIndex);
+  }
+
+  Widget _buildMobileCameraControl({required bool flashlight}) {
+    return IconButton.filledTonal(
+      tooltip: flashlight ? 'Toggle flashlight' : 'Flip camera',
+      style: IconButton.styleFrom(
+        backgroundColor: Colors.black.withValues(alpha: 0.65),
+        foregroundColor: Colors.white,
+        fixedSize: const Size(52, 52),
+      ),
+      icon: Icon(
+        flashlight
+            ? (_isFlashOn ? LucideIcons.flashlightOff : LucideIcons.flashlight)
+            : LucideIcons.switchCamera,
+        size: 24,
+      ),
+      onPressed:
+          !_isCameraInitialized ||
+              _isAnalyzing ||
+              (!flashlight && (_cameras?.length ?? 0) < 2)
+          ? null
+          : flashlight
+          ? _toggleFlash
+          : _flipCamera,
+    );
+  }
+
+  Widget _buildLiveModeButton({bool compact = false}) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: _isLiveMode ? Colors.white24 : Colors.green.shade600,
+        foregroundColor: Colors.white,
+        elevation: _isLiveMode ? 0 : 4,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 18 : 26,
+          vertical: compact ? 12 : 16,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+      ),
+      icon: Icon(
+        _isLiveMode ? LucideIcons.camera : LucideIcons.radar,
+        size: 22,
+      ),
+      label: Text(
+        _isLiveMode ? 'MANUAL' : 'LIVE',
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.2,
+        ),
+      ),
+      onPressed: _isAnalyzing ? null : _toggleLiveMode,
+    );
+  }
 
   Widget _buildScanButton() {
     final enabled = _isCameraInitialized;
@@ -280,9 +344,7 @@ Future<void> _toggleFlash() async {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(40),
-            gradient: const LinearGradient(
-              colors: [_lightAccent, _darkAccent],
-            ),
+            gradient: const LinearGradient(colors: [_lightAccent, _darkAccent]),
             boxShadow: [
               BoxShadow(
                 color: _primaryAccent.withValues(alpha: 0.45),
@@ -302,18 +364,25 @@ Future<void> _toggleFlash() async {
                       _captureAndAnalyze();
                     }
                   : null,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 40, vertical: 18),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: _isMobileScanner ? 12 : 40,
+                  vertical: 18,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(LucideIcons.scanLine, color: Colors.white, size: 26),
-                    SizedBox(width: 12),
+                    Icon(
+                      LucideIcons.scanLine,
+                      color: Colors.white,
+                      size: _isMobileScanner ? 21 : 26,
+                    ),
+                    SizedBox(width: _isMobileScanner ? 6 : 12),
                     Text(
                       "SCAN OBJECT",
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 17,
+                        fontSize: _isMobileScanner ? 14 : 17,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1.2,
                       ),
@@ -371,7 +440,8 @@ Future<void> _toggleFlash() async {
     _liveYoloTimer?.cancel();
     _liveFallbackTimer?.cancel();
     _liveYoloTimer = Timer.periodic(
-      _liveYoloInterval, (_) => unawaited(_runLiveYoloTick()),
+      _liveYoloInterval,
+      (_) => unawaited(_runLiveYoloTick()),
     );
     _liveFallbackTimer = Timer(_liveYoloWindow, () {
       // Do NOT run Gemini while a YOLO inference is still executing.
@@ -426,10 +496,18 @@ Future<void> _toggleFlash() async {
     if (fittedW <= 0 || fittedH <= 0) return null;
     final padX = ((modelSize - fittedW) / 2).roundToDouble();
     final padY = ((modelSize - fittedH) / 2).roundToDouble();
-    final left = ((box.left * modelSize - padX) / fittedW).clamp(0.0, 1.0).toDouble();
-    final top = ((box.top * modelSize - padY) / fittedH).clamp(0.0, 1.0).toDouble();
-    final right = ((box.right * modelSize - padX) / fittedW).clamp(0.0, 1.0).toDouble();
-    final bottom = ((box.bottom * modelSize - padY) / fittedH).clamp(0.0, 1.0).toDouble();
+    final left = ((box.left * modelSize - padX) / fittedW)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final top = ((box.top * modelSize - padY) / fittedH)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final right = ((box.right * modelSize - padX) / fittedW)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final bottom = ((box.bottom * modelSize - padY) / fittedH)
+        .clamp(0.0, 1.0)
+        .toDouble();
     if (right - left < 0.015 || bottom - top < 0.015) return null;
     if ((right - left) * (bottom - top) > 0.78) return null;
     return Rect.fromLTRB(left, top, right, bottom);
@@ -441,15 +519,20 @@ Future<void> _toggleFlash() async {
   bool _shouldTryGeminiAfterYolo() {
     if (_yoloSamples >= _targetYoloSamples) return true;
     final start = _liveScanStartedAt;
-    final pastDeadline = _yoloDeadlineReached ||
+    final pastDeadline =
+        _yoloDeadlineReached ||
         (start != null && DateTime.now().difference(start) >= _liveYoloWindow);
     return pastDeadline && _yoloSamples >= _minimumYoloSamples;
   }
 
   void _tryAutomaticGemini() {
-    if (!mounted || !_isLiveMode || _strongYoloSeen ||
-        _geminiAttemptedForScene || _isGeminiFallbackRunning ||
-        _isLiveYoloRunning) return;
+    if (!mounted ||
+        !_isLiveMode ||
+        _strongYoloSeen ||
+        _geminiAttemptedForScene ||
+        _isGeminiFallbackRunning ||
+        _isLiveYoloRunning)
+      return;
     if (!_shouldTryGeminiAfterYolo()) return;
 
     final basis = _currentLiveDetection;
@@ -474,15 +557,20 @@ Future<void> _toggleFlash() async {
       });
       return;
     }
-    debugPrint('[LIVE] YOLO finished $_yoloSamples sample(s) without '
-        'a strong classification: Gemini fallback');
-    unawaited(_runLiveGeminiFallback(
-      apiBytes: bytes,
-      weakBox: basis?.box,
-      snapshotSize: basis?.snapshotSize ?? _liveImageSize,
-      yoloCandidateName: basis?.yoloCandidateName ?? _lastYoloCandidateName,
-      yoloCandidateScore: basis?.yoloCandidateScore ?? _lastYoloCandidateScore,
-    ));
+    debugPrint(
+      '[LIVE] YOLO finished $_yoloSamples sample(s) without '
+      'a strong classification: Gemini fallback',
+    );
+    unawaited(
+      _runLiveGeminiFallback(
+        apiBytes: bytes,
+        weakBox: basis?.box,
+        snapshotSize: basis?.snapshotSize ?? _liveImageSize,
+        yoloCandidateName: basis?.yoloCandidateName ?? _lastYoloCandidateName,
+        yoloCandidateScore:
+            basis?.yoloCandidateScore ?? _lastYoloCandidateScore,
+      ),
+    );
   }
 
   Future<void> _verifyWithGemini() async {
@@ -538,9 +626,13 @@ Future<void> _toggleFlash() async {
   }
 
   Future<void> _runLiveYoloTick() async {
-    if (!_isLiveMode || _isAnalyzing || _isLiveYoloRunning ||
-        _isGeminiFallbackRunning || _geminiAttemptedForScene ||
-        _strongYoloSeen) return;
+    if (!_isLiveMode ||
+        _isAnalyzing ||
+        _isLiveYoloRunning ||
+        _isGeminiFallbackRunning ||
+        _geminiAttemptedForScene ||
+        _strongYoloSeen)
+      return;
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) return;
 
@@ -558,12 +650,17 @@ Future<void> _toggleFlash() async {
 
       final prepared = await compute(processImageInBackground, {
         'bytes': bytes,
-        'cropLeft': 0.0, 'cropTop': 0.0,
-        'cropWidth': 1.0, 'cropHeight': 1.0,
+        'cropLeft': 0.0,
+        'cropTop': 0.0,
+        'cropWidth': 1.0,
+        'cropHeight': 1.0,
         'liveFast': true,
       });
-      if (!mounted || !_isLiveMode || generation != _liveGeneration ||
-          _isGeminiFallbackRunning) return;
+      if (!mounted ||
+          !_isLiveMode ||
+          generation != _liveGeneration ||
+          _isGeminiFallbackRunning)
+        return;
 
       _lastLiveApiBytes = prepared['apiBytes'] as Uint8List;
       _liveImageSize = Size(
@@ -573,31 +670,42 @@ Future<void> _toggleFlash() async {
       final local = await VisionService.processLocalOnly(
         modelInput: prepared['modelInput'] as Float32List,
       );
-      if (!mounted || !_isLiveMode || generation != _liveGeneration ||
-          _isGeminiFallbackRunning || _geminiAttemptedForScene) return;
+      if (!mounted ||
+          !_isLiveMode ||
+          generation != _liveGeneration ||
+          _isGeminiFallbackRunning ||
+          _geminiAttemptedForScene)
+        return;
       _yoloSamples++;
-      debugPrint('[LIVE] YOLO sample $_yoloSamples in ${watch.elapsedMilliseconds}ms: '
-          '${local?['item_name'] ?? 'none'} ${local?['confidence'] ?? ''}');
+      debugPrint(
+        '[LIVE] YOLO sample $_yoloSamples in ${watch.elapsedMilliseconds}ms: '
+        '${local?['item_name'] ?? 'none'} ${local?['confidence'] ?? ''}',
+      );
 
       final isNull = local == null || local['is_null'] == true;
       final confidence = isNull ? 0.0 : (local['confidence'] as num).toDouble();
       Rect? box;
       if (!isNull && local['box'] is Map) {
         final raw = local['box'] as Map;
-        box = _modelToFrameBox(Rect.fromLTWH(
-          (raw['x'] as num).toDouble(),
-          (raw['y'] as num).toDouble(),
-          (raw['w'] as num).toDouble(),
-          (raw['h'] as num).toDouble(),
-        ), prepared);
+        box = _modelToFrameBox(
+          Rect.fromLTWH(
+            (raw['x'] as num).toDouble(),
+            (raw['y'] as num).toDouble(),
+            (raw['w'] as num).toDouble(),
+            (raw['h'] as num).toDouble(),
+          ),
+          prepared,
+        );
       }
       final name = isNull ? '' : local['item_name'].toString();
       _lastYoloCandidateName = isNull ? null : name;
       _lastYoloCandidateScore = isNull ? null : confidence;
       if (!isNull && box == null) {
-        debugPrint('[LIVE BOX] YOLO returned $name '
-            '${(confidence * 100).toStringAsFixed(1)}%, '
-            'but its coordinates were unusable. Showing the snapshot without a box.');
+        debugPrint(
+          '[LIVE BOX] YOLO returned $name '
+          '${(confidence * 100).toStringAsFixed(1)}%, '
+          'but its coordinates were unusable. Showing the snapshot without a box.',
+        );
       }
       if (!isNull && confidence >= _strongYoloThreshold) {
         // A missing/invalid box must NOT force a high-confidence YOLO
@@ -605,13 +713,17 @@ Future<void> _toggleFlash() async {
         _strongYoloSeen = true;
         _liveYoloTimer?.cancel();
         _liveFallbackTimer?.cancel();
-        debugPrint('[LIVE] YOLO ACCEPTED at '
-            '${(confidence * 100).toStringAsFixed(1)}% '
-            '(usable box: ${box != null}). Gemini NOT called.');
+        debugPrint(
+          '[LIVE] YOLO ACCEPTED at '
+          '${(confidence * 100).toStringAsFixed(1)}% '
+          '(usable box: ${box != null}). Gemini NOT called.',
+        );
         setState(() {
           _liveError = null;
           _currentLiveDetection = LiveDetection(
-            label: name, confidence: confidence, box: box,
+            label: name,
+            confidence: confidence,
+            box: box,
             source: LiveDetectionSource.yoloStrong,
             snapshotBytes: prepared['apiBytes'] as Uint8List,
             snapshotSize: _liveImageSize,
@@ -628,7 +740,9 @@ Future<void> _toggleFlash() async {
         setState(() {
           _liveError = null;
           _currentLiveDetection = LiveDetection(
-            label: name, confidence: confidence, box: box,
+            label: name,
+            confidence: confidence,
+            box: box,
             source: LiveDetectionSource.yoloWeak,
             snapshotBytes: prepared['apiBytes'] as Uint8List,
             snapshotSize: _liveImageSize,
@@ -651,7 +765,9 @@ Future<void> _toggleFlash() async {
         error: e,
         stackTrace: st,
       );
-      if (mounted && _isLiveMode && generation == _liveGeneration &&
+      if (mounted &&
+          _isLiveMode &&
+          generation == _liveGeneration &&
           !_isGeminiFallbackRunning) {
         _yoloSamples++; // A failed attempt also counts toward the limit.
         setState(() {
@@ -661,9 +777,13 @@ Future<void> _toggleFlash() async {
       }
     } finally {
       _isLiveYoloRunning = false;
-      if (mounted && _isLiveMode && generation == _liveGeneration &&
-          !_strongYoloSeen && !_geminiAttemptedForScene &&
-          !_isGeminiFallbackRunning && _shouldTryGeminiAfterYolo()) {
+      if (mounted &&
+          _isLiveMode &&
+          generation == _liveGeneration &&
+          !_strongYoloSeen &&
+          !_geminiAttemptedForScene &&
+          !_isGeminiFallbackRunning &&
+          _shouldTryGeminiAfterYolo()) {
         _tryAutomaticGemini();
       }
     }
@@ -705,11 +825,14 @@ Future<void> _toggleFlash() async {
       final isHardware = cloud['is_hardware'] == true;
       final name = cloud['item_name']?.toString() ?? 'Unknown object';
       final confidence = (cloud['confidence'] as num?)?.toDouble() ?? 0.0;
-      debugPrint('[LIVE] Gemini completed in ${watch.elapsedMilliseconds}ms: $name');
+      debugPrint(
+        '[LIVE] Gemini completed in ${watch.elapsedMilliseconds}ms: $name',
+      );
       setState(() {
         _liveError = null;
         _currentLiveDetection = LiveDetection(
-          label: name, confidence: confidence,
+          label: name,
+          confidence: confidence,
           // These coordinates come from the matching YOLO frame, not Gemini.
           box: isHardware ? weakBox : null,
           source: LiveDetectionSource.geminiFallback,
@@ -918,10 +1041,10 @@ Future<void> _toggleFlash() async {
     );
   }
 
-  // Web scans crop to the visible guide box. Mobile scans retain the full
-  // camera frame so tools outside the guide rectangle are not discarded.
+  // Desktop scans crop to the visible guide box; mobile scans use the full
+  // camera frame, including in a mobile browser.
   Rect _computeCropRect() {
-    if (_isMobilePlatform) {
+    if (_isMobileScanner) {
       return const Rect.fromLTWH(0, 0, 1, 1);
     }
 
@@ -1019,11 +1142,7 @@ Future<void> _toggleFlash() async {
       );
     } catch (e, stackTrace) {
       scanError = e;
-      AppLogger.error(
-        'Object scan failed',
-        error: e,
-        stackTrace: stackTrace,
-      );
+      AppLogger.error('Object scan failed', error: e, stackTrace: stackTrace);
       logger.log('ERROR -> scan failed');
       logger.log('END (source: error)');
     } finally {
@@ -1086,16 +1205,18 @@ Future<void> _toggleFlash() async {
   // UI-only feedback for live scanning. This reuses the existing radar
   // animation controller and does not request any additional camera frames.
   Widget _buildAnimatedLiveStatus() {
-    final bool isChecking = _isGeminiFallbackRunning ||
+    final bool isChecking =
+        _isGeminiFallbackRunning ||
         _currentLiveDetection?.source == LiveDetectionSource.yoloWeak;
-    final bool isActive = _liveError == null &&
-        (isChecking || _currentLiveDetection == null);
+    final bool isActive =
+        _liveError == null && (isChecking || _currentLiveDetection == null);
     final String action = isChecking ? 'Checking item' : 'Scanning';
 
     return AnimatedBuilder(
       animation: _radarController,
       builder: (context, _) {
-        final int dotCount = 1 + (_radarController.value * 3).floor().clamp(0, 2);
+        final int dotCount =
+            1 + (_radarController.value * 3).floor().clamp(0, 2);
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
@@ -1190,8 +1311,6 @@ Future<void> _toggleFlash() async {
       ),
     );
   }
-  
-  
 
   Future<void> _showScanResultModal({
     required String detectedName,
@@ -1332,9 +1451,7 @@ Future<void> _toggleFlash() async {
                                   ),
                                   decoration: BoxDecoration(
                                     color: _primaryAccent.withOpacity(0.1),
-                                    border: Border.all(
-                                      color: _primaryAccent,
-                                    ),
+                                    border: Border.all(color: _primaryAccent),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
@@ -1415,7 +1532,9 @@ Future<void> _toggleFlash() async {
                                                       Text(
                                                         item.name,
                                                         style: const TextStyle(
-                                                          color: Color(0xFF0F172A),
+                                                          color: Color(
+                                                            0xFF0F172A,
+                                                          ),
                                                           fontWeight:
                                                               FontWeight.bold,
                                                           fontSize: 13,
@@ -1543,7 +1662,8 @@ Future<void> _toggleFlash() async {
   // without exposing model names or secondary predictions to shop staff.
   // Inference decisions and API usage are unchanged.
   Widget _buildLiveInventoryPanel(LiveDetection detection) {
-    final isPending = detection.source == LiveDetectionSource.yoloWeak ||
+    final isPending =
+        detection.source == LiveDetectionSource.yoloWeak ||
         _isGeminiFallbackRunning;
     final normalized = detection.label.toLowerCase().trim();
     final inventory = widget.controller.allItems;
@@ -1551,14 +1671,19 @@ Future<void> _toggleFlash() async {
         .where((item) => item.name.toLowerCase().trim() == normalized)
         .firstOrNull;
     final stopWords = {'a', 'an', 'the', 'and', 'tool', 'tools'};
-    final terms = normalized.split(RegExp(r'\s+'))
+    final terms = normalized
+        .split(RegExp(r'\s+'))
         .where((word) => word.length > 2 && !stopWords.contains(word))
         .toList();
-    final similar = inventory.where((item) =>
-        exact?.id != item.id &&
-        (item.name.toLowerCase().contains(normalized) ||
-            terms.any((word) => item.name.toLowerCase().contains(word))))
-        .take(3).toList();
+    final similar = inventory
+        .where(
+          (item) =>
+              exact?.id != item.id &&
+              (item.name.toLowerCase().contains(normalized) ||
+                  terms.any((word) => item.name.toLowerCase().contains(word))),
+        )
+        .take(3)
+        .toList();
     final choices = exact == null ? similar : [exact];
 
     final Color statusColor;
@@ -1600,7 +1725,11 @@ Future<void> _toggleFlash() async {
         gaplessPlayback: true,
       );
     } else {
-      thumbnail = const Icon(LucideIcons.package, color: Colors.white54, size: 28);
+      thumbnail = const Icon(
+        LucideIcons.package,
+        color: Colors.white54,
+        size: 28,
+      );
     }
 
     return Material(
@@ -1621,59 +1750,82 @@ Future<void> _toggleFlash() async {
             children: [
               Container(
                 color: statusColor.withValues(alpha: 0.16),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                child: Row(children: [
-                  Icon(statusIcon, color: statusColor, size: 17),
-                  const SizedBox(width: 7),
-                  Expanded(child: Text(statusText,
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: statusColor, fontSize: 12,
-                        fontWeight: FontWeight.w800))),
-                  PopupMenuButton<String>(
-                    tooltip: 'More options',
-                    enabled: !_isGeminiFallbackRunning,
-                    color: Colors.white,
-                    surfaceTintColor: Colors.transparent,
-                    shadowColor: const Color(0x33000000),
-                    elevation: 8,
-                    menuPadding: const EdgeInsets.symmetric(vertical: 5),
-                    position: PopupMenuPosition.under,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: const BorderSide(color: Color(0xFFE6E1DC)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                child: Row(
+                  children: [
+                    Icon(statusIcon, color: statusColor, size: 17),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        statusText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
-                    icon: const Icon(Icons.more_horiz, size: 19,
-                        color: Colors.white70),
-                    padding: EdgeInsets.zero,
-                    onSelected: (choice) {
-                      if (choice == 'photo') {
-                        _showLiveScanPhoto(detection);
-                      } else if (choice == 'check') {
-                        _verifyWithGemini();
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      if (detection.snapshotBytes != null)
-                        const PopupMenuItem<String>(
-                            value: 'photo', child: Text('View scan photo')),
-                      if (!isPending)
-                        const PopupMenuItem<String>(
-                            value: 'check', child: Text('Check result')),
-                    ],
-                  ),
-                  IconButton(
-                    tooltip: 'Close result',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.close, size: 18,
-                        color: Colors.white70),
-                    onPressed: () => setState(() {
-                      _currentLiveDetection = null;
-                      _geminiAttemptedForScene = true;
-                      _liveYoloTimer?.cancel();
-                      _liveFallbackTimer?.cancel();
-                    }),
-                  ),
-                ]),
+                    PopupMenuButton<String>(
+                      tooltip: 'More options',
+                      enabled: !_isGeminiFallbackRunning,
+                      color: Colors.white,
+                      surfaceTintColor: Colors.transparent,
+                      shadowColor: const Color(0x33000000),
+                      elevation: 8,
+                      menuPadding: const EdgeInsets.symmetric(vertical: 5),
+                      position: PopupMenuPosition.under,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: const BorderSide(color: Color(0xFFE6E1DC)),
+                      ),
+                      icon: const Icon(
+                        Icons.more_horiz,
+                        size: 19,
+                        color: Colors.white70,
+                      ),
+                      padding: EdgeInsets.zero,
+                      onSelected: (choice) {
+                        if (choice == 'photo') {
+                          _showLiveScanPhoto(detection);
+                        } else if (choice == 'check') {
+                          _verifyWithGemini();
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        if (detection.snapshotBytes != null)
+                          const PopupMenuItem<String>(
+                            value: 'photo',
+                            child: Text('View scan photo'),
+                          ),
+                        if (!isPending)
+                          const PopupMenuItem<String>(
+                            value: 'check',
+                            child: Text('Check result'),
+                          ),
+                      ],
+                    ),
+                    IconButton(
+                      tooltip: 'Close result',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(
+                        Icons.close,
+                        size: 18,
+                        color: Colors.white70,
+                      ),
+                      onPressed: () => setState(() {
+                        _currentLiveDetection = null;
+                        _geminiAttemptedForScene = true;
+                        _liveYoloTimer?.cancel();
+                        _liveFallbackTimer?.cancel();
+                      }),
+                    ),
+                  ],
+                ),
               ),
               Padding(
                 padding: const EdgeInsets.all(12),
@@ -1681,59 +1833,101 @@ Future<void> _toggleFlash() async {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(9),
-                        child: SizedBox(width: 72, height: 72,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(9),
+                          child: SizedBox(
+                            width: 72,
+                            height: 72,
                             child: ColoredBox(
                               color: const Color(0xFF0F172A),
                               child: thumbnail,
-                            )),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(detection.label,
-                            maxLines: 2, overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white,
-                              fontWeight: FontWeight.w800, fontSize: 16)),
-                          const SizedBox(height: 6),
-                          // Only ONE score is displayed: the final result's score.
-                          if (!isPending)
-                            Tooltip(
-                              message: 'AI confidence estimate; not a guarantee.',
-                              child: Text('Confidence: $scoreLabel',
-                                style: const TextStyle(color: _lightAccent,
-                                  fontWeight: FontWeight.w700, fontSize: 12)),
-                            )
-                          else
-                            const Text('Checking...', style: TextStyle(
-                                color: Colors.white70, fontSize: 12)),
-                          if (exact != null && !isPending) ...[
-                            const SizedBox(height: 5),
-                            Text('₱${exact.price.toStringAsFixed(2)}',
-                              style: const TextStyle(color: _lightAccent,
-                                  fontWeight: FontWeight.w700, fontSize: 12)),
-                            Text('${exact.quantity.toInt()} in stock',
-                              style: const TextStyle(color: Colors.white70,
-                                  fontSize: 11)),
-                          ],
-                        ],
-                      )),
-                    ]),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                detection.label,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              // Only ONE score is displayed: the final result's score.
+                              if (!isPending)
+                                Tooltip(
+                                  message:
+                                      'AI confidence estimate; not a guarantee.',
+                                  child: Text(
+                                    'Confidence: $scoreLabel',
+                                    style: const TextStyle(
+                                      color: _lightAccent,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                )
+                              else
+                                const Text(
+                                  'Checking...',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              if (exact != null && !isPending) ...[
+                                const SizedBox(height: 5),
+                                Text(
+                                  '₱${exact.price.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: _lightAccent,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                Text(
+                                  '${exact.quantity.toInt()} in stock',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                     if (_isGeminiFallbackRunning) ...[
                       const SizedBox(height: 12),
                       const LinearProgressIndicator(minHeight: 3),
                     ],
                     if (_liveError != null) ...[
                       const SizedBox(height: 8),
-                      Text(_liveError!, style: const TextStyle(
-                          color: Colors.orangeAccent, fontSize: 11)),
+                      Text(
+                        _liveError!,
+                        style: const TextStyle(
+                          color: Colors.orangeAccent,
+                          fontSize: 11,
+                        ),
+                      ),
                     ],
-                    if (!isPending && detection.isHardware && exact != null) ...[
+                    if (!isPending &&
+                        detection.isHardware &&
+                        exact != null) ...[
                       const SizedBox(height: 14),
-                      SizedBox(width: double.infinity,
+                      SizedBox(
+                        width: double.infinity,
                         child: ElevatedButton.icon(
                           onPressed: () => widget.onSelectItem(exact),
                           icon: const Icon(LucideIcons.shoppingCart, size: 18),
@@ -1743,68 +1937,100 @@ Future<void> _toggleFlash() async {
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 13),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(9)),
-                          ),
-                        ),
-                      ),
-                    ] else if (!isPending && detection.isHardware && similar.isNotEmpty) ...[
-                      const SizedBox(height: 13),
-                      const Text('Choose an item', style: TextStyle(
-                          color: Colors.white70, fontSize: 12)),
-                      const SizedBox(height: 6),
-                      ...choices.map((item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Material(
-                          color: const Color(0xFF0F172A),
-                          borderRadius: BorderRadius.circular(8),
-                          child: InkWell(
-                            onTap: () => widget.onSelectItem(item),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 9, vertical: 9),
-                              child: Row(children: [
-                                Expanded(child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(item.name,
-                                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(color: Colors.white,
-                                          fontSize: 11, fontWeight: FontWeight.bold)),
-                                    Text('₱${item.price.toStringAsFixed(2)} · '
-                                        '${item.quantity.toInt()} in stock',
-                                      style: const TextStyle(
-                                          color: Colors.white60, fontSize: 10)),
-                                  ],
-                                )),
-                                const SizedBox(width: 5),
-                                const Icon(Icons.add_circle_outline,
-                                    color: _lightAccent, size: 19),
-                              ]),
+                              borderRadius: BorderRadius.circular(9),
                             ),
                           ),
                         ),
-                      )),
+                      ),
+                    ] else if (!isPending &&
+                        detection.isHardware &&
+                        similar.isNotEmpty) ...[
+                      const SizedBox(height: 13),
+                      const Text(
+                        'Choose an item',
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                      const SizedBox(height: 6),
+                      ...choices.map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Material(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(8),
+                            child: InkWell(
+                              onTap: () => widget.onSelectItem(item),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 9,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          Text(
+                                            '₱${item.price.toStringAsFixed(2)} · '
+                                            '${item.quantity.toInt()} in stock',
+                                            style: const TextStyle(
+                                              color: Colors.white60,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    const Icon(
+                                      Icons.add_circle_outline,
+                                      color: _lightAccent,
+                                      size: 19,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ] else if (!isPending) ...[
                       const SizedBox(height: 10),
                       Text(
                         detection.isHardware
                             ? 'This item is not in your inventory.'
                             : 'No hardware item found.',
-                        style: const TextStyle(color: Colors.white70,
-                            fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                     if (!isPending) ...[
                       const SizedBox(height: 4),
-                      Center(child: TextButton.icon(
-                        onPressed: _restartLiveDetection,
-                        icon: const Icon(LucideIcons.scanLine, size: 15),
-                        label: const Text('Scan another item'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white70,
-                          textStyle: const TextStyle(fontSize: 12)),
-                      )),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: _restartLiveDetection,
+                          icon: const Icon(LucideIcons.scanLine, size: 15),
+                          label: const Text('Scan another item'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white70,
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -1827,25 +2053,38 @@ Future<void> _toggleFlash() async {
           constraints: const BoxConstraints(maxWidth: 520),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Row(children: [
-                const Expanded(child: Text('Scan photo', style: TextStyle(
-                    color: Colors.white, fontSize: 16,
-                    fontWeight: FontWeight.bold))),
-                IconButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  icon: const Icon(Icons.close, color: Colors.white70),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Scan photo',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: const Icon(Icons.close, color: Colors.white70),
+                    ),
+                  ],
                 ),
-              ]),
-              LiveCapturedFramePreview(
-                imageBytes: detection.snapshotBytes,
-                imageSize: detection.snapshotSize,
-                box: detection.box,
-                label: detection.label,
-                confidence: detection.source == LiveDetectionSource.yoloStrong
-                    ? detection.confidence : detection.yoloCandidateScore,
-              ),
-            ]),
+                LiveCapturedFramePreview(
+                  imageBytes: detection.snapshotBytes,
+                  imageSize: detection.snapshotSize,
+                  box: detection.box,
+                  label: detection.label,
+                  confidence: detection.source == LiveDetectionSource.yoloStrong
+                      ? detection.confidence
+                      : detection.yoloCandidateScore,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1856,40 +2095,58 @@ Future<void> _toggleFlash() async {
     return Card(
       elevation: 8,
       color: const Color(0xF21E293B),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Colors.white24)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Colors.white24),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('LIVE SCAN', style: TextStyle(
-            color: Colors.white, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 12),
-          if (_isGeminiFallbackRunning) ...[
-            const LinearProgressIndicator(),
-            const SizedBox(height: 12),
-            const Text('YOLO did not find a confident match.\n'
-              'Gemini is checking one frame (bounded request).',
-              style: TextStyle(color: Colors.white70)),
-          ] else ...[
-            const Icon(Icons.error_outline, size: 25, color: Colors.orangeAccent),
-            const SizedBox(height: 8),
-            Text(_liveError ?? 'The scan could not be completed.',
-              style: const TextStyle(color: Colors.white70)),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _restartLiveDetection,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Scan again'),
-            ),
-            if (_lastLiveApiBytes != null)
-              OutlinedButton.icon(
-                onPressed: _verifyWithGemini,
-                icon: const Icon(Icons.auto_awesome, size: 18),
-                label: const Text('Retry Gemini'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'LIVE SCAN',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
               ),
+            ),
+            const SizedBox(height: 12),
+            if (_isGeminiFallbackRunning) ...[
+              const LinearProgressIndicator(),
+              const SizedBox(height: 12),
+              const Text(
+                'YOLO did not find a confident match.\n'
+                'Gemini is checking one frame (bounded request).',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ] else ...[
+              const Icon(
+                Icons.error_outline,
+                size: 25,
+                color: Colors.orangeAccent,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _liveError ?? 'The scan could not be completed.',
+                style: const TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: _restartLiveDetection,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Scan again'),
+              ),
+              if (_lastLiveApiBytes != null)
+                OutlinedButton.icon(
+                  onPressed: _verifyWithGemini,
+                  icon: const Icon(Icons.auto_awesome, size: 18),
+                  label: const Text('Retry Gemini'),
+                ),
+            ],
           ],
-        ]),
+        ),
       ),
     );
   }
@@ -1908,7 +2165,6 @@ Future<void> _toggleFlash() async {
                         key: _previewBoundaryKey,
                         child: _buildFullScreenCameraPreview(),
                       ),
-
 
                       if (_isLiveMode && _isCountingDown)
                         Center(
@@ -1934,23 +2190,22 @@ Future<void> _toggleFlash() async {
                     child: CircularProgressIndicator(color: _primaryAccent),
                   ),
           ),
-          // The web guide box is the crop boundary. On mobile it is only
-          // a framing aid because the complete camera frame is analyzed.
-          if (!_isLiveMode)
+          // Desktop retains the guide and crop. Mobile scans the full frame.
+          if (!_isLiveMode && !_isMobileScanner)
             Positioned.fill(
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final size = constraints.biggest;
-        final boxW = size.width * _boxWFactor;
-        final boxH = size.height * _boxHFactor;
-        final box = Rect.fromCenter(
-          center: Offset(size.width / 2, size.height / 2),
-          width: boxW,
-          height: boxH,
-        );
-        return Stack(
-          children: [
-            if (!kIsWeb)
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = constraints.biggest;
+                  final boxW = size.width * _alignBoxFactor;
+                  final boxH = size.height * _alignBoxFactor;
+                  final box = Rect.fromCenter(
+                    center: Offset(size.width / 2, size.height / 2),
+                    width: boxW,
+                    height: boxH,
+                  );
+                  return Stack(
+                    children: [
+                      if (!kIsWeb)
                         ClipPath(
                           clipper: OutsideBoxClipper(box),
                           child: BackdropFilter(
@@ -1959,199 +2214,269 @@ Future<void> _toggleFlash() async {
                           ),
                         ),
                       CustomPaint(painter: ScanFramePainter(box), size: size),
-            Positioned(
-              left: box.left,
-              width: box.width,
-              top: box.bottom - 48,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: _primaryAccent.withValues(alpha: 0.6)),
-                  ),
-                  child: Text(
-                    _isMobilePlatform
-                        ? "Keep the whole tool in view"
-                        : "ALIGN TOOL HERE",
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ),
+                      Positioned(
+                        left: box.left,
+                        width: box.width,
+                        top: box.bottom - 48,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: _primaryAccent.withValues(alpha: 0.6),
+                              ),
+                            ),
+                            child: const Text(
+                              "ALIGN TOOL HERE",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
-          ],
-        );
-      },
-    ),
-  ),
-    if (_isAnalyzing) _buildAnalyzingOverlay(),
-    if (_isLiveMode && (_currentLiveDetection != null ||
-        _isGeminiFallbackRunning || _liveError != null))
-      Positioned(
-        right: 12,
-        top: 112,
-        bottom: 94,
-        width: math.min(318.0, MediaQuery.sizeOf(context).width *
-            (MediaQuery.sizeOf(context).width > 700 ? 0.34 : 0.82)),
-        child: Align(
-          alignment: Alignment.topRight,
-          child: _currentLiveDetection != null
-              ? StreamBuilder<List<InventoryItem>>(
-                  stream: widget.controller.streamInventory(),
-                  initialData: widget.controller.currentInventory,
-                  builder: (context, snapshot) =>
-                      _buildLiveInventoryPanel(_currentLiveDetection!),
-                )
-              : _buildLiveFallbackPanel(),
-        ),
-      ),
-          Positioned(
-            top: 40,
-            left: 16,
-            right: 16,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Back Button
-                IconButton(
-                  icon: const Icon(
-                    LucideIcons.chevronLeft,
-                    color: Colors.white,
+          if (_isAnalyzing) _buildAnalyzingOverlay(),
+          if (_isLiveMode &&
+              (_currentLiveDetection != null ||
+                  _isGeminiFallbackRunning ||
+                  _liveError != null))
+            Positioned(
+              right: 12,
+              top: 112,
+              bottom: 94,
+              width: math.min(
+                318.0,
+                MediaQuery.sizeOf(context).width *
+                    (MediaQuery.sizeOf(context).width > 700 ? 0.34 : 0.82),
+              ),
+              child: Align(
+                alignment: Alignment.topRight,
+                child: _currentLiveDetection != null
+                    ? StreamBuilder<List<InventoryItem>>(
+                        stream: widget.controller.streamInventory(),
+                        initialData: widget.controller.currentInventory,
+                        builder: (context, snapshot) =>
+                            _buildLiveInventoryPanel(_currentLiveDetection!),
+                      )
+                    : _buildLiveFallbackPanel(),
+              ),
+            ),
+          if (_isMobileScanner)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 12,
+              left: 16,
+              right: 16,
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton.filledTonal(
+                        tooltip: 'Back',
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black54,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(LucideIcons.chevronLeft),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                      _buildLiveModeButton(compact: true),
+                    ],
                   ),
-                  onPressed: () => Navigator.pop(context),
-                ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _primaryAccent.withValues(alpha: 0.88),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Text(
+                      'Use a well-lit background. Blur and clutter can affect scan results.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (!_isMobileScanner)
+            Positioned(
+              top: 40,
+              left: 16,
+              right: 16,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Back Button
+                  IconButton(
+                    icon: const Icon(
+                      LucideIcons.chevronLeft,
+                      color: Colors.white,
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                  ),
 
-                // Disclaimer Banner
-                Expanded(
-                  child: Center(
-                    // <-- Added Center widget here to shrink-wrap the container
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal:
-                              16, // slightly wider inner padding for a nice pill shape
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _primaryAccent.withOpacity(0.85),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white24, width: 1),
-                        ),
-                        child: const Text(
-                          "The AI requires a well-lit background. Factors like low light, blur, and cluttered backgrounds can impact scan results.",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            height: 1.2,
+                  // Disclaimer Banner
+                  Expanded(
+                    child: Center(
+                      // <-- Added Center widget here to shrink-wrap the container
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal:
+                                16, // slightly wider inner padding for a nice pill shape
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _primaryAccent.withOpacity(0.85),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.white24, width: 1),
+                          ),
+                          child: const Text(
+                            "The AI requires a well-lit background. Factors like low light, blur, and cluttered backgrounds can impact scan results.",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              height: 1.2,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
 
-                // Camera Controls
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 1. Highlighted Action Button (Web & Mobile)
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        // Green to encourage Live mode, muted white24 to go back to Manual
-                        backgroundColor: _isLiveMode
-                            ? Colors.white24
-                            : Colors.green.shade600,
-                        foregroundColor: Colors.white,
-                        elevation: _isLiveMode ? 0 : 4,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 26, // Increased horizontal padding
-                          vertical:
-                              16, // Increased vertical padding for a taller button
+                  // Camera Controls
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 1. Highlighted Action Button (Web & Mobile)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          // Green to encourage Live mode, muted white24 to go back to Manual
+                          backgroundColor: _isLiveMode
+                              ? Colors.white24
+                              : Colors.green.shade600,
+                          foregroundColor: Colors.white,
+                          elevation: _isLiveMode ? 0 : 4,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 26, // Increased horizontal padding
+                            vertical:
+                                16, // Increased vertical padding for a taller button
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              30,
+                            ), // Smoother pill shape
+                          ),
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            30,
-                          ), // Smoother pill shape
-                        ),
-                      ),
-                      icon: Icon(
-                        // Radar icon when offering Live, Camera icon when offering Manual
-                        _isLiveMode ? LucideIcons.camera : LucideIcons.radar,
-                        size: 22, // Increased icon size
-                      ),
-                      label: Text(
-                        _isLiveMode ? "MANUAL" : "LIVE",
-                        style: const TextStyle(
-                          fontSize: 15, // Increased font size
-                          fontWeight:
-                              FontWeight.w900, // Extra bold for dominance
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                      onPressed: _isAnalyzing ? null : _toggleLiveMode,
-                    ),
-
-                    // 2. Hardware Controls (Mobile Only)
-                    if (!kIsWeb) ...[
-                      const SizedBox(width: 8),
-                      IconButton(
                         icon: Icon(
-                          _isFlashOn
-                              ? LucideIcons.flashlightOff
-                              : LucideIcons.flashlight,
-                          color: Colors.white,
-                          size: 24,
+                          // Radar icon when offering Live, Camera icon when offering Manual
+                          _isLiveMode ? LucideIcons.camera : LucideIcons.radar,
+                          size: 22, // Increased icon size
                         ),
-                        onPressed: _toggleFlash,
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          LucideIcons.switchCamera,
-                          color: Colors.white,
-                          size: 24,
+                        label: Text(
+                          _isLiveMode ? "MANUAL" : "LIVE",
+                          style: const TextStyle(
+                            fontSize: 15, // Increased font size
+                            fontWeight:
+                                FontWeight.w900, // Extra bold for dominance
+                            letterSpacing: 1.2,
+                          ),
                         ),
-                        onPressed: () async {
-                          if (_cameras == null || _cameras!.length < 2) return;
-                          _selectedCameraIndex =
-                              (_selectedCameraIndex + 1) % _cameras!.length;
-                          setState(() {
-                            _isCameraInitialized = false;
-                            _isFlashOn =
-                                false; // Reset flash state when swapping lenses
-                          });
-                          await _setCamera(_selectedCameraIndex);
-                        },
+                        onPressed: _isAnalyzing ? null : _toggleLiveMode,
                       ),
+
+                      // 2. Hardware Controls (Mobile Only)
+                      if (!kIsWeb) ...[
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: Icon(
+                            _isFlashOn
+                                ? LucideIcons.flashlightOff
+                                : LucideIcons.flashlight,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                          onPressed: _toggleFlash,
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            LucideIcons.switchCamera,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                          onPressed: () async {
+                            if (_cameras == null || _cameras!.length < 2)
+                              return;
+                            _selectedCameraIndex =
+                                (_selectedCameraIndex + 1) % _cameras!.length;
+                            setState(() {
+                              _isCameraInitialized = false;
+                              _isFlashOn =
+                                  false; // Reset flash state when swapping lenses
+                            });
+                            await _setCamera(_selectedCameraIndex);
+                          },
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
 
           Positioned(
-            bottom: 40,
-            left: 0,
-            right: 0,
+            bottom: _isMobileScanner
+                ? MediaQuery.paddingOf(context).bottom + 24
+                : 40,
+            left: _isMobileScanner ? 12 : 0,
+            right: _isMobileScanner ? 12 : 0,
             child: _isAnalyzing
                 ? const SizedBox.shrink() // the overlay below handles this state
+                : _isMobileScanner
+                ? Row(
+                    children: [
+                      _buildMobileCameraControl(flashlight: true),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: _isLiveMode
+                            ? (_currentLiveDetection != null &&
+                                      _currentLiveDetection!.source !=
+                                          LiveDetectionSource.yoloWeak &&
+                                      !_isGeminiFallbackRunning
+                                  ? const SizedBox.shrink()
+                                  : Center(child: _buildAnimatedLiveStatus()))
+                            : _buildScanButton(),
+                      ),
+                      const SizedBox(width: 4),
+                      _buildMobileCameraControl(flashlight: false),
+                    ],
+                  )
                 : (_isLiveMode
                       ? (_currentLiveDetection != null &&
-                                  _currentLiveDetection!.source !=
-                                      LiveDetectionSource.yoloWeak &&
-                                  !_isGeminiFallbackRunning
-                              ? const SizedBox.shrink()
-                              : Center(child: _buildAnimatedLiveStatus()))
+                                _currentLiveDetection!.source !=
+                                    LiveDetectionSource.yoloWeak &&
+                                !_isGeminiFallbackRunning
+                            ? const SizedBox.shrink()
+                            : Center(child: _buildAnimatedLiveStatus()))
                       : _buildScanButton()),
           ),
         ],
@@ -2338,6 +2663,7 @@ class OutsideBoxClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant OutsideBoxClipper old) => old.box != box;
 }
+
 class ScanLinePainter extends CustomPainter {
   final double progress;
   final bool vertical;
@@ -2419,12 +2745,7 @@ class ScanLinePainter extends CustomPainter {
       oldDelegate.progress != progress || oldDelegate.vertical != vertical;
 }
 
-
-enum LiveDetectionSource {
-  yoloStrong,
-  yoloWeak,
-  geminiFallback,
-}
+enum LiveDetectionSource { yoloStrong, yoloWeak, geminiFallback }
 
 class LiveDetection {
   final String label;
@@ -2466,8 +2787,10 @@ class LiveDetectionPainter extends CustomPainter {
 
     // CameraPreview is displayed using BoxFit.cover, so a normalized
     // image-space box needs that same scale AND the centered crop offset.
-    final scale = math.max(size.width / frameSize.width,
-        size.height / frameSize.height);
+    final scale = math.max(
+      size.width / frameSize.width,
+      size.height / frameSize.height,
+    );
     final cropX = (frameSize.width * scale - size.width) / 2;
     final cropY = (frameSize.height * scale - size.height) / 2;
     final rect = Rect.fromLTWH(
@@ -2484,8 +2807,8 @@ class LiveDetectionPainter extends CustomPainter {
     final color = isGemini
         ? Colors.orangeAccent
         : isWeak
-            ? Colors.yellowAccent
-            : Colors.greenAccent;
+        ? Colors.yellowAccent
+        : Colors.greenAccent;
 
     final paint = Paint()
       ..style = PaintingStyle.stroke
@@ -2504,8 +2827,8 @@ class LiveDetectionPainter extends CustomPainter {
     final sourceText = isGemini
         ? "Gemini fallback"
         : isWeak
-            ? "Checking..."
-            : "YOLO";
+        ? "Checking..."
+        : "YOLO";
 
     final label =
         "${detection.label} ${(detection.confidence * 100).toStringAsFixed(1)}% · $sourceText";
@@ -2525,7 +2848,11 @@ class LiveDetectionPainter extends CustomPainter {
       final unitX = dx / distance;
       final unitY = dy / distance;
 
-      for (double current = 0; current < distance; current += dashWidth + dashSpace) {
+      for (
+        double current = 0;
+        current < distance;
+        current += dashWidth + dashSpace
+      ) {
         final next = math.min(current + dashWidth, distance);
         canvas.drawLine(
           Offset(start.dx + unitX * current, start.dy + unitY * current),
@@ -2541,7 +2868,13 @@ class LiveDetectionPainter extends CustomPainter {
     drawDashedLine(rect.bottomLeft, rect.topLeft);
   }
 
-  void _drawLabel(Canvas canvas, Size size, Rect rect, String text, Color color) {
+  void _drawLabel(
+    Canvas canvas,
+    Size size,
+    Rect rect,
+    String text,
+    Color color,
+  ) {
     final textSpan = TextSpan(
       text: text,
       style: const TextStyle(
@@ -2557,13 +2890,10 @@ class LiveDetectionPainter extends CustomPainter {
     )..layout(maxWidth: 260);
 
     final tagTop = rect.top - 28 < 0 ? rect.top + 4 : rect.top - 28;
-    final tagLeft = rect.left.clamp(0.0, math.max(0.0, size.width - textPainter.width - 14)).toDouble();
-    final tagRect = Rect.fromLTWH(
-      tagLeft,
-      tagTop,
-      textPainter.width + 14,
-      24,
-    );
+    final tagLeft = rect.left
+        .clamp(0.0, math.max(0.0, size.width - textPainter.width - 14))
+        .toDouble();
+    final tagRect = Rect.fromLTWH(tagLeft, tagTop, textPainter.width + 14, 24);
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(tagRect, const Radius.circular(6)),
@@ -2639,20 +2969,40 @@ class LiveCapturedFramePreview extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: imageBytes == null
-          ? const Center(child: Icon(LucideIcons.imageOff,
-                color: Colors.white24, size: 30))
-          : Stack(children: [
-              Positioned.fill(child: Image.memory(
-                imageBytes!, fit: BoxFit.contain, gaplessPlayback: true)),
-              if (box != null && imageSize != null &&
-                  imageSize!.width > 0 && imageSize!.height > 0)
-                Positioned.fill(child: IgnorePointer(child: CustomPaint(
-                  painter: _LiveSnapshotBoxPainter(
-                    box: box!, frameSize: imageSize!, label: label,
-                    confidence: confidence,
+          ? const Center(
+              child: Icon(
+                LucideIcons.imageOff,
+                color: Colors.white24,
+                size: 30,
+              ),
+            )
+          : Stack(
+              children: [
+                Positioned.fill(
+                  child: Image.memory(
+                    imageBytes!,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
                   ),
-                ))),
-            ]),
+                ),
+                if (box != null &&
+                    imageSize != null &&
+                    imageSize!.width > 0 &&
+                    imageSize!.height > 0)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _LiveSnapshotBoxPainter(
+                          box: box!,
+                          frameSize: imageSize!,
+                          label: label,
+                          confidence: confidence,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
     );
   }
 }
@@ -2675,7 +3025,9 @@ class _LiveSnapshotBoxPainter extends CustomPainter {
     // Align the bounding coordinates with Image.memory's BoxFit.contain.
     final fit = applyBoxFit(BoxFit.contain, frameSize, size);
     final imageRect = Alignment.center.inscribe(
-      fit.destination, Offset.zero & size);
+      fit.destination,
+      Offset.zero & size,
+    );
     final rect = Rect.fromLTRB(
       imageRect.left + box.left * imageRect.width,
       imageRect.top + box.top * imageRect.height,
@@ -2688,33 +3040,50 @@ class _LiveSnapshotBoxPainter extends CustomPainter {
       ..color = Colors.greenAccent
       ..strokeWidth = 2.2
       ..style = PaintingStyle.stroke;
-    canvas.drawRRect(RRect.fromRectAndRadius(
-      rect, const Radius.circular(4)), stroke);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(4)),
+      stroke,
+    );
     final scoreText = confidence == null
         ? ''
         : ' ${(confidence! * 100).toStringAsFixed(1)}%';
     final tag = '$label$scoreText · YOLO box';
     final painter = TextPainter(
-      text: TextSpan(text: tag, style: const TextStyle(
-        color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+      text: TextSpan(
+        text: tag,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
       maxLines: 1,
       ellipsis: '…',
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: math.max(40.0, size.width - 16));
-    final tagX = rect.left.clamp(0.0,
-        math.max(0.0, size.width - painter.width - 10)).toDouble();
+    final tagX = rect.left
+        .clamp(0.0, math.max(0.0, size.width - painter.width - 10))
+        .toDouble();
     final tagY = rect.top >= 21 ? rect.top - 19 : rect.top + 2;
-    final labelBg = Rect.fromLTWH(tagX, tagY,
-        painter.width + 10, painter.height + 4);
-    canvas.drawRRect(RRect.fromRectAndRadius(labelBg,
-        const Radius.circular(3)), Paint()..color = const Color(0xD9000000));
+    final labelBg = Rect.fromLTWH(
+      tagX,
+      tagY,
+      painter.width + 10,
+      painter.height + 4,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(labelBg, const Radius.circular(3)),
+      Paint()..color = const Color(0xD9000000),
+    );
     painter.paint(canvas, Offset(tagX + 5, tagY + 2));
   }
 
   @override
   bool shouldRepaint(covariant _LiveSnapshotBoxPainter old) =>
-      old.box != box || old.frameSize != frameSize ||
-      old.label != label || old.confidence != confidence;
+      old.box != box ||
+      old.frameSize != frameSize ||
+      old.label != label ||
+      old.confidence != confidence;
 }
 
 class BoundingBoxOverlay extends StatelessWidget {
