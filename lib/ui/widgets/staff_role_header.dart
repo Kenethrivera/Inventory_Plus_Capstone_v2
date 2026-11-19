@@ -47,8 +47,7 @@ class StaffRoleHeader extends StatelessWidget {
     child: Icon(LucideIcons.package, size: size * 0.52, color: Colors.white),
   );
 
-  
-Widget _tab(int index) {
+  Widget _tab(int index) {
     final selected = selectedTab == index;
 
     return InkWell(
@@ -76,7 +75,6 @@ Widget _tab(int index) {
     );
   }
 
-
   String get _initials {
     final name = userName.trim();
     if (name.isEmpty) return 'U';
@@ -87,8 +85,7 @@ Widget _tab(int index) {
     return name.substring(0, name.length < 2 ? 1 : 2).toUpperCase();
   }
 
-  
-Widget _avatar({bool mobile = false}) => CircleAvatar(
+  Widget _avatar({bool mobile = false}) => CircleAvatar(
     radius: mobile ? 17 : 20,
     backgroundColor: const Color(0xFFFFF0E7),
     child: Text(
@@ -101,7 +98,6 @@ Widget _avatar({bool mobile = false}) => CircleAvatar(
       ),
     ),
   );
-
 
   Widget _mobileAccount() => PopupMenuButton<String>(
     tooltip: 'Account menu',
@@ -188,76 +184,79 @@ Widget _avatar({bool mobile = false}) => CircleAvatar(
     builder: (context, constraints) {
       final mobile = constraints.maxWidth < 600;
       final showName = constraints.maxWidth >= 1100;
-      return Container(
-        height: mobile ? 64 : 66,
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(bottom: BorderSide(color: _line)),
-        ),
-        padding: EdgeInsets.symmetric(
-          horizontal: mobile ? 12 : (showName ? 32 : 16),
-        ),
-        child: Row(
-          children: [
-            _logo(mobile ? 34 : 40),
-            if (mobile) ...[
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Inventory Plus',
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontFamily: _font,
-                    fontSize: 15,
-                    color: _ink,
-                    fontWeight: FontWeight.w800,
+      return SafeArea(
+        bottom: false,
+        child: Container(
+          height: mobile ? 64 : 66,
+          width: double.infinity,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: _line)),
+          ),
+          padding: EdgeInsets.symmetric(
+            horizontal: mobile ? 12 : (showName ? 32 : 16),
+          ),
+          child: Row(
+            children: [
+              _logo(mobile ? 34 : 40),
+              if (mobile) ...[
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Inventory Plus',
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontFamily: _font,
+                      fontSize: 15,
+                      color: _ink,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-              ),
-            ] else ...[
-              const SizedBox(width: 20),
-              Expanded(
-                child: showTabs
-                    ? SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            for (var i = 0; i < tabs.length; i++) ...[
-                              if (i > 0) const SizedBox(width: 10),
-                              _tab(i),
+              ] else ...[
+                const SizedBox(width: 20),
+                Expanded(
+                  child: showTabs
+                      ? SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              for (var i = 0; i < tabs.length; i++) ...[
+                                if (i > 0) const SizedBox(width: 10),
+                                _tab(i),
+                              ],
                             ],
-                          ],
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+              if (!mobile && (extra != null || availability != null))
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (extra != null) IntrinsicWidth(child: extra!),
+                    if (extra != null && availability != null)
+                      const SizedBox(width: 8),
+                    if (availability != null) availability!,
+                  ],
+                ),
+              if (mobile && availability != null) ...[
+                const SizedBox(width: 4),
+                availability!,
+              ],
+              if (notifications != null) ...[
+                const SizedBox(width: 2),
+                notifications!,
+              ],
+              SizedBox(width: mobile ? 5 : 14),
+              if (mobile)
+                _mobileAccount()
+              else
+                _desktopAccount(showName: showName),
             ],
-if (!mobile && (extra != null || availability != null))
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (extra != null) IntrinsicWidth(child: extra!),
-                  if (extra != null && availability != null)
-                    const SizedBox(width: 8),
-                  if (availability != null) availability!,
-                ],
-              ),
-if (mobile && availability != null) ...[
-  const SizedBox(width: 4),
-  availability!,
-],
-            if (notifications != null) ...[
-              const SizedBox(width: 2),
-              notifications!,
-            ],
-            SizedBox(width: mobile ? 5 : 14),
-            if (mobile)
-              _mobileAccount()
-            else
-              _desktopAccount(showName: showName),
-          ],
+          ),
         ),
       );
     },

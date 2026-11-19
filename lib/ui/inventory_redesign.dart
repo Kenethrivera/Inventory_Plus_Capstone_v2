@@ -10,8 +10,6 @@ import '../logic/product_level.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_styled_dropdown.dart';
-import 'widgets/restock_request_dialog.dart';
-import 'widgets/write_off_request_dialog.dart';
 import '../services/app_error_mapper.dart';
 import 'store_map.dart';
 
@@ -77,7 +75,6 @@ Color _statusColor(StockStatus status) {
 
 class InventoryRedesign extends StatefulWidget {
   final InventoryController controller;
-  final ValueChanged<InventoryItem> onSelectItem;
   final Future<void> Function(InventoryItem) onUpdateItem;
   final VoidCallback onExport;
   final void Function(List<InventoryItem>?) onQrLabels;
@@ -87,7 +84,6 @@ class InventoryRedesign extends StatefulWidget {
   const InventoryRedesign({
     super.key,
     required this.controller,
-    required this.onSelectItem,
     required this.onUpdateItem,
     required this.onExport,
     required this.onQrLabels,
@@ -2435,43 +2431,58 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
   }
 
   void _openDetails(InventoryItem item) {
-    showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Close item details',
-      barrierColor: const Color(0x990F172A),
-      transitionDuration: const Duration(milliseconds: 240),
-      pageBuilder: (dialogContext, _, __) => Align(
-        alignment: Alignment.centerRight,
-        child: SizedBox(
-          width: MediaQuery.of(dialogContext).size.width < 500
-              ? MediaQuery.of(dialogContext).size.width
-              : MediaQuery.of(dialogContext).size.width >= 900
-              ? math.min(820, MediaQuery.of(dialogContext).size.width * 0.52)
-              : 440,
-          height: double.infinity,
-          child: Material(
-            color: Colors.white,
-            child: _ItemDetailsDrawer(
-              item: item,
-              controller: widget.controller,
-              onClose: () => Navigator.of(dialogContext).pop(),
-              onSave: widget.onUpdateItem,
-              onQrLabel: () => widget.onQrLabels([item]),
-            ),
-          ),
-        ),
-      ),
-      transitionBuilder: (context, animation, _, child) => SlideTransition(
-        position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
-            .animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-            ),
-        child: child,
+    unawaited(
+      showInventoryItemDetails(
+        context: context,
+        item: item,
+        controller: widget.controller,
+        onSave: widget.onUpdateItem,
+        onQrLabel: () => widget.onQrLabels([item]),
       ),
     );
   }
 }
+
+Future<void> showInventoryItemDetails({
+  required BuildContext context,
+  required InventoryItem item,
+  required InventoryController controller,
+  required Future<void> Function(InventoryItem) onSave,
+  required VoidCallback onQrLabel,
+}) => showGeneralDialog<void>(
+  context: context,
+  barrierDismissible: true,
+  barrierLabel: 'Close item details',
+  barrierColor: const Color(0x990F172A),
+  transitionDuration: const Duration(milliseconds: 240),
+  pageBuilder: (dialogContext, _, __) => Align(
+    alignment: Alignment.centerRight,
+    child: SizedBox(
+      width: MediaQuery.sizeOf(dialogContext).width < 500
+          ? MediaQuery.sizeOf(dialogContext).width
+          : MediaQuery.sizeOf(dialogContext).width >= 900
+          ? math.min(820, MediaQuery.sizeOf(dialogContext).width * 0.52)
+          : 440,
+      height: double.infinity,
+      child: Material(
+        color: Colors.white,
+        child: _ItemDetailsDrawer(
+          item: item,
+          controller: controller,
+          onClose: () => Navigator.of(dialogContext).pop(),
+          onSave: onSave,
+          onQrLabel: onQrLabel,
+        ),
+      ),
+    ),
+  ),
+  transitionBuilder: (context, animation, _, child) => SlideTransition(
+    position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(
+      CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+    ),
+    child: child,
+  ),
+);
 
 Widget _badge(String label, Color color) => Container(
   padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
@@ -2513,8 +2524,6 @@ class _ItemDetailsDrawer extends StatefulWidget {
 class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   static const int _historyPageSize = 10;
   StreamSubscription<void>? _historySubscription;
-  final ValueNotifier<List<Map<String, dynamic>>> _historyNotifier =
-      ValueNotifier<List<Map<String, dynamic>>>(const []);
   List<Map<String, dynamic>> _history = const [];
   bool _historyLoading = true;
   bool _historyFailed = false;
@@ -2537,7 +2546,6 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   bool _requiresLoading = false;
   String? _locationValue;
   int _referenceTab = 0;
-  bool _isEditing = false;
   bool _isSaving = false;
   String? _editError;
   XFile? _chosenImage;
@@ -2606,7 +2614,6 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
           requestVersion != _historyRequestVersion ||
           productId != widget.item.id)
         return;
-      _historyNotifier.value = transactions;
       setState(() {
         _history = transactions;
         _historyLoading = false;
@@ -2632,7 +2639,6 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
       _historyRequestVersion++;
       _history = const [];
       _historyPage = 0;
-      _historyNotifier.value = const [];
       unawaited(_loadHistory());
     }
   }
@@ -2641,7 +2647,6 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   void dispose() {
     _historyRequestVersion++;
     unawaited(_historySubscription?.cancel());
-    _historyNotifier.dispose();
     _formRevision.dispose();
     _nameController.dispose();
     _priceController.dispose();
@@ -2676,40 +2681,6 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         _locationValue != item.locationId ||
         _chosenImageBytes != null ||
         clean(_imageUrlController.text) != clean(item.imageUrl);
-  }
-
-  void _startEdit(InventoryItem item) {
-    _nameController.text = item.name;
-    _priceController.text = item.price.toStringAsFixed(2);
-    _skuController.text = item.sku;
-    _stockDisplayController.text = '${_qty(item.quantity)} ${item.unit}';
-    _descriptionController.text = item.description;
-    _manufacturerController.text = item.manufacturer ?? '';
-    _modelController.text = item.model ?? '';
-    _sizeController.text = item.productSize ?? '';
-    _colorController.text = item.color ?? '';
-    _imageUrlController.text = item.imageUrl;
-    _shelfController.text = item.shelfLevel ?? '';
-    _categoryValue = item.category;
-    _requiresLoading = item.requiresLoading;
-    _locationValue = item.locationId;
-    setState(() {
-      _chosenImage = null;
-      _chosenImageBytes = null;
-      _editError = null;
-      _isEditing = true;
-    });
-  }
-
-  void _cancelEdit() {
-    if (_isSaving) return;
-    setState(() {
-      _isEditing = false;
-      _editError = null;
-      _imageUrlController.text = widget.item.imageUrl;
-      _chosenImage = null;
-      _chosenImageBytes = null;
-    });
   }
 
   Future<void> _pickEditImage() async {
@@ -3085,7 +3056,6 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
       if (!mounted) return;
       _imageUrlController.text = savedImageUrl;
       setState(() {
-        _isEditing = false;
         _chosenImage = null;
         _chosenImageBytes = null;
       });
@@ -3113,361 +3083,283 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
             widget.controller.findAnyItemById(widget.item.id) ?? widget.item;
         final status = widget.controller.stockStatusFor(item);
         final disabled = widget.controller.isDisabled(item.id);
-        if (MediaQuery.of(context).size.width >= 900) {
-          return _buildReferenceDrawer(item, status, disabled);
+        if (MediaQuery.sizeOf(context).width < 600) {
+          return _buildMobileReferenceDrawer(item, status, disabled);
         }
-        return SafeArea(
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                height: 56,
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: _border)),
+        return _buildReferenceDrawer(item, status, disabled);
+      },
+    );
+  }
+  Widget _buildMobileReferenceDrawer(
+    InventoryItem item,
+    StockStatus status,
+    bool disabled,
+  ) {
+    final statusLabel = disabled
+        ? 'Inactive'
+        : status == StockStatus.ok
+        ? 'Available'
+        : status == StockStatus.low
+        ? 'Low'
+        : _statusLabel(status);
+    final sevenDaySales = widget.controller.baselineFor(item);
+    final statusColor = disabled || sevenDaySales <= 0
+        ? _warmMuted
+        : _statusColor(status);
+    final canEdit = widget.controller.isAdmin;
+
+    return SafeArea(
+      child: Column(
+        children: [
+          Container(
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(bottom: BorderSide(color: _warmBorder)),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Back to inventory',
+                  onPressed: widget.onClose,
+                  icon: const Icon(LucideIcons.chevronLeft, size: 18),
                 ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: _isEditing ? _cancelEdit : widget.onClose,
-                      icon: const Icon(
-                        LucideIcons.chevronLeft,
-                        size: 19,
-                        color: _slate,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        _isEditing ? 'EDIT ITEM' : 'ITEM DETAILS',
-                        style: TextStyle(
-                          fontFamily: _font,
-                          color: _slate,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ),
-                    if (!_isEditing && widget.controller.isAdmin && !disabled)
-                      OutlinedButton.icon(
-                        onPressed: () => _startEdit(item),
-                        icon: const Icon(LucideIcons.pencil, size: 13),
-                        label: const Text('Edit'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _slate,
-                          side: const BorderSide(color: _border),
-                          textStyle: const TextStyle(
-                            fontFamily: _font,
-                            fontSize: 11,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
+                const SizedBox(width: 4),
+                Expanded(
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          height: 224,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
-                            border: Border.all(color: _border),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Stack(
-                            children: [
-                              Positioned.fill(child: _photo(item)),
-                              Positioned(
-                                right: 8,
-                                bottom: 8,
-                                child: FilledButton.icon(
-                                  onPressed: () => showDialog<void>(
-                                    context: context,
-                                    builder: (context) => Dialog(
-                                      child: SizedBox(
-                                        width: 640,
-                                        height: 460,
-                                        child: _photo(item),
-                                      ),
-                                    ),
-                                  ),
-                                  icon: const Icon(
-                                    LucideIcons.maximize,
-                                    size: 13,
-                                  ),
-                                  label: const Text('Enlarge'),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF475569),
-                                    textStyle: const TextStyle(
-                                      fontFamily: _font,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                      Text(
+                        item.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      if (_isEditing)
-                        _buildEditForm()
-                      else ...[
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 5,
-                          children: [
-                            _badge(item.category, _accent),
-                            _badge(
-                              disabled ? 'Disabled' : _statusLabel(status),
-                              disabled ? _slate : _statusColor(status),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 7),
-                        Text(
-                          item.name,
-                          style: const TextStyle(
-                            fontFamily: _font,
-                            color: _ink,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          item.sku,
-                          style: const TextStyle(
-                            fontFamily: _font,
-                            color: _slate,
-                            fontSize: 11,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _valueCard('PRICE', _money(item.price)),
-                            ),
-                            const SizedBox(width: 9),
-                            Expanded(
-                              child: _valueCard(
-                                'IN STOCK',
-                                '${_qty(item.quantity)} ${item.unit}',
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        _panel(
-                          'Specifications',
-                          Column(
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _spec(
-                                      'Manufacturer',
-                                      item.manufacturer,
-                                    ),
-                                  ),
-                                  Expanded(child: _spec('Model', item.model)),
-                                  Expanded(
-                                    child: _spec(
-                                      'Product size',
-                                      item.productSize,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (item.color?.trim().isNotEmpty == true) ...[
-                                const SizedBox(height: 12),
-                                _spec('Color', item.color),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _panel(
-                          'Inventory info',
-                          Column(
-                            children: [
-                              _infoRow('Name', item.name),
-                              _infoRow('SKU', item.sku),
-                              _infoRow('Category', item.category),
-                              _infoRow('Unit', item.unit),
-                              _infoRow(
-                                'Status',
-                                disabled ? 'Disabled' : 'Active',
-                                last: item.description.isEmpty,
-                              ),
-                              if (item.description.isNotEmpty)
-                                _infoRow(
-                                  'Description',
-                                  item.description,
-                                  last: true,
-                                ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildLocationSection(item),
-                        const SizedBox(height: 12),
-                        _buildHistorySection(item),
-                      ],
-                      const SizedBox(height: 18),
+                      Text(
+                        item.sku,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: _warmMuted, fontSize: 10),
+                      ),
                     ],
                   ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: _border)),
-                ),
-                child: _isEditing
-                    ? Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: _isSaving ? null : _cancelEdit,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: _ink,
-                                side: const BorderSide(color: _border),
-                              ),
-                              child: const Text('Cancel'),
-                            ),
-                          ),
-                          const SizedBox(width: 9),
-                          Expanded(
-                            child: ValueListenableBuilder<int>(
-                              valueListenable: _formRevision,
-                              builder: (context, _, _) => ElevatedButton.icon(
-                                onPressed: _isSaving || !_hasChanges(item)
-                                    ? null
-                                    : () => _saveEdit(item),
-                                icon: _isSaving
-                                    ? const SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Icon(LucideIcons.check, size: 15),
-                                label: Text(
-                                  _isSaving ? 'Saving...' : 'Save changes',
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  foregroundColor: Colors.white,
-                                  backgroundColor: _accent,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : Row(
-                        children: [
-                          if (!disabled) ...[
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () => unawaited(
-                                  showRestockRequestDialog(
-                                    context: context,
-                                    controller: widget.controller,
-                                    item: item,
-                                  ),
-                                ),
-                                icon: const Icon(LucideIcons.plus, size: 14),
-                                label: const Text('Restock'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _accent,
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  textStyle: const TextStyle(
-                                    fontFamily: _font,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 7),
-                            if (widget
-                                .controller
-                                .canRequestInventoryApproval) ...[
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: item.quantity > 0
-                                      ? () => unawaited(
-                                          showWriteOffRequestDialog(
-                                            context: context,
-                                            controller: widget.controller,
-                                            item: item,
+              ],
+            ),
+          ),
+          Expanded(
+            child: Material(
+              color: _warmBackground,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_referenceTab != 2) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: _warmBorder),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                _referencePhoto(item, size: 52),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          _badge(statusLabel, statusColor),
+                                          const SizedBox(width: 5),
+                                          Expanded(
+                                            child: Text(
+                                              [item.manufacturer, item.model]
+                                                  .where(
+                                                    (part) =>
+                                                        part?.trim().isNotEmpty ==
+                                                        true,
+                                                  )
+                                                  .join(' · '),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: _warmMuted,
+                                                fontSize: 10,
+                                              ),
+                                            ),
                                           ),
-                                        )
-                                      : null,
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFFDC2626),
-                                    side: const BorderSide(
-                                      color: Color(0xFFFECACA),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 5),
+                                      Text.rich(
+                                        TextSpan(
+                                          children: [
+                                            TextSpan(
+                                              text: _money(item.price),
+                                              style: const TextStyle(
+                                                color: _ink,
+                                                fontSize: 19,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            TextSpan(
+                                              text: ' / ${item.unit}',
+                                              style: const TextStyle(
+                                                color: _warmMuted,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: LinearProgressIndicator(
+                                    value: _stockCoverageFraction(
+                                      item.quantity,
+                                      sevenDaySales,
                                     ),
-                                    textStyle: const TextStyle(
-                                      fontFamily: _font,
-                                      fontSize: 11,
+                                    minHeight: 5,
+                                    backgroundColor: const Color(0xFFEEECE8),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      statusColor,
                                     ),
                                   ),
-                                  child: const Text('Write off'),
                                 ),
-                              ),
-                              const SizedBox(width: 7),
-                            ],
-                          ],
-                          if (disabled && widget.controller.isAdmin) ...[
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _isSaving
-                                    ? null
-                                    : () => _restoreReferenceProduct(item),
-                                icon: const Icon(LucideIcons.rotateCcw, size: 14),
-                                label: const Text('Restore'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: _accent,
-                                  side: const BorderSide(color: _border),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _stockCoverageLabel(
+                                    item.quantity,
+                                    sevenDaySales,
+                                  ),
+                                  style: const TextStyle(
+                                    color: _warmMuted,
+                                    fontSize: 9,
+                                  ),
                                 ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '${_qty(item.quantity)} ${item.unit} on hand · '
+                              '${_qty(sevenDaySales)} sold in 7 days',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _warmMuted,
+                                fontSize: 9,
                               ),
                             ),
-                            const SizedBox(width: 7),
                           ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEECE8),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(child: _referenceTabButton('Details', 0)),
+                          Expanded(child: _referenceTabButton('Location', 1)),
                           Expanded(
-                            child: OutlinedButton(
-                              onPressed: widget.onClose,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: _ink,
-                                side: const BorderSide(color: _border),
-                                textStyle: const TextStyle(
-                                  fontFamily: _font,
-                                  fontSize: 11,
-                                ),
-                              ),
-                              child: const Text('Close'),
+                            child: _referenceTabButton(
+                              'History ${_history.length}',
+                              2,
                             ),
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_referenceTab == 0) _referenceDetails(item, canEdit),
+                    if (_referenceTab == 1) _referenceLocation(item, canEdit),
+                    if (_referenceTab == 2) _referenceHistory(),
+                  ],
+                ),
               ),
-            ],
+            ),
           ),
-        );
-      },
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: _warmBorder)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_editError != null) ...[
+                  Text(
+                    _editError!,
+                    style: const TextStyle(color: _warmRed, fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: widget.onQrLabel,
+                      icon: const Icon(LucideIcons.qrCode, size: 15),
+                      label: const Text('QR label'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _warmOrange,
+                        side: const BorderSide(color: _warmOrange),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                      ),
+                    ),
+                    if (canEdit) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ValueListenableBuilder<int>(
+                          valueListenable: _formRevision,
+                          builder: (context, _, _) => FilledButton(
+                            onPressed: _isSaving || !_hasChanges(item)
+                                ? null
+                                : () => _saveEdit(item),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF1C1C1C),
+                            ),
+                            child: Text(_isSaving ? 'Saving…' : 'Save changes'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3735,11 +3627,11 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     );
   }
 
-  Widget _referencePhoto(InventoryItem item) {
+  Widget _referencePhoto(InventoryItem item, {double size = 80}) {
     final imageUrl = _imageUrlController.text.trim();
     return Container(
-      width: 80,
-      height: 80,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: const Color(0xFFF2F0EC),
         border: Border.all(color: _warmBorder),
@@ -3840,33 +3732,66 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     );
   }
 
-  Widget _referenceTabButton(String label, int index) => InkWell(
-    onTap: () => setState(() => _referenceTab = index),
-    borderRadius: BorderRadius.circular(7),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-      decoration: BoxDecoration(
-        color: _referenceTab == index ? Colors.white : Colors.transparent,
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          color: _referenceTab == index ? _ink : _warmMuted,
-          fontWeight: _referenceTab == index
-              ? FontWeight.w600
-              : FontWeight.normal,
+  Widget _referenceTabButton(String label, int index) {
+    final mobile = MediaQuery.sizeOf(context).width < 600;
+    return InkWell(
+      onTap: () => setState(() => _referenceTab = index),
+      borderRadius: BorderRadius.circular(7),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: mobile ? 5 : 13, vertical: 10),
+        decoration: BoxDecoration(
+          color: _referenceTab == index ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: mobile ? 10 : 12,
+            color: _referenceTab == index ? _ink : _warmMuted,
+            fontWeight: _referenceTab == index
+                ? FontWeight.w600
+                : FontWeight.normal,
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _referenceDetails(InventoryItem item, bool canEdit) {
+    final mobile = MediaQuery.sizeOf(context).width < 600;
     final categories = <String>{
       item.category,
       ...widget.controller.allItems.map((product) => product.category),
     }.toList()..sort();
+    final categoryField = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Category', style: TextStyle(fontSize: 12, color: _ink)),
+        const SizedBox(height: 7),
+        AppStyledDropdown<String>(
+          initialValue: categories.contains(_categoryValue)
+              ? _categoryValue
+              : item.category,
+          decoration: _referenceInputDecoration(),
+          items: categories
+              .map(
+                (category) => DropdownMenuItem(
+                  value: category,
+                  child: Text(category),
+                ),
+              )
+              .toList(),
+          onChanged: canEdit
+              ? (value) => setState(
+                  () => _categoryValue = value ?? item.category,
+                )
+              : null,
+        ),
+      ],
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3877,45 +3802,20 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         const SizedBox(height: 16),
         _referenceField('Product name', _nameController, readOnly: !canEdit),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _referenceField('SKU', _skuController, readOnly: true),
-            ),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Category',
-                    style: TextStyle(fontSize: 12, color: _ink),
-                  ),
-                  const SizedBox(height: 7),
-                  AppStyledDropdown<String>(
-                    initialValue: categories.contains(_categoryValue)
-                        ? _categoryValue
-                        : item.category,
-                    decoration: _referenceInputDecoration(),
-                    items: categories
-                        .map(
-                          (category) => DropdownMenuItem(
-                            value: category,
-                            child: Text(category),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: canEdit
-                        ? (value) => setState(
-                            () => _categoryValue = value ?? item.category,
-                          )
-                        : null,
-                  ),
-                ],
+        if (mobile) ...[
+          _referenceField('SKU', _skuController, readOnly: true),
+          const SizedBox(height: 16),
+          categoryField,
+        ] else
+          Row(
+            children: [
+              Expanded(
+                child: _referenceField('SKU', _skuController, readOnly: true),
               ),
-            ),
-          ],
-        ),
+              const SizedBox(width: 18),
+              Expanded(child: categoryField),
+            ],
+          ),
         const SizedBox(height: 16),
         Row(
           children: [
@@ -4103,7 +4003,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         ),
         const SizedBox(height: 20),
         Container(
-          height: 380,
+          height: MediaQuery.sizeOf(context).width < 600 ? 250 : 380,
           decoration: BoxDecoration(
             border: Border.all(color: _warmBorder),
             borderRadius: BorderRadius.circular(10),
@@ -4115,11 +4015,26 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
             viewStyle: MapViewStyle.twoD,
             highlightId: _locationValue,
             showItemPopup: false,
+            onElementSelected: canEdit
+                ? (element) {
+                    if (element.type == ElementType.rack ||
+                        element.type == ElementType.shelf) {
+                      setState(() => _locationValue = element.id);
+                    }
+                  }
+                : null,
             fitEntireMap: true,
             compactZoomControls: true,
             showMobileToolbar: false,
           ),
         ),
+        if (canEdit && MediaQuery.sizeOf(context).width < 600) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Tap a shelf to move this item',
+            style: TextStyle(color: _warmMuted, fontSize: 11),
+          ),
+        ],
       ],
     );
   }
@@ -4186,6 +4101,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   }
 
   Widget _referenceHistory() {
+    final mobile = MediaQuery.sizeOf(context).width < 600;
     if (_historyLoading) {
       return const Padding(
         padding: EdgeInsets.all(24),
@@ -4225,11 +4141,12 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                     style: const TextStyle(fontSize: 11, color: _warmMuted),
                   ),
                 ),
-                IconButton(
-                  tooltip: 'First page',
-                  onPressed: page == 0 ? null : () => _changeHistoryPage(0),
-                  icon: const Icon(LucideIcons.chevronsLeft, size: 17),
-                ),
+                if (!mobile)
+                  IconButton(
+                    tooltip: 'First page',
+                    onPressed: page == 0 ? null : () => _changeHistoryPage(0),
+                    icon: const Icon(LucideIcons.chevronsLeft, size: 17),
+                  ),
                 IconButton(
                   tooltip: 'Previous page',
                   onPressed: page == 0
@@ -4248,13 +4165,14 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                       : () => _changeHistoryPage(page + 1),
                   icon: const Icon(LucideIcons.chevronRight, size: 17),
                 ),
-                IconButton(
-                  tooltip: 'Last page',
-                  onPressed: page + 1 == pageCount
-                      ? null
-                      : () => _changeHistoryPage(pageCount - 1),
-                  icon: const Icon(LucideIcons.chevronsRight, size: 17),
-                ),
+                if (!mobile)
+                  IconButton(
+                    tooltip: 'Last page',
+                    onPressed: page + 1 == pageCount
+                        ? null
+                        : () => _changeHistoryPage(pageCount - 1),
+                    icon: const Icon(LucideIcons.chevronsRight, size: 17),
+                  ),
               ],
             ),
           ),
@@ -4392,448 +4310,6 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
     }
   }
 
-  Widget _buildEditForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Edit product information',
-          style: TextStyle(
-            fontFamily: _font,
-            color: _ink,
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 5),
-        const Text(
-          'Update the details below, then save your changes.',
-          style: TextStyle(fontFamily: _font, fontSize: 11, color: _slate),
-        ),
-        const SizedBox(height: 18),
-        _editField('Product name', _nameController, isRequired: true),
-        const SizedBox(height: 13),
-        Row(
-          children: [
-            Expanded(child: _editField('SKU', _skuController, readOnly: true)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _editField(
-                'Price (₱)',
-                _priceController,
-                isRequired: true,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 13),
-        _editField(
-          'Stock (managed through restock / write-off)',
-          _stockDisplayController,
-          readOnly: true,
-        ),
-        const SizedBox(height: 18),
-        const Text(
-          'Specifications',
-          style: TextStyle(
-            fontFamily: _font,
-            color: _ink,
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _editField('Manufacturer', _manufacturerController),
-            ),
-            const SizedBox(width: 10),
-            Expanded(child: _editField('Model', _modelController)),
-          ],
-        ),
-        const SizedBox(height: 13),
-        _editField('Product size', _sizeController),
-        const SizedBox(height: 13),
-        _editField('Color (optional)', _colorController),
-        const SizedBox(height: 13),
-        _editField('Description', _descriptionController, maxLines: 3),
-        const SizedBox(height: 18),
-        _productImageEditor(widget.item, canEdit: true),
-        if (_editError != null) ...[
-          const SizedBox(height: 12),
-          Text(
-            _editError!,
-            style: const TextStyle(
-              fontFamily: _font,
-              color: Color(0xFFDC2626),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _editField(
-    String label,
-    TextEditingController controller, {
-    bool readOnly = false,
-    bool isRequired = false,
-    int maxLines = 1,
-    TextInputType? keyboardType,
-    ValueChanged<String>? onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          isRequired ? '$label *' : label,
-          style: const TextStyle(
-            fontFamily: _font,
-            color: _slate,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: controller,
-          readOnly: readOnly,
-          maxLines: maxLines,
-          keyboardType: keyboardType,
-          onChanged: onChanged,
-          style: const TextStyle(fontFamily: _font, fontSize: 13, color: _ink),
-          decoration: InputDecoration(
-            isDense: true,
-            filled: true,
-            fillColor: readOnly ? const Color(0xFFF8F7F5) : Colors.white,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 13,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _accent, width: 1.5),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _photo(InventoryItem item) {
-    if (_isEditing && _chosenImageBytes != null) {
-      return Image.memory(_chosenImageBytes!, fit: BoxFit.contain);
-    }
-    final url = _isEditing ? _imageUrlController.text.trim() : item.imageUrl;
-    if (url.isNotEmpty) {
-      return Image.network(
-        url,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _photoPlaceholder(),
-      );
-    }
-    return _photoPlaceholder();
-  }
-
-  Widget _photoPlaceholder() => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(LucideIcons.package, size: 55, color: Color(0xFF8D827C)),
-        const SizedBox(height: 9),
-        const Text(
-          'No image uploaded',
-          style: TextStyle(fontFamily: _font, fontSize: 11, color: _slate),
-        ),
-      ],
-    ),
-  );
-
-  Widget _valueCard(String label, String value) => Container(
-    padding: const EdgeInsets.all(13),
-    decoration: BoxDecoration(
-      border: Border.all(color: _border),
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontFamily: _font,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            color: _slate,
-          ),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          value,
-          style: const TextStyle(
-            fontFamily: _font,
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-            color: _ink,
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _panel(String title, Widget body) => Container(
-    width: double.infinity,
-    decoration: BoxDecoration(
-      border: Border.all(color: _border),
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: const BoxDecoration(
-            color: Color(0xFFF8F7F5),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
-          ),
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontFamily: _font,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: _ink,
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: body,
-        ),
-      ],
-    ),
-  );
-
-  Widget _buildLocationSection(InventoryItem item) {
-    final hasLocation = item.locationId?.isNotEmpty == true;
-    return _panel(
-      'Store location',
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: hasLocation
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(LucideIcons.mapPin, color: _accent, size: 15),
-                      const SizedBox(width: 6),
-                      const Expanded(
-                        child: Text(
-                          'Item location on store map',
-                          style: TextStyle(
-                            fontFamily: _font,
-                            fontSize: 11,
-                            color: _slate,
-                          ),
-                        ),
-                      ),
-                      TextButton.icon(
-                        onPressed: () => _showFullscreenMap(item),
-                        icon: const Icon(LucideIcons.maximize, size: 13),
-                        label: const Text('Expand'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: _accent,
-                          textStyle: const TextStyle(
-                            fontFamily: _font,
-                            fontSize: 11,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 9),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(9),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 220,
-                      child: StoreMap(
-                        controller: widget.controller,
-                        mode: MapMode.view,
-                        highlightId: _locationValue,
-                        showItemPopup: false,
-                        fitEntireMap: true,
-                        compactZoomControls: true,
-                        showMobileToolbar: false,
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            : const Text(
-                'This item is not assigned to a store map location.',
-                style: TextStyle(
-                  fontFamily: _font,
-                  color: _slate,
-                  fontSize: 12,
-                ),
-              ),
-      ),
-    );
-  }
-
-  void _showFullscreenMap(InventoryItem item) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        final size = MediaQuery.of(dialogContext).size;
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: SizedBox(
-            width: size.width < 900 ? size.width * 0.94 : 850,
-            height: size.height * 0.82,
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  height: 54,
-                  color: const Color(0xFFF8F7F5),
-                  child: Row(
-                    children: [
-                      const Icon(LucideIcons.mapPin, size: 17, color: _accent),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          'Location: ${item.name}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: _font,
-                            color: _ink,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Close map',
-                        onPressed: () => Navigator.pop(dialogContext),
-                        icon: const Icon(LucideIcons.x, size: 19),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: StoreMap(
-                    controller: widget.controller,
-                    mode: MapMode.view,
-                    highlightId: _locationValue,
-                    showItemPopup: false,
-                    fitEntireMap: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildHistorySection(InventoryItem item) {
-    return _panel(
-      'Transaction history',
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_historyLoading)
-              const Padding(
-                padding: EdgeInsets.all(22),
-                child: Center(
-                  child: SizedBox(
-                    width: 23,
-                    height: 23,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              )
-            else if (_historyFailed)
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Could not load transactions.',
-                      style: TextStyle(
-                        fontFamily: _font,
-                        fontSize: 11,
-                        color: _slate,
-                      ),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => unawaited(_loadHistory(force: true)),
-                    child: const Text('Retry'),
-                  ),
-                ],
-              )
-            else if (_history.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 14),
-                child: Center(
-                  child: Text(
-                    'No transaction history found.',
-                    style: TextStyle(
-                      fontFamily: _font,
-                      fontSize: 12,
-                      color: _slate,
-                    ),
-                  ),
-                ),
-              )
-            else ...[
-              ..._history.take(5).map(_transactionTile),
-              if (_history.length > 5)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _showAllTransactions(item),
-                    icon: const Icon(LucideIcons.chevronRight, size: 14),
-                    label: Text('View all ${_history.length} transactions'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: _accent,
-                      textStyle: const TextStyle(
-                        fontFamily: _font,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   double _transactionNumber(dynamic value) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0;
@@ -4846,253 +4322,4 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         '${date.hour.toString().padLeft(2, '0')}:'
         '${date.minute.toString().padLeft(2, '0')}';
   }
-
-  Widget _transactionTile(
-    Map<String, dynamic> transaction, {
-    bool expanded = false,
-  }) {
-    final quantity = _transactionNumber(transaction['quantity_change']);
-    final isAdded = quantity >= 0;
-    final color = isAdded ? const Color(0xFF168046) : const Color(0xFFDC2626);
-    final type = transaction['transaction_type']?.toString() ?? 'Update';
-    final typeLabel = type
-        .split('_')
-        .map(
-          (word) => word.isEmpty
-              ? word
-              : '${word[0].toUpperCase()}${word.substring(1)}',
-        )
-        .join(' ');
-    final profile = transaction['profiles'];
-    final performedBy =
-        (profile is Map ? profile['name'] : null) ??
-        transaction['user_name'] ??
-        'Unknown';
-    final remaining = transaction['new_quantity'];
-
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: expanded ? 14 : 11),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: _border)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: expanded ? 40 : 32,
-            height: expanded ? 40 : 32,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.10),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isAdded ? LucideIcons.plus : LucideIcons.minus,
-              color: color,
-              size: expanded ? 17 : 15,
-            ),
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${isAdded ? '+' : ''}${_qty(quantity)}  ·  $typeLabel',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: _font,
-                    fontSize: expanded ? 13 : 12,
-                    color: _ink,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'By $performedBy  ·  '
-                  '${_transactionDate(transaction['created_at'])}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: _font,
-                    fontSize: expanded ? 11 : 10,
-                    color: _slate,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (remaining != null) ...[
-            const SizedBox(width: 5),
-            Text(
-              'Qty: ${_qty(_transactionNumber(remaining))}',
-              style: TextStyle(
-                fontFamily: _font,
-                fontSize: expanded ? 11 : 10,
-                color: _slate,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  void _showAllTransactions(InventoryItem item) {
-    showDialog<void>(
-      context: context,
-      barrierColor: const Color(0x990F172A),
-      builder: (modalContext) {
-        final screen = MediaQuery.of(modalContext).size;
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 24,
-          ),
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: SizedBox(
-            width: screen.width < 840 ? screen.width - 40 : 800,
-            height: screen.height < 780 ? screen.height - 48 : 700,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 20, 16, 16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'All transactions',
-                              style: TextStyle(
-                                fontFamily: _font,
-                                color: _ink,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              item.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: _font,
-                                color: _slate,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Close transaction history',
-                        onPressed: () => Navigator.pop(modalContext),
-                        icon: const Icon(LucideIcons.x, size: 21, color: _ink),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1, color: _border),
-                Expanded(
-                  child: ValueListenableBuilder<List<Map<String, dynamic>>>(
-                    valueListenable: _historyNotifier,
-                    builder: (context, transactions, _) => transactions.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No transaction history found.',
-                              style: TextStyle(
-                                fontFamily: _font,
-                                color: _slate,
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(22, 10, 22, 18),
-                            itemCount: transactions.length,
-                            itemBuilder: (context, index) => _transactionTile(
-                              transactions[index],
-                              expanded: true,
-                            ),
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _spec(String label, String? value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 12),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontFamily: _font,
-            color: _slate,
-            fontSize: 10,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value == null || value.trim().isEmpty ? 'Not set' : value,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontFamily: _font,
-            color: _ink,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _infoRow(String label, String value, {bool last = false}) => Container(
-    padding: const EdgeInsets.symmetric(vertical: 11),
-    decoration: BoxDecoration(
-      border: last ? null : const Border(bottom: BorderSide(color: _border)),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          flex: 2,
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontFamily: _font,
-              fontSize: 11,
-              color: _slate,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 3,
-          child: Text(
-            value,
-            textAlign: TextAlign.end,
-            style: const TextStyle(
-              fontFamily: _font,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: _ink,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
 }

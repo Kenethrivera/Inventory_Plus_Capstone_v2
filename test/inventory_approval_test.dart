@@ -31,7 +31,7 @@ void main() {
   final notificationRepository = File(
     'lib/notifications/notification_repository.dart',
   ).readAsStringSync();
-  final requesterUi = File('lib/ui/item_detail_page.dart').readAsStringSync();
+  final requesterUi = File('lib/ui/cashier_requests_page.dart').readAsStringSync();
   final restockRequesterUi = File(
     'lib/ui/widgets/restock_request_dialog.dart',
   ).readAsStringSync();

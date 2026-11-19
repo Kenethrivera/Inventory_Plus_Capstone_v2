@@ -17,7 +17,6 @@ import '../services/app_logger.dart';
 
 class InventoryPage extends StatefulWidget {
   final InventoryController controller;
-  final Function(InventoryItem) onSelectItem;
   final Future<void> Function(InventoryItem)? onUpdateItem;
   final bool exportDue;
   final VoidCallback? onExported;
@@ -26,7 +25,6 @@ class InventoryPage extends StatefulWidget {
   const InventoryPage({
     super.key,
     required this.controller,
-    required this.onSelectItem,
     this.onUpdateItem,
     this.exportDue = false,
     this.onExported,
@@ -86,7 +84,6 @@ class _InventoryPageState extends State<InventoryPage> {
     });
     return InventoryRedesign(
       controller: widget.controller,
-      onSelectItem: widget.onSelectItem,
       onUpdateItem: widget.onUpdateItem ?? widget.controller.updateItem,
       exportDue: widget.exportDue,
       onExport: () {

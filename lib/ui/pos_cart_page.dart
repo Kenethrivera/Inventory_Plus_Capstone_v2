@@ -3403,181 +3403,182 @@ class _PosCartPageState extends State<PosCartPage> {
                               ],
                             ),
                             clipBehavior: Clip.antiAlias,
-                            child: IntrinsicHeight(
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Container(width: 6, color: mainColor),
-                                  Expanded(
-                                    child: Theme(
-                                      data: Theme.of(context).copyWith(
-                                        dividerColor: Colors.transparent,
+                            child: Stack(
+                              children: [
+                                Positioned(
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: SizedBox(
+                                    width: 6,
+                                    child: ColoredBox(color: mainColor),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 6),
+                                  child: Theme(
+                                    data: Theme.of(context).copyWith(
+                                      dividerColor: Colors.transparent,
+                                    ),
+                                    child: ExpansionTile(
+                                      key: ValueKey(
+                                        '${o.id}-${targetOrderId == o.id}',
                                       ),
-                                      child: ExpansionTile(
-                                        key: ValueKey(
-                                          '${o.id}-${targetOrderId == o.id}',
+                                      initiallyExpanded: targetOrderId == o.id,
+                                      tilePadding: const EdgeInsets.only(
+                                        left: 12,
+                                        right: 16,
+                                        top: 4,
+                                        bottom: 4,
+                                      ),
+                                      leading: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: bgColor,
+                                          shape: BoxShape.circle,
                                         ),
-                                        initiallyExpanded:
-                                            targetOrderId == o.id,
-                                        tilePadding: const EdgeInsets.only(
-                                          left: 12,
-                                          right: 16,
-                                          top: 4,
-                                          bottom: 4,
+                                        child: Icon(
+                                          iconData,
+                                          color: mainColor,
+                                          size: 16,
                                         ),
-                                        leading: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: bgColor,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: Icon(
-                                            iconData,
-                                            color: mainColor,
-                                            size: 16,
-                                          ),
+                                      ),
+                                      title: Text(
+                                        'Order #${(o.id.length <= 8 ? o.id : o.id.substring(0, 8)).toUpperCase()}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          color: _cashierInk,
                                         ),
-                                        title: Text(
-                                          'Order #${(o.id.length <= 8 ? o.id : o.id.substring(0, 8)).toUpperCase()}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                            color: _cashierInk,
-                                          ),
+                                      ),
+                                      subtitle: Text(
+                                        cashierPreparationSubtitle(o),
+                                        style: TextStyle(
+                                          color: mainColor,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
                                         ),
-                                        subtitle: Text(
-                                          cashierPreparationSubtitle(o),
-                                          style: TextStyle(
-                                            color: mainColor,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        trailing: SizedBox(
-                                          width: 70,
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.end,
-                                            children: [
-                                              Text(
-                                                '${o.items.length} item${o.items.length == 1 ? '' : 's'}',
-                                                style: TextStyle(
-                                                  color: Colors.grey.shade600,
-                                                  fontSize: 12,
-                                                ),
+                                      ),
+                                      trailing: SizedBox(
+                                        width: 70,
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              '${o.items.length} item${o.items.length == 1 ? '' : 's'}',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade600,
+                                                fontSize: 12,
                                               ),
-                                              const SizedBox(width: 4),
-                                              Icon(
-                                                Icons.arrow_drop_down,
-                                                color: Colors.grey.shade400,
-                                                size: 20,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        childrenPadding: const EdgeInsets.only(
-                                          left: 16,
-                                          right: 16,
-                                          bottom: 16,
-                                        ),
-                                        children: [
-                                          CashierOrderPreparation(order: o),
-                                          const SizedBox(height: 10),
-                                          ...o.items.map(
-                                            (item) => CashierOrderItemRow(
-                                              order: o,
-                                              item: item,
                                             ),
-                                          ),
-                                          if (isReady) ...[
-                                            const SizedBox(height: 16),
-                                            SizedBox(
-                                              width: double.infinity,
-                                              height: 44,
-                                              child: ElevatedButton.icon(
-                                                icon: const Icon(
-                                                  LucideIcons.check,
-                                                  color: Colors.white,
-                                                  size: 18,
-                                                ),
-                                                label: const Text(
-                                                  'Complete Transaction',
-                                                  style: TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 14,
-                                                  ),
-                                                ),
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.green,
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                  ),
-                                                  elevation: 0,
-                                                ),
-                                                onPressed: () =>
-                                                    _completeOrderFlow(
-                                                      o,
-                                                      onCompleted: () {
-                                                        if (dialogContext
-                                                            .mounted)
-                                                          Navigator.pop(
-                                                            dialogContext,
-                                                          );
-                                                      },
-                                                    ),
-                                              ),
+                                            const SizedBox(width: 4),
+                                            Icon(
+                                              Icons.arrow_drop_down,
+                                              color: Colors.grey.shade400,
+                                              size: 20,
                                             ),
                                           ],
-                                          const SizedBox(height: 10),
+                                        ),
+                                      ),
+                                      childrenPadding: const EdgeInsets.only(
+                                        left: 16,
+                                        right: 16,
+                                        bottom: 16,
+                                      ),
+                                      children: [
+                                        CashierOrderPreparation(order: o),
+                                        const SizedBox(height: 10),
+                                        ...o.items.map(
+                                          (item) => CashierOrderItemRow(
+                                            order: o,
+                                            item: item,
+                                          ),
+                                        ),
+                                        if (isReady) ...[
+                                          const SizedBox(height: 16),
                                           SizedBox(
                                             width: double.infinity,
-                                            height: 40,
-                                            child: OutlinedButton.icon(
-                                              icon: Icon(
-                                                LucideIcons.undo2,
-                                                size: 16,
-                                                color: Colors.red.shade400,
+                                            height: 44,
+                                            child: ElevatedButton.icon(
+                                              icon: const Icon(
+                                                LucideIcons.check,
+                                                color: Colors.white,
+                                                size: 18,
                                               ),
-                                              label: Text(
-                                                'Cancel & Edit',
+                                              label: const Text(
+                                                'Complete Transaction',
                                                 style: TextStyle(
-                                                  color: Colors.red.shade400,
+                                                  color: Colors.white,
                                                   fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
+                                                  fontSize: 14,
                                                 ),
                                               ),
-                                              style: OutlinedButton.styleFrom(
-                                                side: BorderSide(
-                                                  color: Colors.red.shade100,
-                                                ),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Colors.green,
                                                 shape: RoundedRectangleBorder(
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
+                                                elevation: 0,
                                               ),
-                                              onPressed: () async {
-                                                final ok =
-                                                    await _cancelOrderAndRestoreCart(
-                                                      o,
-                                                      fromQueue: true,
-                                                    );
-                                                if (ok &&
-                                                    dialogContext.mounted) {
-                                                  Navigator.pop(dialogContext);
-                                                }
-                                              },
+                                              onPressed: () =>
+                                                  _completeOrderFlow(
+                                                    o,
+                                                    onCompleted: () {
+                                                      if (dialogContext.mounted)
+                                                        Navigator.pop(
+                                                          dialogContext,
+                                                        );
+                                                    },
+                                                  ),
                                             ),
                                           ),
                                         ],
-                                      ),
+                                        const SizedBox(height: 10),
+                                        SizedBox(
+                                          width: double.infinity,
+                                          height: 40,
+                                          child: OutlinedButton.icon(
+                                            icon: Icon(
+                                              LucideIcons.undo2,
+                                              size: 16,
+                                              color: Colors.red.shade400,
+                                            ),
+                                            label: Text(
+                                              'Cancel & Edit',
+                                              style: TextStyle(
+                                                color: Colors.red.shade400,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            style: OutlinedButton.styleFrom(
+                                              side: BorderSide(
+                                                color: Colors.red.shade100,
+                                              ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                            ),
+                                            onPressed: () async {
+                                              final ok =
+                                                  await _cancelOrderAndRestoreCart(
+                                                    o,
+                                                    fromQueue: true,
+                                                  );
+                                              if (ok && dialogContext.mounted) {
+                                                Navigator.pop(dialogContext);
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           );
                         },

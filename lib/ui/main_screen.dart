@@ -30,7 +30,8 @@ import 'approval_center_page.dart';
 import 'analytics_page.dart';
 import 'forecasting_page.dart';
 import 'inventory_page.dart';
-import 'item_detail_page.dart';
+import 'inventory_redesign.dart' show showInventoryItemDetails;
+import 'qr_labels_preview_dialog.dart';
 import 'map_editor_page.dart';
 import 'bodegero_queue_page.dart';
 import 'order_queue_page.dart';
@@ -77,8 +78,6 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   final AIInsightsService _aiInsightsService = AIInsightsService();
   int? _currentIndex;
-  bool _isDetailView = false;
-  String? _selectedItemId;
   String _txTargetTab = 'Sales History';
   String _ordersActivityTab = 'Orders';
   String? _ordersActivityTargetOrderId;
@@ -350,8 +349,6 @@ void _restoreMainSectionFromPath(String path) {
 
     setState(() {
       _currentIndex = index;
-      _isDetailView = false;
-      _selectedItemId = null;
 
       if (_sessionRole == 'helper') {
         if (resolved == MainSection.history) {
@@ -377,10 +374,6 @@ void _restoreMainSectionFromPath(String path) {
       setState(() {
         updateState?.call();
         _currentIndex = index;
-        if (changed) {
-          _isDetailView = false;
-          _selectedItemId = null;
-        }
       });
     }
     final path = _mainSections[index].routePath;
@@ -1382,57 +1375,20 @@ void _restoreMainSectionFromPath(String path) {
   }
 
   void _handleSelectItem(InventoryItem item) {
-    final isDesktop = MediaQuery.of(context).size.width >= 600;
-
-    if (isDesktop) {
-      showDialog(
+    unawaited(
+      showInventoryItemDetails(
         context: context,
-        builder: (dialogContext) => Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: SizedBox(
-            width: 500,
-            height: 700,
-            child: ItemDetailPage(
-              item: item,
-              controller: widget.controller,
-              onBack: () => Navigator.pop(dialogContext),
-              onUpdate: (updatedItem) async {
-                await _handleUpdateItem(updatedItem);
-                if (mounted) setState(() {});
-              },
-              onDelete: (id) async {
-                await widget.controller.deleteItem(id);
-                await _scanInventoryStockAlerts();
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
-                if (mounted) setState(() {});
-              },
-              onStatusChanged: () {
-                if (mounted) setState(() {});
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _scanInventoryStockAlerts();
-                });
-              },
-            ),
+        item: item,
+        controller: widget.controller,
+        onSave: _handleUpdateItem,
+        onQrLabel: () => unawaited(
+          showDialog<bool>(
+            context: context,
+            builder: (_) => QrLabelsPreviewDialog(items: [item]),
           ),
         ),
-      );
-    } else {
-      setState(() {
-        _selectedItemId = item.id;
-        _isDetailView = true;
-      });
-    }
-  }
-
-  void _handleBackToMain() {
-    setState(() {
-      _isDetailView = false;
-      _selectedItemId = null;
-    });
+      ),
+    );
   }
 
   String _formatQty(double value) {
@@ -2048,11 +2004,7 @@ void _restoreMainSectionFromPath(String path) {
   Future<void> _handleUpdateItem(InventoryItem item) async {
     await widget.controller.updateItem(item);
 
-    if (mounted) {
-      setState(() {
-        _selectedItemId = item.id;
-      });
-    }
+    if (mounted) setState(() {});
     unawaited(
       _scanInventoryStockAlerts().catchError((
         Object error,
@@ -2065,18 +2017,6 @@ void _restoreMainSectionFromPath(String path) {
         );
       }),
     );
-  }
-
-  Future<void> _handleDeleteItem(String id) async {
-    await widget.controller.deleteItem(id);
-    await _scanInventoryStockAlerts();
-
-    if (!mounted) return;
-
-    setState(() {
-      _isDetailView = false;
-      _selectedItemId = null;
-    });
   }
 
   Future<void> _createTestNotification() async {
@@ -2398,42 +2338,6 @@ void _restoreMainSectionFromPath(String path) {
             _staffPresenceService?.updateModule(module),
       );
     }
-    final InventoryItem? selectedItem = widget.controller.findAnyItemById(
-      _selectedItemId ?? '',
-    );
-
-    if (_isDetailView && selectedItem != null) {
-      final detailPage = ItemDetailPage(
-        item: selectedItem,
-        controller: widget.controller,
-        onBack: _handleBackToMain,
-        onUpdate: _handleUpdateItem,
-        onDelete: _handleDeleteItem,
-        onStatusChanged: () {
-          if (mounted) setState(() {});
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _scanInventoryStockAlerts();
-          });
-        },
-      );
-      if (_sessionRole != 'admin') return detailPage;
-      return Scaffold(
-        backgroundColor: _mainBg,
-        body: Column(
-          children: [
-            _buildAdminTopBar(
-              orderQueueIndex: _mainSections.indexOf(MainSection.queue),
-              posIndex: _mainSections.indexOf(MainSection.pos),
-              transactionIndex: _mainSections.indexOf(MainSection.transactions),
-              inventoryIndex: _mainSections.indexOf(MainSection.inventory),
-            ),
-            Expanded(child: detailPage),
-          ],
-        ),
-      );
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 600;
@@ -2601,7 +2505,6 @@ void _restoreMainSectionFromPath(String path) {
           pages.add(
             InventoryPage(
               controller: widget.controller,
-              onSelectItem: _handleSelectItem,
               onExported: () {
                 _scanExportReminderNotifications();
               },
@@ -3272,7 +3175,7 @@ Widget _buildHelperUnifiedWorkspace({
     required int transactionIndex,
     required int inventoryIndex,
   }) => PreferredSize(
-    preferredSize: const Size.fromHeight(62),
+    preferredSize: const Size.fromHeight(64),
     child: StaffRoleHeader(
       userName: widget.controller.currentUserName ?? 'Helper',
       tabs: const [],
@@ -3301,7 +3204,7 @@ Widget _buildHelperUnifiedWorkspace({
   }) {
     if (!isAdmin) {
       return PreferredSize(
-        preferredSize: const Size.fromHeight(62),
+        preferredSize: const Size.fromHeight(64),
         child: StaffRoleHeader(
           userName: widget.controller.currentUserName ?? 'Cashier',
           tabs: const [],
