@@ -16,6 +16,10 @@ class NotificationService {
     return _repository.fetchNotifications();
   }
 
+  Future<List<AppNotification>> fetchArchivedNotifications() {
+    return _repository.fetchArchivedNotifications();
+  }
+  
   Future<int> getUnreadCount() {
     return _repository.getUnreadCount();
   }
@@ -96,8 +100,8 @@ class NotificationService {
     return _repository.markAllAsRead();
   }
 
-  Future<void> deleteNotification(String id) {
-    return _repository.deleteNotification(id);
+  Future<void> archiveNotifications(Iterable<String> notificationIds) {
+    return _repository.archiveNotifications(notificationIds);
   }
 
   Future<void> _saveLifecycleAware(AppNotification notification) async {

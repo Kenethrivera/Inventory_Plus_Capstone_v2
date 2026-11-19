@@ -3,16 +3,28 @@ import 'package:inventory_plus/data/inventory.dart';
 import 'package:inventory_plus/logic/staff_availability.dart';
 
 void main() {
-  test('assigned work makes an online helper busy on both screens', () {
+  test('assigned work alone keeps an online helper available', () {
     expect(
       resolveStaffAvailability(
         isOnline: true,
         isOnBreak: false,
         isHelper: true,
-        activeOrders: 1,
+        activeOrders: 5,
       ),
-      StaffAvailability.busy,
+      StaffAvailability.available,
     );
+
+    expect(
+      resolveStaffAvailability(
+        isOnline: true,
+        isOnBreak: false,
+        isHelper: true,
+        activeOrders: 5,
+        currentModule: staffPreparingModule,
+      ),
+      StaffAvailability.preparing,
+    );
+
     expect(
       resolveStaffAvailability(
         isOnline: true,
@@ -45,7 +57,7 @@ void main() {
     );
   });
 
-  test('Bodegero is busy until the assigned heavy load is verified', () {
+  test('Bodegero is loading only while inside the loading workflow', () {
     final assigned = CustomerOrder.fromJson({
       'id': 'heavy-1',
       'status': 'pending',
@@ -69,7 +81,7 @@ void main() {
         isBodegero: true,
         activeOrders: 1,
       ),
-      StaffAvailability.busy,
+      StaffAvailability.available,
     );
     expect(
       resolveStaffAvailability(

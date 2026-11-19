@@ -21,6 +21,33 @@ const _border = Color(0xFFE8E1DA);
 const _orange = Color(0xFFC83D08);
 const _tableHeading = Color(0xFFF5F3F1);
 
+/// Opens the same inventory request drawer for authorized staff roles.
+/// The authenticated controller determines the requester.
+Future<bool> showSharedStockRequestDialog({
+  required BuildContext context,
+  required InventoryController controller,
+}) async {
+  final sent = await showGeneralDialog<bool>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Close new request',
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    pageBuilder: (_, _, _) => Align(
+      alignment: Alignment.centerRight,
+      child: _NewRequestPanel(controller: controller),
+    ),
+    transitionBuilder: (_, animation, _, child) => SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(1, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+      child: child,
+    ),
+  );
+
+  return sent == true;
+}
+
 class CashierRequestsPage extends StatefulWidget {
   const CashierRequestsPage({
     super.key,
@@ -72,24 +99,14 @@ class _CashierRequestsPageState extends State<CashierRequestsPage> {
   }
 
   Future<void> _newRequest() async {
-    final sent = await showGeneralDialog<bool>(
+    final sent = await showSharedStockRequestDialog(
       context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Close new request',
-      barrierColor: Colors.black.withValues(alpha: .35),
-      pageBuilder: (_, _, _) => Align(
-        alignment: Alignment.centerRight,
-        child: _NewRequestPanel(controller: widget.controller),
-      ),
-      transitionBuilder: (_, animation, _, child) => SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(1, 0),
-          end: Offset.zero,
-        ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
-        child: child,
-      ),
+      controller: widget.controller,
     );
-    if (sent == true && mounted) {
+
+    if (!mounted) return;
+
+    if (sent) {
       AppToast.success(context, 'Request sent for approval.');
       await _refresh();
     }
@@ -684,6 +701,7 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
     'Low shelf stock',
     'Below stock threshold',
     'Customer demand',
+    'Shelf is empty',
     'Other',
   ];
   static const _writeOffReasons = ['Damaged', 'Expired', 'Lost', 'Other'];
@@ -721,6 +739,9 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
       _quantityError = null;
       _photoError = null;
       _notesError = null;
+      _notesError = _notesRequired && _notes.text.trim().isEmpty
+          ? 'Notes are required when the reason is Other.'
+          : null;
     });
   }
 

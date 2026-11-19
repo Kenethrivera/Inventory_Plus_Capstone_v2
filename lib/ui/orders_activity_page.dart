@@ -1623,7 +1623,7 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
   static String _orderStatus(CustomerOrder order) =>
       orderActivityStatusLabel(order);
   static String _shortId(String id) =>
-      id.length > 12 ? id.substring(0, 8).toUpperCase() : id;
+      (id.length > 12 ? id.substring(0, 8) : id).toUpperCase();
   static String _actor(Map<String, dynamic> row) =>
       row['user_name']?.toString() ??
       (row['profiles'] as Map<String, dynamic>?)?['name']?.toString() ??

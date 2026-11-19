@@ -620,13 +620,25 @@ class OperationsOverview extends StatelessWidget {
                 final personName = person['user_name']?.toString() ?? 'Staff';
                 final role = person['user_role']?.toString() ?? 'Staff';
                 final module = person['current_module']?.toString() ?? '';
-                final busy = role.toLowerCase() == 'bodegero'
-                    ? (activeLoadingWorkloads(orders)[person['user_id']
-                                  ?.toString()] ??
-                              0) >
-                          0
-                    : module.toLowerCase().contains('queue') ||
-                          module.toLowerCase().contains('pos');
+                final roleKey = role.toLowerCase();
+
+                final statusLabel = roleKey == 'helper'
+                    ? (module == staffPreparingModule
+                          ? 'Preparing'
+                          : 'Available')
+                    : roleKey == 'bodegero'
+                    ? (module == staffLoadingModule ? 'Loading' : 'Available')
+                    : (module.toLowerCase().contains('queue') ||
+                          module.toLowerCase().contains('pos'))
+                    ? 'Busy'
+                    : 'Available';
+
+                final statusColor =
+                    statusLabel == 'Preparing' || statusLabel == 'Loading'
+                    ? const Color(0xFFC83D08)
+                    : statusLabel == 'Busy'
+                    ? const Color(0xFF2556DB)
+                    : const Color(0xFF15803D);
                 return Column(
                   children: [
                     Padding(
@@ -672,13 +684,11 @@ class OperationsOverview extends StatelessWidget {
                           Icon(
                             Icons.circle,
                             size: 9,
-                            color: busy
-                                ? const Color(0xFF2556DB)
-                                : const Color(0xFF15803D),
+                            color: statusColor,
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            busy ? 'Busy' : 'Available',
+                            statusLabel,
                             style: const TextStyle(color: ink, fontSize: 13),
                           ),
                         ],
@@ -840,7 +850,7 @@ class OperationsOverview extends StatelessWidget {
   );
 
   static String _shortOrderId(String value) =>
-      value.length > 12 ? value.substring(0, 8).toUpperCase() : value;
+      (value.length > 12 ? value.substring(0, 8) : value).toUpperCase();
   static String _elapsedTime(Duration duration) {
     final totalMinutes = duration.inMinutes.clamp(0, 1 << 31);
     final days = totalMinutes ~/ 1440;

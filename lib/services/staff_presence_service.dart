@@ -21,6 +21,9 @@ class StaffPresenceService extends ChangeNotifier {
   Timer? _expiryTimer;
   StreamSubscription<void>? _realtimeSubscription;
   String _currentModule = 'Main Screen';
+  String? _workMode;
+
+  Future<void> _heartbeatQueue = Future<void>.value();
   List<Map<String, dynamic>> _activeStaff = const [];
   List<Map<String, dynamic>> _presentStaff = const [];
   bool _isLoading = true;
@@ -55,6 +58,7 @@ class StaffPresenceService extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isOnBreak => _isOnBreak;
   bool get isStarted => _started;
+  String? get workMode => _workMode;
 
   void bindRealtimeSync(RealtimeSyncService realtimeSync) {
     unawaited(_realtimeSubscription?.cancel());
@@ -114,21 +118,62 @@ class StaffPresenceService extends ChangeNotifier {
     await refreshActiveStaff();
   }
 
-  Future<void> heartbeat({required String currentModule}) async {
-    if (_disposed || !_started) return;
+  Future<void> heartbeat({required String currentModule}) {
+    if (_disposed || !_started) {
+      return Future<void>.value();
+    }
 
     _currentModule = currentModule;
-    final now = DateTime.now().toUtc().toIso8601String();
 
-    await supabase.from('staff_presence').upsert({
-      'user_id': userId,
-      'user_name': userName,
-      'user_role': userRole,
-      'location_id': locationId,
-      'is_online': !_isOnBreak,
-      'current_module': _isOnBreak ? 'On break' : currentModule,
-      'last_seen_at': now,
-    }, onConflict: 'user_id');
+    // Serialize presence writes so a delayed "Preparing" update
+    // cannot overwrite a later "Available" update.
+    _heartbeatQueue = _heartbeatQueue.catchError((Object _) {}).then((_) async {
+      if (_disposed || !_started) return;
+
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      await supabase.from('staff_presence').upsert({
+        'user_id': userId,
+        'user_name': userName,
+        'user_role': userRole,
+        'location_id': locationId,
+        'is_online': !_isOnBreak,
+        'current_module': _isOnBreak
+            ? 'On break'
+            : (_workMode ?? _currentModule),
+        'last_seen_at': now,
+      }, onConflict: 'user_id');
+    });
+
+    return _heartbeatQueue;
+  }
+
+  Future<void> setWorkMode(String? mode) async {
+    if (_disposed || !_started) return;
+
+    if (mode != null &&
+        mode != staffPreparingModule &&
+        mode != staffLoadingModule) {
+      throw ArgumentError.value(mode, 'mode');
+    }
+
+    if (mode != null && _isOnBreak) return;
+    if (_workMode == mode) return;
+
+    _workMode = mode;
+
+    // Update the local header immediately.
+    notifyListeners();
+
+    try {
+      // Publish the activity without waiting for the next heartbeat.
+      await heartbeat(currentModule: _currentModule);
+      await refreshActiveStaff();
+    } catch (error, stackTrace) {
+      // Keep the desired local state; the next heartbeat can retry it.
+      debugPrint('[StaffPresence] work mode update failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   Future<void> setOnBreak(bool onBreak) async {
@@ -139,6 +184,10 @@ class StaffPresenceService extends ChangeNotifier {
       throw StateError('Staff availability is not ready.');
     }
     if (_isOnBreak == onBreak) return;
+
+    if (onBreak && _workMode != null) {
+      throw StateError('Close the active order before taking a break.');
+    }
 
     _isOnBreak = onBreak;
     notifyListeners();
@@ -176,6 +225,14 @@ class StaffPresenceService extends ChangeNotifier {
     _expiryTimer = null;
     _started = false;
     _isOnBreak = false;
+    _workMode = null;
+
+    try {
+      await _heartbeatQueue;
+    } catch (_) {
+      // Logout must still proceed if an earlier heartbeat failed.
+    }
+
     if (!_disposed) notifyListeners();
 
     final now = DateTime.now().toUtc().toIso8601String();

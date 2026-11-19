@@ -5,8 +5,9 @@ import '../ui/widgets/app_toast.dart';
 import 'models/app_notification.dart';
 import 'models/notification_type.dart';
 import 'notification_controller.dart';
+import 'notification_actions_menu.dart';
 
-enum _HelperNotificationFilter { all, orders, approvals }
+enum _HelperNotificationFilter { all, archived, orders, approvals }
 
 /// The compact notification popover used by the helper's mobile header.
 class HelperNotificationPanel extends StatefulWidget {
@@ -16,12 +17,14 @@ class HelperNotificationPanel extends StatefulWidget {
     required this.isActionable,
     required this.onValidateNotification,
     required this.onInformationalNotificationsShown,
+    required this.onNotificationRemovedFromSession,
   });
 
   final NotificationController controller;
   final bool Function(AppNotification) isActionable;
   final Future<String?> Function(AppNotification)? onValidateNotification;
   final ValueChanged<Iterable<String>> onInformationalNotificationsShown;
+  final ValueChanged<String> onNotificationRemovedFromSession;
 
   @override
   State<HelperNotificationPanel> createState() =>
@@ -57,10 +60,16 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
 
   List<AppNotification> _visibleNotifications() {
     final notifications = widget.controller.notifications;
+
     return switch (_filter) {
       _HelperNotificationFilter.all => notifications,
+
+      _HelperNotificationFilter.archived =>
+        widget.controller.archivedNotifications,
+
       _HelperNotificationFilter.orders =>
         notifications.where(_isOrder).toList(),
+
       _HelperNotificationFilter.approvals =>
         notifications.where(_isApproval).toList(),
     };
@@ -72,11 +81,13 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
       animation: widget.controller,
       builder: (context, _) {
         final notifications = _visibleNotifications();
-        widget.onInformationalNotificationsShown(
-          notifications
-              .where((item) => !item.isRead && !widget.isActionable(item))
-              .map((item) => item.id),
-        );
+        if (_filter != _HelperNotificationFilter.archived) {
+          widget.onInformationalNotificationsShown(
+            notifications
+                .where((item) => !item.isRead && !widget.isActionable(item))
+                .map((item) => item.id),
+          );
+        }
 
         final screenHeight = MediaQuery.sizeOf(context).height;
         final listHeight = notifications.isEmpty
@@ -116,34 +127,34 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
                         ),
                       ),
                     ),
-                    TextButton(
-                      onPressed: widget.controller.unreadCount == 0
-                          ? null
-                          : widget.controller.markAllAsRead,
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF9B451B),
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      child: const Text(
-                        'Mark all read',
-                        style: TextStyle(fontSize: 13),
-                      ),
+                    NotificationActionsMenu(
+                      controller: widget.controller,
+                      onArchivedFromSession:
+                          widget.onNotificationRemovedFromSession,
+                      archivedView:
+                          _filter == _HelperNotificationFilter.archived,
                     ),
                   ],
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 0, 14, 9),
-                child: Row(
-                  children: [
-                    _filterButton(_HelperNotificationFilter.all, 'All'),
-                    _filterButton(_HelperNotificationFilter.orders, 'Orders'),
-                    _filterButton(
-                      _HelperNotificationFilter.approvals,
-                      'Approvals',
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _filterButton(_HelperNotificationFilter.all, 'All'),
+                      _filterButton(
+                        _HelperNotificationFilter.archived,
+                        'Archived',
+                      ),
+                      _filterButton(_HelperNotificationFilter.orders, 'Orders'),
+                      _filterButton(
+                        _HelperNotificationFilter.approvals,
+                        'Approvals',
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const Divider(height: 1, color: _line),
@@ -165,7 +176,13 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
     return Padding(
       padding: const EdgeInsets.only(right: 4),
       child: InkWell(
-        onTap: () => setState(() => _filter = filter),
+        onTap: () async {
+          setState(() => _filter = filter);
+
+          if (filter == _HelperNotificationFilter.archived) {
+            await widget.controller.loadArchivedNotifications();
+          }
+        },
         borderRadius: BorderRadius.circular(20),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -187,6 +204,16 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
   }
 
   Widget _buildList(List<AppNotification> notifications) {
+    final archivedView = _filter == _HelperNotificationFilter.archived;
+
+    final loading = archivedView
+        ? widget.controller.isArchiveLoading
+        : widget.controller.isLoading;
+
+    final error = archivedView
+        ? widget.controller.archiveErrorMessage
+        : widget.controller.errorMessage;
+
     if (widget.controller.isLoading && notifications.isEmpty) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
@@ -203,6 +230,7 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
         _HelperNotificationFilter.all => 'No notifications yet',
         _HelperNotificationFilter.orders => 'No order notifications',
         _HelperNotificationFilter.approvals => 'No approval notifications',
+        _HelperNotificationFilter.archived => 'No archived notifications',
       };
       return Center(
         child: Text(label, style: const TextStyle(color: _muted, fontSize: 13)),
@@ -227,7 +255,7 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
         '${time.hour < 12 ? 'AM' : 'PM'}';
 
     return InkWell(
-      onTap: !actionable
+      onTap: _filter == _HelperNotificationFilter.archived || !actionable
           ? null
           : () async {
               final error = await widget.onValidateNotification?.call(item);
@@ -291,7 +319,40 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
               ),
             ),
             const SizedBox(width: 8),
-            Text(timeText, style: const TextStyle(color: _muted, fontSize: 12)),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  timeText,
+                  style: const TextStyle(color: _muted, fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                if (_filter != _HelperNotificationFilter.archived)
+                  IconButton(
+                  tooltip: 'Archive notification',
+                  icon: const Icon(
+                    Icons.archive_outlined, size: 17, color: _muted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  onPressed: () async {
+                    final archived = await widget.controller
+                        .archiveNotification(item.id);
+
+                    if (archived) {
+                      widget.onNotificationRemovedFromSession(item.id);
+                    } else if (mounted) {
+                      AppToast.error(
+                        context,
+                        'Could not archive notification.',
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
           ],
         ),
       ),

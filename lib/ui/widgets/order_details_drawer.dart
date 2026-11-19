@@ -674,7 +674,7 @@ class OrderDetailsDrawer extends StatelessWidget {
   );
 
   static String _shortOrderId(String id) =>
-      id.length > 12 ? id.substring(0, 8).toUpperCase() : id;
+      (id.length > 12 ? id.substring(0, 8) : id).toUpperCase();
   static bool _isFullyPicked(CustomerOrder order) =>
       order.status == 'prepared' || order.status == 'completed';
   static String _quantity(double value) => value == value.roundToDouble()
