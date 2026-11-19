@@ -22,6 +22,7 @@ import '../navigation/main_section.dart';
 import '../services/debug_clock.dart';
 import '../services/export_period.dart';
 import '../services/export_reminder_service.dart';
+import '../services/report_export_controller.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 import '../login/session_storage.dart';
@@ -30,7 +31,8 @@ import 'approval_center_page.dart';
 import 'analytics_page.dart';
 import 'forecasting_page.dart';
 import 'inventory_page.dart';
-import 'item_detail_page.dart';
+import 'inventory_redesign.dart' show showInventoryItemDetails;
+import 'qr_labels_preview_dialog.dart';
 import 'map_editor_page.dart';
 import 'bodegero_queue_page.dart';
 import 'order_queue_page.dart';
@@ -47,6 +49,7 @@ import 'widgets/startup_restoration_surface.dart';
 import '../services/staff_presence_service.dart';
 import '../services/order_auto_assignment_service.dart';
 import 'widgets/active_staff_button.dart';
+import 'widgets/report_export_indicator.dart';
 import 'widgets/admin_store_status_clock.dart';
 import '../services/store_access_service.dart';
 import '../services/main_section_url.dart';
@@ -77,8 +80,6 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   final AIInsightsService _aiInsightsService = AIInsightsService();
   int? _currentIndex;
-  bool _isDetailView = false;
-  String? _selectedItemId;
   String _txTargetTab = 'Sales History';
   String _ordersActivityTab = 'Orders';
   String? _ordersActivityTargetOrderId;
@@ -334,8 +335,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       path.startsWith('/main/') ||
       path == '/classification_test';
 
-  
-void _restoreMainSectionFromPath(String path) {
+  void _restoreMainSectionFromPath(String path) {
     if (!mounted || !_isMainSectionPath(path)) return;
 
     final requested = MainSection.fromPath(path);
@@ -350,8 +350,6 @@ void _restoreMainSectionFromPath(String path) {
 
     setState(() {
       _currentIndex = index;
-      _isDetailView = false;
-      _selectedItemId = null;
 
       if (_sessionRole == 'helper') {
         if (resolved == MainSection.history) {
@@ -365,7 +363,6 @@ void _restoreMainSectionFromPath(String path) {
     _updateStaffPresenceModule();
   }
 
-
   void _selectMainIndex(
     int index, {
     VoidCallback? updateState,
@@ -377,10 +374,6 @@ void _restoreMainSectionFromPath(String path) {
       setState(() {
         updateState?.call();
         _currentIndex = index;
-        if (changed) {
-          _isDetailView = false;
-          _selectedItemId = null;
-        }
       });
     }
     final path = _mainSections[index].routePath;
@@ -1147,6 +1140,7 @@ void _restoreMainSectionFromPath(String path) {
       _storeLogoutDialogSetState = null;
     }
 
+    ReportExportController.instance.clear();
     await _staffPresenceService?.stop(logoutReason: 'store_hours_expired');
     await widget.controller.revokeCurrentSession();
 
@@ -1315,6 +1309,7 @@ void _restoreMainSectionFromPath(String path) {
     if (_isInvalidatingSession) return;
     _isInvalidatingSession = true;
     _clearStoreAccessScheduling();
+    ReportExportController.instance.clear();
     try {
       await _staffPresenceService?.stop(logoutReason: 'profile_changed');
       await widget.controller.revokeCurrentSession();
@@ -1382,57 +1377,20 @@ void _restoreMainSectionFromPath(String path) {
   }
 
   void _handleSelectItem(InventoryItem item) {
-    final isDesktop = MediaQuery.of(context).size.width >= 600;
-
-    if (isDesktop) {
-      showDialog(
+    unawaited(
+      showInventoryItemDetails(
         context: context,
-        builder: (dialogContext) => Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: SizedBox(
-            width: 500,
-            height: 700,
-            child: ItemDetailPage(
-              item: item,
-              controller: widget.controller,
-              onBack: () => Navigator.pop(dialogContext),
-              onUpdate: (updatedItem) async {
-                await _handleUpdateItem(updatedItem);
-                if (mounted) setState(() {});
-              },
-              onDelete: (id) async {
-                await widget.controller.deleteItem(id);
-                await _scanInventoryStockAlerts();
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
-                if (mounted) setState(() {});
-              },
-              onStatusChanged: () {
-                if (mounted) setState(() {});
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _scanInventoryStockAlerts();
-                });
-              },
-            ),
+        item: item,
+        controller: widget.controller,
+        onSave: _handleUpdateItem,
+        onQrLabel: () => unawaited(
+          showDialog<bool>(
+            context: context,
+            builder: (_) => QrLabelsPreviewDialog(items: [item]),
           ),
         ),
-      );
-    } else {
-      setState(() {
-        _selectedItemId = item.id;
-        _isDetailView = true;
-      });
-    }
-  }
-
-  void _handleBackToMain() {
-    setState(() {
-      _isDetailView = false;
-      _selectedItemId = null;
-    });
+      ),
+    );
   }
 
   String _formatQty(double value) {
@@ -2048,11 +2006,7 @@ void _restoreMainSectionFromPath(String path) {
   Future<void> _handleUpdateItem(InventoryItem item) async {
     await widget.controller.updateItem(item);
 
-    if (mounted) {
-      setState(() {
-        _selectedItemId = item.id;
-      });
-    }
+    if (mounted) setState(() {});
     unawaited(
       _scanInventoryStockAlerts().catchError((
         Object error,
@@ -2065,18 +2019,6 @@ void _restoreMainSectionFromPath(String path) {
         );
       }),
     );
-  }
-
-  Future<void> _handleDeleteItem(String id) async {
-    await widget.controller.deleteItem(id);
-    await _scanInventoryStockAlerts();
-
-    if (!mounted) return;
-
-    setState(() {
-      _isDetailView = false;
-      _selectedItemId = null;
-    });
   }
 
   Future<void> _createTestNotification() async {
@@ -2408,8 +2350,8 @@ void _restoreMainSectionFromPath(String path) {
         // as Admin, Cashier, and Helper. No extra Bodegero profile tab.
         onProfile: _showProfileDialog,
         // STORE_LOGOUT_COUNTDOWN_HEADER: Bodegero has its own app bar.
-        storeLogoutCountdown: _showStoreLogoutCountdownChip &&
-                _storeLogoutRemainingSeconds > 0
+        storeLogoutCountdown:
+            _showStoreLogoutCountdownChip && _storeLogoutRemainingSeconds > 0
             ? _buildStoreLogoutCountdownChip()
             : null,
         storeHours: _cashierStoreStatus(),
@@ -2419,42 +2361,6 @@ void _restoreMainSectionFromPath(String path) {
             _staffPresenceService?.updateModule(module),
       );
     }
-    final InventoryItem? selectedItem = widget.controller.findAnyItemById(
-      _selectedItemId ?? '',
-    );
-
-    if (_isDetailView && selectedItem != null) {
-      final detailPage = ItemDetailPage(
-        item: selectedItem,
-        controller: widget.controller,
-        onBack: _handleBackToMain,
-        onUpdate: _handleUpdateItem,
-        onDelete: _handleDeleteItem,
-        onStatusChanged: () {
-          if (mounted) setState(() {});
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _scanInventoryStockAlerts();
-          });
-        },
-      );
-      if (_sessionRole != 'admin') return detailPage;
-      return Scaffold(
-        backgroundColor: _mainBg,
-        body: Column(
-          children: [
-            _buildAdminTopBar(
-              orderQueueIndex: _mainSections.indexOf(MainSection.queue),
-              posIndex: _mainSections.indexOf(MainSection.pos),
-              transactionIndex: _mainSections.indexOf(MainSection.transactions),
-              inventoryIndex: _mainSections.indexOf(MainSection.inventory),
-            ),
-            Expanded(child: detailPage),
-          ],
-        ),
-      );
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 600;
@@ -2549,6 +2455,7 @@ void _restoreMainSectionFromPath(String path) {
               controller: widget.controller,
               isActive: _currentIndex == analyticsIndex,
               onOpenInventory: () => _selectMainIndex(inventoryIndex),
+              onExported: _scanExportReminderNotifications,
             ),
           );
 
@@ -2622,7 +2529,6 @@ void _restoreMainSectionFromPath(String path) {
           pages.add(
             InventoryPage(
               controller: widget.controller,
-              onSelectItem: _handleSelectItem,
               onExported: () {
                 _scanExportReminderNotifications();
               },
@@ -2665,9 +2571,6 @@ void _restoreMainSectionFromPath(String path) {
               controller: widget.controller,
               isActive: _currentIndex == transactionIndex,
               initialTab: _txTargetTab,
-              onExported: () {
-                _scanExportReminderNotifications();
-              },
               onCompleteOrder: (orderId) =>
                   _openAdminActivity('Orders', orderId: orderId),
             ),
@@ -2759,18 +2662,9 @@ void _restoreMainSectionFromPath(String path) {
                 ),
               ],
             ),
-            floatingActionButton: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (isAdmin && _staffPresenceService != null)
-                  ActiveStaffButton(presenceService: _staffPresenceService!),
-
-                if (!kReleaseMode) ...[
-                  const SizedBox(height: 12),
-                  _debugToolsButtons(),
-                ],
-              ],
+            floatingActionButton: _buildReportExportActions(
+              showActiveStaff: isAdmin,
+              showDebugTools: !kReleaseMode,
             ),
           );
         }
@@ -2811,9 +2705,9 @@ void _restoreMainSectionFromPath(String path) {
                   index: _currentIndex,
                   children: _lazyPageChildren(pages),
                 ),
-          floatingActionButton: isAdmin && _staffPresenceService != null
-              ? ActiveStaffButton(presenceService: _staffPresenceService!)
-              : null,
+          floatingActionButton: _buildReportExportActions(
+            showActiveStaff: isAdmin,
+          ),
           bottomNavigationBar: isHelper
               ? _helperChecklistVisible
                     ? null
@@ -2831,47 +2725,83 @@ void _restoreMainSectionFromPath(String path) {
     );
   }
 
+  Widget _buildReportExportActions({
+    required bool showActiveStaff,
+    bool showDebugTools = false,
+  }) {
+    final export = ReportExportController.instance;
+    return ListenableBuilder(
+      listenable: export,
+      builder: (context, _) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (export.hasExport) ...[
+            ReportExportIndicator(
+              controller: export,
+              onDownloaded: (name, destination) {
+                if (!mounted) return;
+                AppToast.success(
+                  context,
+                  destination == 'browser downloads'
+                      ? '$name download started'
+                      : '$name downloaded · Saved to $destination',
+                );
+              },
+              onDownloadError: (message) {
+                if (mounted) AppToast.error(context, message);
+              },
+            ),
+            if (showActiveStaff && _staffPresenceService != null)
+              const SizedBox(height: 12),
+          ],
+          if (showActiveStaff && _staffPresenceService != null)
+            ActiveStaffButton(presenceService: _staffPresenceService!),
+          if (showDebugTools) ...[
+            const SizedBox(height: 12),
+            _debugToolsButtons(),
+          ],
+        ],
+      ),
+    );
+  }
+
   // STORE_LOGOUT_COUNTDOWN_HEADER_START
   // Shared final-minute countdown used by all role headers. The Wait button
   // only dismisses the dialog; it does not pause the logout deadline.
-  Widget _buildStoreLogoutCountdownChip() =>
-      Tooltip(
-        message: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
-        child: Semantics(
-          label: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
-          liveRegion: true,
-          child: Container(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF7ED),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFF97316)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  LucideIcons.timer,
-                  size: 15,
-                  color: Color(0xFFC2410C),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  _formatStoreLogoutCountdown(_storeLogoutRemainingSeconds),
-                  style: const TextStyle(
-                    color: Color(0xFF9A3412),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    fontFamily: _fontFam,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-            ),
-          ),
+  Widget _buildStoreLogoutCountdownChip() => Tooltip(
+    message: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
+    child: Semantics(
+      label: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
+      liveRegion: true,
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFF97316)),
         ),
-      );
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(LucideIcons.timer, size: 15, color: Color(0xFFC2410C)),
+            const SizedBox(width: 5),
+            Text(
+              _formatStoreLogoutCountdown(_storeLogoutRemainingSeconds),
+              style: const TextStyle(
+                color: Color(0xFF9A3412),
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                fontFamily: _fontFam,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
   // STORE_LOGOUT_COUNTDOWN_HEADER_END
 
   Widget _buildNotificationControls({
@@ -2993,9 +2923,7 @@ void _restoreMainSectionFromPath(String path) {
     storeAccessSettings: _scheduledStoreAccessSettings,
   );
 
-
-
-void _selectHelperUnifiedTab(
+  void _selectHelperUnifiedTab(
     int tab, {
     required int orderQueueIndex,
     required int staffHistoryIndex,
@@ -3022,8 +2950,6 @@ void _selectHelperUnifiedTab(
     _staffPresenceService?.updateModule(modules[tab]);
     _syncHelperWorkStatus();
   }
-
-
 
   Widget _buildHelperUnifiedAvailability() {
     final presence = _staffPresenceService;
@@ -3093,8 +3019,7 @@ void _selectHelperUnifiedTab(
     );
   }
 
-  
-// STAFF_STORE_HOURS_HEADER_FIX: Reuse the live store-hours clock for
+  // STAFF_STORE_HOURS_HEADER_FIX: Reuse the live store-hours clock for
   // Helper and Bodegero. The widget reads the existing store-access settings;
   // no store-hour values are hardcoded.
   Widget _roleStoreHours() => SizedBox(
@@ -3120,7 +3045,7 @@ void _selectHelperUnifiedTab(
     child: _roleStoreHours(),
   );
 
-Widget _buildHelperUnifiedWorkspace({
+  Widget _buildHelperUnifiedWorkspace({
     required List<Widget> pages,
     required int orderQueueIndex,
     required int inventoryIndex,
@@ -3247,9 +3172,6 @@ Widget _buildHelperUnifiedWorkspace({
     );
   }
 
-
-
-
   Widget _buildHelperMobileNavigationBar({
     required int orderQueueIndex,
     required int staffHistoryIndex,
@@ -3293,7 +3215,7 @@ Widget _buildHelperUnifiedWorkspace({
     required int transactionIndex,
     required int inventoryIndex,
   }) => PreferredSize(
-    preferredSize: const Size.fromHeight(62),
+    preferredSize: const Size.fromHeight(64),
     child: StaffRoleHeader(
       userName: widget.controller.currentUserName ?? 'Helper',
       tabs: const [],
@@ -3322,7 +3244,7 @@ Widget _buildHelperUnifiedWorkspace({
   }) {
     if (!isAdmin) {
       return PreferredSize(
-        preferredSize: const Size.fromHeight(62),
+        preferredSize: const Size.fromHeight(64),
         child: StaffRoleHeader(
           userName: widget.controller.currentUserName ?? 'Cashier',
           tabs: const [],
@@ -3962,7 +3884,7 @@ Widget _buildHelperUnifiedWorkspace({
     required int transactionIndex,
     required int inventoryIndex,
     required int staffHistoryIndex,
-    }) {
+  }) {
     if (!isHelper) {
       return _buildCashierTopNavBar(
         posIndex: posIndex,
@@ -4533,6 +4455,7 @@ Widget _buildHelperUnifiedWorkspace({
 
     try {
       _clearStoreAccessScheduling();
+      ReportExportController.instance.clear();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       await widget.controller.revokeCurrentSession();
       await widget.realtimeSync.stop();
@@ -4555,6 +4478,7 @@ Widget _buildHelperUnifiedWorkspace({
   Future<void> _logoutFromForcedPasswordChange() async {
     try {
       _clearStoreAccessScheduling();
+      ReportExportController.instance.clear();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       await widget.controller.revokeCurrentSession();
       await widget.realtimeSync.stop();

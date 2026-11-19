@@ -33,9 +33,11 @@ Future<bool> showSharedStockRequestDialog({
     barrierDismissible: true,
     barrierLabel: 'Close new request',
     barrierColor: Colors.black.withValues(alpha: 0.35),
-    pageBuilder: (_, _, _) => Align(
-      alignment: Alignment.centerRight,
-      child: _NewRequestPanel(controller: controller),
+    pageBuilder: (_, _, _) => SafeArea(
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: _NewRequestPanel(controller: controller),
+      ),
     ),
     transitionBuilder: (_, animation, _, child) => SlideTransition(
       position: Tween<Offset>(
@@ -1143,24 +1145,27 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
                     28,
                   ),
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _typeCard(
-                            InventoryApprovalType.restock,
-                            'Restock',
-                            'Ask for more stock',
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _typeCard(
+                              InventoryApprovalType.restock,
+                              'Restock',
+                              'Ask for more stock',
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _typeCard(
-                            InventoryApprovalType.writeOff,
-                            'Write-off',
-                            'Remove damaged or lost stock',
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _typeCard(
+                              InventoryApprovalType.writeOff,
+                              'Write-off',
+                              'Remove damaged or lost stock',
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 22),
                     Row(
@@ -1296,13 +1301,15 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
                     ),
                     _error(_notesError),
                     const SizedBox(height: 24),
-                    const Row(
+                    const Wrap(
+                      spacing: 5,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           'Supporting photo',
                           style: TextStyle(fontSize: 13, color: _ink),
                         ),
-                        SizedBox(width: 5),
                         Text(
                           '(required)',
                           style: TextStyle(fontSize: 12, color: _muted),
@@ -1323,8 +1330,10 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
                   isMobile ? 16 : 30,
                   17,
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 10,
+                  runSpacing: 10,
                   children: [
                     OutlinedButton(
                       onPressed: _submitting
@@ -1340,7 +1349,6 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
                       ),
                       child: const Text('Cancel'),
                     ),
-                    const SizedBox(width: 10),
                     FilledButton(
                       onPressed: _submitting ? null : () => _submit(items),
                       style: FilledButton.styleFrom(

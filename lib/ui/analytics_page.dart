@@ -3,16 +3,45 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:printing/printing.dart';
 
 import '../data/inventory.dart';
 import '../logic/history_pagination.dart';
 import '../logic/inventory_controller.dart';
 import 'reports/inventory_report_generator.dart';
 import 'reports/sales_report_generator.dart';
-import 'reports/report_period_dialog.dart';
-import 'reports/report_range.dart';
 import 'widgets/app_styled_dropdown.dart';
+import 'widgets/analytics_export_menu.dart';
+import '../services/report_export_controller.dart';
+import '../services/report_pdf_build.dart';
+import '../services/export_period.dart';
+import '../services/export_reminder_service.dart';
+import '../notifications/notification_provider.dart';
+
+class _AnalyticsReportRange {
+  const _AnalyticsReportRange({
+    required this.period,
+    required this.start,
+    required this.endExclusive,
+  });
+
+  final String period;
+  final DateTime start;
+  final DateTime endExclusive;
+
+  DateTime get displayEnd {
+    final last = endExclusive.subtract(const Duration(microseconds: 1));
+    return DateTime(last.year, last.month, last.day);
+  }
+
+  String get fileTag =>
+      '${start.year}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}'
+      '_${displayEnd.year}-${displayEnd.month.toString().padLeft(2, '0')}-${displayEnd.day.toString().padLeft(2, '0')}';
+
+  bool contains(DateTime date) {
+    final local = date.toLocal();
+    return !local.isBefore(start) && local.isBefore(endExclusive);
+  }
+}
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({
@@ -20,11 +49,13 @@ class AnalyticsPage extends StatefulWidget {
     required this.controller,
     required this.isActive,
     required this.onOpenInventory,
+    this.onExported,
   });
 
   final InventoryController controller;
   final bool isActive;
   final VoidCallback onOpenInventory;
+  final VoidCallback? onExported;
 
   @override
   State<AnalyticsPage> createState() => _AnalyticsPageState();
@@ -39,7 +70,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   String _period = 'This month';
   bool _loading = true;
-  bool _exporting = false;
   String? _error;
   Map<String, dynamic>? _summary;
   final List<CustomerOrder> _periodOrders = <CustomerOrder>[];
@@ -459,156 +489,180 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     );
   }
 
-  void _openSalesReportDialog() {
-    if (_exporting) return;
+  _AnalyticsReportRange get _selectedReportRange => _AnalyticsReportRange(
+    period: switch (_period) {
+      'Today' => 'Daily',
+      'This week' => 'Weekly',
+      'This month' || 'Last month' => 'Monthly',
+      'This year' => 'Yearly',
+      _ => 'Custom',
+    },
+    start: _periodStart,
+    endExclusive: _periodEnd,
+  );
 
-    unawaited(
-      showReportPeriodDialog(
-        context,
-        title: 'Generate Sales Report',
-        onGenerate: (range) {
-          unawaited(_exportSales(range));
-        },
-      ),
-    );
+  ExportPeriodType? get _currentExportPeriodType => switch (_period) {
+    'Today' => ExportPeriodType.daily,
+    'This week' => ExportPeriodType.weekly,
+    'This month' => ExportPeriodType.monthly,
+    _ => null,
+  };
+
+  Future<void> Function()? _exportReminderAfterDownload(String reportType) {
+    final type = _currentExportPeriodType;
+    if (type == null) return null;
+    final period = ExportPeriod.current(type);
+    final controller = widget.controller;
+    final notifications = NotificationProvider.maybeOf(context);
+    final onExported = widget.onExported;
+    return () async {
+      final locationId = controller.activeLocationId;
+      if (locationId == null) return;
+      await ExportReminderService(
+        supabase: controller.supabase,
+        locationId: locationId,
+      ).logExport(
+        reportType: reportType,
+        period: period,
+        exportedBy: controller.currentUserNumericId,
+      );
+      await notifications?.resolveExportReminder(
+        reportType: reportType,
+        periodType: type.name,
+        periodKey: period.key,
+      );
+      onExported?.call();
+    };
   }
 
-  void _openInventoryReportDialog() {
-    if (_exporting) return;
-
-    unawaited(
-      showReportPeriodDialog(
-        context,
-        title: 'Generate Inventory Report',
-        note: 'Past reports use current inventory prices.',
-        onGenerate: (range) {
-          unawaited(_exportInventory(range));
-        },
-      ),
-    );
-  }
-
-  Future<void> _exportSales(ReportRange range) async {
-    if (_exporting) return;
-    setState(() => _exporting = true);
-    try {
-      final orders = await widget.controller.loadAnalyticsSalesExport(
-        start: range.start,
-        endExclusive: range.endExclusive,
-      );
-      final entries = orders
-          .where((order) => range.contains(order.createdAt))
-          .map(
-            (order) => SalesReportEntry(
-              orderNumber: order.id
-                  .substring(0, math.min(order.id.length, 8))
-                  .toUpperCase(),
-              date: order.createdAt,
-              cashier: order.createdByName ?? 'Unknown',
-              paymentMode: order.paymentMode ?? 'Unknown',
-              paymentReference: order.paymentReference,
-              subtotal: order.totalAmount + order.discountAmount,
-              discount: order.discountAmount,
-              total: order.totalAmount,
-            ),
-          )
-          .toList();
-      if (entries.isEmpty) throw StateError('No sales in this period.');
-      final bytes = await SalesReportGenerator.generate(
-        period: range.period,
-        periodStart: range.start,
-        periodEnd: range.displayEnd,
-        generatedAt: DateTime.now(),
-        generatedBy: widget.controller.currentUserName ?? 'Administrator',
-        sales: entries,
-        businessName: 'Inventory Plus',
-      );
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename:
-            'Sales_report_${range.period}_${range.fileTag}_${DateTime.now().millisecondsSinceEpoch}.pdf',
-      );
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              error is StateError ? error.message : 'Sales report failed.',
-            ),
+  Future<void> _exportSales(_AnalyticsReportRange range) async {
+    final controller = widget.controller;
+    final generatedBy = controller.currentUserName ?? 'Administrator';
+    final now = DateTime.now();
+    final started = ReportExportController.instance.start(
+      reportName: 'Sales report',
+      fileName:
+          'Sales_report_${range.period}_${range.fileTag}_${now.millisecondsSinceEpoch}.pdf',
+      afterDownload: _exportReminderAfterDownload('sales'),
+      build: (progress) async {
+        final orders = await controller.loadAnalyticsSalesExport(
+          start: range.start,
+          endExclusive: range.endExclusive,
+        );
+        progress(0.4);
+        final entries = orders
+            .where((order) => range.contains(order.createdAt))
+            .map(
+              (order) => SalesReportEntry(
+                orderNumber: order.id
+                    .substring(0, math.min(order.id.length, 8))
+                    .toUpperCase(),
+                date: order.createdAt,
+                cashier: order.createdByName ?? 'Unknown',
+                paymentMode: order.paymentMode ?? 'Unknown',
+                paymentReference: order.paymentReference,
+                subtotal: order.totalAmount + order.discountAmount,
+                discount: order.discountAmount,
+                total: order.totalAmount,
+              ),
+            )
+            .toList();
+        if (entries.isEmpty) throw StateError('No sales in this period.');
+        progress(0.65);
+        final bytes = await buildSalesReportPdf(
+          SalesReportPdfRequest(
+            period: range.period,
+            periodStart: range.start,
+            periodEnd: range.displayEnd,
+            generatedAt: now,
+            generatedBy: generatedBy,
+            sales: entries,
+            businessName: 'Inventory Plus',
           ),
         );
-      }
-    } finally {
-      if (mounted) setState(() => _exporting = false);
+        progress(0.95);
+        return bytes;
+      },
+    );
+    if (!started && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Finish or download the current report first.'),
+        ),
+      );
     }
   }
 
-  Future<void> _exportInventory(ReportRange range) async {
-    if (_exporting) return;
-    setState(() => _exporting = true);
-    try {
-      final transactions = await widget.controller.loadAllTransactionHistory();
-      final start = range.start;
-      final end = range.endExclusive;
-      final net = <String, double>{};
-      final after = <String, double>{};
-      final received = <String, double>{};
-      final issued = <String, double>{};
-      for (final tx in transactions) {
-        final id = tx['product_id']?.toString();
-        final date = DateTime.tryParse(
-          tx['created_at']?.toString() ?? '',
-        )?.toLocal();
-        if (id == null || date == null) continue;
-        final change = (tx['quantity_change'] as num?)?.toDouble() ?? 0;
-        if (!date.isBefore(end)) {
-          after[id] = (after[id] ?? 0) + change;
-        } else if (!date.isBefore(start)) {
-          net[id] = (net[id] ?? 0) + change;
-          if (change > 0) received[id] = (received[id] ?? 0) + change;
-          if (change < 0) issued[id] = (issued[id] ?? 0) - change;
+  Future<void> _exportInventory(_AnalyticsReportRange range) async {
+    final controller = widget.controller;
+    final generatedBy = controller.currentUserName ?? 'Administrator';
+    final items = List<InventoryItem>.of(controller.allItems);
+    final now = DateTime.now();
+    final started = ReportExportController.instance.start(
+      reportName: 'Inventory report',
+      fileName:
+          'Inventory_report_${range.period}_${range.fileTag}_${now.millisecondsSinceEpoch}.pdf',
+      afterDownload: _exportReminderAfterDownload('inventory'),
+      build: (progress) async {
+        final transactions = await controller.loadAllTransactionHistory();
+        progress(0.35);
+        final start = range.start;
+        final end = range.endExclusive;
+        final net = <String, double>{};
+        final after = <String, double>{};
+        final received = <String, double>{};
+        final issued = <String, double>{};
+        for (final tx in transactions) {
+          final id = tx['product_id']?.toString();
+          final date = DateTime.tryParse(
+            tx['created_at']?.toString() ?? '',
+          )?.toLocal();
+          if (id == null || date == null) continue;
+          final change = (tx['quantity_change'] as num?)?.toDouble() ?? 0;
+          if (!date.isBefore(end)) {
+            after[id] = (after[id] ?? 0) + change;
+          } else if (!date.isBefore(start)) {
+            net[id] = (net[id] ?? 0) + change;
+            if (change > 0) received[id] = (received[id] ?? 0) + change;
+            if (change < 0) issued[id] = (issued[id] ?? 0) - change;
+          }
         }
-      }
-      final entries = widget.controller.allItems.map((item) {
-        final ending = item.quantity - (after[item.id] ?? 0);
-        return InventoryReportEntry(
-          sku: item.sku,
-          name: item.name,
-          unit: item.unit,
-          beginningQty: ending - (net[item.id] ?? 0),
-          received: received[item.id] ?? 0,
-          issued: issued[item.id] ?? 0,
-          endingQty: ending,
-          unitCost: item.price,
-        );
-      }).toList();
-      if (entries.isEmpty) throw StateError('No inventory items found.');
-      final bytes = await InventoryReportGenerator.generate(
-        period: range.period,
-        periodStart: range.start,
-        periodEnd: range.displayEnd,
-        generatedAt: DateTime.now(),
-        generatedBy: widget.controller.currentUserName ?? 'Administrator',
-        items: entries,
-        businessName: 'Inventory Plus',
-      );
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename:
-            'Inventory_report_${range.period}_${range.fileTag}_${DateTime.now().millisecondsSinceEpoch}.pdf',
-      );
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              error is StateError ? error.message : 'Inventory report failed.',
-            ),
+        final entries = items.map((item) {
+          final ending = item.quantity - (after[item.id] ?? 0);
+          return InventoryReportEntry(
+            sku: item.sku,
+            name: item.name,
+            unit: item.unit,
+            beginningQty: ending - (net[item.id] ?? 0),
+            received: received[item.id] ?? 0,
+            issued: issued[item.id] ?? 0,
+            endingQty: ending,
+            unitCost: item.price,
+          );
+        }).toList();
+        if (entries.isEmpty) throw StateError('No inventory items found.');
+        progress(0.65);
+        final bytes = await buildInventoryReportPdf(
+          InventoryReportPdfRequest(
+            period: range.period,
+            periodStart: range.start,
+            periodEnd: range.displayEnd,
+            generatedAt: now,
+            generatedBy: generatedBy,
+            items: entries,
+            businessName: 'Inventory Plus',
           ),
         );
-      }
-    } finally {
-      if (mounted) setState(() => _exporting = false);
+        progress(0.95);
+        return bytes;
+      },
+    );
+    if (!started && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Finish or download the current report first.'),
+        ),
+      );
     }
   }
 
@@ -704,70 +758,102 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         ),
       ],
     );
-    final actions = Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        SizedBox(
-          width: 180,
-          height: 44,
-          child: AppStyledDropdown<String>(
-            value: _period,
-            items:
-                const [
-                      'Today',
-                      'This week',
-                      'This month',
-                      'Last month',
-                      'This year',
-                      'Custom range',
-                    ]
-                    .map(
-                      (value) =>
-                          DropdownMenuItem(value: value, child: Text(value)),
-                    )
-                    .toList(),
-            onChanged: (value) {
-              if (value == 'Custom range') {
-                unawaited(_selectCustomRange());
-              } else if (value != null && value != _period) {
-                setState(() => _period = value);
-                unawaited(_load());
-              }
-            },
-          ),
-        ),
-        if (_period == 'Custom range' && _customRange != null)
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 260),
-            child: Text(
-              _periodLabel,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: _muted, fontSize: 12),
-            ),
-          ),
-        _outlineButton(
-          'Sales report',
-          LucideIcons.download,
-          _exporting ? null : _openSalesReportDialog,
-        ),
-        _outlineButton(
-          'Inventory report',
-          LucideIcons.download,
-          _exporting ? null : _openInventoryReportDialog,
-        ),
-      ],
-    );
     return LayoutBuilder(
       builder: (context, limits) {
-        // A side-by-side header is only safe when both the heading and
-        // all actions fit; at intermediate desktop widths use two rows.
+        final mobile = limits.maxWidth < 560;
+        final actions = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: mobile ? 130 : 180,
+              height: 44,
+              child: AppStyledDropdown<String>(
+                value: _period,
+                items:
+                    const [
+                          'Today',
+                          'This week',
+                          'This month',
+                          'Last month',
+                          'This year',
+                          'Custom range',
+                        ]
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value, overflow: TextOverflow.ellipsis),
+                          ),
+                        )
+                        .toList(),
+                onChanged: (value) {
+                  if (value == 'Custom range') {
+                    unawaited(_selectCustomRange());
+                  } else if (value != null && value != _period) {
+                    setState(() => _period = value);
+                    unawaited(_load());
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            AnalyticsExportMenu(
+              periodLabel: _periodLabel,
+              export: ReportExportController.instance,
+              onSales: () => unawaited(_exportSales(_selectedReportRange)),
+              onInventory: () =>
+                  unawaited(_exportInventory(_selectedReportRange)),
+            ),
+          ],
+        );
+        if (mobile) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Analytics',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        color: _ink,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  actions,
+                ],
+              ),
+              if (_period == 'Custom range' && _customRange != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _periodLabel,
+                  style: const TextStyle(color: _muted, fontSize: 12),
+                ),
+              ],
+            ],
+          );
+        }
+        final desktopActions = Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            actions,
+            if (_period == 'Custom range' && _customRange != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _periodLabel,
+                style: const TextStyle(color: _muted, fontSize: 12),
+              ),
+            ],
+          ],
+        );
         if (narrow || limits.maxWidth < 1200) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [heading, const SizedBox(height: 16), actions],
+            children: [heading, const SizedBox(height: 16), desktopActions],
           );
         }
         return Row(
@@ -777,31 +863,16 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             const SizedBox(width: 18),
             Flexible(
               flex: 3,
-              child: Align(alignment: Alignment.centerRight, child: actions),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: desktopActions,
+              ),
             ),
           ],
         );
       },
     );
   }
-
-  Widget _outlineButton(String label, IconData icon, VoidCallback? action) =>
-      SizedBox(
-        height: 44,
-        child: OutlinedButton.icon(
-          onPressed: action,
-          icon: Icon(icon, size: 17),
-          label: Text(label),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _ink,
-            backgroundColor: Colors.white,
-            side: const BorderSide(color: _line),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        ),
-      );
 
   Widget _card(Widget child) => Container(
     decoration: BoxDecoration(
@@ -816,6 +887,77 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final change = _previousRevenue > 0
         ? (_revenue - _previousRevenue) / _previousRevenue * 100
         : null;
+    if (MediaQuery.sizeOf(context).width < 560) {
+      Widget smallMetric(String label, String value) => Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(color: _muted, fontSize: 11)),
+            const SizedBox(height: 3),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      return _card(
+        Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Revenue · $_periodLabel',
+                style: const TextStyle(color: _muted, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.end,
+                spacing: 8,
+                children: [
+                  Text(
+                    _money(_revenue),
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    change == null
+                        ? 'prev. ${_money(_previousRevenue)}'
+                        : '${change >= 0 ? '+' : ''}${change.toStringAsFixed(1)}% vs previous',
+                    style: const TextStyle(color: _muted, fontSize: 11),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: _line),
+              const SizedBox(height: 11),
+              Row(
+                children: [
+                  smallMetric('Orders', _orderCount.toString()),
+                  smallMetric('Units sold', _number(_unitsSold)),
+                  smallMetric(
+                    'Avg. order',
+                    _money(_orderCount == 0 ? 0 : _revenue / _orderCount),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final metrics = <Widget>[
       _metric(
         'Revenue',
@@ -904,6 +1046,72 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final categories = _categorySales.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final total = categories.fold<double>(0, (sum, item) => sum + item.value);
+    if (MediaQuery.sizeOf(context).width < 560) {
+      return _card(
+        Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Sales by category',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Text(
+                    _periodLabel,
+                    style: const TextStyle(color: _muted, fontSize: 11),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              if (categories.isEmpty)
+                const Text(
+                  'No category sales for this period.',
+                  style: TextStyle(color: _muted),
+                )
+              else
+                for (final entry in categories.take(8)) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          entry.key,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      Text(
+                        '${total > 0 ? (entry.value / total * 100).toStringAsFixed(1) : '0.0'}%',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: total > 0 ? entry.value / total : 0,
+                      minHeight: 6,
+                      backgroundColor: _line,
+                      color: _ink,
+                    ),
+                  ),
+                  const SizedBox(height: 11),
+                ],
+              const Text(
+                'Revenue is allocated from order totals, including discounts.',
+                style: TextStyle(color: _muted, fontSize: 10),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return _card(
       Padding(
         padding: const EdgeInsets.all(24),
@@ -959,10 +1167,91 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   Widget _salesPerformanceCard() {
-    final grouping = _period == 'Today' ? 'Hourly' : _chartGrouping;
     final buckets = _salesBuckets();
     final showRevenue = _chartMeasure == 'Revenue';
     final total = showRevenue ? _revenue : _unitsSold;
+    if (MediaQuery.sizeOf(context).width < 560) {
+      return _card(
+        Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Sales performance',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Text(
+                    _periodLabel,
+                    style: const TextStyle(color: _muted, fontSize: 11),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppStyledDropdown<String>(
+                      value: _chartMeasure,
+                      items: const ['Revenue', 'Units sold']
+                          .map((value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value),
+                          ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) setState(() => _chartMeasure = value);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _period == 'Today'
+                        ? const Center(
+                            child: Text('Hourly', style: TextStyle(color: _muted)),
+                          )
+                        : AppStyledDropdown<String>(
+                            value: _chartGrouping,
+                            items: const ['Daily', 'Weekly', 'Monthly']
+                                .map((value) => DropdownMenuItem(
+                                  value: value,
+                                  child: Text(value),
+                                ))
+                                .toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _chartGrouping = value);
+                              }
+                            },
+                          ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (buckets.length >= 400)
+                const Text(
+                  'Choose weekly or monthly grouping to see the full trend.',
+                  style: TextStyle(color: _muted, fontSize: 12),
+                )
+              else if (buckets.isEmpty || _periodOrders.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text(
+                    'No recorded sales for this period.',
+                    style: TextStyle(color: _muted),
+                  ),
+                )
+              else
+                _AnalyticsTrendChart(buckets: buckets, showRevenue: showRevenue),
+            ],
+          ),
+        ),
+      );
+    }
     return _card(
       Padding(
         padding: const EdgeInsets.all(22),
@@ -1062,6 +1351,76 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         return byUnits != 0 ? byUnits : a.revenue.compareTo(b.revenue);
       });
     }
+    if (MediaQuery.sizeOf(context).width < 560) {
+      return _card(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(14, 14, 14, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Product performance',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    'Ranked by units sold',
+                    style: TextStyle(color: _muted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: _background,
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Row(
+                  children: [
+                    for (final ranking in const ['Top sellers', 'Bottom sellers'])
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setState(() => _productRanking = ranking),
+                          borderRadius: BorderRadius.circular(7),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                            decoration: BoxDecoration(
+                              color: _productRanking == ranking
+                                  ? Colors.white
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(7),
+                            ),
+                            child: Text(
+                              ranking,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: _productRanking == ranking ? _ink : _muted,
+                                fontSize: 12,
+                                fontWeight: _productRanking == ranking
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            if (rows.isEmpty)
+              _emptyRow('No products found for this selection.')
+            else
+              for (final row in rows.take(8)) _mobileProductRow(row),
+          ],
+        ),
+      );
+    }
     return _card(
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1129,6 +1488,71 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       ),
     );
   }
+
+  Widget _mobileProductRow(_ProductSalesRow row) => InkWell(
+    onTap: widget.onOpenInventory,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: _line)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: _background,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(LucideIcons.package, size: 16, color: _muted),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  row.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '${row.category} · ${_number(row.inStock)} on hand',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: _muted, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                _money(row.revenue),
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                '${_number(row.units)} sold',
+                style: const TextStyle(color: _muted, fontSize: 10),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget _weekdayCard({bool matchCategoryHeight = false}) {
     const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

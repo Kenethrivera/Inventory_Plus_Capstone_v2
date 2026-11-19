@@ -1,21 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:inventory_plus/ui/widgets/app_toast.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../logic/inventory_controller.dart';
 import '../logic/history_pagination.dart';
-import 'package:printing/printing.dart';
-import 'reports/sales_report_generator.dart';
-import '../services/export_period.dart';
-import '../services/export_reminder_service.dart'; // add
-import 'reports/report_range.dart';
-import 'reports/report_period_dialog.dart';
-import '../notifications/notification_provider.dart';
 import 'widgets/history_period_controls.dart';
 import 'widgets/history_pagination_footer.dart';
-import '../services/app_error_mapper.dart';
-import '../services/app_logger.dart';
 
 String _fmtQty(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
@@ -23,8 +13,6 @@ String _fmtQty(double v) =>
 class TransactionHistoryPage extends StatefulWidget {
   final InventoryController controller;
   final String initialTab;
-  final bool exportDue;
-  final VoidCallback? onExported;
   final void Function(String orderId)? onCompleteOrder;
   final bool isActive;
 
@@ -32,8 +20,6 @@ class TransactionHistoryPage extends StatefulWidget {
     super.key,
     required this.controller,
     this.initialTab = 'Sales History',
-    this.exportDue = false,
-    this.onExported,
     this.onCompleteOrder,
     required this.isActive,
   });
@@ -494,7 +480,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            if (_activeTab == 'Sales History') _buildExportButton(),
             OutlinedButton(
               onPressed: _reloadAll,
               style: OutlinedButton.styleFrom(
@@ -523,52 +508,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           ],
         );
       },
-    );
-  }
-
-  Widget _buildExportButton() {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        OutlinedButton.icon(
-          onPressed: () => showReportPeriodDialog(
-            context,
-            title: 'Generate Sales Report',
-            onGenerate: (range) => _generateAndPrintSalesReport(context, range),
-          ),
-          icon: const Icon(LucideIcons.download, size: 15),
-          label: const Text(
-            'Export Sales',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-          ),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFF334155),
-            side: BorderSide(
-              color: widget.exportDue
-                  ? const Color(0xFFDC2626)
-                  : const Color(0xFFE2E8F0),
-              width: widget.exportDue ? 1.5 : 1,
-            ),
-            minimumSize: const Size(0, 38),
-            padding: const EdgeInsets.symmetric(horizontal: 13),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(9),
-            ),
-          ),
-        ),
-        if (widget.exportDue)
-          const Positioned(
-            top: -3,
-            right: -3,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Color(0xFFDC2626),
-                shape: BoxShape.circle,
-              ),
-              child: SizedBox(width: 9, height: 9),
-            ),
-          ),
-      ],
     );
   }
 
@@ -1447,102 +1386,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         : value.hour;
     return '$hour:${value.minute.toString().padLeft(2, '0')} '
         '${value.hour >= 12 ? 'PM' : 'AM'}';
-  }
-
-  Future<void> _generateAndPrintSalesReport(
-    BuildContext context,
-    ReportRange range,
-  ) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) =>
-          const Center(child: CircularProgressIndicator(color: Colors.orange)),
-    );
-
-    try {
-      final rows = await widget.controller.loadSalesExport(
-        start: range.start,
-        endExclusive: range.endExclusive,
-      );
-      final periodSales = _orderGroupsFromRows(rows);
-
-      if (periodSales.isEmpty) {
-        if (context.mounted) {
-          Navigator.pop(context);
-          AppToast.error(context, 'No completed sales found for this period.');
-        }
-        return;
-      }
-
-      final entries = periodSales
-          .map(
-            (sale) => SalesReportEntry(
-              orderNumber: sale.shortId,
-              date: sale.eventAt,
-              cashier: sale.createdBy ?? 'Admin',
-              paymentMode: sale.paymentMode,
-              paymentReference: sale.paymentReference,
-              subtotal: sale.subtotal,
-              discount: sale.discount,
-              total: sale.totalAmount,
-            ),
-          )
-          .toList();
-
-      final now = DateTime.now();
-      final bytes = await SalesReportGenerator.generate(
-        period: range.period,
-        periodStart: range.start,
-        periodEnd: range.displayEnd,
-        generatedAt: now,
-        generatedBy: widget.controller.currentUserName ?? 'Admin',
-        sales: entries,
-      );
-
-      if (context.mounted) Navigator.pop(context);
-
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename:
-            'Sales_Report_${range.period}_${range.fileTag}_${now.millisecondsSinceEpoch}.pdf',
-      );
-
-      // Only the CURRENT period counts toward the export reminder.
-      if (range.isCurrent) await _markExported(range.type);
-    } catch (e, stackTrace) {
-      AppLogger.error(
-        'Sales PDF generation failed',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      if (context.mounted) {
-        Navigator.pop(context);
-        AppToast.error(context, AppErrorMapper.unknown);
-      }
-    }
-  }
-
-  Future<void> _markExported(ExportPeriodType type) async {
-    final locId = widget.controller.activeLocationId;
-    if (locId == null) return;
-    final notificationController = NotificationProvider.maybeOf(context);
-    final service = ExportReminderService(
-      supabase: widget.controller.supabase,
-      locationId: locId,
-    );
-    final period = ExportPeriod.current(type);
-    await service.logExport(
-      reportType: 'sales',
-      period: period,
-      exportedBy: widget.controller.currentUserNumericId,
-    );
-    await notificationController?.resolveExportReminder(
-      reportType: 'sales',
-      periodType: type.name,
-      periodKey: period.key,
-    );
-    widget.onExported?.call();
   }
 }
 

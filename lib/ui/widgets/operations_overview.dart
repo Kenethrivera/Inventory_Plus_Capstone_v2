@@ -94,16 +94,29 @@ class OperationsOverview extends StatelessWidget {
             final mainWidth = wide
                 ? limits.maxWidth - sidebarWidth - 24
                 : limits.maxWidth;
-            final main = Column(
+            final salesCard = _salesCard(
+              todayOrders,
+              sales,
+              cash,
+              gcash,
+              mainWidth,
+            );
+            final queueAndActivity = Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _salesCard(todayOrders, sales, cash, gcash, mainWidth),
-                const SizedBox(height: 24),
                 _sectionTitle('Order queue', 'All orders', onOrders),
                 const SizedBox(height: 12),
                 _queue(waiting, preparing, ready, mainWidth),
                 const SizedBox(height: 24),
                 _activity(todayOrders),
+              ],
+            );
+            final main = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                salesCard,
+                const SizedBox(height: 24),
+                queueAndActivity,
               ],
             );
             final aside = _attention(alerts);
@@ -134,9 +147,11 @@ class OperationsOverview extends StatelessWidget {
                     ],
                   )
                 else ...[
-                  main,
+                  salesCard,
                   const SizedBox(height: 24),
                   aside,
+                  const SizedBox(height: 24),
+                  queueAndActivity,
                 ],
               ],
             );
@@ -313,11 +328,12 @@ class OperationsOverview extends StatelessWidget {
 
   Widget _orderCard(CustomerOrder order, String group) {
     final elapsed = _elapsedTime(DateTime.now().difference(order.createdAt));
-    final isSharedOrder = orderNeedsHelper(order) &&
+    final isSharedOrder =
+        orderNeedsHelper(order) &&
         order.items.any((item) => item.requiresLoading);
     final assignedStaff = isSharedOrder
         ? 'Helper: ${order.assignedHelperName?.trim().isNotEmpty == true ? order.assignedHelperName!.trim() : 'Unassigned'}\n'
-          'Bodegero: ${order.assignedBodegeroName?.trim().isNotEmpty == true ? order.assignedBodegeroName!.trim() : 'Unassigned'}'
+              'Bodegero: ${order.assignedBodegeroName?.trim().isNotEmpty == true ? order.assignedBodegeroName!.trim() : 'Unassigned'}'
         : orderAssignedStaffLabel(order);
     final pickedCount = order.items
         .where(
@@ -589,8 +605,10 @@ class OperationsOverview extends StatelessWidget {
     animation: presence ?? _silent,
     builder: (context, _) {
       final people = (presence?.activeStaff ?? const <Map<String, dynamic>>[])
-          .where((person) =>
-              person['user_role']?.toString().trim().toLowerCase() != 'admin')
+          .where(
+            (person) =>
+                person['user_role']?.toString().trim().toLowerCase() != 'admin',
+          )
           .toList(growable: false);
       return _panel(
         Column(
@@ -681,11 +699,7 @@ class OperationsOverview extends StatelessWidget {
                               ],
                             ),
                           ),
-                          Icon(
-                            Icons.circle,
-                            size: 9,
-                            color: statusColor,
-                          ),
+                          Icon(Icons.circle, size: 9, color: statusColor),
                           const SizedBox(width: 6),
                           Text(
                             statusLabel,
