@@ -82,7 +82,8 @@ class PosCartPage extends StatefulWidget {
 
 class _PosCartPageState extends State<PosCartPage> {
   String _searchQuery = '';
-  final TextEditingController _productSearchController = TextEditingController();
+  final TextEditingController _productSearchController =
+      TextEditingController();
   String _selectedCategory = 'All';
   final Map<String, double> _cart = {};
   bool _isProcessingCart = false;
@@ -330,7 +331,11 @@ class _PosCartPageState extends State<PosCartPage> {
         );
       }
     } catch (e, stackTrace) {
-      AppLogger.error('Order submission failed', error: e, stackTrace: stackTrace);
+      AppLogger.error(
+        'Order submission failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         AppToast.error(
           context,
@@ -424,39 +429,39 @@ class _PosCartPageState extends State<PosCartPage> {
   Future<void> _runSoloCheckout(CustomerOrder order) async {
     if (!_preparingOrderIds.add(order.id)) return;
     try {
-    final result = await showOrderChecklistModal(
-      context: context,
-      order: order,
-      controller: widget.controller,
-      finishLabel: "PROCEED TO PAYMENT",
-      onCancelOrder: () => _cancelOrderAndRestoreCart(order),
-    );
-    if (!mounted) return;
+      final result = await showOrderChecklistModal(
+        context: context,
+        order: order,
+        controller: widget.controller,
+        finishLabel: "PROCEED TO PAYMENT",
+        onCancelOrder: () => _cancelOrderAndRestoreCart(order),
+      );
+      if (!mounted) return;
 
-    switch (result) {
-      case ChecklistResult.finished:
-        await widget.controller.updateOrderStatus(
-          order.id,
-          'prepared',
-          expectedStatus: 'solo_picking',
-        );
-        var paid = false;
-        await _completeOrderFlow(order, onCompleted: () => paid = true);
-        if (!paid && mounted) {
-          AppToast.success(
-            context,
-            "Payment not completed — order is waiting in Pending Orders",
+      switch (result) {
+        case ChecklistResult.finished:
+          await widget.controller.updateOrderStatus(
+            order.id,
+            'prepared',
+            expectedStatus: 'solo_picking',
           );
-        }
-        break;
-      case ChecklistResult.dismissed:
-        await widget.controller.updateOrderStatus(order.id, 'pending');
-        if (mounted)
-          AppToast.success(context, "Order moved to the Helper queue");
-        break;
-      case ChecklistResult.cancelled:
-        break;
-    }
+          var paid = false;
+          await _completeOrderFlow(order, onCompleted: () => paid = true);
+          if (!paid && mounted) {
+            AppToast.success(
+              context,
+              "Payment not completed — order is waiting in Pending Orders",
+            );
+          }
+          break;
+        case ChecklistResult.dismissed:
+          await widget.controller.updateOrderStatus(order.id, 'pending');
+          if (mounted)
+            AppToast.success(context, "Order moved to the Helper queue");
+          break;
+        case ChecklistResult.cancelled:
+          break;
+      }
     } catch (error, stackTrace) {
       AppLogger.error(
         'Solo preparation failed',
@@ -480,90 +485,95 @@ class _PosCartPageState extends State<PosCartPage> {
   }) async {
     if (!_cancellingOrderIds.add(order.id)) return false;
     try {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AppDialog(
-        icon: LucideIcons.undo2,
-        color: Colors.red.shade600,
-        title: "Cancel & Edit This Order?",
-        subtitle: "#${order.id.substring(0, 8).toUpperCase()}",
-        child: Text(
-          fromQueue
-              ? "This cancels the order and puts its items back in your cart. "
-                    "If your helper is already picking it, let them know."
-              : "This cancels the order and puts its items back in your cart so "
-                    "you can change quantities before checking out again.",
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AppDialog(
+          icon: LucideIcons.undo2,
+          color: Colors.red.shade600,
+          title: "Cancel & Edit This Order?",
+          subtitle: "#${order.id.substring(0, 8).toUpperCase()}",
+          child: Text(
+            fromQueue
+                ? "This cancels the order and puts its items back in your cart. "
+                      "If your helper is already picking it, let them know."
+                : "This cancels the order and puts its items back in your cart so "
+                      "you can change quantities before checking out again.",
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+          ),
+          actions: [
+            OutlinedButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.black87,
+                side: BorderSide(color: Colors.grey.shade300),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text("Keep It"),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text(
+                "Cancel Order",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
         ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.black87,
-              side: BorderSide(color: Colors.grey.shade300),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            child: const Text("Keep It"),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade600,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            child: const Text(
-              "Cancel Order",
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return false;
-
-    try {
-      final notificationController = NotificationProvider.maybeOf(context);
-      await widget.controller.cancelOrder(order);
-      await notificationController?.resolveOrderWorkflowNotification(
-        orderId: order.id,
       );
-      if (!mounted) return true;
-      setState(() {
-        _invalidateDiscountApproval();
-        for (final item in order.items) {
-          _cart[item.productId] = (_cart[item.productId] ?? 0) + item.quantity;
-        }
-        if (order.discountAmount > 0 && _discountValue == 0) {
-          _discountValue = order.discountAmount;
-          _isDiscountPercentage = false;
-        }
-      });
-      AppToast.success(
-        context,
-        "Order cancelled — items are back in your cart",
-      );
-      return true;
-    } catch (e, stackTrace) {
-      AppLogger.error('Order cancellation failed', error: e, stackTrace: stackTrace);
-      if (mounted) {
-        AppToast.error(
-          context,
-          AppErrorMapper.message(e, fallback: AppErrorCategory.dataSave),
+
+      if (confirmed != true) return false;
+
+      try {
+        final notificationController = NotificationProvider.maybeOf(context);
+        await widget.controller.cancelOrder(order);
+        await notificationController?.resolveOrderWorkflowNotification(
+          orderId: order.id,
         );
+        if (!mounted) return true;
+        setState(() {
+          _invalidateDiscountApproval();
+          for (final item in order.items) {
+            _cart[item.productId] =
+                (_cart[item.productId] ?? 0) + item.quantity;
+          }
+          if (order.discountAmount > 0 && _discountValue == 0) {
+            _discountValue = order.discountAmount;
+            _isDiscountPercentage = false;
+          }
+        });
+        AppToast.success(
+          context,
+          "Order cancelled — items are back in your cart",
+        );
+        return true;
+      } catch (e, stackTrace) {
+        AppLogger.error(
+          'Order cancellation failed',
+          error: e,
+          stackTrace: stackTrace,
+        );
+        if (mounted) {
+          AppToast.error(
+            context,
+            AppErrorMapper.message(e, fallback: AppErrorCategory.dataSave),
+          );
+        }
+        return false;
       }
-      return false;
-    }
     } finally {
       _cancellingOrderIds.remove(order.id);
     }
@@ -665,10 +675,7 @@ class _PosCartPageState extends State<PosCartPage> {
       if (mounted) {
         AppToast.error(
           context,
-          AppErrorMapper.message(
-            error,
-            fallback: AppErrorCategory.dataSave,
-          ),
+          AppErrorMapper.message(error, fallback: AppErrorCategory.dataSave),
         );
       }
     } finally {
@@ -972,11 +979,15 @@ class _PosCartPageState extends State<PosCartPage> {
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFFC8BFB8)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFC8BFB8),
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFFC8BFB8)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFC8BFB8),
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -1007,11 +1018,15 @@ class _PosCartPageState extends State<PosCartPage> {
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFFC8BFB8)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFC8BFB8),
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFFC8BFB8)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFC8BFB8),
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -1075,8 +1090,8 @@ class _PosCartPageState extends State<PosCartPage> {
     final backupGcashNumber = widget.controller.alternateGcashNumber;
     final backupGcashQrUrl = widget.controller.alternateGcashQrUrl;
     final backupConfigured = widget.controller.hasAlternateGcashAccount;
-    final backupAvailable = backupConfigured &&
-        await widget.controller.canRecordGcashDestination();
+    final backupAvailable =
+        backupConfigured && await widget.controller.canRecordGcashDestination();
     if (!mounted) return null;
     String paymentMode = 'Cash';
     bool useBackupGcash = false;
@@ -1095,293 +1110,285 @@ class _PosCartPageState extends State<PosCartPage> {
         barrierDismissible: false,
         builder: (dialogContext) => StatefulBuilder(
           builder: (dialogContext, setDialogState) {
-          double change = cashReceived - totalDue;
-          if (change < 0) change = 0;
+            double change = cashReceived - totalDue;
+            if (change < 0) change = 0;
 
-          // --- NEW: Calculate limits dynamically ---
-          double maxAllowedCash = (totalDue / 1000).ceil() * 1000.0;
-          if (maxAllowedCash == 0) maxAllowedCash = 1000.0;
+            // --- NEW: Calculate limits dynamically ---
+            double maxAllowedCash = (totalDue / 1000).ceil() * 1000.0;
+            if (maxAllowedCash == 0) maxAllowedCash = 1000.0;
 
-          bool isCashExcessive = cashReceived > maxAllowedCash;
-          bool isCashInsufficient = cashReceived > 0 && cashReceived < totalDue;
-          bool hasError = isCashExcessive || isCashInsufficient;
-          // -----------------------------------------
+            bool isCashExcessive = cashReceived > maxAllowedCash;
+            bool isCashInsufficient =
+                cashReceived > 0 && cashReceived < totalDue;
+            bool hasError = isCashExcessive || isCashInsufficient;
+            // -----------------------------------------
 
-          String cashText(double value) => value == value.roundToDouble()
-              ? value.toStringAsFixed(0)
-              : value.toStringAsFixed(2);
+            String cashText(double value) => value == value.roundToDouble()
+                ? value.toStringAsFixed(0)
+                : value.toStringAsFixed(2);
 
-          bool canAddCash(int amount) {
-            final current = double.tryParse(cashCtrl.text.trim()) ?? 0.0;
-            final next = current + amount;
-            return !isSubmitting &&
-                !orderAlreadyCompleted &&
-                next <= maxAllowedCash &&
-                cashText(next).length <= 7;
-          }
-
-          void addCash(int amount) {
-            final current = double.tryParse(cashCtrl.text.trim()) ?? 0.0;
-            final next = current + amount;
-            final text = cashText(next);
-            cashCtrl.value = TextEditingValue(
-              text: text,
-              selection: TextSelection.collapsed(offset: text.length),
-            );
-            setDialogState(() => cashReceived = next);
-          }
-
-          Widget buildPaymentTile(String title, IconData icon) {
-            bool isSelected = paymentMode == title;
-            return Expanded(
-              child: GestureDetector(
-                onTap: isSubmitting || orderAlreadyCompleted
-                    ? null
-                    : () => setDialogState(() {
-                        paymentMode = title;
-                        referenceError = null;
-                        paymentError = null;
-                      }),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isSelected ? _cashierTint : Colors.white,
-                    border: Border.all(
-                      color: isSelected ? _cashierAccent : Colors.grey.shade300,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(
-                        icon,
-                        color: isSelected ? _cashierAccent : Colors.grey.shade400,
-                        size: 20,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: isSelected
-                              ? _cashierAccent
-                              : Colors.grey.shade600,
-                          fontSize: 12,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }
-
-          void selectGcashDestination(bool backup) {
-            setDialogState(() {
-              useBackupGcash = backup;
-              refCtrl.clear();
-              referenceError = null;
-              paymentError = null;
-            });
-          }
-
-          Future<void> submitPayment() async {
-            String? reference;
-            if (paymentMode == 'GCash') {
-              final selectedQr = useBackupGcash
-                  ? backupGcashQrUrl
-                  : primaryGcashQrUrl;
-              if (selectedQr.isEmpty) {
-                setDialogState(() => paymentError =
-                    'No QR is configured for this GCash account.');
-                return;
-              }
-              try {
-                reference = normalizeGcashReference(refCtrl.text);
-              } on FormatException catch (error) {
-                setDialogState(() => referenceError = error.message);
-                refFocusNode.requestFocus();
-                return;
-              }
+            bool canAddCash(int amount) {
+              final current = double.tryParse(cashCtrl.text.trim()) ?? 0.0;
+              final next = current + amount;
+              return !isSubmitting &&
+                  !orderAlreadyCompleted &&
+                  next <= maxAllowedCash &&
+                  cashText(next).length <= 7;
             }
 
-            final submittedCash = paymentMode == 'Cash'
-                ? cashReceived
-                : totalDue;
-            final submittedChange = paymentMode == 'Cash'
-                ? cashReceived - totalDue
-                : 0.0;
-            setDialogState(() {
-              isSubmitting = true;
-              referenceError = null;
-              paymentError = null;
-            });
-
-            try {
-              final times = await widget.controller.completeOrder(
-                order,
-                paymentMode: paymentMode,
-                cashGiven: submittedCash,
-                changeAmount: submittedChange,
-                paymentReference: reference,
-                gcashAccountSlot: paymentMode == 'GCash'
-                    ? (useBackupGcash ? 'alternate' : 'primary')
-                    : null,
-                gcashDestinationName: paymentMode == 'GCash'
-                    ? (useBackupGcash
-                          ? backupGcashAccountName
-                          : primaryGcashAccountName)
-                    : null,
-                gcashDestinationNumber: paymentMode == 'GCash'
-                    ? (useBackupGcash ? backupGcashNumber : primaryGcashNumber)
-                    : null,
+            void addCash(int amount) {
+              final current = double.tryParse(cashCtrl.text.trim()) ?? 0.0;
+              final next = current + amount;
+              final text = cashText(next);
+              cashCtrl.value = TextEditingValue(
+                text: text,
+                selection: TextSelection.collapsed(offset: text.length),
               );
-              if (!dialogContext.mounted) return;
-              if (times == null) {
-                setDialogState(() {
-                  isSubmitting = false;
-                  paymentError = 'Payment is already being processed.';
-                });
-                return;
+              setDialogState(() => cashReceived = next);
+            }
+
+            Widget buildPaymentTile(String title, IconData icon) {
+              bool isSelected = paymentMode == title;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: isSubmitting || orderAlreadyCompleted
+                      ? null
+                      : () => setDialogState(() {
+                          paymentMode = title;
+                          referenceError = null;
+                          paymentError = null;
+                        }),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: isSelected ? _cashierTint : Colors.white,
+                      border: Border.all(
+                        color: isSelected
+                            ? _cashierAccent
+                            : Colors.grey.shade300,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          icon,
+                          color: isSelected
+                              ? _cashierAccent
+                              : Colors.grey.shade400,
+                          size: 20,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: isSelected
+                                ? _cashierAccent
+                                : Colors.grey.shade600,
+                            fontSize: 12,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            void selectGcashDestination(bool backup) {
+              setDialogState(() {
+                useBackupGcash = backup;
+                refCtrl.clear();
+                referenceError = null;
+                paymentError = null;
+              });
+            }
+
+            Future<void> submitPayment() async {
+              String? reference;
+              if (paymentMode == 'GCash') {
+                final selectedQr = useBackupGcash
+                    ? backupGcashQrUrl
+                    : primaryGcashQrUrl;
+                if (selectedQr.isEmpty) {
+                  setDialogState(
+                    () => paymentError =
+                        'No QR is configured for this GCash account.',
+                  );
+                  return;
+                }
+                try {
+                  reference = normalizeGcashReference(refCtrl.text);
+                } on FormatException catch (error) {
+                  setDialogState(() => referenceError = error.message);
+                  refFocusNode.requestFocus();
+                  return;
+                }
               }
 
-              Navigator.pop(
-                dialogContext,
-                _CompletedPayment(
+              final submittedCash = paymentMode == 'Cash'
+                  ? cashReceived
+                  : totalDue;
+              final submittedChange = paymentMode == 'Cash'
+                  ? cashReceived - totalDue
+                  : 0.0;
+              setDialogState(() {
+                isSubmitting = true;
+                referenceError = null;
+                paymentError = null;
+              });
+
+              try {
+                final times = await widget.controller.completeOrder(
+                  order,
                   paymentMode: paymentMode,
-                  cashReceived: submittedCash,
-                  change: submittedChange,
-                  reference: reference,
+                  cashGiven: submittedCash,
+                  changeAmount: submittedChange,
+                  paymentReference: reference,
+                  gcashAccountSlot: paymentMode == 'GCash'
+                      ? (useBackupGcash ? 'alternate' : 'primary')
+                      : null,
                   gcashDestinationName: paymentMode == 'GCash'
                       ? (useBackupGcash
                             ? backupGcashAccountName
                             : primaryGcashAccountName)
                       : null,
                   gcashDestinationNumber: paymentMode == 'GCash'
-                      ? (useBackupGcash ? backupGcashNumber : primaryGcashNumber)
+                      ? (useBackupGcash
+                            ? backupGcashNumber
+                            : primaryGcashNumber)
                       : null,
-                  times: times,
-                ),
-              );
-            } catch (error, stackTrace) {
-              AppLogger.error(
-                'Order completion failed',
-                error: error,
-                stackTrace: stackTrace,
-              );
-              if (!dialogContext.mounted) return;
-
-              final code = error is AppUserFacingException
-                  ? error.code
-                  : null;
-              if (code == AppUserFacingErrorCode.duplicatePaymentReference) {
-                setDialogState(() {
-                  isSubmitting = false;
-                  referenceError =
-                      'This GCash reference has already been used. Enter a unique reference number.';
-                });
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (dialogContext.mounted && refFocusNode.canRequestFocus) {
-                    refFocusNode.requestFocus();
-                  }
-                });
-                return;
-              }
-
-              if (code == AppUserFacingErrorCode.orderAlreadyCompleted) {
-                setDialogState(() {
-                  isSubmitting = false;
-                  orderAlreadyCompleted = true;
-                  paymentError = 'This order has already been completed.';
-                });
-                return;
-              }
-
-              setDialogState(() {
-                isSubmitting = false;
-                paymentError = AppErrorMapper.message(
-                  error,
-                  fallback: AppErrorCategory.dataSave,
                 );
-              });
+                if (!dialogContext.mounted) return;
+                if (times == null) {
+                  setDialogState(() {
+                    isSubmitting = false;
+                    paymentError = 'Payment is already being processed.';
+                  });
+                  return;
+                }
+
+                Navigator.pop(
+                  dialogContext,
+                  _CompletedPayment(
+                    paymentMode: paymentMode,
+                    cashReceived: submittedCash,
+                    change: submittedChange,
+                    reference: reference,
+                    gcashDestinationName: paymentMode == 'GCash'
+                        ? (useBackupGcash
+                              ? backupGcashAccountName
+                              : primaryGcashAccountName)
+                        : null,
+                    gcashDestinationNumber: paymentMode == 'GCash'
+                        ? (useBackupGcash
+                              ? backupGcashNumber
+                              : primaryGcashNumber)
+                        : null,
+                    times: times,
+                  ),
+                );
+              } catch (error, stackTrace) {
+                AppLogger.error(
+                  'Order completion failed',
+                  error: error,
+                  stackTrace: stackTrace,
+                );
+                if (!dialogContext.mounted) return;
+
+                final code = error is AppUserFacingException
+                    ? error.code
+                    : null;
+                if (code == AppUserFacingErrorCode.duplicatePaymentReference) {
+                  setDialogState(() {
+                    isSubmitting = false;
+                    referenceError =
+                        'This GCash reference has already been used. Enter a unique reference number.';
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (dialogContext.mounted && refFocusNode.canRequestFocus) {
+                      refFocusNode.requestFocus();
+                    }
+                  });
+                  return;
+                }
+
+                if (code == AppUserFacingErrorCode.orderAlreadyCompleted) {
+                  setDialogState(() {
+                    isSubmitting = false;
+                    orderAlreadyCompleted = true;
+                    paymentError = 'This order has already been completed.';
+                  });
+                  return;
+                }
+
+                setDialogState(() {
+                  isSubmitting = false;
+                  paymentError = AppErrorMapper.message(
+                    error,
+                    fallback: AppErrorCategory.dataSave,
+                  );
+                });
+              }
             }
-          }
 
-          String qtyStr = totalQty.truncateToDouble() == totalQty
-              ? totalQty.toInt().toString()
-              : totalQty.toStringAsFixed(2);
+            String qtyStr = totalQty.truncateToDouble() == totalQty
+                ? totalQty.toInt().toString()
+                : totalQty.toStringAsFixed(2);
 
-          return Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            backgroundColor: Colors.white,
-            child: SizedBox(
-              width: 400,
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Confirm Order",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: _cashierInk,
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              backgroundColor: Colors.white,
+              child: SizedBox(
+                width: 400,
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Confirm Order",
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: _cashierInk,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "$itemsCount items - $qtyStr total qty",
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 13,
+                        const SizedBox(height: 4),
+                        Text(
+                          "$itemsCount items - $qtyStr total qty",
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 20),
+                        const SizedBox(height: 20),
 
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade200),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'Subtotal',
-                                  style: TextStyle(fontSize: 12),
-                                ),
-                                Text(
-                                  '₱${subtotal.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            if (discountAmt > 0) ...[
-                              const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade200),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   const Text(
-                                    'Discount',
+                                    'Subtotal',
                                     style: TextStyle(fontSize: 12),
                                   ),
                                   Text(
-                                    "-₱${discountAmt.toStringAsFixed(2)}",
+                                    '₱${subtotal.toStringAsFixed(2)}',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
@@ -1389,548 +1396,599 @@ class _PosCartPageState extends State<PosCartPage> {
                                   ),
                                 ],
                               ),
-                            ],
 
-                            const SizedBox(height: 12),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'TOTAL',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                Text(
-                                  "₱${totalDue.toStringAsFixed(2)}",
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-                      Text(
-                        "MODE OF PAYMENT",
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade500,
-                          letterSpacing: 1.0,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          buildPaymentTile('Cash', LucideIcons.banknote),
-                          const SizedBox(width: 8),
-                          buildPaymentTile('GCash', LucideIcons.smartphone),
-                        ],
-                      ),
-
-                      if (paymentMode == 'Cash') ...[
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            const Text(
-                              "Cash Received",
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: TextField(
-                                controller: cashCtrl,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                inputFormatters: [
-                                  // --- NEW: Block physically typing too many numbers ---
-                                  LengthLimitingTextInputFormatter(7),
-                                  FilteringTextInputFormatter.allow(
-                                    RegExp(
-                                      r'^\d*\.?\d{0,2}',
-                                    ), // Only allows 2 decimal places
-                                  ),
-                                ],
-                                textAlign: TextAlign.right,
-                                style: TextStyle(
-                                  color: hasError ? Colors.red : Colors.black87,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: "0.00",
-                                  hintStyle: TextStyle(
-                                    color: Colors.grey.shade400,
-                                    fontWeight: FontWeight.normal,
-                                  ),
-                                  filled: true,
-                                  fillColor: hasError
-                                      ? Colors.red.shade50
-                                      : Colors.transparent,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(6),
-                                    borderSide: BorderSide(
-                                      color: Colors.grey.shade400,
-                                    ),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(6),
-                                    borderSide: BorderSide(
-                                      color: hasError
-                                          ? Colors.red.shade300
-                                          : Colors.grey.shade400,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(6),
-                                    borderSide: BorderSide(
-                                      color: hasError
-                                          ? Colors.red
-                                          : _cashierAccent,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  isDense: true,
-                                ),
-                                onChanged: (val) {
-                                  setDialogState(() {
-                                    cashReceived = double.tryParse(val) ?? 0.0;
-                                  });
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            for (final amount in const [1000, 500, 100, 50]) ...[
-                              if (amount != 1000) const SizedBox(width: 6),
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: canAddCash(amount)
-                                      ? () => addCash(amount)
-                                      : null,
-                                  style: OutlinedButton.styleFrom(
-                                    minimumSize: const Size(0, 36),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    foregroundColor: _cashierAccent,
-                                    side: const BorderSide(color: _cashierBorder),
-                                  ),
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text('+$amount'),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-
-                        // --- NEW: Real-time red error UI ---
-                        if (isCashExcessive)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: Text(
-                                "Max allowed is ₱${maxAllowedCash.toStringAsFixed(0)}",
-                                style: const TextStyle(
-                                  color: Colors.red,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          )
-                        else if (isCashInsufficient)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: Text(
-                                "Insufficient cash",
-                                style: const TextStyle(
-                                  color: Colors.red,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-
-                        // -------------------------------------
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              "Change",
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green,
-                              ),
-                            ),
-                            Text(
-                              "₱${change.toStringAsFixed(2)}",
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ] else if (paymentMode == 'GCash') ...[
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: _cashierTint,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFF2D4C4)),
-                          ),
-                          child: Column(
-                            children: [
-                              const Text(
-                                "Scan to Pay with GCash",
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: _cashierAccent,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              if (backupAvailable) ...[
-                                Wrap(
-                                  alignment: WrapAlignment.center,
-                                  spacing: 8,
+                              if (discountAmt > 0) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
-                                    ChoiceChip(
-                                      label: const Text('Primary QR'),
-                                      selected: !useBackupGcash,
-                                      onSelected: isSubmitting || orderAlreadyCompleted
-                                          ? null
-                                          : (_) => selectGcashDestination(false),
+                                    const Text(
+                                      'Discount',
+                                      style: TextStyle(fontSize: 12),
                                     ),
-                                    ChoiceChip(
-                                      label: const Text('Backup QR'),
-                                      selected: useBackupGcash,
-                                      onSelected: isSubmitting || orderAlreadyCompleted
-                                          ? null
-                                          : (_) => selectGcashDestination(true),
+                                    Text(
+                                      "-₱${discountAmt.toStringAsFixed(2)}",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 6),
-                                const Text(
-                                  'Use the backup if the primary receiving account cannot accept payment.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: 11, color: _cashierAccent),
-                                ),
-                                const SizedBox(height: 12),
                               ],
-                              if (backupConfigured && !backupAvailable)
-                                const Padding(
-                                  padding: EdgeInsets.only(bottom: 12),
-                                  child: Text(
-                                    'Backup QR is unavailable. Ask an administrator to finish payment setup.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(fontSize: 11, color: _cashierAccent),
-                                  ),
-                                ),
-                              if ((useBackupGcash
-                                      ? backupGcashAccountName
-                                      : primaryGcashAccountName)
-                                  .isNotEmpty)
-                                Text(
-                                  useBackupGcash
-                                      ? backupGcashAccountName
-                                      : primaryGcashAccountName,
-                                  style: const TextStyle(fontWeight: FontWeight.w700),
-                                ),
-                              if ((useBackupGcash
-                                      ? backupGcashNumber
-                                      : primaryGcashNumber)
-                                  .isNotEmpty)
-                                Text(
-                                  useBackupGcash
-                                      ? backupGcashNumber
-                                      : primaryGcashNumber,
-                                ),
+
                               const SizedBox(height: 12),
-                              (useBackupGcash
-                                      ? backupGcashQrUrl
-                                      : primaryGcashQrUrl)
-                                  .isNotEmpty
-                                  ? GcashQrImage(
-                                      imageUrl: useBackupGcash
-                                          ? backupGcashQrUrl
-                                          : primaryGcashQrUrl,
-                                    )
-                                  : Container(
-                                      height: 180,
-                                      width: 180,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            LucideIcons.imageOff,
-                                            color: Colors.grey.shade400,
-                                            size: 32,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          const Text(
-                                            "No QR Code Set",
-                                            style: TextStyle(
-                                              color: Colors.redAccent,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'TOTAL',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
                                     ),
-                              // --------------------------------------------------
-                              const SizedBox(height: 12),
+                                  ),
+                                  Text(
+                                    "₱${totalDue.toStringAsFixed(2)}",
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+                        Text(
+                          "MODE OF PAYMENT",
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade500,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            buildPaymentTile('Cash', LucideIcons.banknote),
+                            const SizedBox(width: 8),
+                            buildPaymentTile('GCash', LucideIcons.smartphone),
+                          ],
+                        ),
+
+                        if (paymentMode == 'Cash') ...[
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
                               const Text(
-                                "Please wait for the customer to confirm transfer.",
+                                "Cash Received",
                                 style: TextStyle(
-                                  fontSize: 11,
-                                  color: _cashierAccent,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
                                 ),
                               ),
-                              const SizedBox(height: 16),
-                              const Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  'GCash Reference Number',
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: TextField(
+                                  controller: cashCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  inputFormatters: [
+                                    // --- NEW: Block physically typing too many numbers ---
+                                    LengthLimitingTextInputFormatter(7),
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(
+                                        r'^\d*\.?\d{0,2}',
+                                      ), // Only allows 2 decimal places
+                                    ),
+                                  ],
+                                  textAlign: TextAlign.right,
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    color: hasError
+                                        ? Colors.red
+                                        : Colors.black87,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                  decoration: InputDecoration(
+                                    hintText: "0.00",
+                                    hintStyle: TextStyle(
+                                      color: Colors.grey.shade400,
+                                      fontWeight: FontWeight.normal,
+                                    ),
+                                    filled: true,
+                                    fillColor: hasError
+                                        ? Colors.red.shade50
+                                        : Colors.transparent,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                      borderSide: BorderSide(
+                                        color: hasError
+                                            ? Colors.red.shade300
+                                            : Colors.grey.shade400,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                      borderSide: BorderSide(
+                                        color: hasError
+                                            ? Colors.red
+                                            : _cashierAccent,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    isDense: true,
+                                  ),
+                                  onChanged: (val) {
+                                    setDialogState(() {
+                                      cashReceived =
+                                          double.tryParse(val) ?? 0.0;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              for (final amount in const [
+                                1000,
+                                500,
+                                100,
+                                50,
+                              ]) ...[
+                                if (amount != 1000) const SizedBox(width: 6),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: canAddCash(amount)
+                                        ? () => addCash(amount)
+                                        : null,
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size(0, 36),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                      foregroundColor: _cashierAccent,
+                                      side: const BorderSide(
+                                        color: _cashierBorder,
+                                      ),
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text('+$amount'),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+
+                          // --- NEW: Real-time red error UI ---
+                          if (isCashExcessive)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  "Max allowed is ₱${maxAllowedCash.toStringAsFixed(0)}",
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (isCashInsufficient)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  "Insufficient cash",
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // -------------------------------------
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                "Change",
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                              Text(
+                                "₱${change.toStringAsFixed(2)}",
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else if (paymentMode == 'GCash') ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: _cashierTint,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: const Color(0xFFF2D4C4),
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                const Text(
+                                  "Scan to Pay with GCash",
+                                  style: TextStyle(
+                                    fontSize: 13,
                                     fontWeight: FontWeight.bold,
                                     color: _cashierAccent,
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              TextField(
-                                controller: refCtrl,
-                                focusNode: refFocusNode,
-                                keyboardType: TextInputType.number,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                  LengthLimitingTextInputFormatter(13),
-                                ],
-                                onChanged: (_) {
-                                  setDialogState(() {
-                                    referenceError = null;
-                                    if (!orderAlreadyCompleted) {
-                                      paymentError = null;
-                                    }
-                                  });
-                                },
-                                decoration: InputDecoration(
-                                  hintText: 'GCash Reference Number',
-                                  helperText: 'Enter the full reference number',
-                                  errorText: referenceError,
-                                  hintStyle: TextStyle(
-                                    color: Colors.grey.shade500,
-                                    fontSize: 12,
+                                const SizedBox(height: 12),
+                                if (backupAvailable) ...[
+                                  Wrap(
+                                    alignment: WrapAlignment.center,
+                                    spacing: 8,
+                                    children: [
+                                      ChoiceChip(
+                                        label: const Text('Primary QR'),
+                                        selected: !useBackupGcash,
+                                        onSelected:
+                                            isSubmitting ||
+                                                orderAlreadyCompleted
+                                            ? null
+                                            : (_) =>
+                                                  selectGcashDestination(false),
+                                      ),
+                                      ChoiceChip(
+                                        label: const Text('Backup QR'),
+                                        selected: useBackupGcash,
+                                        onSelected:
+                                            isSubmitting ||
+                                                orderAlreadyCompleted
+                                            ? null
+                                            : (_) =>
+                                                  selectGcashDestination(true),
+                                      ),
+                                    ],
                                   ),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                  prefixIcon: const Icon(
-                                    LucideIcons.hash,
-                                    size: 16,
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'Use the backup if the primary receiving account cannot accept payment.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: _cashierAccent,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (backupConfigured && !backupAvailable)
+                                  const Padding(
+                                    padding: EdgeInsets.only(bottom: 12),
+                                    child: Text(
+                                      'Backup QR is unavailable. Ask an administrator to finish payment setup.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: _cashierAccent,
+                                      ),
+                                    ),
+                                  ),
+                                if ((useBackupGcash
+                                        ? backupGcashAccountName
+                                        : primaryGcashAccountName)
+                                    .isNotEmpty)
+                                  Text(
+                                    useBackupGcash
+                                        ? backupGcashAccountName
+                                        : primaryGcashAccountName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                if ((useBackupGcash
+                                        ? backupGcashNumber
+                                        : primaryGcashNumber)
+                                    .isNotEmpty)
+                                  Text(
+                                    useBackupGcash
+                                        ? backupGcashNumber
+                                        : primaryGcashNumber,
+                                  ),
+                                const SizedBox(height: 12),
+                                (useBackupGcash
+                                            ? backupGcashQrUrl
+                                            : primaryGcashQrUrl)
+                                        .isNotEmpty
+                                    ? GcashQrImage(
+                                        imageUrl: useBackupGcash
+                                            ? backupGcashQrUrl
+                                            : primaryGcashQrUrl,
+                                      )
+                                    : Container(
+                                        height: 180,
+                                        width: 180,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              LucideIcons.imageOff,
+                                              color: Colors.grey.shade400,
+                                              size: 32,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            const Text(
+                                              "No QR Code Set",
+                                              style: TextStyle(
+                                                color: Colors.redAccent,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                // --------------------------------------------------
+                                const SizedBox(height: 12),
+                                const Text(
+                                  "Please wait for the customer to confirm transfer.",
+                                  style: TextStyle(
+                                    fontSize: 11,
                                     color: _cashierAccent,
                                   ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide(
-                                      color: const Color(0xFFE6B7A2),
-                                    ),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide(
-                                      color: const Color(0xFFE6B7A2),
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: const BorderSide(
+                                ),
+                                const SizedBox(height: 16),
+                                const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'GCash Reference Number',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
                                       color: _cashierAccent,
-                                      width: 2,
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      if (paymentError != null) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.red.shade200),
-                          ),
-                          child: Text(
-                            paymentError!,
-                            style: TextStyle(
-                              color: Colors.red.shade700,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      const SizedBox(height: 24),
-                      Row(
-                        children: [
-                          const Icon(
-                            LucideIcons.check,
-                            color: Colors.green,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Payment is received',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(
-                            LucideIcons.check,
-                            color: Colors.green,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Receipt will be generated',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: isSubmitting
-                                  ? null
-                                  : () => Navigator.pop(dialogContext, null),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.black87,
-                                side: BorderSide(color: Colors.grey.shade300),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                              ),
-                              child: const Text("Cancel"),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton(
-                              // --- NEW: Disable button dynamically if rules are broken ---
-                              onPressed:
-                                  isSubmitting ||
-                                      orderAlreadyCompleted ||
-                                      (paymentMode == 'Cash' && hasError)
-                                  ? null
-                                  : submitPayment,
-                              // -----------------------------------------------------------
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                disabledBackgroundColor: Colors.green.shade200,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                elevation: 0,
-                              ),
-                              child: isSubmitting
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text(
-                                      "Confirm",
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: refCtrl,
+                                  focusNode: refFocusNode,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                    LengthLimitingTextInputFormatter(13),
+                                  ],
+                                  onChanged: (_) {
+                                    setDialogState(() {
+                                      referenceError = null;
+                                      if (!orderAlreadyCompleted) {
+                                        paymentError = null;
+                                      }
+                                    });
+                                  },
+                                  decoration: InputDecoration(
+                                    hintText: 'GCash Reference Number',
+                                    helperText:
+                                        'Enter the full reference number',
+                                    errorText: referenceError,
+                                    hintStyle: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 12,
+                                    ),
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    prefixIcon: const Icon(
+                                      LucideIcons.hash,
+                                      size: 16,
+                                      color: _cashierAccent,
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                        color: const Color(0xFFE6B7A2),
                                       ),
                                     ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                        color: const Color(0xFFE6B7A2),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: const BorderSide(
+                                        color: _cashierAccent,
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
-                      ),
-                    ],
+
+                        if (paymentError != null) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: Text(
+                              paymentError!,
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            const Icon(
+                              LucideIcons.check,
+                              color: Colors.green,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Payment is received',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(
+                              LucideIcons.check,
+                              color: Colors.green,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Receipt will be generated',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: isSubmitting
+                                    ? null
+                                    : () => Navigator.pop(dialogContext, null),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.black87,
+                                  side: BorderSide(color: Colors.grey.shade300),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                ),
+                                child: const Text("Cancel"),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
+                                // --- NEW: Disable button dynamically if rules are broken ---
+                                onPressed:
+                                    isSubmitting ||
+                                        orderAlreadyCompleted ||
+                                        (paymentMode == 'Cash' && hasError)
+                                    ? null
+                                    : submitPayment,
+                                // -----------------------------------------------------------
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  disabledBackgroundColor:
+                                      Colors.green.shade200,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: isSubmitting
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Text(
+                                        "Confirm",
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
+            );
           },
         ),
       );
@@ -3257,7 +3315,9 @@ class _PosCartPageState extends State<PosCartPage> {
                     builder: (context, snapshot) {
                       if (!snapshot.hasData) {
                         return const Center(
-                          child: CircularProgressIndicator(color: _cashierAccent),
+                          child: CircularProgressIndicator(
+                            color: _cashierAccent,
+                          ),
                         );
                       }
                       final pendingOrders = snapshot.data!
@@ -3378,7 +3438,7 @@ class _PosCartPageState extends State<PosCartPage> {
                                           ),
                                         ),
                                         title: Text(
-                                          'Order #${o.id.substring(0, 8)}',
+                                          'Order #${(o.id.length <= 8 ? o.id : o.id.substring(0, 8)).toUpperCase()}',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 14,
@@ -3644,11 +3704,7 @@ class _PosCartPageState extends State<PosCartPage> {
               ),
             ),
             const SizedBox(height: 8),
-            const Icon(
-              LucideIcons.shoppingCart,
-              size: 20,
-              color: _cashierInk,
-            ),
+            const Icon(LucideIcons.shoppingCart, size: 20, color: _cashierInk),
             const SizedBox(height: 8),
             Text(
               '$itemCount items',
@@ -3693,8 +3749,7 @@ class _PosCartPageState extends State<PosCartPage> {
               if (mobileFullPage)
                 IconButton(
                   tooltip: 'Back to products',
-                  onPressed: () =>
-                      setState(() => _showMobileCart = false),
+                  onPressed: () => setState(() => _showMobileCart = false),
                   icon: const Icon(
                     LucideIcons.arrowLeft,
                     color: _cashierInk,
@@ -3723,8 +3778,7 @@ class _PosCartPageState extends State<PosCartPage> {
               if (!mobileFullPage)
                 IconButton(
                   tooltip: 'Collapse order cart',
-                  onPressed: () =>
-                      setState(() => _isCartCollapsed = true),
+                  onPressed: () => setState(() => _isCartCollapsed = true),
                   icon: const Icon(
                     LucideIcons.chevronRight,
                     color: _cashierInk,
@@ -3836,15 +3890,22 @@ class _PosCartPageState extends State<PosCartPage> {
                       'View cart',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                  Text('$count ${count == 1 ? 'item' : 'items'}',
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text(
+                    '$count ${count == 1 ? 'item' : 'items'}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   if (MediaQuery.sizeOf(context).width >= 380) ...[
                     const SizedBox(width: 12),
-                    Text('₱${total.toStringAsFixed(2)}',
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Text(
+                      '₱${total.toStringAsFixed(2)}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ],
                 ],
               ),
@@ -3865,9 +3926,7 @@ class _PosCartPageState extends State<PosCartPage> {
     final foregroundColor = emphasized ? Colors.white : _cashierInk;
     final backgroundColor = emphasized ? _cashierPrimary : Colors.white;
 
-    final borderColor = emphasized
-        ? _cashierPrimary
-        : _cashierWarmBorder;
+    final borderColor = emphasized ? _cashierPrimary : _cashierWarmBorder;
 
     return SizedBox(
       height: 44,
@@ -4070,10 +4129,14 @@ class _PosCartPageState extends State<PosCartPage> {
                         ),
                         const SizedBox(height: 18),
                         detailLine('Category', item.category),
-                        detailLine('Stock on hand',
-                            '${_posQuantity(item.quantity)} ${item.unit}'),
-                        detailLine('Available to add',
-                            '${_posQuantity(math.max(0.0, available))} ${item.unit}'),
+                        detailLine(
+                          'Stock on hand',
+                          '${_posQuantity(item.quantity)} ${item.unit}',
+                        ),
+                        detailLine(
+                          'Available to add',
+                          '${_posQuantity(math.max(0.0, available))} ${item.unit}',
+                        ),
                         detailLine('Manufacturer', item.manufacturer),
                         detailLine('Model', item.model),
                         detailLine('Size', item.productSize),
@@ -4237,9 +4300,7 @@ class _PosCartPageState extends State<PosCartPage> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            compact
-                                ? '$skuLabel · ${item.category}'
-                                : skuLabel,
+                            compact ? '$skuLabel · ${item.category}' : skuLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -4477,10 +4538,7 @@ class _PosCartPageState extends State<PosCartPage> {
                   padding: const EdgeInsets.only(top: 3),
                   child: Text(
                     '${_posQuantity(inCart)} in cart',
-                    style: const TextStyle(
-                      color: _cashierMuted,
-                      fontSize: 10,
-                    ),
+                    style: const TextStyle(color: _cashierMuted, fontSize: 10),
                   ),
                 ),
             ],
@@ -4500,8 +4558,8 @@ class _PosCartPageState extends State<PosCartPage> {
       ),
     ];
     final products = _filteredItems;
-    final hasFilter = _searchQuery.trim().isNotEmpty ||
-        _selectedCategory != 'All';
+    final hasFilter =
+        _searchQuery.trim().isNotEmpty || _selectedCategory != 'All';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4511,51 +4569,52 @@ class _PosCartPageState extends State<PosCartPage> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               Widget searchField() => SizedBox(
-                    height: 44,
-                    child: TextField(
-                      controller: _productSearchController,
-                      style: const TextStyle(fontSize: 13, color: _cashierInk),
-                      decoration: InputDecoration(
-                        hintText: 'Search by name, SKU, or color',
-                        hintStyle: const TextStyle(
-                          fontSize: 12,
-                          color: _cashierMuted,
-                        ),
-                        prefixIcon: const Icon(
-                          LucideIcons.search,
-                          size: 18,
-                          color: _cashierMuted,
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 8),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(9),
-                          borderSide:
-                              const BorderSide(color: _cashierWarmBorder),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(9),
-                          borderSide:
-                              const BorderSide(color: _cashierWarmBorder),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(9),
-                          borderSide: const BorderSide(color: _cashierAccent),
-                        ),
-                      ),
-                      onChanged: (value) => setState(() => _searchQuery = value),
+                height: 44,
+                child: TextField(
+                  controller: _productSearchController,
+                  style: const TextStyle(fontSize: 13, color: _cashierInk),
+                  decoration: InputDecoration(
+                    hintText: 'Search by name, SKU, or color',
+                    hintStyle: const TextStyle(
+                      fontSize: 12,
+                      color: _cashierMuted,
                     ),
-                  );
+                    prefixIcon: const Icon(
+                      LucideIcons.search,
+                      size: 18,
+                      color: _cashierMuted,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(9),
+                      borderSide: const BorderSide(color: _cashierWarmBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(9),
+                      borderSide: const BorderSide(color: _cashierWarmBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(9),
+                      borderSide: const BorderSide(color: _cashierAccent),
+                    ),
+                  ),
+                  onChanged: (value) => setState(() => _searchQuery = value),
+                ),
+              );
 
-              Widget pendingOrdersButton() => StreamBuilder<List<CustomerOrder>>(
+              Widget pendingOrdersButton() =>
+                  StreamBuilder<List<CustomerOrder>>(
                     stream: widget.controller.streamOrders(),
                     builder: (context, snapshot) {
-                      final pendingCount = snapshot.data
-                              ?.where((order) =>
-                                  order.status == 'prepared' ||
-                                  order.status == 'pending')
+                      final pendingCount =
+                          snapshot.data
+                              ?.where(
+                                (order) =>
+                                    order.status == 'prepared' ||
+                                    order.status == 'pending',
+                              )
                               .length ??
                           0;
                       return _buildPrimaryPosAction(
@@ -4568,19 +4627,19 @@ class _PosCartPageState extends State<PosCartPage> {
                   );
 
               Widget scannerButton() => _buildPrimaryPosAction(
-                    icon: LucideIcons.scanLine,
-                    label: 'Object Scanner',
-                    emphasized: true,
-                    onPressed: _openAIObjectScanner,
-                  );
+                icon: LucideIcons.scanLine,
+                label: 'Object Scanner',
+                emphasized: true,
+                onPressed: _openAIObjectScanner,
+              );
 
               Widget actionsRow() => Row(
-                    children: [
-                      Expanded(child: pendingOrdersButton()),
-                      const SizedBox(width: 10),
-                      Expanded(child: scannerButton()),
-                    ],
-                  );
+                children: [
+                  Expanded(child: pendingOrdersButton()),
+                  const SizedBox(width: 10),
+                  Expanded(child: scannerButton()),
+                ],
+              );
 
               if (constraints.maxWidth < 540) {
                 return Column(
@@ -4671,7 +4730,9 @@ class _PosCartPageState extends State<PosCartPage> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          hasFilter ? 'No matching products' : 'No products available',
+                          hasFilter
+                              ? 'No matching products'
+                              : 'No products available',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: _cashierInk,
@@ -4710,8 +4771,10 @@ class _PosCartPageState extends State<PosCartPage> {
                 )
               : LayoutBuilder(
                   builder: (context, constraints) {
-                    final visibleWidth =
-                        math.max(0.0, constraints.maxWidth - 32);
+                    final visibleWidth = math.max(
+                      0.0,
+                      constraints.maxWidth - 32,
+                    );
                     final compact = visibleWidth < 810;
                     final narrow = visibleWidth < 620;
                     return Padding(
@@ -4745,18 +4808,24 @@ class _PosCartPageState extends State<PosCartPage> {
                                         const SizedBox(width: 12),
                                         Expanded(
                                           flex: 2,
-                                          child: _buildPosTableHeading('Category'),
+                                          child: _buildPosTableHeading(
+                                            'Category',
+                                          ),
                                         ),
                                       ],
                                       const SizedBox(width: 12),
                                       Expanded(
                                         flex: 2,
-                                        child: _buildPosTableHeading('Available'),
+                                        child: _buildPosTableHeading(
+                                          'Available',
+                                        ),
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
                                         flex: 2,
-                                        child: _buildPosTableHeading('Unit price'),
+                                        child: _buildPosTableHeading(
+                                          'Unit price',
+                                        ),
                                       ),
                                       const SizedBox(width: 6),
                                       SizedBox(
@@ -4773,7 +4842,10 @@ class _PosCartPageState extends State<PosCartPage> {
                                 child: ListView.builder(
                                   itemCount: products.length,
                                   itemBuilder: (context, index) => narrow
-                                      ? _buildPosNarrowRow(products[index], index)
+                                      ? _buildPosNarrowRow(
+                                          products[index],
+                                          index,
+                                        )
                                       : _buildPosTableRow(
                                           products[index],
                                           index,
@@ -4911,8 +4983,7 @@ class _PosCartPageState extends State<PosCartPage> {
                                                             vertical: 2,
                                                           ),
                                                       decoration: BoxDecoration(
-                                                        color:
-                                                            _cashierTint,
+                                                        color: _cashierTint,
                                                         borderRadius:
                                                             BorderRadius.circular(
                                                               4,
@@ -5075,7 +5146,9 @@ class _PosCartPageState extends State<PosCartPage> {
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFF2D4C4)),
+                                border: Border.all(
+                                  color: const Color(0xFFF2D4C4),
+                                ),
                               ),
                               child: const Icon(
                                 LucideIcons.x,

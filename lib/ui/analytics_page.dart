@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:printing/printing.dart';
 
@@ -10,6 +13,8 @@ import '../logic/history_pagination.dart';
 import '../logic/inventory_controller.dart';
 import 'reports/inventory_report_generator.dart';
 import 'reports/sales_report_generator.dart';
+import 'reports/report_period_dialog.dart';
+import 'reports/report_range.dart';
 import 'widgets/app_styled_dropdown.dart';
 
 class AnalyticsPage extends StatefulWidget {
@@ -40,6 +45,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   bool _exporting = false;
   String? _error;
   Map<String, dynamic>? _summary;
+  late final Future<Map<String, String>> _marketFuture;
   String? _loadedPeriod;
   String? _loadedLocationId;
   bool _stale = true;
@@ -51,6 +57,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   @override
   void initState() {
     super.initState();
+    _marketFuture = _loadMarketContext();
     _inventorySubscription = widget.controller.inventorySnapshots.listen((_) {
       if (mounted && widget.isActive) setState(() {});
     });
@@ -154,6 +161,80 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     }
   }
 
+
+  // Live reference feeds are informational only, not forecasting inputs.
+  Future<Map<String, String>> _loadMarketContext() async {
+    final results = <String, String>{};
+
+    Future<void> weather() async {
+      final key = dotenv.env['WEATHER_API_KEY'];
+      if (key == null || key.isEmpty) return;
+      try {
+        final uri = Uri.https('api.openweathermap.org', '/data/2.5/weather', {
+          'q': 'Quezon City,PH',
+          'units': 'metric',
+          'appid': key,
+        });
+        final response = await http.get(uri).timeout(const Duration(seconds: 8));
+        if (response.statusCode != 200) return;
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final conditions = data['weather'] as List<dynamic>?;
+        final condition = conditions?.isNotEmpty == true
+            ? (conditions!.first as Map<String, dynamic>)['description']
+                  ?.toString()
+            : null;
+        if (condition != null) {
+          results['Weather'] = '$condition · Quezon City · OpenWeather';
+        }
+      } catch (_) {}
+    }
+
+    Future<void> exchange() async {
+      try {
+        final response = await http
+            .get(Uri.parse('https://open.er-api.com/v6/latest/USD'))
+            .timeout(const Duration(seconds: 8));
+        if (response.statusCode != 200) return;
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final rate = (data['rates'] as Map<String, dynamic>?)?['PHP'] as num?;
+        if (rate != null) {
+          results['USD / PHP'] =
+              '₱${rate.toStringAsFixed(2)} per USD · ExchangeRate-API';
+        }
+      } catch (_) {}
+    }
+
+    Future<void> news() async {
+      final key = dotenv.env['NEWS_API_KEY'];
+      if (key == null || key.isEmpty) return;
+      try {
+        final uri = Uri.https('newsapi.org', '/v2/everything', {
+          'q': 'Philippines construction hardware',
+          'language': 'en',
+          'sortBy': 'publishedAt',
+          'pageSize': '1',
+          'apiKey': key,
+        });
+        final response = await http.get(uri).timeout(const Duration(seconds: 8));
+        if (response.statusCode != 200) return;
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final articles = data['articles'] as List<dynamic>?;
+        if (articles?.isNotEmpty != true) return;
+        final article = articles!.first as Map<String, dynamic>;
+        final title = article['title']?.toString();
+        final source =
+            (article['source'] as Map<String, dynamic>?)?['name']?.toString();
+        if (title != null && title != '[Removed]') {
+          results['Industry news'] =
+              '$title${source == null ? '' : ' · $source'}';
+        }
+      } catch (_) {}
+    }
+
+    await Future.wait([weather(), exchange(), news()]);
+    return results;
+  }
+
   DateTime get _periodStart {
     final now = DateTime.now();
     switch (_period) {
@@ -192,37 +273,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     _summary?['categories'] as Map? ?? const {},
   )).map((key, value) => MapEntry(key, (value as num).toDouble()));
 
-  Map<String, double> _monthlyRevenue() {
-    final months = <String, double>{};
-    final raw = Map<String, dynamic>.from(
-      _summary?['monthly'] as Map? ?? const {},
-    );
-    for (final entry in raw.entries) {
-      final parts = entry.key.split('-');
-      if (parts.length != 2) continue;
-      final key = '${int.tryParse(parts[0])}-${int.tryParse(parts[1])}';
-      months[key] = (entry.value as num).toDouble();
-    }
-    return months;
-  }
-
   Map<String, dynamic> get _stockSummary =>
       Map<String, dynamic>.from(_summary?['stock'] as Map? ?? const {});
-
-  List<_StockRow> get _restock {
-    final stock = _stockSummary;
-    final rows = <_StockRow>[];
-    for (final item in widget.controller.allItems) {
-      final movement = stock[item.id] as Map?;
-      final weekly = ((movement?['sold_28_days'] as num?)?.toDouble() ?? 0) / 4;
-      final cover = weekly > 0 ? item.quantity / weekly : double.infinity;
-      if (item.quantity <= 0 || (weekly > 0 && cover < 4)) {
-        rows.add(_StockRow(item, weekly, cover));
-      }
-    }
-    rows.sort((a, b) => a.cover.compareTo(b.cover));
-    return rows.take(6).toList();
-  }
 
   List<_DeadRow> get _deadStock {
     final now = DateTime.now();
@@ -246,18 +298,50 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         .toList();
   }
 
-  Future<void> _exportSales() async {
+  void _openSalesReportDialog() {
+    if (_exporting) return;
+
+    unawaited(
+      showReportPeriodDialog(
+        context,
+        title: 'Generate Sales Report',
+        onGenerate: (range) {
+          unawaited(_exportSales(range));
+        },
+      ),
+    );
+  }
+
+  void _openInventoryReportDialog() {
+    if (_exporting) return;
+
+    unawaited(
+      showReportPeriodDialog(
+        context,
+        title: 'Generate Inventory Report',
+        note: 'Past reports use current inventory prices.',
+        onGenerate: (range) {
+          unawaited(_exportInventory(range));
+        },
+      ),
+    );
+  }
+
+  Future<void> _exportSales(ReportRange range) async {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
       final orders = await widget.controller.loadAnalyticsSalesExport(
-        start: _periodStart,
-        endExclusive: _periodEnd,
+        start: range.start,
+        endExclusive: range.endExclusive,
       );
       final entries = orders
+          .where((order) => range.contains(order.createdAt))
           .map(
             (order) => SalesReportEntry(
-              orderNumber: order.id.substring(0, math.min(order.id.length, 8)),
+              orderNumber: order.id
+                  .substring(0, math.min(order.id.length, 8))
+                  .toUpperCase(),
               date: order.createdAt,
               cashier: order.createdByName ?? 'Unknown',
               paymentMode: order.paymentMode ?? 'Unknown',
@@ -270,9 +354,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           .toList();
       if (entries.isEmpty) throw StateError('No sales in this period.');
       final bytes = await SalesReportGenerator.generate(
-        period: _period,
-        periodStart: _periodStart,
-        periodEnd: _periodEnd,
+        period: range.period,
+        periodStart: range.start,
+        periodEnd: range.displayEnd,
         generatedAt: DateTime.now(),
         generatedBy: widget.controller.currentUserName ?? 'Administrator',
         sales: entries,
@@ -280,7 +364,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       );
       await Printing.sharePdf(
         bytes: bytes,
-        filename: 'Sales_report_${DateTime.now().millisecondsSinceEpoch}.pdf',
+        filename:
+            'Sales_report_${range.period}_${range.fileTag}_${DateTime.now().millisecondsSinceEpoch}.pdf',
       );
     } catch (error) {
       if (mounted) {
@@ -297,18 +382,19 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     }
   }
 
-  Future<void> _exportInventory() async {
+  Future<void> _exportInventory(ReportRange range) async {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
-      final movements = await widget.controller.loadAllTransactionHistory();
-      final start = _periodStart;
-      final end = _periodEnd;
+      final transactions =
+          await widget.controller.loadAllTransactionHistory();
+      final start = range.start;
+      final end = range.endExclusive;
       final net = <String, double>{};
       final after = <String, double>{};
       final received = <String, double>{};
       final issued = <String, double>{};
-      for (final tx in movements) {
+      for (final tx in transactions) {
         final id = tx['product_id']?.toString();
         final date = DateTime.tryParse(
           tx['created_at']?.toString() ?? '',
@@ -338,9 +424,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       }).toList();
       if (entries.isEmpty) throw StateError('No inventory items found.');
       final bytes = await InventoryReportGenerator.generate(
-        period: _period,
-        periodStart: start,
-        periodEnd: end,
+        period: range.period,
+        periodStart: range.start,
+        periodEnd: range.displayEnd,
         generatedAt: DateTime.now(),
         generatedBy: widget.controller.currentUserName ?? 'Administrator',
         items: entries,
@@ -349,7 +435,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       await Printing.sharePdf(
         bytes: bytes,
         filename:
-            'Inventory_report_${DateTime.now().millisecondsSinceEpoch}.pdf',
+            'Inventory_report_${range.period}_${range.fileTag}_${DateTime.now().millisecondsSinceEpoch}.pdf',
       );
     } catch (error) {
       if (mounted) {
@@ -398,34 +484,25 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 narrow
                     ? Column(
                         children: [
-                          _forecastCard(),
-                          const SizedBox(height: 20),
                           _categoryCard(),
-                        ],
-                      )
-                    : Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(flex: 7, child: _forecastCard()),
-                          const SizedBox(width: 20),
-                          Expanded(flex: 4, child: _categoryCard()),
-                        ],
-                      ),
-                const SizedBox(height: 28),
-                narrow
-                    ? Column(
-                        children: [
-                          _restockCard(),
+                          const SizedBox(height: 20),
+                          _marketCard(),
                           const SizedBox(height: 20),
                           _deadStockCard(),
                         ],
                       )
-                    : Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    : Column(
                         children: [
-                          Expanded(child: _restockCard()),
-                          const SizedBox(width: 20),
-                          Expanded(child: _deadStockCard()),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: _categoryCard()),
+                              const SizedBox(width: 20),
+                              Expanded(child: _marketCard()),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          _deadStockCard(),
                         ],
                       ),
               ],
@@ -450,7 +527,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         ),
         const SizedBox(height: 5),
         const Text(
-          'Sales, stock health and demand outlook.',
+          'Historical sales and inventory performance.',
           style: TextStyle(fontSize: 16, color: _muted),
         ),
       ],
@@ -488,12 +565,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _outlineButton(
           'Sales report',
           LucideIcons.download,
-          _exporting ? null : _exportSales,
+          _exporting ? null : _openSalesReportDialog,
         ),
         _outlineButton(
           'Inventory report',
           LucideIcons.download,
-          _exporting ? null : _exportInventory,
+          _exporting ? null : _openInventoryReportDialog,
         ),
       ],
     );
@@ -627,83 +704,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     ),
   );
 
-  Widget _forecastCard() {
-    final now = DateTime.now();
-    final months = _monthlyRevenue();
-    final actual = <double>[];
-    final labels = <String>[];
-    for (var i = 8; i >= 0; i--) {
-      final date = DateTime(now.year, now.month - i);
-      labels.add(_monthName(date.month));
-      actual.add(months['${date.year}-${date.month}'] ?? 0);
-    }
-    final known = actual.where((value) => value > 0).toList();
-    final hasForecast = known.length >= 3;
-    final forecast = <double>[];
-    if (hasForecast) {
-      final recent = known.reversed.take(3).toList();
-      final average = recent.reduce((a, b) => a + b) / recent.length;
-      final trend = (recent[0] - recent[2]) / 2;
-      for (var i = 1; i <= 3; i++) {
-        forecast.add(math.max(0, average + trend * i));
-        labels.add(_monthName(DateTime(now.year, now.month + i).month));
-      }
-    }
-    return _card(
-      Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Monthly demand & forecast',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                const Text(
-                  '₱ sales',
-                  style: TextStyle(color: _muted, fontSize: 13),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              hasForecast
-                  ? 'Dashed line is a simple estimate from recent recorded sales.'
-                  : 'At least three months with sales are needed for an estimate.',
-              style: const TextStyle(color: _muted, fontSize: 14),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              height: 270,
-              width: double.infinity,
-              child: CustomPaint(
-                painter: _DemandChart(actual, forecast, labels),
-              ),
-            ),
-            const SizedBox(height: 18),
-            const Divider(color: _line),
-            const SizedBox(height: 12),
-            const Text(
-              'Demand outlook',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              known.isEmpty
-                  ? 'No recorded sales are available for the recent months.'
-                  : 'Actual sales are shown in black. Forecasts are estimates and may change as new orders arrive.',
-              style: const TextStyle(color: _muted, fontSize: 14),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _categoryCard() {
     final categories = _categorySales.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
@@ -759,35 +759,64 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     );
   }
 
-  Widget _restockCard() {
-    final rows = _restock;
-    return _card(
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+
+  Widget _marketCard() => _card(
+    Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _tableHeading(
-            'Restocking recommendations',
-            'Based on on-hand stock and the last 28 days of sales',
+          const Text(
+            'Market context',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
-          if (rows.isEmpty)
-            _emptyRow('No urgent restocking recommendations.')
-          else
-            for (final row in rows)
-              _tableRow(
-                row.item.name,
-                '${_number(row.item.quantity)} ${row.item.unit} on hand · sells ${row.weekly.toStringAsFixed(1)}/wk',
-                row.item.quantity <= 0
-                    ? 'Out'
-                    : '${row.cover.toStringAsFixed(1)} wk',
-                row.weekly > 0
-                    ? 'Add ${_number(math.max(0, row.weekly * 4 - row.item.quantity))} ${row.item.unit}'
-                    : 'Review stock',
-                onTap: widget.onOpenInventory,
-              ),
+          const SizedBox(height: 4),
+          const Text(
+            'Live reference information',
+            style: TextStyle(color: _muted, fontSize: 13),
+          ),
+          const SizedBox(height: 18),
+          FutureBuilder<Map<String, String>>(
+            future: _marketFuture,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Text(
+                  'Checking available feeds…',
+                  style: TextStyle(color: _muted),
+                );
+              }
+              final values = snapshot.data!;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final label in const [
+                    'Weather',
+                    'USD / PHP',
+                    'Industry news',
+                  ]) ...[
+                    Text(
+                      label,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      values[label] ?? 'Live feed unavailable',
+                      style: const TextStyle(color: _muted, fontSize: 13),
+                    ),
+                    if (label != 'Industry news') ...[
+                      const SizedBox(height: 14),
+                      const Divider(color: _line),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ],
+              );
+            },
+          ),
         ],
       ),
-    );
-  }
+    ),
+  );
 
   Widget _deadStockCard() {
     final rows = _deadStock;
@@ -921,127 +950,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       : value >= 1000
       ? '₱${(value / 1000).toStringAsFixed(1)}k'
       : _money(value);
-  static String _monthName(int month) => const [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ][month - 1];
-}
-
-class _StockRow {
-  const _StockRow(this.item, this.weekly, this.cover);
-  final InventoryItem item;
-  final double weekly;
-  final double cover;
 }
 
 class _DeadRow {
   const _DeadRow(this.item, this.lastSale);
   final InventoryItem item;
   final DateTime? lastSale;
-}
-
-class _DemandChart extends CustomPainter {
-  const _DemandChart(this.actual, this.forecast, this.labels);
-  final List<double> actual;
-  final List<double> forecast;
-  final List<String> labels;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const left = 48.0;
-    const bottom = 25.0;
-    const top = 8.0;
-    final width = size.width - left - 8;
-    final height = size.height - bottom - top;
-    final maxValue = math.max(
-      1.0,
-      [...actual, ...forecast].fold<double>(0, math.max) * 1.15,
-    );
-    final grid = Paint()
-      ..color = const Color(0xFFEAE6E0)
-      ..strokeWidth = 1;
-    final black = Paint()
-      ..color = const Color(0xFF262626)
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke;
-    final orange = Paint()
-      ..color = const Color(0xFFC83D08)
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke;
-    for (var i = 0; i <= 4; i++) {
-      final y = top + height * i / 4;
-      canvas.drawLine(Offset(left, y), Offset(size.width, y), grid);
-      _label(
-        canvas,
-        '₱${((maxValue * (4 - i) / 4) / 1000).toStringAsFixed(0)}k',
-        Offset(0, y - 7),
-        10,
-        const Color(0xFF817A75),
-      );
-    }
-    final count = labels.length;
-    Offset point(int i, double value) => Offset(
-      left + width * i / math.max(1, count - 1),
-      top + height * (1 - value / maxValue),
-    );
-    for (var i = 0; i < actual.length - 1; i++) {
-      canvas.drawLine(point(i, actual[i]), point(i + 1, actual[i + 1]), black);
-    }
-    for (var i = 0; i < actual.length; i++) {
-      canvas.drawCircle(
-        point(i, actual[i]),
-        3.5,
-        Paint()..color = Colors.white,
-      );
-      canvas.drawCircle(point(i, actual[i]), 3.5, black);
-    }
-    if (forecast.isNotEmpty) {
-      final values = [actual.last, ...forecast];
-      for (var i = 0; i < values.length - 1; i++) {
-        final a = point(actual.length - 1 + i, values[i]);
-        final b = point(actual.length + i, values[i + 1]);
-        for (var j = 0; j < 10; j += 2) {
-          canvas.drawLine(
-            Offset.lerp(a, b, j / 10)!,
-            Offset.lerp(a, b, (j + 1) / 10)!,
-            orange,
-          );
-        }
-      }
-    }
-    for (var i = 0; i < count; i++) {
-      _label(
-        canvas,
-        labels[i],
-        Offset(point(i, 0).dx - 11, size.height - 17),
-        10,
-        const Color(0xFF817A75),
-      );
-    }
-  }
-
-  void _label(Canvas canvas, String text, Offset at, double size, Color color) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(fontSize: size, color: color),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas, at);
-  }
-
-  @override
-  bool shouldRepaint(covariant _DemandChart oldDelegate) =>
-      oldDelegate.actual != actual || oldDelegate.forecast != forecast;
 }

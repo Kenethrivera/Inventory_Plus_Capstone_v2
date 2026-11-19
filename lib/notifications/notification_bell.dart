@@ -67,7 +67,13 @@ class NotificationBell extends StatelessWidget {
                 if (actionInitiated && !selectedNotification!.isRead) {
                   informationalIds.add(selectedNotification.id);
                 }
-                await controller.markNotificationsAsRead(informationalIds);
+                final stillVisibleIds = controller.notifications
+                    .map((notification) => notification.id)
+                    .toSet();
+
+                await controller.markNotificationsAsRead(
+                  informationalIds.where(stillVisibleIds.contains),
+                );
               },
               icon: Stack(
                 clipBehavior: Clip.none,
@@ -103,6 +109,7 @@ class NotificationBell extends StatelessWidget {
           controller,
           screen,
           onInformationalNotificationsShown,
+          onNotificationRemovedFromSession,
         );
       }
       return showModalBottomSheet<AppNotification>(
@@ -151,6 +158,7 @@ class NotificationBell extends StatelessWidget {
     NotificationController controller,
     Size screen,
     ValueChanged<Iterable<String>> onInformationalNotificationsShown,
+    ValueChanged<String> onNotificationRemovedFromSession,
   ) {
     final box = context.findRenderObject() as RenderBox?;
     final offset = box?.localToGlobal(Offset.zero) ?? Offset.zero;
@@ -177,6 +185,8 @@ class NotificationBell extends StatelessWidget {
                 onValidateNotification: onValidateNotification,
                 onInformationalNotificationsShown:
                     onInformationalNotificationsShown,
+                onNotificationRemovedFromSession:
+                    onNotificationRemovedFromSession,
               ),
             ),
           ),

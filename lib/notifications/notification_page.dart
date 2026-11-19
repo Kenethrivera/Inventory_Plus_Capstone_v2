@@ -4,11 +4,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'models/app_notification.dart';
 import 'models/notification_type.dart';
 import 'notification_controller.dart';
+import 'notification_actions_menu.dart';
 import 'notification_tile.dart';
 import '../ui/widgets/app_toast.dart';
 
 enum NotificationFilter {
   all,
+  archived,
   unread,
   orders,
   stock,
@@ -78,14 +80,17 @@ class _NotificationPageState extends State<NotificationPage> {
         final filtered = _filteredNotifications(
           widget.controller.notifications,
         );
-        widget.onInformationalNotificationsShown(
-          filtered
-              .where(
-                (notification) =>
-                    !notification.isRead && !widget.isActionable(notification),
-              )
-              .map((notification) => notification.id),
-        );
+        if (_filter != NotificationFilter.archived) {
+          widget.onInformationalNotificationsShown(
+            filtered
+                .where(
+                  (notification) =>
+                      !notification.isRead &&
+                      !widget.isActionable(notification),
+                )
+                .map((notification) => notification.id),
+          );
+        }
 
         return Container(
           width: panelWidth,
@@ -113,7 +118,9 @@ class _NotificationPageState extends State<NotificationPage> {
                   Expanded(
                     child: RefreshIndicator(
                       color: _primaryBlue,
-                      onRefresh: widget.controller.refresh,
+                      onRefresh: _filter == NotificationFilter.archived
+                          ? widget.controller.loadArchivedNotifications
+                          : widget.controller.refresh,
                       child: _buildBody(filtered),
                     ),
                   ),
@@ -143,18 +150,10 @@ class _NotificationPageState extends State<NotificationPage> {
               ),
             ),
           ),
-          if (widget.controller.unreadCount > 0)
-            TextButton(
-              onPressed: widget.controller.markAllAsRead,
-              child: const Text(
-                'Mark all read',
-                style: TextStyle(
-                  color: _primaryBlue,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: _fontFam,
-                ),
-              ),
-            ),
+          NotificationActionsMenu(
+            controller: widget.controller,
+            onArchivedFromSession: widget.onNotificationRemovedFromSession,
+          ),
           IconButton(
             tooltip: 'Close',
             onPressed: () => Navigator.pop(context),
@@ -189,10 +188,14 @@ class _NotificationPageState extends State<NotificationPage> {
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: InkWell(
-                onTap: () {
+                onTap: () async {
                   setState(() {
                     _filter = filter;
                   });
+
+                  if (filter == NotificationFilter.archived) {
+                    await widget.controller.loadArchivedNotifications();
+                  }
                 },
                 borderRadius: BorderRadius.circular(999),
                 child: AnimatedContainer(
@@ -229,7 +232,10 @@ class _NotificationPageState extends State<NotificationPage> {
   List<NotificationFilter> _availableFilters(
     List<AppNotification> notifications,
   ) {
-    final filters = <NotificationFilter>[NotificationFilter.all];
+    final filters = <NotificationFilter>[
+      NotificationFilter.all,
+      NotificationFilter.archived,
+    ];
 
     final hasUnread = notifications.any((n) => !n.isRead);
 
@@ -274,13 +280,24 @@ class _NotificationPageState extends State<NotificationPage> {
   }
 
   Widget _buildBody(List<AppNotification> notifications) {
-    if (widget.controller.isLoading && notifications.isEmpty) {
+
+    final archivedView = _filter == NotificationFilter.archived;
+
+    final loading = archivedView
+        ? widget.controller.isArchiveLoading
+        : widget.controller.isLoading;
+
+    final error = archivedView
+        ? widget.controller.archiveErrorMessage
+        : widget.controller.errorMessage;
+        
+    if (loading && notifications.isEmpty) {
       return const Center(
         child: CircularProgressIndicator(color: _primaryBlue),
       );
     }
 
-    if (widget.controller.errorMessage != null && notifications.isEmpty) {
+    if (error != null && notifications.isEmpty) {
       return ListView(
         padding: const EdgeInsets.symmetric(horizontal: 24),
         children: [
@@ -288,7 +305,7 @@ class _NotificationPageState extends State<NotificationPage> {
           Icon(LucideIcons.circleAlert, size: 48, color: Colors.red.shade400),
           const SizedBox(height: 16),
           Text(
-            widget.controller.errorMessage!,
+            error!,
             textAlign: TextAlign.center,
             style: const TextStyle(color: _mutedText, fontFamily: _fontFam),
           ),
@@ -360,7 +377,7 @@ class _NotificationPageState extends State<NotificationPage> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: NotificationTile(
                   notification: notification,
-                  onTap: !isActionable
+                  onTap: _filter == NotificationFilter.archived || !isActionable
                       ? null
                       : () async {
                           final errorMessage = await widget
@@ -377,9 +394,20 @@ class _NotificationPageState extends State<NotificationPage> {
                             Navigator.pop(context, notification);
                           }
                         },
-                  onDelete: () {
-                    widget.onNotificationRemovedFromSession(notification.id);
-                    widget.controller.deleteNotification(notification.id);
+                  onArchive: _filter == NotificationFilter.archived
+                      ? null
+                      : () async {
+                    final archived = await widget.controller
+                        .archiveNotification(notification.id);
+
+                    if (archived) {
+                      widget.onNotificationRemovedFromSession(notification.id);
+                    } else if (mounted) {
+                      AppToast.error(
+                        context,
+                        'Could not archive notification.',
+                      );
+                    }
                   },
                 ),
               );
@@ -396,6 +424,9 @@ class _NotificationPageState extends State<NotificationPage> {
     switch (_filter) {
       case NotificationFilter.all:
         return notifications;
+
+      case NotificationFilter.archived:
+        return widget.controller.archivedNotifications;
 
       case NotificationFilter.unread:
         return notifications.where((n) => !n.isRead).toList();
@@ -488,6 +519,8 @@ class _NotificationPageState extends State<NotificationPage> {
         return 'Transactions';
       case NotificationFilter.system:
         return 'System';
+      case NotificationFilter.archived:
+        return 'Archived';
     }
   }
 
@@ -507,6 +540,8 @@ class _NotificationPageState extends State<NotificationPage> {
         return 'No transaction notifications';
       case NotificationFilter.system:
         return 'No system notifications';
+      case NotificationFilter.archived:
+        return 'No archived notifications';
     }
   }
 

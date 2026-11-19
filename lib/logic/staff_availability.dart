@@ -1,6 +1,9 @@
 import '../data/inventory.dart';
 
-enum StaffAvailability { offline, onBreak, busy, available }
+const String staffPreparingModule = 'Preparing order';
+const String staffLoadingModule = 'Loading order';
+
+enum StaffAvailability { offline, onBreak, preparing, loading, available }
 
 Map<String, int> activeLoadingWorkloads(Iterable<CustomerOrder> orders) {
   final counts = <String, int>{};
@@ -42,11 +45,24 @@ StaffAvailability resolveStaffAvailability({
   required bool isHelper,
   bool isBodegero = false,
   required int activeOrders,
+  String? currentModule,
 }) {
-  if (isOnBreak) return StaffAvailability.onBreak;
-  if (!isOnline) return StaffAvailability.offline;
-  if ((isHelper || isBodegero) && activeOrders > 0) {
-    return StaffAvailability.busy;
+  if (isOnBreak) {
+    return StaffAvailability.onBreak;
   }
+
+  if (!isOnline) {
+    return StaffAvailability.offline;
+  }
+
+  if (isHelper && currentModule?.trim() == staffPreparingModule) {
+    return StaffAvailability.preparing;
+  }
+
+  if (isBodegero && currentModule?.trim() == staffLoadingModule) {
+    return StaffAvailability.loading;
+  }
+
+  // Assigned orders are workload, not proof of active work.
   return StaffAvailability.available;
 }

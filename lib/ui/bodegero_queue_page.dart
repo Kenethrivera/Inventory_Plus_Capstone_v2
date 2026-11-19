@@ -181,6 +181,12 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   @override
   void dispose() {
+    if (_selectedOrderId != null) {
+      final presence = widget.presenceService;
+      if (presence != null) {
+        unawaited(presence.setWorkMode(null));
+      }
+    }
     widget.presenceService?.removeListener(_scheduleAutoClaim);
     unawaited(_autoClaimSubscription?.cancel());
     _truckController.dispose();
@@ -226,15 +232,18 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           isHelper: false,
           isBodegero: true,
           activeOrders: activeOrders,
+          currentModule: presence.workMode,
         );
         final label = switch (availability) {
           StaffAvailability.offline => 'Offline',
           StaffAvailability.onBreak => 'On break',
-          StaffAvailability.busy => 'Busy',
+          StaffAvailability.preparing => 'Preparing',
+          StaffAvailability.loading => 'Loading',
           StaffAvailability.available => 'Available',
         };
         final background = switch (availability) {
-          StaffAvailability.busy => _orange,
+          StaffAvailability.preparing => _orange,
+          StaffAvailability.loading => _orange,
           StaffAvailability.available => const Color(0xFF168047),
           _ => const Color(0xFF45413E),
         };
@@ -282,6 +291,10 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   Future<bool> _open(CustomerOrder order) async {
     if (_busy || _clockBusy) return false;
+    if (widget.presenceService?.isOnBreak == true) {
+      _message('Switch to Available before loading an order.');
+      return false;
+    }
     order = widget.controller.orderById(order.id) ?? order;
     if ((order.status != 'pending' && order.status != 'solo_picking') ||
         order.loadingVerifiedAt != null ||
@@ -343,7 +356,24 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       _completedOrder = null;
       _photoJpeg = null;
     });
+
+    final presence = widget.presenceService;
+    if (presence != null) {
+      unawaited(presence.setWorkMode(staffLoadingModule));
+    }
+
     return true;
+  }
+
+  void _closeLoadingChecklist() {
+    setState(() {
+      _selectedOrderId = null;
+    });
+
+    final presence = widget.presenceService;
+    if (presence != null) {
+      unawaited(presence.setWorkMode(null));
+    }
   }
 
   Future<void> _toggleLoadingPause(CustomerOrder order) async {
@@ -391,6 +421,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       return false;
     }
     setState(() => _tabIndex = 0);
+    widget.onModuleChanged?.call('Heavy loading');
     return _open(order);
   }
 
@@ -496,6 +527,10 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         _completedOrder = updated;
         _photoJpeg = null;
       });
+      final presence = widget.presenceService;
+      if (presence != null) {
+        unawaited(presence.setWorkMode(null));
+      }
       _message(
         updated.status == 'prepared'
             ? 'Loading verified. Order is ready for payment.'
@@ -545,6 +580,10 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
             _visitedTabs.add(4);
           });
           widget.onModuleChanged?.call('Profile');
+          final presence = widget.presenceService;
+          if (presence != null) {
+            unawaited(presence.setWorkMode(null));
+          }
         },
         onLogout: widget.onLogout,
         availability: widget.presenceService == null
@@ -582,6 +621,14 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         'Profile',
       ][index],
     );
+    final presence = widget.presenceService;
+    if (presence != null) {
+      final mode = index == 0 && _selectedOrderId != null
+          ? staffLoadingModule
+          : null;
+
+      unawaited(presence.setWorkMode(mode));
+    }
   }
 
   Widget _statusPill(String label, {bool active = false}) => Container(
@@ -1422,7 +1469,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                 tooltip: 'Back to queue',
                 onPressed: _busy
                     ? null
-                    : () => setState(() => _selectedOrderId = null),
+                    : _closeLoadingChecklist,
                 icon: const Icon(LucideIcons.arrowLeft, color: _muted),
               ),
               const SizedBox(width: 4),
@@ -1672,7 +1719,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                 tooltip: 'Back to queue',
                 onPressed: _busy
                     ? null
-                    : () => setState(() => _selectedOrderId = null),
+                    : _closeLoadingChecklist,
                 icon: const Icon(LucideIcons.arrowLeft),
               ),
               const SizedBox(width: 18),
@@ -1926,6 +1973,12 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       CustomerOrder? selected;
       for (final order in orders) {
         if (order.id == _selectedOrderId) selected = order;
+      }
+      if (selected == null && _selectedOrderId != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _selectedOrderId == null) return;
+          _closeLoadingChecklist();
+        });
       }
       return selected == null
           ? _queue(orders)

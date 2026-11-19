@@ -16,6 +16,9 @@ class NotificationController extends ChangeNotifier {
   NotificationController(this._service);
 
   List<AppNotification> _notifications = [];
+  List<AppNotification> _archivedNotifications = [];
+  bool _isArchiveLoading = false;
+  String? _archiveErrorMessage;
   bool _isLoading = false;
   String? _errorMessage;
   StreamSubscription<void>? _notificationChangesSubscription;
@@ -28,6 +31,13 @@ class NotificationController extends ChangeNotifier {
   List<AppNotification> get notifications {
     return List.unmodifiable(_notifications);
   }
+
+  List<AppNotification> get archivedNotifications =>
+      List.unmodifiable(_archivedNotifications);
+
+  bool get isArchiveLoading => _isArchiveLoading;
+
+  String? get archiveErrorMessage => _archiveErrorMessage;
 
   bool get isLoading => _isLoading;
 
@@ -49,6 +59,36 @@ class NotificationController extends ChangeNotifier {
   bool get hasUnread => unreadCount > 0;
 
   bool get hasLoadedSnapshot => _hasLoadedSnapshot;
+
+  Future<void> loadArchivedNotifications() async {
+    if (_disposed) return;
+
+    _isArchiveLoading = true;
+    _archiveErrorMessage = null;
+    notifyListeners();
+
+    try {
+      final result = await _service.fetchArchivedNotifications();
+
+      if (_disposed) return;
+
+      _archivedNotifications = result;
+    } catch (error) {
+      if (_disposed) return;
+
+      AppLogger.error('Archived notifications load failed', error: error);
+
+      _archiveErrorMessage = AppErrorMapper.message(
+        error,
+        fallback: AppErrorCategory.dataLoad,
+      );
+    } finally {
+      if (!_disposed) {
+        _isArchiveLoading = false;
+        notifyListeners();
+      }
+    }
+  }
 
   Future<void> loadNotifications() async {
     return _refreshNotifications(showLoading: true);
@@ -220,20 +260,56 @@ class NotificationController extends ChangeNotifier {
     }
   }
 
-  Future<void> deleteNotification(String notificationId) async {
+  Future<bool> archiveNotification(String notificationId) async {
     try {
       _errorMessage = null;
 
-      await _service.deleteNotification(notificationId);
+      await _service.archiveNotifications([notificationId]);
+
+      if (_disposed) return false;
 
       _notifications.removeWhere(
         (notification) => notification.id == notificationId,
       );
 
       notifyListeners();
-    } catch (e) {
-      _recordError(e, operation: 'Notification deletion failed');
+      return true;
+    } catch (error) {
+      if (_disposed) return false;
+
+      _recordError(error, operation: 'Notification archive failed');
       notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> archiveAllNotifications() async {
+    final ids = _notifications.map((notification) => notification.id).toSet();
+
+    if (ids.isEmpty) return true;
+
+    try {
+      _errorMessage = null;
+
+      await _service.archiveNotifications(ids);
+
+      if (_disposed) return false;
+
+      _notifications.removeWhere(
+        (notification) => ids.contains(notification.id),
+      );
+
+      notifyListeners();
+      return true;
+    } catch (error) {
+      if (_disposed) return false;
+
+      _recordError(error, operation: 'Archive all notifications failed');
+
+      // A batch may have partially completed.
+      // Reload to show the actual saved archive state.
+      await refresh();
+      return false;
     }
   }
 

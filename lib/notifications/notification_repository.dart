@@ -5,6 +5,8 @@ import 'models/app_notification.dart';
 abstract class NotificationRepository {
   Future<List<AppNotification>> fetchNotifications();
 
+  Future<List<AppNotification>> fetchArchivedNotifications();
+
   /// Active rows used only by lifecycle-aware persistence. User-specific read
   /// and delete state is intentionally not part of logical event identity.
   Future<List<AppNotification>> fetchActiveLifecycleNotifications();
@@ -26,7 +28,7 @@ abstract class NotificationRepository {
 
   Future<void> rearmNotificationReads(String notificationId);
 
-  Future<void> deleteNotification(String notificationId);
+  Future<void> archiveNotifications(Iterable<String> notificationIds);
 
   Future<int> getUnreadCount();
 
@@ -106,41 +108,103 @@ class SupabaseNotificationRepository implements NotificationRepository {
 
           return AppNotification.fromJson(row, readState: readState);
         })
-        .where((notification) {
-          if (notification.isDeleted) return false;
-
-          // orderAssigned is role-visible in the schema, while the intended
-          // recipient is carried by the existing payload.
-          final helperId = notification.payload['helperId']?.toString();
-          if (userRole == 'helper' &&
-              notification.type.name == 'orderAssigned' &&
-              helperId != null &&
-              helperId != recipientId) {
-            return false;
-          }
-
-          final bodegeroId = notification.payload['bodegeroId']?.toString();
-          if (userRole == 'bodegero' &&
-              notification.type.name == 'orderAssigned' &&
-              bodegeroId != null &&
-              bodegeroId != recipientId) {
-            return false;
-          }
-
-          final approvalRecipientId = notification.payload['recipientId']
-              ?.toString();
-          if (notification.payload['category'] == 'inventoryApproval' &&
-              approvalRecipientId != null &&
-              approvalRecipientId.isNotEmpty &&
-              approvalRecipientId != recipientId) {
-            return false;
-          }
-
-          return true;
-        })
+        .where(
+          (notification) =>
+              !notification.isDeleted &&
+              _isVisibleToCurrentRecipient(notification),
+        )
         .toList();
 
     return notifications;
+
+    
+  }
+
+  @override
+  Future<List<AppNotification>> fetchArchivedNotifications() async {
+    // Only archive records belonging to the signed-in user.
+    final readRows = await _supabase
+        .from('notification_reads')
+        .select()
+        .eq('user_id', userId)
+        .eq('is_deleted', true);
+
+    final archivedReads = List<Map<String, dynamic>>.from(readRows);
+
+    if (archivedReads.isEmpty) {
+      return <AppNotification>[];
+    }
+
+    final readsById = <String, Map<String, dynamic>>{
+      for (final row in archivedReads) row['notification_id'].toString(): row,
+    };
+
+    final ids = readsById.keys.toList(growable: false);
+    final archived = <AppNotification>[];
+
+    // Process IDs in batches to avoid an oversized IN filter.
+    for (var start = 0; start < ids.length; start += 100) {
+      final batch = ids.skip(start).take(100).toList(growable: false);
+
+      final notificationRows = await _supabase
+          .from('notifications')
+          .select()
+          .eq('location_id', locationId)
+          .contains('target_roles', [userRole])
+          .inFilter('id', batch);
+
+      for (final row in List<Map<String, dynamic>>.from(notificationRows)) {
+        final id = row['id'].toString();
+        final readState = readsById[id];
+
+        if (readState == null) continue;
+
+        final notification = AppNotification.fromJson(
+          row,
+          readState: readState,
+        );
+
+        if (notification.isDeleted &&
+            _isVisibleToCurrentRecipient(notification)) {
+          archived.add(notification);
+        }
+      }
+    }
+
+    archived.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return archived;
+  }
+
+  bool _isVisibleToCurrentRecipient(AppNotification notification) {
+    final helperId = notification.payload['helperId']?.toString();
+
+    if (userRole == 'helper' &&
+        notification.type.name == 'orderAssigned' &&
+        helperId != null &&
+        helperId != recipientId) {
+      return false;
+    }
+
+    final bodegeroId = notification.payload['bodegeroId']?.toString();
+
+    if (userRole == 'bodegero' &&
+        notification.type.name == 'orderAssigned' &&
+        bodegeroId != null &&
+        bodegeroId != recipientId) {
+      return false;
+    }
+
+    final approvalRecipientId = notification.payload['recipientId']?.toString();
+
+    if (notification.payload['category'] == 'inventoryApproval' &&
+        approvalRecipientId != null &&
+        approvalRecipientId.isNotEmpty &&
+        approvalRecipientId != recipientId) {
+      return false;
+    }
+
+    return true;
   }
 
   @override
@@ -199,48 +263,45 @@ class SupabaseNotificationRepository implements NotificationRepository {
 
   @override
   Future<void> markAsReadBatch(Iterable<String> notificationIds) async {
-    final ids = notificationIds.toSet();
+    final ids = notificationIds.toSet().toList(growable: false);
     if (ids.isEmpty) return;
-    final readAt = DateTime.now().toUtc().toIso8601String();
+
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    // Insert missing read-state rows without overwriting
+    // existing archived rows.
     final rows = ids
         .map(
-          (notificationId) => {
-            'notification_id': notificationId,
+          (id) => {
+            'notification_id': id,
             'user_id': userId,
-            'is_read': true,
-            'read_at': readAt,
+            'is_read': false,
             'is_deleted': false,
-            'deleted_at': null,
           },
         )
-        .toList(growable: false);
+        .toList();
+
     await _supabase
         .from('notification_reads')
-        .upsert(rows, onConflict: 'notification_id,user_id');
+        .upsert(
+          rows,
+          onConflict: 'notification_id,user_id',
+          ignoreDuplicates: true,
+        );
+
+    // Update read state only. Never reset archive state.
+    await _supabase
+        .from('notification_reads')
+        .update({'is_read': true, 'read_at': now})
+        .eq('user_id', userId)
+        .inFilter('notification_id', ids);
   }
 
   @override
   Future<void> markAllAsRead() async {
     final notifications = await fetchNotifications();
 
-    if (notifications.isEmpty) return;
-
-    final now = DateTime.now().toUtc().toIso8601String();
-
-    final rows = notifications.map((notification) {
-      return {
-        'notification_id': notification.id,
-        'user_id': userId,
-        'is_read': true,
-        'read_at': now,
-        'is_deleted': false,
-        'deleted_at': null,
-      };
-    }).toList();
-
-    await _supabase
-        .from('notification_reads')
-        .upsert(rows, onConflict: 'notification_id,user_id');
+    await markAsReadBatch(notifications.map((notification) => notification.id));
   }
 
   @override
@@ -257,15 +318,34 @@ class SupabaseNotificationRepository implements NotificationRepository {
   }
 
   @override
-  Future<void> deleteNotification(String notificationId) async {
-    await _supabase.from('notification_reads').upsert({
-      'notification_id': notificationId,
-      'user_id': userId,
-      'is_read': true,
-      'read_at': DateTime.now().toUtc().toIso8601String(),
-      'is_deleted': true,
-      'deleted_at': DateTime.now().toUtc().toIso8601String(),
-    }, onConflict: 'notification_id,user_id');
+  Future<void> archiveNotifications(Iterable<String> notificationIds) async {
+    final ids = notificationIds.toSet().toList(growable: false);
+    if (ids.isEmpty) return;
+
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    // Archive is per user. No notification is physically deleted.
+    // Batch writes avoid sending one request per notification.
+    for (var start = 0; start < ids.length; start += 100) {
+      final batch = ids
+          .skip(start)
+          .take(100)
+          .map(
+            (id) => {
+              'notification_id': id,
+              'user_id': userId,
+              'is_read': true,
+              'read_at': now,
+              'is_deleted': true,
+              'deleted_at': now,
+            },
+          )
+          .toList();
+
+      await _supabase
+          .from('notification_reads')
+          .upsert(batch, onConflict: 'notification_id,user_id');
+    }
   }
 
   @override

@@ -1364,8 +1364,24 @@ void _restoreMainSectionFromPath(String path) {
     });
   }
 
+  void _syncHelperWorkStatus() {
+    final presence = _staffPresenceService;
+
+    if (presence == null || _sessionRole != 'helper') {
+      return;
+    }
+
+    final preparing =
+        _helperChecklistVisible &&
+        _helperMobileTab == 0 &&
+        _currentMainSection == MainSection.queue;
+
+    unawaited(presence.setWorkMode(preparing ? staffPreparingModule : null));
+  }
+
   void _updateStaffPresenceModule() {
     _staffPresenceService?.updateModule(_currentModuleName());
+    _syncHelperWorkStatus();
   }
 
   void _handleSelectItem(InventoryItem item) {
@@ -2568,9 +2584,13 @@ void _restoreMainSectionFromPath(String path) {
                 }
               },
               onChecklistVisibilityChanged: (visible) {
-                if (mounted && _helperChecklistVisible != visible) {
+                if (!mounted) return;
+
+                if (_helperChecklistVisible != visible) {
                   setState(() => _helperChecklistVisible = visible);
                 }
+
+                _syncHelperWorkStatus();
               },
             ),
           );
@@ -2872,6 +2892,10 @@ void _restoreMainSectionFromPath(String path) {
     setState(() => _changingHelperBreak = true);
     try {
       await presence.setOnBreak(!presence.isOnBreak);
+    } on StateError catch (error) {
+      if (mounted) {
+        AppToast.error(context, error.message);
+      }
     } catch (_) {
       if (mounted) {
         AppToast.error(context, 'Could not update your availability.');
@@ -2951,9 +2975,6 @@ void _selectHelperUnifiedTab(
 
     setState(() {
       _helperMobileTab = tab;
-      if (tab != 0) {
-        _helperChecklistVisible = false;
-      }
     });
 
     final targetIndex = tab == 2 ? staffHistoryIndex : orderQueueIndex;
@@ -2970,6 +2991,7 @@ void _selectHelperUnifiedTab(
     ];
 
     _staffPresenceService?.updateModule(modules[tab]);
+    _syncHelperWorkStatus();
   }
 
 
@@ -2995,17 +3017,20 @@ void _selectHelperUnifiedTab(
             isOnBreak: presence.isOnBreak,
             isHelper: true,
             activeOrders: activeOrders,
+            currentModule: presence.workMode,
           );
 
           final label = switch (availability) {
             StaffAvailability.offline => 'Offline',
             StaffAvailability.onBreak => 'On break',
-            StaffAvailability.busy => 'Busy',
+            StaffAvailability.preparing => 'Preparing',
+            StaffAvailability.loading => 'Loading',
             StaffAvailability.available => 'Available',
           };
 
           final color = switch (availability) {
-            StaffAvailability.busy => const Color(0xFFC83D08),
+            StaffAvailability.preparing => const Color(0xFFC83D08),
+            StaffAvailability.loading => const Color(0xFFC83D08),
             StaffAvailability.available => const Color(0xFF168047),
             _ => const Color(0xFF45413E),
           };
@@ -3084,7 +3109,7 @@ Widget _buildHelperUnifiedWorkspace({
               onProfile: _showProfileDialog,
 
               onLogout: () => unawaited(_handleLogout()),
-              showTabs: !_helperChecklistVisible,
+              showTabs: selectedTab != 0 || !_helperChecklistVisible,
               availability: _buildHelperUnifiedAvailability(),
               notifications: _buildNotificationControls(
                 orderQueueIndex: orderQueueIndex,
@@ -3104,7 +3129,8 @@ Widget _buildHelperUnifiedWorkspace({
       ),
 
       // Cashier-style bottom navigation on mobile only.
-      bottomNavigationBar: isMobile && !_helperChecklistVisible
+      bottomNavigationBar:
+          isMobile && (selectedTab != 0 || !_helperChecklistVisible)
           ? NavigationBarTheme(
               data: NavigationBarThemeData(
                 indicatorColor: _accent.withValues(alpha: 0.10),
@@ -3799,15 +3825,18 @@ Widget _buildHelperUnifiedWorkspace({
             isOnBreak: presence.isOnBreak,
             isHelper: true,
             activeOrders: activeOrders,
+            currentModule: presence.workMode,
           );
           final label = switch (availability) {
             StaffAvailability.offline => 'Offline',
             StaffAvailability.onBreak => 'On break',
-            StaffAvailability.busy => 'Busy',
+            StaffAvailability.preparing => 'Preparing',
+            StaffAvailability.loading => 'Loading',
             StaffAvailability.available => 'Available',
           };
           final background = switch (availability) {
-            StaffAvailability.busy => const Color(0xFFC83D08),
+            StaffAvailability.preparing => const Color(0xFFC83D08),
+            StaffAvailability.loading => const Color(0xFFC83D08),
             StaffAvailability.available => const Color(0xFF168047),
             _ => const Color(0xFF45413E),
           };

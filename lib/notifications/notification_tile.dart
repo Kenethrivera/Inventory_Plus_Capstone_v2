@@ -8,13 +8,13 @@ import 'notification_presentation.dart';
 class NotificationTile extends StatelessWidget {
   final AppNotification notification;
   final VoidCallback? onTap;
-  final VoidCallback onDelete;
+  final VoidCallback? onArchive;
 
   const NotificationTile({
     super.key,
     required this.notification,
     this.onTap,
-    required this.onDelete,
+    this.onArchive,
   });
 
   static const Color _darkText = Color(0xFF0F172A);
@@ -77,6 +77,22 @@ class NotificationTile extends StatelessWidget {
                   size: 18,
                 ),
               ],
+              const SizedBox(height: 6),
+              if (onArchive != null)
+                IconButton(
+                  tooltip: 'Archive notification',
+                  onPressed: onArchive,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
+                  icon: const Icon(
+                    Icons.archive_outlined,
+                    size: 19,
+                    color: Color(0xFF756D67),
+                  ),
+                ),
             ],
           ),
         ],
@@ -98,21 +114,7 @@ class NotificationTile extends StatelessWidget {
           : tile,
     );
 
-    return Dismissible(
-      key: ValueKey(notification.id),
-      direction: DismissDirection.endToStart,
-      onDismissed: (_) => onDelete(),
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.symmetric(horizontal: 22),
-        decoration: BoxDecoration(
-          color: Colors.red,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: const Icon(LucideIcons.trash2, color: Colors.white),
-      ),
-      child: Opacity(opacity: isUnread ? 1 : 0.76, child: content),
-    );
+    return Opacity(opacity: isUnread ? 1 : 0.76, child: content);
   }
 
   Widget _buildIcon(NotificationPresentation presentation, bool isUnread) {

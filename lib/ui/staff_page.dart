@@ -867,31 +867,42 @@ class _StaffPageState extends State<StaffPage> {
   Widget _availability(Map<String, dynamic> person) {
     final id = person['id']?.toString() ?? '';
     final presence = widget.presence;
-    final online =
-        presence?.activeStaff.any((row) => row['user_id']?.toString() == id) ??
-        false;
+
+    final presenceRow = presence?.activeStaff
+        .where((row) => row['user_id']?.toString() == id)
+        .firstOrNull;
+
+    final online = presenceRow != null;
+
     final role = person['role']?.toString().toLowerCase();
     final helper = role == 'helper';
     final bodegero = role == 'bodegero';
+
     final availability = resolveStaffAvailability(
       isOnline: online,
       isOnBreak: (helper || bodegero) && (presence?.isUserOnBreak(id) ?? false),
       isHelper: helper,
       isBodegero: bodegero,
       activeOrders: _activeOrderCounts[id] ?? 0,
+      currentModule: presenceRow?['current_module']?.toString(),
     );
+
     final label = switch (availability) {
       StaffAvailability.offline => 'Offline',
       StaffAvailability.onBreak => 'On break',
-      StaffAvailability.busy => 'Busy',
+      StaffAvailability.preparing => 'Preparing',
+      StaffAvailability.loading => 'Loading',
       StaffAvailability.available => 'Available',
     };
+
     final color = switch (availability) {
       StaffAvailability.offline => _muted,
       StaffAvailability.onBreak => const Color(0xFF9A5B00),
-      StaffAvailability.busy => _orange,
+      StaffAvailability.preparing => _orange,
+      StaffAvailability.loading => _orange,
       StaffAvailability.available => _green,
     };
+
     return _pill(label, color);
   }
 

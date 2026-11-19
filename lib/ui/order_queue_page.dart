@@ -216,6 +216,12 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   }
 
   bool _openAssignedOrderChecklist(CustomerOrder order) {
+
+    if (widget.presenceService?.isOnBreak == true) {
+      AppToast.error(context, 'Switch to Available before preparing an order.');
+      return false;
+    }
+    
     final CustomerOrder? latestOrder = widget.controller.orderById(order.id);
 
     if (latestOrder == null ||
@@ -299,7 +305,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   String _mobileOrderId(CustomerOrder order) {
     final id = order.id.trim();
-    return '#${id.length <= 8 ? id : id.substring(0, 8)}';
+    return '#${(id.length <= 8 ? id : id.substring(0, 8)).toUpperCase()}';
   }
 
   String _mobileOrderLocations(CustomerOrder order) {
