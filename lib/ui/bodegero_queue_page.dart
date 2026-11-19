@@ -23,6 +23,8 @@ import 'helper_me_page.dart';
 import 'helper_request_page.dart';
 import 'scanner_search_page.dart';
 import 'store_map.dart';
+import 'widgets/app_toast.dart';
+import 'widgets/loading_proof_camera_page.dart';
 import 'widgets/staff_role_header.dart';
 
 const _ink = Color(0xFF171717);
@@ -40,6 +42,7 @@ class BodegeroQueuePage extends StatefulWidget {
     this.approvalChanges,
     this.onModuleChanged,
     this.presenceService,
+    this.imagePicker,
   });
 
   final InventoryController controller;
@@ -47,6 +50,7 @@ class BodegeroQueuePage extends StatefulWidget {
   final Stream<void>? approvalChanges;
   final ValueChanged<String>? onModuleChanged;
   final StaffPresenceService? presenceService;
+  final ImagePicker? imagePicker;
 
   @override
   State<BodegeroQueuePage> createState() => _BodegeroQueuePageState();
@@ -55,7 +59,6 @@ class BodegeroQueuePage extends StatefulWidget {
 class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   final _truckController = TextEditingController();
   final _searchController = TextEditingController();
-  final _quantityControllers = <String, TextEditingController>{};
   late Stream<List<CustomerOrder>> _ordersStream;
   late Stream<List<CustomerOrder>> _availabilityOrdersStream;
   StreamSubscription<List<CustomerOrder>>? _autoClaimSubscription;
@@ -84,11 +87,17 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   }
 
   void _bindAutoClaim() {
-    widget.presenceService?.addListener(_scheduleAutoClaim);
+    widget.presenceService?.addListener(_onPresenceChanged);
     _autoClaimSubscription = widget.controller.orderSnapshots.listen(
       (_) => _scheduleAutoClaim(),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleAutoClaim());
+  }
+
+  void _onPresenceChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _scheduleAutoClaim();
   }
 
   void _scheduleAutoClaim() {
@@ -170,7 +179,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller ||
         oldWidget.presenceService != widget.presenceService) {
-      oldWidget.presenceService?.removeListener(_scheduleAutoClaim);
+      oldWidget.presenceService?.removeListener(_onPresenceChanged);
       unawaited(_autoClaimSubscription?.cancel());
       _ordersStream = widget.controller.streamOrders();
       _availabilityOrdersStream = widget.controller.streamOrders();
@@ -181,19 +190,16 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   @override
   void dispose() {
+    widget.presenceService?.removeListener(_onPresenceChanged);
     if (_selectedOrderId != null) {
       final presence = widget.presenceService;
       if (presence != null) {
         unawaited(presence.setWorkMode(null));
       }
     }
-    widget.presenceService?.removeListener(_scheduleAutoClaim);
     unawaited(_autoClaimSubscription?.cancel());
     _truckController.dispose();
     _searchController.dispose();
-    for (final controller in _quantityControllers.values) {
-      controller.dispose();
-    }
     super.dispose();
   }
 
@@ -204,12 +210,22 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   Future<void> _toggleBreak() async {
     final presence = widget.presenceService;
-    if (presence == null || !presence.isStarted || _changingBreak) return;
+    if (presence == null ||
+        !presence.isStarted ||
+        _changingBreak ||
+        _busy ||
+        _clockBusy) {
+      return;
+    }
     setState(() => _changingBreak = true);
     try {
       await presence.setOnBreak(!presence.isOnBreak);
+    } on StateError catch (error) {
+      if (mounted) AppToast.error(context, error.message);
     } catch (_) {
-      _message('Could not update your availability.');
+      if (mounted) {
+        AppToast.error(context, 'Could not update your availability.');
+      }
     } finally {
       if (mounted) setState(() => _changingBreak = false);
     }
@@ -253,7 +269,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
             tooltip: presence.isOnBreak
                 ? 'Switch to Available'
                 : 'Switch to On break',
-            onPressed: _changingBreak || !presence.isStarted
+            onPressed: _changingBreak || _busy || _clockBusy || !presence.isStarted
                 ? null
                 : _toggleBreak,
             backgroundColor: background,
@@ -291,6 +307,10 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   Future<bool> _open(CustomerOrder order) async {
     if (_busy || _clockBusy) return false;
+    if (widget.presenceService?.isOnBreak == true) {
+      AppToast.error(context, 'Switch to Available before loading an order.');
+      return false;
+    }
     order = widget.controller.orderById(order.id) ?? order;
     if ((order.status != 'pending' && order.status != 'solo_picking') ||
         order.loadingVerifiedAt != null ||
@@ -304,10 +324,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       return false;
     }
     if (order.assignedBodegeroId == null) {
-      if (widget.presenceService?.isOnBreak == true) {
-        _message('Switch to Available before opening a new order.');
-        return false;
-      }
       setState(() => _busy = true);
       try {
         order = await widget.controller.claimOrderLoading(order.id);
@@ -328,22 +344,26 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         if (mounted) setState(() => _busy = false);
       }
     }
+    if (!mounted) return false;
+    if (widget.presenceService?.isOnBreak == true) {
+      AppToast.error(context, 'Switch to Available before loading an order.');
+      return false;
+    }
     setState(() => _clockBusy = true);
     try {
       await widget.controller.startOrderLoadingClock(order.id);
       if (!mounted) return false;
     } catch (error) {
-      _message('Could not start the loading timer: $error');
+      if (error.toString().contains('bodegero_unavailable')) {
+        if (mounted) {
+          AppToast.error(context, 'Switch to Available before loading an order.');
+        }
+      } else {
+        _message('Could not start the loading timer: $error');
+      }
       return false;
     } finally {
       if (mounted) setState(() => _clockBusy = false);
-    }
-    for (final controller in _quantityControllers.values) {
-      controller.dispose();
-    }
-    _quantityControllers.clear();
-    for (final item in order.items.where((item) => item.requiresLoading)) {
-      _quantityControllers[item.productId] = TextEditingController();
     }
     _truckController.clear();
     setState(() {
@@ -420,7 +440,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                 order.id,
                 expected.productId,
               );
-              _message('${expected.productName} verified. Count the quantity.');
+              _message('${expected.productName} verified. Load the ordered quantity.');
             } catch (error) {
               _message('Could not verify this item: $error');
             } finally {
@@ -433,16 +453,32 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   }
 
   Future<void> _capturePhoto() async {
-    if (_photoPreparing) return;
+    if (_photoPreparing || _busy) return;
+    final source = await _choosePhotoSource();
+    if (source == null || !mounted) return;
     setState(() => _photoPreparing = true);
     try {
-      final image = await ImagePicker().pickImage(
-        source: ImageSource.camera,
-        maxWidth: kIsWeb ? null : 960,
-        maxHeight: kIsWeb ? null : 960,
-        imageQuality: kIsWeb ? null : 65,
-      );
+      final XFile? image;
+      if (source == ImageSource.camera && widget.imagePicker == null) {
+        image = await Navigator.push<XFile>(
+          context,
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => const LoadingProofCameraPage(),
+          ),
+        );
+      } else {
+        image = await (widget.imagePicker ?? ImagePicker()).pickImage(
+          source: source,
+          maxWidth: kIsWeb ? null : 960,
+          maxHeight: kIsWeb ? null : 960,
+          imageQuality: kIsWeb ? null : 65,
+        );
+      }
       if (image == null) return;
+      if (await image.length() > 10 * 1024 * 1024) {
+        throw StateError('Images must be 10 MB or smaller.');
+      }
       final bytes = await loading_proof_photo
           .prepareLoadingProofPhotoFromPicker(image);
       if (mounted) setState(() => _photoJpeg = bytes);
@@ -452,6 +488,142 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       if (mounted) setState(() => _photoPreparing = false);
     }
   }
+
+  Future<ImageSource?> _choosePhotoSource() => showDialog<ImageSource>(
+    context: context,
+    builder: (dialogContext) => Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 22,
+                      color: _orange,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(dialogContext),
+                    icon: const Icon(Icons.close, size: 20),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Import image',
+                style: TextStyle(
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
+                  color: _ink,
+                ),
+              ),
+              const SizedBox(height: 5),
+              const Text(
+                'Choose where the supporting photo comes from.',
+                style: TextStyle(fontSize: 13, color: _muted),
+              ),
+              const SizedBox(height: 22),
+              _photoSourceOption(
+                dialogContext,
+                source: ImageSource.gallery,
+                icon: Icons.image_outlined,
+                title: 'Local image',
+                subtitle: 'Choose a photo from this device',
+              ),
+              const SizedBox(height: 10),
+              _photoSourceOption(
+                dialogContext,
+                source: ImageSource.camera,
+                icon: Icons.photo_camera_outlined,
+                title: 'Take photo',
+                subtitle: 'Capture supporting evidence using the camera',
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Images must be JPG, PNG, WebP, or GIF, up to 10 MB.',
+                style: TextStyle(fontSize: 12, color: _muted),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _photoSourceOption(
+    BuildContext dialogContext, {
+    required ImageSource source,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) => SizedBox(
+    width: double.infinity,
+    child: OutlinedButton(
+      onPressed: () => Navigator.pop(dialogContext, source),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: const Color(0xFFF7F6F4),
+        foregroundColor: _ink,
+        padding: const EdgeInsets.all(14),
+        side: const BorderSide(color: Color(0xFFE8E1DA)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: _orange, size: 20),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(fontSize: 12, color: _muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.chevron_right, size: 18, color: _muted),
+        ],
+      ),
+    ),
+  );
 
   Future<void> _finish(CustomerOrder order) async {
     if (_photoPreparing) return;
@@ -467,19 +639,9 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       _message('Enter the truck plate and capture a loading photo.');
       return;
     }
-    final quantities = <String, double>{};
-    for (final item in heavyItems) {
-      final count = double.tryParse(
-        _quantityControllers[item.productId]?.text.trim() ?? '',
-      );
-      if (count == null || !count.isFinite || count != item.quantity) {
-        _message(
-          'Confirm exactly ${item.quantity} ${item.unit ?? ''} of ${item.productName}.',
-        );
-        return;
-      }
-      quantities[item.productId] = count;
-    }
+    final quantities = <String, double>{
+      for (final item in heavyItems) item.productId: item.quantity,
+    };
     setState(() => _busy = true);
     try {
       final updated = await widget.controller.finishOrderLoading(
@@ -629,7 +791,9 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: () => unawaited(_open(order)),
+        onTap: _busy || _clockBusy
+            ? null
+            : () => unawaited(_open(order)),
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -740,7 +904,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: _busy || _clockBusy || widget.presenceService?.isOnBreak == true
+        onTap: _busy || _clockBusy
             ? null
             : () => unawaited(_open(order)),
         child: Container(
@@ -787,6 +951,41 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     );
   }
 
+  Widget _breakNotice({required bool compact}) {
+    final presence = widget.presenceService;
+    if (presence == null) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: presence,
+      builder: (context, _) {
+        if (!presence.isOnBreak) return const SizedBox.shrink();
+        return Container(
+          margin: EdgeInsets.only(bottom: compact ? 20 : 24),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF3D4),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(
+            children: [
+              Icon(LucideIcons.coffee, size: 18, color: Color(0xFFA95700)),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "You're on break. New heavy orders won't be auto-assigned to you until you switch back to Available.",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF473013),
+                    fontFamily: _font,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _queue(List<CustomerOrder> orders) {
     final myId = widget.controller.currentUserId;
     final matching = orders
@@ -826,39 +1025,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (widget.presenceService case final presence?)
-                      AnimatedBuilder(
-                        animation: presence,
-                        builder: (context, _) => presence.isOnBreak
-                            ? Container(
-                                margin: const EdgeInsets.only(bottom: 20),
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFF2D0),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    Icon(
-                                      LucideIcons.coffee,
-                                      color: Color(0xFFA65A00),
-                                      size: 18,
-                                    ),
-                                    SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        "You're on break. New heavy orders won't be assigned or claimed until you switch back to Available.",
-                                        style: TextStyle(
-                                          color: _ink,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : const SizedBox.shrink(),
-                      ),
+                    _breakNotice(compact: true),
                     Row(
                       children: [
                         const Expanded(
@@ -990,13 +1157,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (widget.presenceService?.isOnBreak == true) ...[
-                const Text(
-                  "You're on break. Switch to Available for new loading orders.",
-                  style: TextStyle(color: _muted, fontSize: 15),
-                ),
-                const SizedBox(height: 24),
-              ],
+              _breakNotice(compact: false),
               Row(
                 children: [
                   const Expanded(
@@ -1140,9 +1301,71 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       ? value.toInt().toString()
       : value.toString();
 
-  Widget _itemCard(CustomerOrder order, CustomerOrderItem item, int position) {
+  Widget _itemCard(CustomerOrder order, CustomerOrderItem item, int position) =>
+      LayoutBuilder(
+        builder: (context, constraints) => _itemCardContent(
+          order,
+          item,
+          position,
+          compact: constraints.maxWidth < 500,
+        ),
+      );
+
+  Widget _itemCardContent(
+    CustomerOrder order,
+    CustomerOrderItem item,
+    int position, {
+    required bool compact,
+  }) {
     final product = widget.controller.findAnyItemById(item.productId);
     final verified = item.heavyVerified;
+    final Widget scanAction = verified
+        ? compact
+            ? const Tooltip(
+                message: 'QR verified',
+                child: Icon(
+                  LucideIcons.circleCheck,
+                  size: 22,
+                  color: Color(0xFF168047),
+                ),
+              )
+            : const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(LucideIcons.circleCheck, size: 18, color: Color(0xFF168047)),
+                  SizedBox(width: 7),
+                  Text('QR verified', style: TextStyle(
+                    color: Color(0xFF168047),
+                    fontWeight: FontWeight.w700,
+                    fontFamily: _font,
+                  )),
+                ],
+              )
+        : compact
+            ? SizedBox(
+                width: 44,
+                height: 44,
+                child: IconButton.filled(
+                  tooltip: 'Scan shelf QR',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+                  onPressed: _busy ? null : () => _scan(order, item),
+                  icon: const Icon(LucideIcons.scanLine, size: 20),
+                  style: IconButton.styleFrom(backgroundColor: _ink),
+                ),
+              )
+            : FilledButton.icon(
+                onPressed: _busy ? null : () => _scan(order, item),
+                icon: const Icon(LucideIcons.scanLine, size: 17),
+                label: const Text('Scan shelf QR'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _ink,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                ),
+              );
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -1221,6 +1444,8 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                   ],
                 ),
               ),
+              const SizedBox(width: 12),
+              scanAction,
             ],
           ),
           const SizedBox(height: 12),
@@ -1231,59 +1456,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
               fontSize: 13,
               fontWeight: FontWeight.w700,
               fontFamily: _font,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              if (!verified)
-                FilledButton.icon(
-                  onPressed: _busy ? null : () => _scan(order, item),
-                  icon: const Icon(LucideIcons.scanLine, size: 17),
-                  label: const Text('Scan shelf QR'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _ink,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                  ),
-                )
-              else
-                const Row(
-                  children: [
-                    Icon(
-                      LucideIcons.circleCheck,
-                      size: 18,
-                      color: Color(0xFF168047),
-                    ),
-                    SizedBox(width: 7),
-                    Text(
-                      'QR verified',
-                      style: TextStyle(
-                        color: Color(0xFF168047),
-                        fontWeight: FontWeight.w700,
-                        fontFamily: _font,
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _quantityControllers[item.productId],
-            enabled: verified && !_busy,
-            onChanged: (_) => setState(() {}),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: 'Quantity loaded (${item.unit ?? 'pcs'})',
-              hintText: verified ? 'Enter counted quantity' : 'Scan QR first',
-              filled: true,
-              fillColor: const Color(0xFFFAF9F7),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
             ),
           ),
         ],
@@ -1368,26 +1540,17 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     ),
   );
 
-  bool _countsMatch(List<CustomerOrderItem> items) => items.every((item) {
-    final count = double.tryParse(
-      _quantityControllers[item.productId]?.text.trim() ?? '',
-    );
-    return count != null && count.isFinite && count == item.quantity;
-  });
-
   Widget _checklist(CustomerOrder order) {
     final items = _heavyItems(order);
     final sharedProgress = OrderWorkProgress.fromOrder(order);
     final scanned = items.where((item) => item.heavyVerified).length;
     final allScanned = scanned == items.length;
-    final countsMatch = _countsMatch(items);
     final truckReady = _truckController.text.trim().isNotEmpty;
     final photoReady = _photoJpeg != null;
     final canFinish =
         order.assignedBodegeroId != null &&
         !_photoPreparing &&
         allScanned &&
-        countsMatch &&
         truckReady &&
         photoReady;
     final nextLabel = _busy
@@ -1396,8 +1559,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         ? 'Preparing photo…'
         : !allScanned
         ? 'Scan ${items.length - scanned} more ${items.length - scanned == 1 ? 'item' : 'items'}'
-        : !countsMatch
-        ? 'Confirm loaded quantities'
         : !truckReady || !photoReady
         ? 'Add truck and photo'
         : 'Confirm loaded onto truck';
@@ -1622,7 +1783,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         order.assignedBodegeroId != null &&
         !_photoPreparing &&
         allScanned &&
-        _countsMatch(items) &&
         _truckController.text.trim().isNotEmpty &&
         _photoJpeg != null;
     final nextLabel = _busy
@@ -1631,8 +1791,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         ? 'Preparing photo…'
         : !allScanned
         ? 'Scan ${items.length - scanned} more ${items.length - scanned == 1 ? 'item' : 'items'}'
-        : !_countsMatch(items)
-        ? 'Confirm loaded quantities'
         : _truckController.text.trim().isEmpty || _photoJpeg == null
         ? 'Add truck and photo'
         : 'Confirm loaded onto truck';

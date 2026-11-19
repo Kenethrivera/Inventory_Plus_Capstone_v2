@@ -21,8 +21,8 @@ begin
   if not found then
     raise exception 'Approval session is invalid or expired';
   end if;
-  if v_profile.role not in ('helper', 'staff', 'cashier') then
-    raise exception 'Only Cashier or Helper accounts may upload proof';
+  if v_profile.role not in ('helper', 'bodegero', 'staff', 'cashier') then
+    raise exception 'Only Cashier, Helper, or Bodegero accounts may upload proof';
   end if;
   if v_file_name is null or length(v_file_name) > 255 then
     raise exception 'A valid proof file name is required';

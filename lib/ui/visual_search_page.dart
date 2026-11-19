@@ -19,9 +19,9 @@ import 'package:inventory_plus/services/app_error_mapper.dart';
 import 'package:inventory_plus/services/app_logger.dart';
 import 'package:inventory_plus/ui/widgets/app_error_dialog.dart';
 
-const Color _primaryBlue = Color(0xFF2563EB);
-const Color _lightBlue = Color(0xFF3B82F6);
-const Color _darkBlue = Color(0xFF1D4ED8);
+const Color _primaryAccent = Color(0xFFC83D08);
+const Color _lightAccent = Color(0xFFEA580C);
+const Color _darkAccent = Color(0xFFC2410C);
 
 class VisualSearchPage extends StatefulWidget {
   final InventoryController controller;
@@ -281,11 +281,11 @@ Future<void> _toggleFlash() async {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(40),
             gradient: const LinearGradient(
-              colors: [_lightBlue, _darkBlue],
+              colors: [_lightAccent, _darkAccent],
             ),
             boxShadow: [
               BoxShadow(
-                color: _primaryBlue.withValues(alpha: 0.45),
+                color: _primaryAccent.withValues(alpha: 0.45),
                 blurRadius: 20,
                 spreadRadius: 1,
                 offset: const Offset(0, 6),
@@ -1067,7 +1067,7 @@ Future<void> _toggleFlash() async {
   Widget _buildItemImage(String imageUrl) {
     if (imageUrl.isEmpty) {
       return Container(
-        color: const Color(0xFF334155),
+        color: const Color(0xFFF4F6F8),
         child: const Icon(LucideIcons.imageOff, color: Colors.grey, size: 24),
       );
     }
@@ -1077,7 +1077,7 @@ Future<void> _toggleFlash() async {
       imageUrl,
       fit: BoxFit.cover,
       errorBuilder: (_, _, _) => Container(
-        color: const Color(0xFF334155),
+        color: const Color(0xFFF4F6F8),
         child: const Icon(LucideIcons.imageOff, color: Colors.grey, size: 24),
       ),
     );
@@ -1112,7 +1112,7 @@ Future<void> _toggleFlash() async {
                   height: 15,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Color(0xFF93C5FD),
+                    color: _lightAccent,
                     backgroundColor: Colors.white12,
                   ),
                 ),
@@ -1153,9 +1153,9 @@ Future<void> _toggleFlash() async {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 28),
             decoration: BoxDecoration(
-              color: const Color(0xE61E293B),
+              color: const Color(0xF2FFFFFF),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _primaryBlue.withValues(alpha: 0.4)),
+              border: Border.all(color: _primaryAccent.withValues(alpha: 0.4)),
             ),
             child: const Column(
               mainAxisSize: MainAxisSize.min,
@@ -1164,8 +1164,8 @@ Future<void> _toggleFlash() async {
                   width: 60,
                   height: 60,
                   child: CircularProgressIndicator(
-                    color: _primaryBlue,
-                    backgroundColor: Colors.white12,
+                    color: _primaryAccent,
+                    backgroundColor: Color(0xFFFFE7DB),
                     strokeWidth: 4, // Thinner stroke for a lighter feel
                   ),
                 ),
@@ -1173,7 +1173,7 @@ Future<void> _toggleFlash() async {
                 Text(
                   "Analyzing tool...",
                   style: TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF0F172A),
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                   ),
@@ -1181,7 +1181,7 @@ Future<void> _toggleFlash() async {
                 SizedBox(height: 6),
                 Text(
                   "Processing image data...",
-                  style: TextStyle(color: Colors.white60, fontSize: 13),
+                  style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
                 ),
               ],
             ),
@@ -1222,7 +1222,7 @@ Future<void> _toggleFlash() async {
       bannerIcon = LucideIcons.checkCircle2;
       descriptionText = "Found a match in your inventory.";
     } else if (hasSimilar) {
-      bannerColor = _primaryBlue;
+      bannerColor = _primaryAccent;
       bannerTitle = "SIMILAR ITEMS IN STOCK";
       bannerIcon = LucideIcons.searchCode;
       descriptionText = "We found similar items in stock:";
@@ -1237,7 +1237,8 @@ Future<void> _toggleFlash() async {
     return showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ConstrainedBox(
@@ -1292,11 +1293,11 @@ Future<void> _toggleFlash() async {
                           )
                         : Container(
                             height: 200,
-                            color: const Color(0xFF0F172A),
+                            color: const Color(0xFFF4F6F8),
                             child: const Center(
                               child: Icon(
                                 LucideIcons.imageOff,
-                                color: Colors.white24,
+                                color: Color(0xFF94A3B8),
                                 size: 40,
                               ),
                             ),
@@ -1317,7 +1318,7 @@ Future<void> _toggleFlash() async {
                                 child: Text(
                                   detectedName,
                                   style: const TextStyle(
-                                    color: Colors.white,
+                                    color: Color(0xFF0F172A),
                                     fontSize: 20,
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -1330,18 +1331,16 @@ Future<void> _toggleFlash() async {
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFF2563EB,
-                                    ).withOpacity(0.2),
+                                    color: _primaryAccent.withOpacity(0.1),
                                     border: Border.all(
-                                      color: const Color(0xFF2563EB),
+                                      color: _primaryAccent,
                                     ),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
                                     "${(confidence * 100).toStringAsFixed(1)}%",
                                     style: const TextStyle(
-                                      color: Color(0xFF60A5FA),
+                                      color: _primaryAccent,
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -1353,7 +1352,7 @@ Future<void> _toggleFlash() async {
                           Text(
                             descriptionText,
                             style: const TextStyle(
-                              color: Colors.white70,
+                              color: Color(0xFF64748B),
                               fontSize: 13,
                               height: 1.3,
                             ),
@@ -1377,7 +1376,7 @@ Future<void> _toggleFlash() async {
                                           ? exactMatch
                                           : similarItems[index];
                                       return Material(
-                                        color: const Color(0xFF0F172A),
+                                        color: const Color(0xFFF4F6F8),
                                         borderRadius: BorderRadius.circular(8),
                                         child: InkWell(
                                           onTap: () {
@@ -1416,7 +1415,7 @@ Future<void> _toggleFlash() async {
                                                       Text(
                                                         item.name,
                                                         style: const TextStyle(
-                                                          color: Colors.white,
+                                                          color: Color(0xFF0F172A),
                                                           fontWeight:
                                                               FontWeight.bold,
                                                           fontSize: 13,
@@ -1430,7 +1429,7 @@ Future<void> _toggleFlash() async {
                                                         "₱${item.price.toStringAsFixed(2)}  •  Stock: ${item.quantity.toInt()}",
                                                         style: const TextStyle(
                                                           color: Color(
-                                                            0xFF60A5FA,
+                                                            0xFFC83D08,
                                                           ),
                                                           fontSize: 12,
                                                         ),
@@ -1440,7 +1439,7 @@ Future<void> _toggleFlash() async {
                                                 ),
                                                 const Icon(
                                                   LucideIcons.chevronRight,
-                                                  color: Colors.white24,
+                                                  color: Color(0xFF94A3B8),
                                                   size: 18,
                                                 ),
                                               ],
@@ -1454,13 +1453,13 @@ Future<void> _toggleFlash() async {
                                     width: double.infinity,
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF0F172A),
+                                      color: const Color(0xFFF4F6F8),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: const Text(
                                       "No matching stock items available.",
                                       style: TextStyle(
-                                        color: Colors.white38,
+                                        color: Color(0xFF64748B),
                                         fontSize: 12,
                                       ),
                                     ),
@@ -1499,8 +1498,8 @@ Future<void> _toggleFlash() async {
                     Expanded(
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white70,
-                          side: const BorderSide(color: Colors.white24),
+                          foregroundColor: _primaryAccent,
+                          side: const BorderSide(color: _primaryAccent),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -1514,7 +1513,7 @@ Future<void> _toggleFlash() async {
                     Expanded(
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryBlue,
+                          backgroundColor: _primaryAccent,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
@@ -1578,7 +1577,7 @@ Future<void> _toggleFlash() async {
       statusIcon = LucideIcons.checkCircle2;
       statusText = 'Found in inventory';
     } else if (similar.isNotEmpty) {
-      statusColor = const Color(0xFF93C5FD);
+      statusColor = _lightAccent;
       statusIcon = LucideIcons.searchCode;
       statusText = 'Possible matches';
     } else {
@@ -1705,7 +1704,7 @@ Future<void> _toggleFlash() async {
                             Tooltip(
                               message: 'AI confidence estimate; not a guarantee.',
                               child: Text('Confidence: $scoreLabel',
-                                style: const TextStyle(color: Color(0xFF93C5FD),
+                                style: const TextStyle(color: _lightAccent,
                                   fontWeight: FontWeight.w700, fontSize: 12)),
                             )
                           else
@@ -1714,7 +1713,7 @@ Future<void> _toggleFlash() async {
                           if (exact != null && !isPending) ...[
                             const SizedBox(height: 5),
                             Text('₱${exact.price.toStringAsFixed(2)}',
-                              style: const TextStyle(color: Color(0xFF93C5FD),
+                              style: const TextStyle(color: _lightAccent,
                                   fontWeight: FontWeight.w700, fontSize: 12)),
                             Text('${exact.quantity.toInt()} in stock',
                               style: const TextStyle(color: Colors.white70,
@@ -1740,7 +1739,7 @@ Future<void> _toggleFlash() async {
                           icon: const Icon(LucideIcons.shoppingCart, size: 18),
                           label: const Text('Add to cart'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _primaryBlue,
+                            backgroundColor: _primaryAccent,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 13),
                             shape: RoundedRectangleBorder(
@@ -1780,7 +1779,7 @@ Future<void> _toggleFlash() async {
                                 )),
                                 const SizedBox(width: 5),
                                 const Icon(Icons.add_circle_outline,
-                                    color: Color(0xFF93C5FD), size: 19),
+                                    color: _lightAccent, size: 19),
                               ]),
                             ),
                           ),
@@ -1922,7 +1921,7 @@ Future<void> _toggleFlash() async {
                                 child: CircularProgressIndicator(
                                   value: _autoScanController!.value,
                                   strokeWidth: 4,
-                                  color: _primaryBlue,
+                                  color: _primaryAccent,
                                   backgroundColor: Colors.white24,
                                 ),
                               );
@@ -1932,7 +1931,7 @@ Future<void> _toggleFlash() async {
                     ],
                   )
                 : const Center(
-                    child: CircularProgressIndicator(color: _primaryBlue),
+                    child: CircularProgressIndicator(color: _primaryAccent),
                   ),
           ),
           // The web guide box is the crop boundary. On mobile it is only
@@ -1972,7 +1971,7 @@ Future<void> _toggleFlash() async {
                     color: Colors.black.withValues(alpha: 0.7),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                        color: _primaryBlue.withValues(alpha: 0.6)),
+                        color: _primaryAccent.withValues(alpha: 0.6)),
                   ),
                   child: Text(
                     _isMobilePlatform
@@ -2043,7 +2042,7 @@ Future<void> _toggleFlash() async {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: _primaryBlue.withOpacity(0.85),
+                          color: _primaryAccent.withOpacity(0.85),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: Colors.white24, width: 1),
                         ),
@@ -2183,7 +2182,7 @@ class ScanFramePainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5
-        ..color = _primaryBlue.withValues(alpha: 0.6),
+        ..color = _primaryAccent.withValues(alpha: 0.6),
     );
 
     // Bold corner brackets
@@ -2191,7 +2190,7 @@ class ScanFramePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round
-      ..color = _primaryBlue;
+      ..color = _primaryAccent;
     const len = 28.0;
     final l = box.left, t = box.top, r = box.right, b = box.bottom;
     canvas.drawPath(
@@ -2777,7 +2776,7 @@ class BoxPainter extends CustomPainter {
 
     // Draw Box
     final paint = Paint()
-      ..color = const Color(0xFF2563EB)
+      ..color = _primaryAccent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
 
@@ -2805,7 +2804,7 @@ class BoxPainter extends CustomPainter {
     )..layout();
 
     // Draw Tag Background
-    final tagBg = Paint()..color = const Color(0xFF2563EB);
+    final tagBg = Paint()..color = _primaryAccent;
     final tagRect = Rect.fromLTWH(
       left,
       (top - 22 < 0) ? top : top - 22,

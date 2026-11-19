@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:inventory_plus/data/inventory.dart';
 import 'package:inventory_plus/logic/inventory_controller.dart';
 import 'package:inventory_plus/logic/bodegero_loading_history.dart';
@@ -13,6 +14,7 @@ import 'package:inventory_plus/notifications/notification_service.dart';
 import 'package:inventory_plus/services/staff_presence_service.dart';
 import 'package:inventory_plus/ui/bodegero_queue_page.dart';
 import 'package:inventory_plus/ui/order_queue_page.dart';
+import 'package:inventory_plus/ui/widgets/loading_proof_camera_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -193,6 +195,7 @@ class _Presence extends StaffPresenceService {
       );
 
   bool _onBreak = false;
+  String? _workMode;
 
   @override
   bool get isStarted => true;
@@ -201,9 +204,39 @@ class _Presence extends StaffPresenceService {
   bool get isOnBreak => _onBreak;
 
   @override
+  String? get workMode => _workMode;
+
+  @override
+  Future<void> setWorkMode(String? mode) async {
+    if (mode != null && _onBreak) return;
+    _workMode = mode;
+    notifyListeners();
+  }
+
+  @override
   Future<void> setOnBreak(bool onBreak) async {
+    if (onBreak && _workMode != null) {
+      throw StateError('Close the active order before taking a break.');
+    }
     _onBreak = onBreak;
     notifyListeners();
+  }
+}
+
+class _RecordingImagePicker extends ImagePicker {
+  final sources = <ImageSource>[];
+
+  @override
+  Future<XFile?> pickImage({
+    required ImageSource source,
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+    CameraDevice preferredCameraDevice = CameraDevice.rear,
+    bool requestFullMetadata = true,
+  }) async {
+    sources.add(source);
+    return null;
   }
 }
 
@@ -239,7 +272,7 @@ void main() {
     expect(_QueueController(order).canRequestInventoryApproval, isTrue);
   });
 
-  testWidgets('Bodegero header shows Preparing for assigned loading', (
+  testWidgets('Assigned loading remains available until work starts', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
@@ -256,7 +289,53 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Preparing'), findsOneWidget);
+    expect(find.text('Available'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('On break blocks assigned loading; active loading blocks a break', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final presence = _Presence();
+    addTearDown(presence.dispose);
+    final controller = _QueueController(order);
+    await tester.pumpWidget(MaterialApp(
+      home: BodegeroQueuePage(
+        controller: controller,
+        presenceService: presence,
+        onLogout: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Switch to On break'));
+    await tester.pumpAndSettle();
+    final assignedCard = find.ancestor(
+      of: find.text('#ORDER-12'),
+      matching: find.byType(InkWell),
+    );
+    expect(tester.widget<InkWell>(assignedCard.first).onTap, isNotNull);
+    expect(find.text('On break'), findsOneWidget);
+    expect(find.textContaining("New heavy orders won't be auto-assigned"), findsOneWidget);
+    await tester.tap(find.text('Start loading'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Switch to Available before loading an order.'), findsOneWidget);
+    expect(find.text('Load onto truck'), findsNothing);
+
+    await tester.tap(find.byTooltip('Switch to Available'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<InkWell>(assignedCard.first).onTap, isNotNull);
+    await tester.tap(find.text('Start loading'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Loading'), findsWidgets);
+    expect(presence.workMode, 'Loading order');
+    await tester.tap(find.byTooltip('Switch to On break'));
+    await tester.pumpAndSettle();
+    expect(presence.isOnBreak, isFalse);
+    expect(find.textContaining('Close the active order'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -340,12 +419,124 @@ void main() {
       of: find.text('#OPEN-123'),
       matching: find.byType(InkWell),
     );
-    expect(tester.widget<InkWell>(openCard.first).onTap, isNull);
+    expect(tester.widget<InkWell>(openCard.first).onTap, isNotNull);
     expect(find.text('Claim'), findsNothing);
+    await tester.tap(find.text('#OPEN-123'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Switch to Available before loading an order.'), findsOneWidget);
     await tester.tap(find.byTooltip('Switch to Available'));
     await tester.pumpAndSettle();
     expect(find.text('Available'), findsOneWidget);
     expect(tester.widget<InkWell>(openCard.first).onTap, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Loading proof source dialog routes gallery and camera', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final picker = _RecordingImagePicker();
+    await tester.pumpWidget(MaterialApp(
+      home: BodegeroQueuePage(
+        controller: _QueueController(order),
+        imagePicker: picker,
+        onLogout: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start loading'));
+    await tester.pumpAndSettle();
+
+    final capture = find.text('Capture loaded goods');
+    await tester.ensureVisible(capture);
+    await tester.tap(capture);
+    await tester.pumpAndSettle();
+    expect(find.text('Import image'), findsOneWidget);
+    expect(find.text('Local image'), findsOneWidget);
+    expect(find.text('Take photo'), findsOneWidget);
+    await tester.tap(find.text('Local image'));
+    await tester.pumpAndSettle();
+    expect(picker.sources, [ImageSource.gallery]);
+
+    await tester.tap(capture);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Take photo'));
+    await tester.pumpAndSettle();
+    expect(picker.sources, [ImageSource.gallery, ImageSource.camera]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Loading camera fills the mobile screen with flash and flip controls', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      const MaterialApp(home: LoadingProofCameraPage()),
+    );
+    await tester.pump();
+
+    expect(find.byType(Dialog), findsNothing);
+    expect(tester.getSize(find.byType(Scaffold)), const Size(390, 844));
+    expect(find.byTooltip('Toggle flashlight'), findsOneWidget);
+    expect(find.byTooltip('Flip camera'), findsOneWidget);
+    expect(find.byTooltip('Capture photo'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Take photo opens the full-screen camera from loading proof', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+      home: BodegeroQueuePage(
+        controller: _QueueController(order),
+        onLogout: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start loading'));
+    await tester.pumpAndSettle();
+    final capture = find.text('Capture loaded goods');
+    await tester.ensureVisible(capture);
+    await tester.tap(capture);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Take photo'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.byType(LoadingProofCameraPage), findsOneWidget);
+    expect(find.byType(Dialog), findsNothing);
+    expect(find.byTooltip('Flip camera'), findsOneWidget);
+    expect(find.byTooltip('Toggle flashlight'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Desktop Bodegero shows the Helper-style break banner', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final presence = _Presence();
+    addTearDown(presence.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: BodegeroQueuePage(
+        controller: _QueueController(order),
+        presenceService: presence,
+        onLogout: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Switch to On break'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining("New heavy orders won't be auto-assigned"),
+      findsOneWidget,
+    );
+    expect(find.text('On break'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -553,7 +744,12 @@ void main() {
       expect(find.text('Load onto truck'), findsOneWidget);
       expect(find.text('Pause loading'), findsNothing);
       expect(find.text('Resume loading'), findsNothing);
-      expect(find.text('Scan shelf QR'), findsOneWidget);
+      if (size.width < 600) {
+        expect(find.byTooltip('Scan shelf QR'), findsOneWidget);
+      } else {
+        expect(find.text('Scan shelf QR'), findsOneWidget);
+      }
+      expect(find.textContaining('Quantity loaded'), findsNothing);
       expect(find.text('Truck loading proof'), findsOneWidget);
       if (size.width >= 900) {
         expect(find.text('Loading list · scan and count'), findsOneWidget);
