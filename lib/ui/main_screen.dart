@@ -2386,6 +2386,11 @@ void _restoreMainSectionFromPath(String path) {
       return BodegeroQueuePage(
         controller: widget.controller,
         onLogout: () => unawaited(_handleLogout()),
+        // STORE_LOGOUT_COUNTDOWN_HEADER: Bodegero has its own app bar.
+        storeLogoutCountdown: _showStoreLogoutCountdownChip &&
+                _storeLogoutRemainingSeconds > 0
+            ? _buildStoreLogoutCountdownChip()
+            : null,
         approvalChanges: widget.realtimeSync.approvalRequestChanges,
         presenceService: _staffPresenceService,
         onModuleChanged: (module) =>
@@ -2804,6 +2809,49 @@ void _restoreMainSectionFromPath(String path) {
     );
   }
 
+  // STORE_LOGOUT_COUNTDOWN_HEADER_START
+  // Shared final-minute countdown used by all role headers. The Wait button
+  // only dismisses the dialog; it does not pause the logout deadline.
+  Widget _buildStoreLogoutCountdownChip() =>
+      Tooltip(
+        message: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
+        child: Semantics(
+          label: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
+          liveRegion: true,
+          child: Container(
+            height: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: const Color(0xFFF97316)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  LucideIcons.timer,
+                  size: 15,
+                  color: Color(0xFFC2410C),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  _formatStoreLogoutCountdown(_storeLogoutRemainingSeconds),
+                  style: const TextStyle(
+                    color: Color(0xFF9A3412),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    fontFamily: _fontFam,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+  // STORE_LOGOUT_COUNTDOWN_HEADER_END
+
   Widget _buildNotificationControls({
     required int orderQueueIndex,
     required int posIndex,
@@ -2818,43 +2866,7 @@ void _restoreMainSectionFromPath(String path) {
       children: [
         if (_showStoreLogoutCountdownChip &&
             _storeLogoutRemainingSeconds > 0) ...[
-          Tooltip(
-            message: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
-            child: Semantics(
-              label: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
-              liveRegion: true,
-              child: Container(
-                height: 30,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7ED),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: const Color(0xFFF97316)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      LucideIcons.timer,
-                      size: 15,
-                      color: Color(0xFFC2410C),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      _formatStoreLogoutCountdown(_storeLogoutRemainingSeconds),
-                      style: const TextStyle(
-                        color: Color(0xFF9A3412),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        fontFamily: _fontFam,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          _buildStoreLogoutCountdownChip(),
           const SizedBox(width: 4),
         ],
         NotificationBell(
@@ -3874,8 +3886,8 @@ Widget _buildHelperUnifiedWorkspace({
     final label = window == null
         ? 'Store hours unavailable'
         : isOpen
-        ? 'Open · closes ${_dashboardTime(window.shiftEnd)}'
-        : 'Closed · opens ${_dashboardTime(nextOpening!)}';
+        ? 'Open - closes ${_dashboardTime(window.shiftEnd)}'
+        : 'Closed - opens ${_dashboardTime(nextOpening!)}';
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -3958,8 +3970,8 @@ Widget _buildHelperUnifiedWorkspace({
       final storeStatus = window == null
           ? 'Store hours unavailable'
           : isOpen
-          ? 'Open ┬╖ closes ${_dashboardTime(window.shiftEnd)}'
-          : 'Closed ┬╖ opens ${_dashboardTime(nextOpening!)}';
+          ? 'Open - closes ${_dashboardTime(window.shiftEnd)}'
+          : 'Closed - opens ${_dashboardTime(nextOpening!)}';
       final name = widget.controller.currentUserName?.trim();
       final displayName = name == null || name.isEmpty ? 'Cashier' : name;
       final parts = displayName.split(RegExp(r'\s+'));

@@ -42,6 +42,7 @@ class BodegeroQueuePage extends StatefulWidget {
     this.approvalChanges,
     this.onModuleChanged,
     this.presenceService,
+    this.storeLogoutCountdown,
     this.imagePicker,
   });
 
@@ -50,6 +51,8 @@ class BodegeroQueuePage extends StatefulWidget {
   final Stream<void>? approvalChanges;
   final ValueChanged<String>? onModuleChanged;
   final StaffPresenceService? presenceService;
+  // STORE_LOGOUT_COUNTDOWN_HEADER: Provided by MainScreen, not generated here.
+  final Widget? storeLogoutCountdown;
   final ImagePicker? imagePicker;
 
   @override
@@ -702,9 +705,14 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   PreferredSizeWidget _header() {
     final name = widget.controller.currentUserName?.trim() ?? 'Bodegero';
     final desktop = MediaQuery.sizeOf(context).width >= 900;
+    final countdown = widget.storeLogoutCountdown;
+    final mobileCountdown = !desktop && countdown != null;
     return PreferredSize(
-      preferredSize: const Size.fromHeight(67),
-      child: StaffRoleHeader(
+      preferredSize: Size.fromHeight(mobileCountdown ? 98 : 67),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StaffRoleHeader(
         userName: name,
         tabs: const ['Queue', 'Map', 'History', 'Request'],
         selectedTab: _tabIndex,
@@ -724,9 +732,17 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         availability: widget.presenceService == null
             ? null
             : _availabilityChip(widget.presenceService!),
-        notifications: NotificationProvider.maybeOf(context) == null
-            ? null
-            : NotificationBell(
+        notifications: (desktop && countdown != null) ||
+                NotificationProvider.maybeOf(context) != null
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (desktop && countdown != null) ...[
+                    countdown,
+                    const SizedBox(width: 4),
+                  ],
+                  if (NotificationProvider.maybeOf(context) != null)
+                    NotificationBell(
                 iconColor: _ink,
                 helperMobilePanel: true,
                 isActionable: (notification) =>
@@ -736,7 +752,26 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                         false),
                 onNotificationSelected: _openNotifiedLoadingOrder,
               ),
+                ],
+              )
+            : null,
         showTabs: desktop,
+          ),
+          // STORE_LOGOUT_COUNTDOWN_HEADER: Mobile uses a second compact
+          // header row so the timer cannot crowd the avatar/bell.
+          if (mobileCountdown)
+            Container(
+              height: 34,
+              width: double.infinity,
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 12),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: _line)),
+              ),
+              child: countdown!,
+            ),
+        ],
       ),
     );
   }

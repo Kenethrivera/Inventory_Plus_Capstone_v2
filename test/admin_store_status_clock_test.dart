@@ -26,12 +26,12 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Closed · opens 7:30 AM'), findsOneWidget);
+    expect(find.text('Closed - opens 7:30 AM'), findsOneWidget);
     expect(find.textContaining('Now '), findsNothing);
 
     now = DateTime(2026, 11, 18, 7, 30);
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Open · closes 5:00 PM'), findsOneWidget);
+    expect(find.text('Open - closes 5:00 PM'), findsOneWidget);
     expect(
       tester.widget<Icon>(find.byIcon(Icons.circle)).color,
       const Color(0xFF16A34A),
@@ -74,6 +74,6 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Closed · Maintenance · opens 7:30 AM'), findsOneWidget);
+    expect(find.text('Closed - Maintenance - opens 7:30 AM'), findsOneWidget);
   });
 }
