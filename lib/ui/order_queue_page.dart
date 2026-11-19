@@ -2390,246 +2390,362 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.sizeOf(context).width < 600) {
-      return _buildMobileChecklist(context);
+  // HELPER_DESKTOP_PICKING_LAYOUT_V2_START
+  // UI-ONLY parity: Desktop follows Bodegero's map-left / work-list-right
+  // composition, but every Helper pick, scan, and finish action is reused
+  // from the existing mobile implementation. No backend behavior changed.
+  Widget _buildDesktopPickingChecklist(BuildContext context) {
+    final sharedProgress = OrderWorkProgress.fromOrder(order);
+    final walkingItems = _walkingOrderItems();
+    final pickStopMarkers = <PickStopMarker>[];
+    for (var i = 0; i < walkingItems.length; i++) {
+      final locationId =
+          controller.findAnyItemById(walkingItems[i].productId)?.locationId;
+      if (locationId != null && locationId.isNotEmpty) {
+        pickStopMarkers.add(
+          PickStopMarker(
+            locationId: locationId,
+            number: i + 1,
+            label: _itemLocation(walkingItems[i]),
+          ),
+        );
+      }
     }
-    final String shortId = order.id.toString().substring(0, 8).toUpperCase();
 
-    final int pickedCount = workItems
+    final pickedCount = workItems
         .where((item) => pickedItems.contains(item.productId))
         .length;
-
-    final int totalCount = workItems.length;
-
-    final bool isAllPicked = pickedCount == totalCount;
-
-    final assignedHelperName = order.assignedHelperName?.toString().trim();
+    final remaining = workItems.length - pickedCount;
+    final nextItems = walkingItems.where(
+      (item) => !pickedItems.contains(item.productId),
+    );
+    final highlightedProductId = _focusedProductId ??
+        (nextItems.isEmpty ? null : nextItems.first.productId);
+    final highlightedLocationId = highlightedProductId == null
+        ? null
+        : controller.findAnyItemById(highlightedProductId)?.locationId;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F8),
-
+      backgroundColor: const Color(0xFFF6F5F2),
       body: Column(
         children: [
-          // =====================================================
-          // COMPACT HEADER
-          // Back button + order information share one row.
-          // =====================================================
+          // Desktop order heading matches the Bodegero checklist layout.
           Container(
             width: double.infinity,
-            color: const Color(0xFFF4F6F8),
-            padding: const EdgeInsets.fromLTRB(32, 24, 32, 18),
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(40, 22, 40, 22),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // -------------------------------
-                // BACK BUTTON
-                // -------------------------------
-                InkWell(
-                  onTap: onBack,
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      LucideIcons.arrowLeft,
-                      size: 20,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
+                IconButton(
+                  tooltip: 'Back to queue',
+                  onPressed: onBack,
+                  icon: const Icon(LucideIcons.arrowLeft,
+                      color: _helperInk),
                 ),
-
-                const SizedBox(width: 16),
-
-                // -------------------------------
-                // ORDER HEADING
-                // -------------------------------
+                const SizedBox(width: 18),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Order assignment',
-                        style: TextStyle(
-                          color: Colors.grey.shade500,
-                          fontSize: 13,
-                          fontFamily: _fontFam,
-                        ),
-                      ),
-
-                      const SizedBox(height: 3),
-
-                      Text(
-                        '#ORD-$shortId',
+                        _shortOrderId(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 28,
-                          height: 1.1,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF0F172A),
+                          color: _helperInk,
+                          fontSize: 25,
+                          fontWeight: FontWeight.w800,
                           fontFamily: _fontFam,
                         ),
                       ),
-
-                      const SizedBox(height: 7),
-
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.person_pin_circle_outlined,
-                            size: 15,
-                            color: Colors.grey.shade500,
-                          ),
-
-                          const SizedBox(width: 6),
-
-                          Flexible(
-                            child: Text(
-                              assignedHelperName != null &&
-                                      assignedHelperName.isNotEmpty
-                                  ? 'Assigned to $assignedHelperName'
-                                  : 'Ready for picking',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                fontFamily: _fontFam,
-                              ),
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 4),
+                      Text(
+                        sharedProgress.isMixed
+                            ? 'Bring light items to loading area'
+                            : 'Deliver to checkout counter',
+                        maxLines: 2,
+                        style: const TextStyle(
+                          color: _helperMuted,
+                          fontSize: 16,
+                          fontFamily: _fontFam,
+                        ),
                       ),
                     ],
                   ),
                 ),
-
-                const SizedBox(width: 16),
-
-                // -------------------------------
-                // HELP BUTTON
-                // -------------------------------
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF0F172A),
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.question_mark,
-                    color: Colors.white,
-                    size: 16,
+                const SizedBox(width: 12),
+                Text(
+                  '$pickedCount/${workItems.length}',
+                  style: const TextStyle(
+                    color: _helperInk,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                    fontFamily: _fontFam,
                   ),
                 ),
-
-                const SizedBox(width: 12),
-
-                // -------------------------------
-                // PICK PROGRESS
-                // -------------------------------
-                Container(
-                  height: 40,
-                  constraints: const BoxConstraints(minWidth: 58),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    '$pickedCount/$totalCount',
-                    style: const TextStyle(
-                      color: _primaryBlue,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 15,
-                      fontFamily: _fontFam,
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(32, 28, 32, 36),
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1600),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Wrap(
+                                  alignment: WrapAlignment.spaceBetween,
+                                  crossAxisAlignment:
+                                      WrapCrossAlignment.center,
+                                  spacing: 12,
+                                  runSpacing: 12,
+                                  children: [
+                                    const Text(
+                                      'Store map · light item locations',
+                                      style: TextStyle(
+                                        color: _helperInk,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w800,
+                                        fontFamily: _fontFam,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEDEBE6),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          for (final style in MapViewStyle.values)
+                                            InkWell(
+                                              onTap: () => setState(
+                                                  () => _mobileMapStyle = style),
+                                              borderRadius:
+                                                  BorderRadius.circular(7),
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 8,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: _mobileMapStyle == style
+                                                      ? Colors.white
+                                                      : Colors.transparent,
+                                                  borderRadius:
+                                                      BorderRadius.circular(7),
+                                                ),
+                                                child: Text(
+                                                  style == MapViewStyle.twoD
+                                                      ? '2D plan'
+                                                      : '3D view',
+                                                  style: TextStyle(
+                                                    color: _mobileMapStyle == style
+                                                        ? _helperInk
+                                                        : _helperMuted,
+                                                    fontFamily: _fontFam,
+                                                    fontWeight:
+                                                        _mobileMapStyle == style
+                                                            ? FontWeight.w700
+                                                            : FontWeight.w500,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+                                SizedBox(
+                                  height: 530,
+                                  child: controller.storeLayout.isEmpty
+                                      ? const Center(
+                                          child: Text(
+                                            'Store map unavailable.',
+                                            style: TextStyle(
+                                              color: _helperMuted,
+                                              fontFamily: _fontFam,
+                                            ),
+                                          ),
+                                        )
+                                      : StoreMap(
+                                          controller: controller,
+                                          mode: MapMode.view,
+                                          viewStyle: _mobileMapStyle,
+                                          highlightId: highlightedLocationId,
+                                          pickStopMarkers: pickStopMarkers,
+                                          showProductCounts: false,
+                                          showItemPopup: false,
+                                          showZoomControls: true,
+                                          compactZoomControls: true,
+                                          miniZoomControls: true,
+                                          zoomAccentColor: _helperOrange,
+                                          showMobileToolbar: false,
+                                          itemAssignmentEnabled: false,
+                                          fitEntireMap: true,
+                                        ),
+                                ),
+                                if (_mobileMapStyle == MapViewStyle.threeD &&
+                                    pickStopMarkers.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      for (final marker in pickStopMarkers)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 7),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF6F5F2),
+                                            borderRadius:
+                                                BorderRadius.circular(18),
+                                          ),
+                                          child: Text(
+                                            '${marker.number}. ${marker.label ?? 'Pick stop'}',
+                                            maxLines: 2,
+                                            style: const TextStyle(
+                                              fontFamily: _fontFam,
+                                              color: _helperInk,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Text(
+                                'Pick list · in walking order',
+                                style: TextStyle(
+                                  color: _helperInk,
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: _fontFam,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Tap a product to highlight its location, '
+                                'then scan its shelf QR to verify the item.',
+                                style: TextStyle(
+                                  color: _helperMuted,
+                                  fontSize: 12,
+                                  fontFamily: _fontFam,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              if (sharedProgress.isMixed) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: _helperLine),
+                                  ),
+                                  child: Text(
+                                    'Shared order · Bodegero: '
+                                    '${sharedProgress.bodegeroSummary}',
+                                    style: const TextStyle(
+                                      color: _helperInk,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      fontFamily: _fontFam,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              for (var index = 0;
+                                  index < walkingItems.length;
+                                  index++)
+                                // Same scanning/verifying card as mobile.
+                                _buildMobilePickCard(
+                                  context,
+                                  walkingItems[index],
+                                  index + 1,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ],
             ),
           ),
-
-          // =====================================================
-          // ITEM CHECKLIST
-          // =====================================================
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(32, 8, 32, 8),
-              itemCount: workItems.length,
-              itemBuilder: (context, index) {
-                final item = workItems[index];
-
-                final isPicked = pickedItems.contains(item.productId);
-
-                return _ChecklistItemCard(
-                  item: item,
-                  isPicked: isPicked,
-                  onMapTap: () {
-                    _showItemLocationMap(
-                      context,
-                      item.productId,
-                      item.productName,
-                    );
-                  },
-                  onScanTap: () {
-                    _openScannerToCheckoff(
-                      context,
-                      item.productId,
-                      item.quantity,
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-
-          // =====================================================
-          // BOTTOM ACTION BAR
-          // =====================================================
+          // Persistent action mirrors mobile's enabled/disabled and mixed-order
+          // rules; no change to _finishLightWork, _markPrepared or RPC calls.
           Container(
-            padding: const EdgeInsets.fromLTRB(32, 14, 32, 32),
-            decoration: const BoxDecoration(color: Color(0xFFF4F6F8)),
-            child: SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: isAllPicked && !_isSubmittingPreparation
-                    ? () => _finishLightWork(context)
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryBlue,
-                  disabledBackgroundColor: Colors.blue.shade200,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(32, 14, 32, 20),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: _helperLine)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: FilledButton(
+                  onPressed: remaining == 0 && !_isSubmittingPreparation
+                      ? () => _finishLightWork(context)
+                      : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _helperOrange,
+                    disabledBackgroundColor: const Color(0xFFE9B79F),
+                    disabledForegroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                ),
-                child: Text(
-                  order.status == 'prepared'
-                      ? 'Order ready · Back to queue'
-                      : _isSubmittingPreparation
-                      ? 'Saving preparation...'
-                      : isAllPicked
-                      ? order.items.any((item) => item.requiresLoading) &&
-                                order.loadingVerifiedAt == null
-                            ? 'Finish light items'
-                            : 'Notify Cashier (Prepared)'
-                      : 'Pick all items first ($pickedCount/$totalCount)',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    fontFamily: _fontFam,
+                  child: Text(
+                    order.status == 'prepared'
+                        ? 'Order ready · Back to queue'
+                        : _isSubmittingPreparation
+                            ? 'Saving preparation…'
+                            : remaining == 0
+                                ? order.items.any(
+                                            (item) => item.requiresLoading) &&
+                                        order.loadingVerifiedAt == null
+                                    ? 'Finish light items'
+                                    : 'Finish preparing'
+                                : 'Scan $remaining more to finish',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      fontFamily: _fontFam,
+                    ),
                   ),
                 ),
               ),
@@ -2639,6 +2755,19 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
       ),
     );
   }
+  // HELPER_DESKTOP_PICKING_LAYOUT_V2_END
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          // Smaller laptops and tablets use the existing stacked mobile
+          // composition instead of squeezing the map and scan list together.
+          if (constraints.maxWidth < 900) {
+            return _buildMobileChecklist(context);
+          }
+          return _buildDesktopPickingChecklist(context);
+        },
+      );
 }
 
 class _ChecklistItemCard extends StatelessWidget {
