@@ -18,6 +18,7 @@ import '../notifications/notification_bell.dart';
 import '../notifications/notification_provider.dart';
 import '../services/staff_presence_service.dart';
 import 'bodegero_history_page.dart';
+import 'cashier_requests_page.dart';
 import 'helper_me_page.dart';
 import 'helper_request_page.dart';
 import 'scanner_search_page.dart';
@@ -68,7 +69,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   bool _busy = false;
   bool _photoPreparing = false;
   bool _clockBusy = false;
-  bool _loadingPaused = false;
   bool _changingBreak = false;
   int _tabIndex = 0;
   int _lastMainTabIndex = 0;
@@ -291,10 +291,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   Future<bool> _open(CustomerOrder order) async {
     if (_busy || _clockBusy) return false;
-    if (widget.presenceService?.isOnBreak == true) {
-      _message('Switch to Available before loading an order.');
-      return false;
-    }
     order = widget.controller.orderById(order.id) ?? order;
     if ((order.status != 'pending' && order.status != 'solo_picking') ||
         order.loadingVerifiedAt != null ||
@@ -334,9 +330,8 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     }
     setState(() => _clockBusy = true);
     try {
-      final clock = await widget.controller.startOrderLoadingClock(order.id);
+      await widget.controller.startOrderLoadingClock(order.id);
       if (!mounted) return false;
-      _loadingPaused = clock['paused'] == true;
     } catch (error) {
       _message('Could not start the loading timer: $error');
       return false;
@@ -356,39 +351,21 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       _completedOrder = null;
       _photoJpeg = null;
     });
-
     final presence = widget.presenceService;
     if (presence != null) {
       unawaited(presence.setWorkMode(staffLoadingModule));
     }
-
     return true;
   }
 
   void _closeLoadingChecklist() {
+    if (!mounted) return;
     setState(() {
       _selectedOrderId = null;
     });
-
     final presence = widget.presenceService;
     if (presence != null) {
       unawaited(presence.setWorkMode(null));
-    }
-  }
-
-  Future<void> _toggleLoadingPause(CustomerOrder order) async {
-    if (_clockBusy) return;
-    setState(() => _clockBusy = true);
-    try {
-      final clock = await widget.controller.setOrderLoadingPause(
-        order.id,
-        paused: !_loadingPaused,
-      );
-      if (mounted) setState(() => _loadingPaused = clock['paused'] == true);
-    } catch (error) {
-      _message('Could not update loading timer: $error');
-    } finally {
-      if (mounted) setState(() => _clockBusy = false);
     }
   }
 
@@ -478,10 +455,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   Future<void> _finish(CustomerOrder order) async {
     if (_photoPreparing) return;
-    if (_loadingPaused) {
-      _message('Resume loading before confirming the truck proof.');
-      return;
-    }
     final heavyItems = order.items
         .where((item) => item.requiresLoading)
         .toList();
@@ -626,7 +599,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       final mode = index == 0 && _selectedOrderId != null
           ? staffLoadingModule
           : null;
-
       unawaited(presence.setWorkMode(mode));
     }
   }
@@ -1266,9 +1238,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
             children: [
               if (!verified)
                 FilledButton.icon(
-                  onPressed: _busy || _loadingPaused
-                      ? null
-                      : () => _scan(order, item),
+                  onPressed: _busy ? null : () => _scan(order, item),
                   icon: const Icon(LucideIcons.scanLine, size: 17),
                   label: const Text('Scan shelf QR'),
                   style: FilledButton.styleFrom(
@@ -1303,7 +1273,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           const SizedBox(height: 12),
           TextField(
             controller: _quantityControllers[item.productId],
-            enabled: verified && !_busy && !_loadingPaused,
+            enabled: verified && !_busy,
             onChanged: (_) => setState(() {}),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
@@ -1357,7 +1327,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         TextField(
           controller: _truckController,
           maxLength: 32,
-          enabled: !_busy && !_loadingPaused,
+          enabled: !_busy,
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             labelText: 'Truck plate / identifier',
@@ -1368,9 +1338,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           ),
         ),
         OutlinedButton.icon(
-          onPressed: _busy || _photoPreparing || _loadingPaused
-              ? null
-              : _capturePhoto,
+          onPressed: _busy || _photoPreparing ? null : _capturePhoto,
           icon: const Icon(LucideIcons.camera, size: 18),
           label: Text(
             _photoPreparing
@@ -1418,7 +1386,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     final canFinish =
         order.assignedBodegeroId != null &&
         !_photoPreparing &&
-        !_loadingPaused &&
         allScanned &&
         countsMatch &&
         truckReady &&
@@ -1427,8 +1394,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         ? 'Saving loading proof…'
         : _photoPreparing
         ? 'Preparing photo…'
-        : _loadingPaused
-        ? 'Resume loading to finish'
         : !allScanned
         ? 'Scan ${items.length - scanned} more ${items.length - scanned == 1 ? 'item' : 'items'}'
         : !countsMatch
@@ -1513,18 +1478,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: OutlinedButton.icon(
-                  onPressed: _busy || _clockBusy
-                      ? null
-                      : () => _toggleLoadingPause(order),
-                  icon: Icon(_loadingPaused ? Icons.play_arrow : Icons.pause),
-                  label: Text(
-                    _loadingPaused ? 'Resume loading' : 'Pause loading',
-                  ),
-                ),
-              ),
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 900),
@@ -1668,7 +1621,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     final canFinish =
         order.assignedBodegeroId != null &&
         !_photoPreparing &&
-        !_loadingPaused &&
         allScanned &&
         _countsMatch(items) &&
         _truckController.text.trim().isNotEmpty &&
@@ -1677,8 +1629,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         ? 'Saving loading proof…'
         : _photoPreparing
         ? 'Preparing photo…'
-        : _loadingPaused
-        ? 'Resume loading to finish'
         : !allScanned
         ? 'Scan ${items.length - scanned} more ${items.length - scanned == 1 ? 'item' : 'items'}'
         : !_countsMatch(items)
@@ -1748,15 +1698,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                 style: const TextStyle(
                   fontSize: 23,
                   fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(width: 24),
-              OutlinedButton(
-                onPressed: _busy || _clockBusy
-                    ? null
-                    : () => _toggleLoadingPause(order),
-                child: Text(
-                  _loadingPaused ? 'Resume loading' : 'Pause loading',
                 ),
               ),
             ],
@@ -2063,10 +2004,17 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
               )
             : const SizedBox.shrink(),
         _visitedTabs.contains(3)
-            ? HelperRequestPage(
-                controller: widget.controller,
-                approvalChanges: widget.approvalChanges,
-              )
+            ? MediaQuery.sizeOf(context).width >= 900
+                  ? CashierRequestsPage(
+                      controller: widget.controller,
+                      onOpenRegister: () {},
+                      approvalChanges: widget.approvalChanges,
+                      showDiscountApprovals: false,
+                    )
+                  : HelperRequestPage(
+                      controller: widget.controller,
+                      approvalChanges: widget.approvalChanges,
+                    )
             : const SizedBox.shrink(),
         _visitedTabs.contains(4)
             ? HelperMePage(controller: widget.controller)

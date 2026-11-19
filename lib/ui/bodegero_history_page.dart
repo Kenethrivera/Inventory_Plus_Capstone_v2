@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../logic/bodegero_loading_history.dart';
 import '../logic/inventory_controller.dart';
+import 'widgets/history_period_controls.dart';
 
 class BodegeroHistoryPage extends StatefulWidget {
   const BodegeroHistoryPage({
@@ -33,6 +34,9 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
   Timer? _searchDebounce;
   late Future<BodegeroLoadingHistoryPage> _history;
   int _page = 1;
+  HistoryPeriodSelection _period = HistoryPeriodSelection.current();
+  bool _periodActive = false;
+  String _statusFilter = 'All';
 
   @override
   void initState() {
@@ -57,8 +61,47 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
     super.dispose();
   }
 
-  Future<BodegeroLoadingHistoryPage> _load() => widget.controller
-      .fetchMyLoadingHistory(page: _page, search: _searchController.text);
+  Future<BodegeroLoadingHistoryPage> _load() {
+    final range = _period.range;
+    return widget.controller.fetchMyLoadingHistory(
+      page: _page,
+      search: _searchController.text,
+      start: _periodActive ? range.start : null,
+      end: _periodActive ? range.end : null,
+      status: _statusFilter.toLowerCase(),
+    );
+  }
+
+  String _historyErrorMessage(Object? error) =>
+      error.toString().contains('PGRST202')
+      ? 'History filters need a database update.'
+      : 'Could not load your loading history.';
+
+  void _changePeriod(HistoryPeriodSelection selection) {
+    setState(() {
+      _period = selection;
+      _periodActive = true;
+      _page = 1;
+      _history = _load();
+    });
+  }
+
+  void _changeStatus(String status) {
+    setState(() {
+      _statusFilter = status;
+      _page = 1;
+      _history = _load();
+    });
+  }
+
+  void _showAllHistory() {
+    setState(() {
+      _periodActive = false;
+      _statusFilter = 'All';
+      _page = 1;
+      _history = _load();
+    });
+  }
 
   Future<void> _refresh() async {
     _proofs.clear();
@@ -653,68 +696,406 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) => ColoredBox(
-    color: const Color(0xFFF6F5F2),
-    child: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _searchField({bool compact = false}) => TextField(
+    controller: _searchController,
+    onChanged: (_) {
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+        if (mounted) _setPage(1);
+      });
+    },
+    decoration: InputDecoration(
+      hintText: 'Search order, truck, or product',
+      isDense: compact,
+      contentPadding: compact
+          ? const EdgeInsets.symmetric(horizontal: 10, vertical: 9)
+          : null,
+      prefixIcon: const Icon(LucideIcons.search, size: 18),
+      prefixIconConstraints: compact
+          ? const BoxConstraints(minWidth: 36, minHeight: 36)
+          : null,
+      suffixIcon: _searchController.text.isEmpty
+          ? null
+          : IconButton(
+              tooltip: 'Clear search',
+              icon: const Icon(Icons.close, size: 18),
+              onPressed: () {
+                _searchDebounce?.cancel();
+                _searchController.clear();
+                _setPage(1);
+              },
+            ),
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+    ),
+  );
+
+  Widget _filterChip(String label, bool selected, VoidCallback onTap) =>
+      ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        selectedColor: _ink,
+        backgroundColor: const Color(0xFFF4F1EE),
+        labelStyle: TextStyle(
+          color: selected ? Colors.white : _muted,
+          fontSize: 12,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+        ),
+        side: BorderSide.none,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      );
+
+  Widget _historyFilters() => Wrap(
+    spacing: 4,
+    runSpacing: 4,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    children: [
+      _filterChip('All time', !_periodActive, () {
+        setState(() {
+          _periodActive = false;
+          _page = 1;
+          _history = _load();
+        });
+      }),
+      for (final mode in HistoryPeriodMode.values)
+        _filterChip(
+          mode.label,
+          _periodActive && _period.mode == mode,
+          () => _changePeriod(_period.withMode(mode)),
+        ),
+      HistoryPeriodControls(
+        selection: _period,
+        onChanged: _changePeriod,
+        warmPalette: true,
+      ),
+      for (final status in const [
+        'All',
+        'Waiting',
+        'Ready',
+        'Completed',
+        'Cancelled',
+      ])
+        _filterChip(
+          status,
+          _statusFilter == status,
+          () => _changeStatus(status),
+        ),
+    ],
+  );
+
+  Widget _metric(String label, String value, IconData icon, Color color) =>
+      Container(
+        height: 58,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: _line),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 16),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: _muted, fontSize: 10),
+                  ),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _desktopCell(String text, {int flex = 1, bool bold = false}) =>
+      Expanded(
+        flex: flex,
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: bold ? _ink : _muted,
+            fontSize: 13,
+            fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+          ),
+        ),
+      );
+
+  Widget _desktopRecord(BodegeroLoadingRecord record) => InkWell(
+    onTap: () => _showProof(record),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: _line)),
+      ),
+      child: Row(
+        children: [
+          _desktopCell(_shortId(record.orderId), flex: 2, bold: true),
+          Expanded(
+            flex: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  MaterialLocalizations.of(
+                    context,
+                  ).formatMediumDate(record.capturedAt.toLocal()),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  _time(record.capturedAt),
+                  style: const TextStyle(color: _muted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          _desktopCell('Loaded by you', flex: 2, bold: true),
+          _desktopCell('${record.items.length}', flex: 1),
+          Expanded(flex: 1, child: _statusBadge(record.status)),
+          _desktopCell(record.truckPlate, flex: 2),
+          const Icon(LucideIcons.chevronRight, color: _muted, size: 18),
+        ],
+      ),
+    ),
+  );
+
+  Widget _desktopHistory(BodegeroLoadingHistoryPage page) {
+    final records = [...page.records]
+      ..sort((a, b) => b.capturedAt.compareTo(a.capturedAt));
+    final ready = records.where((record) => record.status == 'prepared').length;
+    final completed = records
+        .where((record) => record.status == 'completed')
+        .length;
+    final first = page.totalCount == 0
+        ? 0
+        : (page.page - 1) * page.pageSize + 1;
+    final last = (page.page - 1) * page.pageSize + records.length;
+    return RefreshIndicator(
+      color: _orange,
+      onRefresh: _refresh,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1160),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             children: [
               const Text(
-                'My loading history',
+                'My Loading History',
                 style: TextStyle(
                   color: _ink,
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 5),
-              const Text(
-                'Heavy orders you verified and loaded onto a truck.',
-                style: TextStyle(color: _muted, fontSize: 13),
+              const SizedBox(height: 4),
+              Text(
+                '${page.totalCount} loading record${page.totalCount == 1 ? '' : 's'}.',
+                style: const TextStyle(color: _muted, fontSize: 13),
               ),
-              const SizedBox(height: 18),
-              TextField(
-                controller: _searchController,
-                onChanged: (_) {
-                  _searchDebounce?.cancel();
-                  _searchDebounce = Timer(
-                    const Duration(milliseconds: 300),
-                    () {
-                      if (mounted) _setPage(1);
-                    },
+              const SizedBox(height: 12),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  const gap = 10.0;
+                  final width = (constraints.maxWidth - gap * 3) / 4;
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      SizedBox(
+                        width: width,
+                        child: _metric(
+                          'My Records',
+                          '${page.totalCount}',
+                          LucideIcons.history,
+                          _orange,
+                        ),
+                      ),
+                      SizedBox(
+                        width: width,
+                        child: _metric(
+                          'On this page',
+                          '${records.length}',
+                          LucideIcons.list,
+                          const Color(0xFFD97706),
+                        ),
+                      ),
+                      SizedBox(
+                        width: width,
+                        child: _metric(
+                          'Ready on page',
+                          '$ready',
+                          LucideIcons.circleCheck,
+                          const Color(0xFF168047),
+                        ),
+                      ),
+                      SizedBox(
+                        width: width,
+                        child: _metric(
+                          'Completed on page',
+                          '$completed',
+                          LucideIcons.packageCheck,
+                          const Color(0xFF245C9E),
+                        ),
+                      ),
+                    ],
                   );
                 },
-                decoration: InputDecoration(
-                  hintText: 'Search order, truck, or product',
-                  prefixIcon: const Icon(LucideIcons.search, size: 18),
-                  suffixIcon: IconButton(
-                    tooltip: 'Clear search',
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () {
-                      _searchDebounce?.cancel();
-                      _searchController.clear();
-                      _setPage(1);
-                    },
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: _line),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) =>
+                      constraints.maxWidth >= 1030
+                      ? Row(
+                          children: [
+                            Expanded(child: _historyFilters()),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 235,
+                              child: _searchField(compact: true),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _historyFilters(),
+                            const SizedBox(height: 8),
+                            _searchField(compact: true),
+                          ],
+                        ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: _line),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 11,
+                      ),
+                      color: const Color(0xFFFAF9F7),
+                      child: Row(
+                        children: [
+                          _desktopCell('ORDER', flex: 2),
+                          _desktopCell('DATE & TIME', flex: 2),
+                          _desktopCell('ACTIVITY', flex: 2),
+                          _desktopCell('ITEMS'),
+                          _desktopCell('STATUS'),
+                          _desktopCell('TRUCK', flex: 2),
+                          const SizedBox(width: 18),
+                        ],
+                      ),
+                    ),
+                    if (records.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(40),
+                        child: Text('No loading records match your search.'),
+                      ),
+                    for (final record in records) _desktopRecord(record),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      decoration: const BoxDecoration(
+                        border: Border(top: BorderSide(color: _line)),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            '$first–$last of ${page.totalCount}',
+                            style: const TextStyle(color: _muted, fontSize: 12),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            tooltip: 'Previous page',
+                            onPressed: _page > 1
+                                ? () => _setPage(_page - 1)
+                                : null,
+                            icon: const Icon(LucideIcons.chevronLeft, size: 18),
+                          ),
+                          Text('$_page of ${page.totalPages}'),
+                          IconButton(
+                            tooltip: 'Next page',
+                            onPressed: _page < page.totalPages
+                                ? () => _setPage(_page + 1)
+                                : null,
+                            icon: const Icon(
+                              LucideIcons.chevronRight,
+                              size: 18,
+                            ),
+                          ),
+                          const Spacer(),
+                          const SizedBox(width: 90),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
-        Expanded(
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => MediaQuery.sizeOf(context).width >= 900
+      ? ColoredBox(
+          color: const Color(0xFFF6F5F2),
           child: FutureBuilder<BodegeroLoadingHistoryPage>(
             future: _history,
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
                 return const Center(
                   child: CircularProgressIndicator(color: _orange),
                 );
@@ -724,7 +1105,11 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('Could not load your loading history.'),
+                      Text(_historyErrorMessage(snapshot.error)),
+                      TextButton(
+                        onPressed: _showAllHistory,
+                        child: const Text('Show all history'),
+                      ),
                       TextButton(
                         onPressed: _refresh,
                         child: const Text('Retry'),
@@ -733,18 +1118,74 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
                   ),
                 );
               }
-              final page = snapshot.data!;
-              return RefreshIndicator(
-                color: _orange,
-                onRefresh: _refresh,
-                child: _historyList(page),
-              );
+              return _desktopHistory(snapshot.data!);
             },
           ),
-        ),
-      ],
-    ),
-  );
+        )
+      : ColoredBox(
+          color: const Color(0xFFF6F5F2),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'My loading history',
+                      style: TextStyle(
+                        color: _ink,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Heavy orders you verified and loaded onto a truck.',
+                      style: TextStyle(color: _muted, fontSize: 13),
+                    ),
+                    const SizedBox(height: 18),
+                    _searchField(),
+                    const SizedBox(height: 10),
+                    _historyFilters(),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: FutureBuilder<BodegeroLoadingHistoryPage>(
+                  future: _history,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(color: _orange),
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_historyErrorMessage(snapshot.error)),
+                            TextButton(
+                              onPressed: _refresh,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    final page = snapshot.data!;
+                    return RefreshIndicator(
+                      color: _orange,
+                      onRefresh: _refresh,
+                      child: _historyList(page),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
 }
 
 class _LoadingProof {

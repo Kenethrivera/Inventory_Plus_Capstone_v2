@@ -1366,10 +1366,7 @@ void _restoreMainSectionFromPath(String path) {
 
   void _syncHelperWorkStatus() {
     final presence = _staffPresenceService;
-
-    if (presence == null || _sessionRole != 'helper') {
-      return;
-    }
+    if (presence == null || _sessionRole != 'helper') return;
 
     final preparing =
         _helperChecklistVisible &&
@@ -2585,11 +2582,9 @@ void _restoreMainSectionFromPath(String path) {
               },
               onChecklistVisibilityChanged: (visible) {
                 if (!mounted) return;
-
                 if (_helperChecklistVisible != visible) {
                   setState(() => _helperChecklistVisible = visible);
                 }
-
                 _syncHelperWorkStatus();
               },
             ),
