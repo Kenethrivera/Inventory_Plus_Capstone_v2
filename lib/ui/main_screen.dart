@@ -22,6 +22,7 @@ import '../navigation/main_section.dart';
 import '../services/debug_clock.dart';
 import '../services/export_period.dart';
 import '../services/export_reminder_service.dart';
+import '../services/report_export_controller.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 import '../login/session_storage.dart';
@@ -48,6 +49,7 @@ import 'widgets/startup_restoration_surface.dart';
 import '../services/staff_presence_service.dart';
 import '../services/order_auto_assignment_service.dart';
 import 'widgets/active_staff_button.dart';
+import 'widgets/report_export_indicator.dart';
 import 'widgets/admin_store_status_clock.dart';
 import '../services/store_access_service.dart';
 import '../services/main_section_url.dart';
@@ -333,8 +335,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       path.startsWith('/main/') ||
       path == '/classification_test';
 
-  
-void _restoreMainSectionFromPath(String path) {
+  void _restoreMainSectionFromPath(String path) {
     if (!mounted || !_isMainSectionPath(path)) return;
 
     final requested = MainSection.fromPath(path);
@@ -361,7 +362,6 @@ void _restoreMainSectionFromPath(String path) {
 
     _updateStaffPresenceModule();
   }
-
 
   void _selectMainIndex(
     int index, {
@@ -1140,6 +1140,7 @@ void _restoreMainSectionFromPath(String path) {
       _storeLogoutDialogSetState = null;
     }
 
+    ReportExportController.instance.clear();
     await _staffPresenceService?.stop(logoutReason: 'store_hours_expired');
     await widget.controller.revokeCurrentSession();
 
@@ -1308,6 +1309,7 @@ void _restoreMainSectionFromPath(String path) {
     if (_isInvalidatingSession) return;
     _isInvalidatingSession = true;
     _clearStoreAccessScheduling();
+    ReportExportController.instance.clear();
     try {
       await _staffPresenceService?.stop(logoutReason: 'profile_changed');
       await widget.controller.revokeCurrentSession();
@@ -2327,8 +2329,8 @@ void _restoreMainSectionFromPath(String path) {
         controller: widget.controller,
         onLogout: () => unawaited(_handleLogout()),
         // STORE_LOGOUT_COUNTDOWN_HEADER: Bodegero has its own app bar.
-        storeLogoutCountdown: _showStoreLogoutCountdownChip &&
-                _storeLogoutRemainingSeconds > 0
+        storeLogoutCountdown:
+            _showStoreLogoutCountdownChip && _storeLogoutRemainingSeconds > 0
             ? _buildStoreLogoutCountdownChip()
             : null,
         storeHours: _cashierStoreStatus(),
@@ -2432,6 +2434,7 @@ void _restoreMainSectionFromPath(String path) {
               controller: widget.controller,
               isActive: _currentIndex == analyticsIndex,
               onOpenInventory: () => _selectMainIndex(inventoryIndex),
+              onExported: _scanExportReminderNotifications,
             ),
           );
 
@@ -2547,9 +2550,6 @@ void _restoreMainSectionFromPath(String path) {
               controller: widget.controller,
               isActive: _currentIndex == transactionIndex,
               initialTab: _txTargetTab,
-              onExported: () {
-                _scanExportReminderNotifications();
-              },
               onCompleteOrder: (orderId) =>
                   _openAdminActivity('Orders', orderId: orderId),
             ),
@@ -2641,18 +2641,9 @@ void _restoreMainSectionFromPath(String path) {
                 ),
               ],
             ),
-            floatingActionButton: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (isAdmin && _staffPresenceService != null)
-                  ActiveStaffButton(presenceService: _staffPresenceService!),
-
-                if (!kReleaseMode) ...[
-                  const SizedBox(height: 12),
-                  _debugToolsButtons(),
-                ],
-              ],
+            floatingActionButton: _buildReportExportActions(
+              showActiveStaff: isAdmin,
+              showDebugTools: !kReleaseMode,
             ),
           );
         }
@@ -2693,9 +2684,9 @@ void _restoreMainSectionFromPath(String path) {
                   index: _currentIndex,
                   children: _lazyPageChildren(pages),
                 ),
-          floatingActionButton: isAdmin && _staffPresenceService != null
-              ? ActiveStaffButton(presenceService: _staffPresenceService!)
-              : null,
+          floatingActionButton: _buildReportExportActions(
+            showActiveStaff: isAdmin,
+          ),
           bottomNavigationBar: isHelper
               ? _helperChecklistVisible
                     ? null
@@ -2713,47 +2704,83 @@ void _restoreMainSectionFromPath(String path) {
     );
   }
 
+  Widget _buildReportExportActions({
+    required bool showActiveStaff,
+    bool showDebugTools = false,
+  }) {
+    final export = ReportExportController.instance;
+    return ListenableBuilder(
+      listenable: export,
+      builder: (context, _) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (export.hasExport) ...[
+            ReportExportIndicator(
+              controller: export,
+              onDownloaded: (name, destination) {
+                if (!mounted) return;
+                AppToast.success(
+                  context,
+                  destination == 'browser downloads'
+                      ? '$name download started'
+                      : '$name downloaded · Saved to $destination',
+                );
+              },
+              onDownloadError: (message) {
+                if (mounted) AppToast.error(context, message);
+              },
+            ),
+            if (showActiveStaff && _staffPresenceService != null)
+              const SizedBox(height: 12),
+          ],
+          if (showActiveStaff && _staffPresenceService != null)
+            ActiveStaffButton(presenceService: _staffPresenceService!),
+          if (showDebugTools) ...[
+            const SizedBox(height: 12),
+            _debugToolsButtons(),
+          ],
+        ],
+      ),
+    );
+  }
+
   // STORE_LOGOUT_COUNTDOWN_HEADER_START
   // Shared final-minute countdown used by all role headers. The Wait button
   // only dismisses the dialog; it does not pause the logout deadline.
-  Widget _buildStoreLogoutCountdownChip() =>
-      Tooltip(
-        message: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
-        child: Semantics(
-          label: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
-          liveRegion: true,
-          child: Container(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF7ED),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFF97316)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  LucideIcons.timer,
-                  size: 15,
-                  color: Color(0xFFC2410C),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  _formatStoreLogoutCountdown(_storeLogoutRemainingSeconds),
-                  style: const TextStyle(
-                    color: Color(0xFF9A3412),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    fontFamily: _fontFam,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-            ),
-          ),
+  Widget _buildStoreLogoutCountdownChip() => Tooltip(
+    message: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
+    child: Semantics(
+      label: 'Auto logout in $_storeLogoutRemainingSeconds seconds',
+      liveRegion: true,
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFF97316)),
         ),
-      );
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(LucideIcons.timer, size: 15, color: Color(0xFFC2410C)),
+            const SizedBox(width: 5),
+            Text(
+              _formatStoreLogoutCountdown(_storeLogoutRemainingSeconds),
+              style: const TextStyle(
+                color: Color(0xFF9A3412),
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                fontFamily: _fontFam,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
   // STORE_LOGOUT_COUNTDOWN_HEADER_END
 
   Widget _buildNotificationControls({
@@ -2875,9 +2902,7 @@ void _restoreMainSectionFromPath(String path) {
     storeAccessSettings: _scheduledStoreAccessSettings,
   );
 
-
-
-void _selectHelperUnifiedTab(
+  void _selectHelperUnifiedTab(
     int tab, {
     required int orderQueueIndex,
     required int staffHistoryIndex,
@@ -2904,8 +2929,6 @@ void _selectHelperUnifiedTab(
     _staffPresenceService?.updateModule(modules[tab]);
     _syncHelperWorkStatus();
   }
-
-
 
   Widget _buildHelperUnifiedAvailability() {
     final presence = _staffPresenceService;
@@ -2975,8 +2998,7 @@ void _selectHelperUnifiedTab(
     );
   }
 
-  
-// STAFF_STORE_HOURS_HEADER_FIX: Reuse the live store-hours clock for
+  // STAFF_STORE_HOURS_HEADER_FIX: Reuse the live store-hours clock for
   // Helper and Bodegero. The widget reads the existing store-access settings;
   // no store-hour values are hardcoded.
   Widget _roleStoreHours() => SizedBox(
@@ -3002,7 +3024,7 @@ void _selectHelperUnifiedTab(
     child: _roleStoreHours(),
   );
 
-Widget _buildHelperUnifiedWorkspace({
+  Widget _buildHelperUnifiedWorkspace({
     required List<Widget> pages,
     required int orderQueueIndex,
     required int inventoryIndex,
@@ -3128,9 +3150,6 @@ Widget _buildHelperUnifiedWorkspace({
       floatingActionButton: !isMobile ? _debugToolsButtons() : null,
     );
   }
-
-
-
 
   Widget _buildHelperMobileNavigationBar({
     required int orderQueueIndex,
@@ -3844,7 +3863,7 @@ Widget _buildHelperUnifiedWorkspace({
     required int transactionIndex,
     required int inventoryIndex,
     required int staffHistoryIndex,
-    }) {
+  }) {
     if (!isHelper) {
       return _buildCashierTopNavBar(
         posIndex: posIndex,
@@ -4415,6 +4434,7 @@ Widget _buildHelperUnifiedWorkspace({
 
     try {
       _clearStoreAccessScheduling();
+      ReportExportController.instance.clear();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       await widget.controller.revokeCurrentSession();
       await widget.realtimeSync.stop();
@@ -4437,6 +4457,7 @@ Widget _buildHelperUnifiedWorkspace({
   Future<void> _logoutFromForcedPasswordChange() async {
     try {
       _clearStoreAccessScheduling();
+      ReportExportController.instance.clear();
       await _staffPresenceService?.stop(logoutReason: 'manual_logout');
       await widget.controller.revokeCurrentSession();
       await widget.realtimeSync.stop();
