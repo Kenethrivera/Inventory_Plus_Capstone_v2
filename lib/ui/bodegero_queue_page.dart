@@ -39,6 +39,7 @@ class BodegeroQueuePage extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onLogout,
+    this.onProfile,
     this.approvalChanges,
     this.onModuleChanged,
     this.presenceService,
@@ -50,6 +51,8 @@ class BodegeroQueuePage extends StatefulWidget {
 
   final InventoryController controller;
   final VoidCallback onLogout;
+  // Optional to retain standalone test/caller compatibility.
+  final VoidCallback? onProfile;
   final Stream<void>? approvalChanges;
   final ValueChanged<String>? onModuleChanged;
   final StaffPresenceService? presenceService;
@@ -729,6 +732,16 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         selectedTab: _tabIndex,
         onTabSelected: _selectTab,
         onProfile: () {
+          // BODEGERO_PROFILE_NAV_PARITY_V1: The main app opens the shared
+          // profile dialog on web/desktop, and a push route with back arrow
+          // on mobile. Do not replace the active queue tab or show bottom
+          // navigation behind the mobile profile.
+          final openSharedProfile = widget.onProfile;
+          if (openSharedProfile != null) {
+            openSharedProfile();
+            return;
+          }
+          // Preserve existing behavior for legacy/standalone callers.
           setState(() {
             _tabIndex = 4;
             _visitedTabs.add(4);
@@ -2207,8 +2220,32 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     ],
   );
 
+  // BODEGERO_NATIVE_STATUS_BAR_SAFEAREA_V1
+  // The native mobile page owns the top system inset. Do not shift individual
+  // header controls: Android status-bar height can vary by phone, cutout and
+  // system font/display settings. Child widgets inherit a MediaQuery with
+  // the top inset consumed, preventing accidental double top padding.
+  // Web and desktop presentation, notification actions and all tabs stay intact.
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    final workspace = _buildBodegeroWorkspace();
+    if (kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.iOS)) {
+      return workspace;
+    }
+
+    return ColoredBox(
+      color: Colors.white,
+      child: SafeArea(
+        top: true,
+        bottom: false,
+        child: workspace,
+      ),
+    );
+  }
+
+  Widget _buildBodegeroWorkspace() => Scaffold(
     backgroundColor: _background,
     appBar: _header(),
     body: IndexedStack(

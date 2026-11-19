@@ -2,8 +2,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../../data/inventory.dart';
-import '../../logic/inventory_controller.dart';
+import '../data/inventory.dart';
+import '../logic/inventory_controller.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;

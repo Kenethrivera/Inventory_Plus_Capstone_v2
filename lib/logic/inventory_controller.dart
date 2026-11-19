@@ -4053,6 +4053,7 @@ class InventoryController {
     double? changeAmount,
     bool soloHandled = false,
     HelperAssignmentCandidate? assignedHelper,
+    HelperAssignmentCandidate? assignedBodegero,
   }) async {
     final locId = activeLocationId;
     if (locId == null) return null;
@@ -4064,9 +4065,9 @@ class InventoryController {
               helper: assignedHelper,
               assignedAt: DateTime.now().toUtc(),
             );
-      final response = await supabase.rpc(
-        'create_customer_order_v2',
-        params: <String, dynamic>{
+      // POS_BODEGERO_ASSIGNMENT_V1: use existing checkout RPC for auto;
+      // opt into the guarded atomic RPC only for explicit manual selection.
+      final rpcParams = <String, dynamic>{
           'p_session_token': _requireSessionToken(),
           'p_items': items.map((i) => i.toJson()).toList(growable: false),
           'p_total_amount': totalAmount,
@@ -4086,7 +4087,15 @@ class InventoryController {
           'p_payment_mode': paymentMode ?? 'Cash',
           'p_cash_given': cashGiven,
           'p_change_amount': changeAmount,
-        },
+      };
+      if (assignedBodegero != null) {
+        rpcParams['p_selected_bodegero_id'] = assignedBodegero.id;
+      }
+      final response = await supabase.rpc(
+        assignedBodegero == null
+            ? 'create_customer_order_v2'
+            : 'create_customer_order_with_bodegero_v1',
+        params: rpcParams,
       );
       return CustomerOrder.fromJson(Map<String, dynamic>.from(response as Map));
     } catch (error, stackTrace) {

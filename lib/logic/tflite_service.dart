@@ -1,9 +1,10 @@
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
-import 'package:flutter/services.dart'
-    show rootBundle, RootIsolateToken, BackgroundIsolateBinaryMessenger;
+
 import 'package:flutter_litert/flutter_litert.dart';
+
+import 'package:flutter/services.dart' show rootBundle;
 
 class LocalDetectionResult {
   final String label;
@@ -60,50 +61,55 @@ class TfliteService {
   /// This is significantly faster on mobile than the manual method's
   /// per-scan isolate startup, at the cost of brief synchronous UI work.
   /// On web inference already executes on the main browser thread.
-  static Future<LocalDetectionResult?> detectObjectLive(Float32List input) async {
+  static Future<LocalDetectionResult?> detectObjectLive(
+    Float32List input,
+  ) async {
     await initialize();
     if (_mainInterpreter == null || _classes.isEmpty) {
-      debugPrint('[YOLO] Live model unavailable; verify model assets and runtime');
+      debugPrint(
+        '[YOLO] Live model unavailable; verify model assets and runtime',
+      );
       return null;
     }
     _mainOutput ??= List<double>.filled(
-      1 * (4 + _classes.length) * 8400, 0.0,
+      1 * (4 + _classes.length) * 8400,
+      0.0,
     ).reshape([1, 4 + _classes.length, 8400]);
     return _runInference(
-      _mainInterpreter, input, _classes, outputBuffer: _mainOutput,
+      _mainInterpreter,
+      input,
+      _classes,
+      outputBuffer: _mainOutput,
     );
   }
 
-  /// [input] is the ready 1x3x640x640 letterboxed tensor.
   static Future<LocalDetectionResult?> detectObject(Float32List input) async {
     await initialize();
+
     final labels = _classes;
     if (labels.isEmpty) return null;
 
     if (kIsWeb) {
-      // Web isolates are limited; run on the main thread for Web
       return _runInference(_mainInterpreter, input, labels);
     }
 
-    // MOBILE/DESKTOP: Offload heavy C++ inference and nested array loops
-    // to a background isolate to completely unblock the UI spinner.
-    final rootToken = RootIsolateToken.instance;
+    // Load the model asset on the root isolate, where
+    // Flutter's asset binding is available.
+    final modelData = await rootBundle.load('assets/models/best_v1.2.tflite');
 
-    return await Isolate.run(() async {
-      // We must initialize the messenger to read assets in a background isolate
-      if (rootToken != null) {
-        BackgroundIsolateBinaryMessenger.ensureInitialized(rootToken);
-      }
+    final modelBytes = modelData.buffer.asUint8List(
+      modelData.offsetInBytes,
+      modelData.lengthInBytes,
+    );
 
-      // Load an independent interpreter bound to this background isolate's memory
-      final isolateInterpreter = await Interpreter.fromAsset(
-        'assets/models/best_v1.2.tflite',
-      );
+    // Keep expensive inference off the UI isolate.
+    // Do not access rootBundle inside this worker.
+    return Isolate.run(() {
+      final isolateInterpreter = Interpreter.fromBuffer(modelBytes);
 
       try {
         return _runInference(isolateInterpreter, input, labels);
       } finally {
-        // Free C++ memory explicitly to prevent background memory leaks
         isolateInterpreter.close();
       }
     });
@@ -120,10 +126,12 @@ class TfliteService {
 
     try {
       final numClasses = labels.length;
-      final output = outputBuffer ?? List<double>.filled(
-        1 * (4 + numClasses) * 8400,
-        0.0,
-      ).reshape([1, 4 + numClasses, 8400]);
+      final output =
+          outputBuffer ??
+          List<double>.filled(
+            1 * (4 + numClasses) * 8400,
+            0.0,
+          ).reshape([1, 4 + numClasses, 8400]);
 
       interpreter.run(input, output);
 

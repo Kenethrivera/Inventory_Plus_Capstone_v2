@@ -2310,9 +2310,27 @@ void _restoreMainSectionFromPath(String path) {
       return const StartupRestorationSurface();
     }
 
+    // GLOBAL_NATIVE_ROLE_SAFEAREA_V1
+    // A single outer safe-area boundary for every authenticated role workspace.
+    // It covers the Cashier, Admin, Helper, and Bodegero main screens/tabs.
+    // SafeArea consumes the top MediaQuery inset before the child Scaffold,
+    // so nested Helper/Bodegero SafeArea widgets never add it a second time.
+    // Keep the bottom inset owned by the existing Scaffold/navigation controls.
+    // Native Android/iOS only; the web/desktop layout is unaffected.
     return NotificationProvider(
       controller: notificationController,
-      child: _buildMainContent(),
+      child: !kIsWeb &&
+              (defaultTargetPlatform == TargetPlatform.android ||
+                  defaultTargetPlatform == TargetPlatform.iOS)
+          ? ColoredBox(
+              color: Colors.white,
+              child: SafeArea(
+                top: true,
+                bottom: false,
+                child: _buildMainContent(),
+              ),
+            )
+          : _buildMainContent(),
     );
   }
 
@@ -2386,6 +2404,9 @@ void _restoreMainSectionFromPath(String path) {
       return BodegeroQueuePage(
         controller: widget.controller,
         onLogout: () => unawaited(_handleLogout()),
+        // BODEGERO_PROFILE_NAV_PARITY_V1: Use the same profile modal/route
+        // as Admin, Cashier, and Helper. No extra Bodegero profile tab.
+        onProfile: _showProfileDialog,
         // STORE_LOGOUT_COUNTDOWN_HEADER: Bodegero has its own app bar.
         storeLogoutCountdown: _showStoreLogoutCountdownChip &&
                 _storeLogoutRemainingSeconds > 0

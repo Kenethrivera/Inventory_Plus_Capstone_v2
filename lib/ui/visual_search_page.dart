@@ -9,12 +9,12 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, compute, defaultTargetPlatform, TargetPlatform;
 import 'package:image/image.dart' as img;
-import '../../data/inventory.dart';
-import '../../logic/inventory_controller.dart';
-import '../../logic/vision_service.dart';
-import '../../logic/tflite_service.dart';
-import '../../logic/scan_logger.dart';
-import '../../logic/gemini_service.dart';
+import '../data/inventory.dart';
+import '../logic/inventory_controller.dart';
+import '../logic/vision_service.dart';
+import '../logic/tflite_service.dart';
+import '../logic/scan_logger.dart';
+import '../logic/gemini_service.dart';
 import 'package:flutter/services.dart';
 import 'package:inventory_plus/services/app_error_mapper.dart';
 import 'package:inventory_plus/services/app_logger.dart';

@@ -7,6 +7,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../data/inventory.dart';
 import '../logic/helper_assignment.dart';
+import '../logic/staff_availability.dart';
 import '../logic/discount_calculation.dart';
 import '../logic/inventory_controller.dart';
 import '../logic/payment_reference.dart';
@@ -101,6 +102,7 @@ class _PosCartPageState extends State<PosCartPage> {
 
   final bool _soloMode = false;
   String? _selectedHelperId;
+  String? _selectedBodegeroId; // POS_BODEGERO_ASSIGNMENT_V1
 
   String? _pendingAutoOpenOrderId;
   StreamSubscription<InventoryRuntimeSettingsSnapshot>?
@@ -251,7 +253,16 @@ class _PosCartPageState extends State<PosCartPage> {
       final discount = _discountCalculation(subtotal);
       final double discountAmt = discount.discountAmount;
       final double totalDue = discount.total;
-      final assignedHelper = _soloMode ? null : _selectedEligibleHelper();
+      final assignedHelper = _soloMode || !_cartHasLightItems
+          ? null : _selectedEligibleHelper();
+      final assignedBodegero = _soloMode || !_cartHasHeavyItems
+          ? null : _selectedEligibleBodegero();
+      if (_cartHasHeavyItems && _selectedBodegeroId != null &&
+          assignedBodegero == null) {
+        throw StateError(
+          'Selected Bodegero is no longer available. Select Auto-assign or another available Bodegero.',
+        );
+      }
 
       final CustomerOrder? createdOrder = await widget.controller
           .createCustomerOrder(
@@ -267,6 +278,7 @@ class _PosCartPageState extends State<PosCartPage> {
                 : null,
             soloHandled: _soloMode,
             assignedHelper: assignedHelper,
+            assignedBodegero: assignedBodegero,
           );
       if (createdOrder == null) {
         throw Exception('Order could not be created.');
@@ -318,6 +330,7 @@ class _PosCartPageState extends State<PosCartPage> {
         _discountValue = 0.0;
         _discountReason = '';
         _selectedHelperId = null;
+        _selectedBodegeroId = null;
       });
 
       if (_soloMode) {
@@ -363,6 +376,43 @@ class _PosCartPageState extends State<PosCartPage> {
     if (selectedId == null) return null;
     for (final helper in _eligibleHelpers()) {
       if (helper.id == selectedId) return helper;
+    }
+    return null;
+  }
+
+  // POS_BODEGERO_ASSIGNMENT_V1: use product handling tags in the cart,
+  // not a string/name heuristic or the order's not-yet-created line items.
+  bool get _cartHasHeavyItems => widget.controller.allItems.any(
+    (item) => item.requiresLoading && (_cart[item.id] ?? 0) > 0,
+  );
+
+  bool get _cartHasLightItems => widget.controller.allItems.any(
+    (item) => !item.requiresLoading && (_cart[item.id] ?? 0) > 0,
+  );
+
+  List<HelperAssignmentCandidate> _eligibleBodegeros() {
+    final candidates = widget.presenceService?.eligibleBodegerosForAssignment;
+    if (candidates == null || candidates.isEmpty) {
+      return const <HelperAssignmentCandidate>[];
+    }
+    final workloads = activeLoadingWorkloads(widget.controller.currentOrders);
+    final ranked = candidates.toList();
+    ranked.sort((a, b) {
+      final byLoad = (workloads[a.id] ?? 0).compareTo(workloads[b.id] ?? 0);
+      if (byLoad != 0) return byLoad;
+      final aId = BigInt.tryParse(a.id);
+      final bId = BigInt.tryParse(b.id);
+      if (aId != null && bId != null) return aId.compareTo(bId);
+      return a.id.compareTo(b.id);
+    });
+    return List<HelperAssignmentCandidate>.unmodifiable(ranked);
+  }
+
+  HelperAssignmentCandidate? _selectedEligibleBodegero() {
+    final selectedId = _selectedBodegeroId;
+    if (selectedId == null) return null;
+    for (final worker in _eligibleBodegeros()) {
+      if (worker.id == selectedId) return worker;
     }
     return null;
   }
@@ -5434,7 +5484,10 @@ class _PosCartPageState extends State<PosCartPage> {
 
   Widget _buildHelperAssignmentControl() {
     final presenceService = widget.presenceService;
-    if (presenceService == null) {
+    final needsBodegero = _cartHasHeavyItems;
+    final hasLightItems = _cartHasLightItems;
+
+    if (presenceService == null && !needsBodegero) {
       return const HelperAssignmentSelector(
         helpers: <HelperAssignmentCandidate>[],
         workloads: <String, int>{},
@@ -5449,6 +5502,15 @@ class _PosCartPageState extends State<PosCartPage> {
       initialData: widget.controller.currentOrders,
       builder: (context, orderSnapshot) {
         final orders = orderSnapshot.data ?? widget.controller.currentOrders;
+        if (presenceService == null) {
+          return _buildStaffAssignmentPair(
+            helpers: const <HelperAssignmentCandidate>[],
+            bodegeros: const <HelperAssignmentCandidate>[],
+            helperWorkloads: const <String, int>{},
+            bodegeroWorkloads: const <String, int>{},
+            hasLightItems: hasLightItems,
+          );
+        }
         return AnimatedBuilder(
           animation: presenceService,
           builder: (context, _) {
@@ -5456,21 +5518,100 @@ class _PosCartPageState extends State<PosCartPage> {
               helpers: presenceService.eligibleHelpersForAssignment,
               orders: orders,
             );
-            return HelperAssignmentSelector(
+            if (!needsBodegero) {
+              // Preserve the entire existing light-only POS presentation.
+              return HelperAssignmentSelector(
+                helpers: helpers,
+                workloads: activePreparationWorkloads(orders),
+                selectedHelperId: _selectedHelperId,
+                enabled: !_isProcessingCart,
+                onChanged: (helperId) {
+                  if (_selectedHelperId == helperId) return;
+                  setState(() => _selectedHelperId = helperId);
+                },
+              );
+            }
+            final bodegeroWorkloads = activeLoadingWorkloads(orders);
+            final bodegeros = presenceService.eligibleBodegerosForAssignment
+                .toList();
+            bodegeros.sort((a, b) {
+              final load = (bodegeroWorkloads[a.id] ?? 0)
+                  .compareTo(bodegeroWorkloads[b.id] ?? 0);
+              if (load != 0) return load;
+              final aId = BigInt.tryParse(a.id);
+              final bId = BigInt.tryParse(b.id);
+              if (aId != null && bId != null) return aId.compareTo(bId);
+              return a.id.compareTo(b.id);
+            });
+            return _buildStaffAssignmentPair(
               helpers: helpers,
-              workloads: activePreparationWorkloads(orders),
-              selectedHelperId: _selectedHelperId,
-              enabled: !_isProcessingCart,
-              onChanged: (helperId) {
-                if (_selectedHelperId == helperId) return;
-                setState(() => _selectedHelperId = helperId);
-              },
+              bodegeros: bodegeros,
+              helperWorkloads: activePreparationWorkloads(orders),
+              bodegeroWorkloads: bodegeroWorkloads,
+              hasLightItems: hasLightItems,
             );
           },
         );
       },
     );
   }
+
+  // Only the existing staff-assignment footer row changes on heavy carts.
+  Widget _buildStaffAssignmentPair({
+    required List<HelperAssignmentCandidate> helpers,
+    required List<HelperAssignmentCandidate> bodegeros,
+    required Map<String, int> helperWorkloads,
+    required Map<String, int> bodegeroWorkloads,
+    required bool hasLightItems,
+  }) {
+    final helper = HelperAssignmentSelector(
+      key: const ValueKey('pos-dual-helper'),
+      helpers: hasLightItems ? helpers : const <HelperAssignmentCandidate>[],
+      workloads: helperWorkloads,
+      selectedHelperId: hasLightItems ? _selectedHelperId : null,
+      enabled: hasLightItems && !_isProcessingCart &&
+          widget.presenceService != null,
+      onChanged: hasLightItems ? (id) {
+        if (_selectedHelperId != id) setState(() => _selectedHelperId = id);
+      } : null,
+      roleName: 'Helper',
+      showInlineLabel: false,
+      compact: true,
+      disabledLabel: hasLightItems ? null : 'Helper: N/A',
+    );
+    final bodegero = HelperAssignmentSelector(
+      key: const ValueKey('pos-dual-bodegero'),
+      helpers: bodegeros,
+      workloads: bodegeroWorkloads,
+      selectedHelperId: _selectedBodegeroId,
+      enabled: !_isProcessingCart && widget.presenceService != null,
+      onChanged: (id) {
+        if (_selectedBodegeroId != id) {
+          setState(() => _selectedBodegeroId = id);
+        }
+      },
+      roleName: 'Bodegero',
+      showInlineLabel: false,
+      compact: true,
+    );
+
+    return LayoutBuilder(builder: (context, constraints) {
+      if (constraints.maxWidth < 300) {
+        // Very narrow panels: avoid overflowing either dropdown.
+        return Column(children: [
+          helper,
+          const SizedBox(height: 8),
+          bodegero,
+        ]);
+      }
+      return Row(children: [
+        Expanded(child: helper),
+        const SizedBox(width: 8),
+        Expanded(child: bodegero),
+      ]);
+    });
+  }
+
 }
 
 class _DashedDivider extends StatelessWidget {

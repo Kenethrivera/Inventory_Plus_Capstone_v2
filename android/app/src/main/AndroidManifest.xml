@@ -3,6 +3,7 @@
     <!-- Required for YOLOView camera access to run visual search -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:label="inventory_plus"

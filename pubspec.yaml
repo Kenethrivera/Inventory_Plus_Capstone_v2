@@ -9,7 +9,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  ultralytics_yolo:
   emailjs: ^4.0.0  # Official YOLO plugin for Flutter
   camera: ^0.11.0
   lucide_icons_flutter: ^4.0.0

@@ -55,6 +55,15 @@ class StaffPresenceService extends ChangeNotifier {
         now: DateTime.now().toUtc(),
         activeTimeout: activeTimeout,
       );
+  // POS_BODEGERO_ASSIGNMENT_V1: same location/presence freshness as Helper.
+  List<HelperAssignmentCandidate> get eligibleBodegerosForAssignment =>
+      eligibleHelpersFromPresence(
+        presenceRows: _activeStaff,
+        locationId: locationId,
+        now: DateTime.now().toUtc(),
+        activeTimeout: activeTimeout,
+        targetRole: 'bodegero',
+      );
   bool get isLoading => _isLoading;
   bool get isOnBreak => _isOnBreak;
   bool get isStarted => _started;

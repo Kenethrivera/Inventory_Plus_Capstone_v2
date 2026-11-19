@@ -17,11 +17,14 @@ enum NotificationFilter {
   reports,
   transactions,
   system,
+  approvals,
 }
 
 class NotificationPage extends StatefulWidget {
   final NotificationController controller;
   final bool isModal;
+  // STAFF_NATIVE_MOBILE_NOTIFICATION_PARITY_V1: Helper/Bodegero native-mobile filters only.
+  final bool staffMobileFilters;
   final Future<String?> Function(AppNotification notification)?
   onValidateNotification;
   final bool Function(AppNotification notification) isActionable;
@@ -32,6 +35,7 @@ class NotificationPage extends StatefulWidget {
     super.key,
     required this.controller,
     this.isModal = false,
+    this.staffMobileFilters = false,
     this.onValidateNotification,
     required this.isActionable,
     required this.onInformationalNotificationsShown,
@@ -166,7 +170,14 @@ class _NotificationPageState extends State<NotificationPage> {
   }
 
   Widget _buildFilters() {
-    final filters = _availableFilters(widget.controller.notifications);
+    final filters = widget.staffMobileFilters
+        ? const <NotificationFilter>[
+            NotificationFilter.all,
+            NotificationFilter.archived,
+            NotificationFilter.orders,
+            NotificationFilter.approvals,
+          ]
+        : _availableFilters(widget.controller.notifications);
 
     if (!filters.contains(_filter)) {
       _filter = NotificationFilter.all;
@@ -440,6 +451,11 @@ class _NotificationPageState extends State<NotificationPage> {
               n.type == NotificationType.orderCancelled;
         }).toList();
 
+      case NotificationFilter.approvals:
+        return notifications
+            .where((n) => n.payload['category'] == 'inventoryApproval')
+            .toList();
+
       case NotificationFilter.stock:
         return notifications.where((n) {
           return n.type == NotificationType.stockAlert ||
@@ -520,6 +536,8 @@ class _NotificationPageState extends State<NotificationPage> {
         return 'Transactions';
       case NotificationFilter.system:
         return 'System';
+      case NotificationFilter.approvals:
+        return 'Approvals';
       case NotificationFilter.archived:
         return 'Archived';
     }
@@ -541,6 +559,8 @@ class _NotificationPageState extends State<NotificationPage> {
         return 'No transaction notifications';
       case NotificationFilter.system:
         return 'No system notifications';
+      case NotificationFilter.approvals:
+        return 'No approval notifications';
       case NotificationFilter.archived:
         return 'No archived notifications';
     }

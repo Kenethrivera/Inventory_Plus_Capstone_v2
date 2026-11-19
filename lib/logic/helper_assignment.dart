@@ -44,6 +44,7 @@ List<HelperAssignmentCandidate> eligibleHelpersFromPresence({
   required String locationId,
   required DateTime now,
   required Duration activeTimeout,
+  String targetRole = 'helper',
 }) {
   final normalizedLocation = locationId.trim();
   final helpers = <HelperAssignmentCandidate>[];
@@ -58,7 +59,7 @@ List<HelperAssignmentCandidate> eligibleHelpersFromPresence({
     )?.toUtc();
 
     if (row['is_online'] != true ||
-        role != 'helper' ||
+        role != targetRole ||
         rowLocation != normalizedLocation ||
         id == null ||
         id.isEmpty ||

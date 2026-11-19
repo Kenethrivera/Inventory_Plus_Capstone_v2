@@ -625,16 +625,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                       alignment: WrapAlignment.end,
                       children: [
                         OutlinedButton.icon(
-                          onPressed: widget.onExport,
-                          icon: Icon(
-                            LucideIcons.download,
-                            size: 15,
-                            color: widget.exportDue ? Colors.red : _ink,
-                          ),
-                          label: const Text('Export report'),
-                          style: _outlineStyle,
-                        ),
-                        OutlinedButton.icon(
                           onPressed: () => widget.onQrLabels(null),
                           icon: const Icon(LucideIcons.qrCode, size: 15),
                           label: const Text('QR labels'),
@@ -1035,12 +1025,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                   ),
                 ),
                 if (widget.controller.isAdmin) ...[
-                  OutlinedButton.icon(
-                    onPressed: widget.onExport,
-                    icon: const Icon(LucideIcons.download, size: 17),
-                    label: const Text('Export report'),
-                  ),
-                  const SizedBox(width: 10),
                   OutlinedButton.icon(
                     onPressed: filtered.isEmpty
                         ? null

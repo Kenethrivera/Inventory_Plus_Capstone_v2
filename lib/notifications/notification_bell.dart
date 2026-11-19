@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -103,7 +104,9 @@ class NotificationBell extends StatelessWidget {
     final isDesktop = screen.width >= 700;
 
     if (!isDesktop) {
-      if (helperMobilePanel) {
+      // STAFF_NATIVE_MOBILE_NOTIFICATION_PARITY_V1: Preserve web popover. On native mobile,
+      // Helper/Bodegero share the Admin/Cashier bottom-sheet presentation.
+      if (helperMobilePanel && kIsWeb) {
         return _showHelperMobilePanel(
           context,
           controller,
@@ -122,6 +125,7 @@ class NotificationBell extends StatelessWidget {
             child: NotificationPage(
               controller: controller,
               isModal: true,
+              staffMobileFilters: helperMobilePanel && !kIsWeb,
               onValidateNotification: onValidateNotification,
               isActionable: isActionable,
               onInformationalNotificationsShown:

@@ -21,6 +21,10 @@ class HelperAssignmentSelector extends StatefulWidget {
     required this.selectedHelperId,
     required this.enabled,
     required this.onChanged,
+    this.roleName = 'Helper',
+    this.showInlineLabel = true,
+    this.compact = false,
+    this.disabledLabel,
   });
 
   final List<HelperAssignmentCandidate> helpers;
@@ -28,6 +32,11 @@ class HelperAssignmentSelector extends StatefulWidget {
   final String? selectedHelperId;
   final bool enabled;
   final ValueChanged<String?>? onChanged;
+  // POS_BODEGERO_ASSIGNMENT_V1: opt-in role-neutral selector presentation.
+  final String roleName;
+  final bool showInlineLabel;
+  final bool compact;
+  final String? disabledLabel;
 
   @override
   State<HelperAssignmentSelector> createState() =>
@@ -217,7 +226,7 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
                     key: const Key('helper-option-auto'),
                     icon: LucideIcons.zap,
                     title: 'Auto-assign',
-                    subtitle: 'Least-loaded available Helper',
+                    subtitle: 'Least-loaded available ${widget.roleName}',
                     selected: selectedHelper == null,
                     onTap: () => _select(null),
                   ),
@@ -251,16 +260,18 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
 
     return Row(
       children: [
-        const Text(
-          'Helper packs',
-          style: TextStyle(
-            color: _muted,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            fontFamily: _fontFamily,
+        if (widget.showInlineLabel) ...[
+          const Text(
+            'Helper packs',
+            style: TextStyle(
+              color: _muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              fontFamily: _fontFamily,
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
+          const SizedBox(width: 12),
+        ],
         Expanded(
           child: CompositedTransformTarget(
             link: _layerLink,
@@ -281,8 +292,8 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
                   enabled: widget.enabled,
                   expanded: _isOpen,
                   label: selectedHelper == null
-                      ? 'Auto-assign Helper, least loaded'
-                      : 'Assigned Helper ${selectedHelper.name}',
+                      ? '${widget.roleName}: auto-assign least loaded'
+                      : 'Assigned ${widget.roleName} ${selectedHelper.name}',
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
@@ -306,30 +317,38 @@ class _HelperAssignmentSelectorState extends State<HelperAssignmentSelector> {
                         ),
                         child: Row(
                           children: [
-                            Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: highlighted
-                                    ? const Color(0xFFFBE2D4)
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(7),
+                            if (!widget.compact) ...[
+                              Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: highlighted
+                                      ? const Color(0xFFFBE2D4)
+                                      : Colors.white,
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                                child: Icon(
+                                  selectedHelper == null
+                                      ? LucideIcons.zap
+                                      : LucideIcons.userRound,
+                                  size: 15,
+                                  color: _accent,
+                                ),
                               ),
-                              child: Icon(
-                                selectedHelper == null
-                                    ? LucideIcons.zap
-                                    : LucideIcons.userRound,
-                                size: 15,
-                                color: _accent,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
+                              const SizedBox(width: 10),
+                            ],
                             Expanded(
                               child: Text(
-                                selectedHelper == null
-                                    ? 'Auto-assign — least loaded'
-                                    : '${selectedHelper.name} — '
-                                          '${_activeOrderLabel(selectedCount)}',
+                                !widget.enabled && widget.disabledLabel != null
+                                    ? widget.disabledLabel!
+                                    : selectedHelper == null
+                                        ? (widget.compact
+                                            ? '${widget.roleName}: Auto'
+                                            : 'Auto-assign — least loaded')
+                                        : (widget.compact
+                                            ? '${widget.roleName}: ${selectedHelper.name}'
+                                            : '${selectedHelper.name} — '
+                                              '${_activeOrderLabel(selectedCount)}'),
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   color: _ink,
