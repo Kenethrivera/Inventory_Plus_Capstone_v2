@@ -29,9 +29,7 @@ String _qty(double value) => value == value.roundToDouble()
     : value.toStringAsFixed(2);
 
 double _stockCoverageFraction(double onHand, double sevenDaySales) =>
-    sevenDaySales <= 0
-    ? 0.0
-    : (onHand / sevenDaySales).clamp(0.0, 1.0);
+    sevenDaySales <= 0 ? 0.0 : (onHand / sevenDaySales).clamp(0.0, 1.0);
 
 String _stockCoverageLabel(double onHand, double sevenDaySales) {
   if (sevenDaySales <= 0) return 'No recent sales';
@@ -76,19 +74,15 @@ Color _statusColor(StockStatus status) {
 class InventoryRedesign extends StatefulWidget {
   final InventoryController controller;
   final Future<void> Function(InventoryItem) onUpdateItem;
-  final VoidCallback onExport;
   final void Function(List<InventoryItem>?) onQrLabels;
   final VoidCallback onNewItem;
-  final bool exportDue;
 
   const InventoryRedesign({
     super.key,
     required this.controller,
     required this.onUpdateItem,
-    required this.onExport,
     required this.onQrLabels,
     required this.onNewItem,
-    this.exportDue = false,
   });
 
   @override
@@ -102,6 +96,33 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
   String _sortBy = 'nameAsc';
   int _page = 0;
   static const _perPage = 8;
+
+  Widget _qrLabelsAction({List<InventoryItem>? items, bool enabled = true}) =>
+      Tooltip(
+        message: 'Download QR labels',
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: OutlinedButton(
+            onPressed: enabled
+                ? () {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                    widget.onQrLabels(items);
+                  }
+                : null,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _ink,
+              backgroundColor: Colors.white,
+              padding: EdgeInsets.zero,
+              side: const BorderSide(color: _border),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Icon(LucideIcons.qrCode, size: 18),
+          ),
+        ),
+      );
 
   @override
   void dispose() {
@@ -521,10 +542,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
     }.where((c) => c.toLowerCase() != 'unassigned').toList()..sort();
     final categories = <String>['All', ...categoryNames];
     final selectedCategory = categories.contains(_category) ? _category : 'All';
-    final source = <InventoryItem>[
-      ...active,
-      ...disabled,
-    ];
+    final source = <InventoryItem>[...active, ...disabled];
     final query = _search.text.trim().toLowerCase();
     List<InventoryItem> filterItems(List<InventoryItem> candidates) {
       final matches = candidates.where((item) {
@@ -620,12 +638,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                       runSpacing: 8,
                       alignment: WrapAlignment.end,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () => widget.onQrLabels(null),
-                          icon: const Icon(LucideIcons.qrCode, size: 15),
-                          label: const Text('QR labels'),
-                          style: _outlineStyle,
-                        ),
+                        _qrLabelsAction(),
                         ElevatedButton.icon(
                           onPressed: widget.onNewItem,
                           icon: const Icon(LucideIcons.plus, size: 16),
@@ -955,7 +968,8 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
     final query = _search.text.trim().toLowerCase();
     final filtered = allItems.where((item) {
       final inactive = disabledIds.contains(item.id);
-      final matchesStatus = _stockFilter == 'all' ||
+      final matchesStatus =
+          _stockFilter == 'all' ||
           (!inactive && _matchesStatusFilter(item, _stockFilter));
       return matchesStatus &&
           (selectedCategory == 'All' || item.category == selectedCategory) &&
@@ -1021,12 +1035,9 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                   ),
                 ),
                 if (widget.controller.isAdmin) ...[
-                  OutlinedButton.icon(
-                    onPressed: filtered.isEmpty
-                        ? null
-                        : () => widget.onQrLabels(filtered),
-                    icon: const Icon(LucideIcons.qrCode, size: 17),
-                    label: const Text('Print labels'),
+                  _qrLabelsAction(
+                    items: filtered,
+                    enabled: filtered.isNotEmpty,
                   ),
                   const SizedBox(width: 10),
                   FilledButton.icon(
@@ -1125,7 +1136,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                     ),
                   ],
                 );
-                return limits.maxWidth < 1000
+                return limits.maxWidth < 1200
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1525,6 +1536,8 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                         ),
                       ),
                       if (widget.controller.isAdmin) ...[
+                        _qrLabelsAction(),
+                        const SizedBox(width: 8),
                         SizedBox(
                           height: 40,
                           child: FilledButton.icon(
@@ -1556,46 +1569,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                       fontSize: 12,
                     ),
                   ),
-                  if (widget.controller.isAdmin) ...[
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 40,
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                FocusManager.instance.primaryFocus?.unfocus();
-                                widget.onQrLabels(null);
-                              },
-                              icon: const Icon(LucideIcons.qrCode, size: 16),
-                              label: const Text('QR labels'),
-                              style: _outlineStyle,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: SizedBox(
-                            height: 40,
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                FocusManager.instance.primaryFocus?.unfocus();
-                                widget.onExport();
-                              },
-                              icon: Icon(
-                                LucideIcons.download,
-                                size: 16,
-                                color: widget.exportDue ? Colors.red : _ink,
-                              ),
-                              label: const Text('Export report'),
-                              style: _outlineStyle,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -1631,33 +1604,33 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      SizedBox(
-                        height: 46,
-                        child: OutlinedButton.icon(
-                          onPressed: () => _openMobileFilterSheet(
-                            source: source,
-                            categories: categories,
-                            selectedCategory: selectedCategory,
-                          ),
-                          icon: const Icon(Icons.tune, size: 17),
-                          label: const Text('Filter'),
-                          style: OutlinedButton.styleFrom(
-                            backgroundColor: hasActiveFilters
-                                ? const Color(0xFFFFF1E9)
-                                : Colors.white,
-                            foregroundColor: hasActiveFilters ? _accent : _ink,
-                            padding: const EdgeInsets.symmetric(horizontal: 9),
-                            side: BorderSide(
-                              color: hasActiveFilters ? _accent : _border,
+                      Tooltip(
+                        message: 'Filter inventory',
+                        child: SizedBox(
+                          width: 46,
+                          height: 46,
+                          child: OutlinedButton(
+                            onPressed: () => _openMobileFilterSheet(
+                              source: source,
+                              categories: categories,
+                              selectedCategory: selectedCategory,
                             ),
-                            textStyle: const TextStyle(
-                              fontFamily: _font,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: hasActiveFilters
+                                  ? const Color(0xFFFFF1E9)
+                                  : Colors.white,
+                              foregroundColor: hasActiveFilters
+                                  ? _accent
+                                  : _ink,
+                              padding: EdgeInsets.zero,
+                              side: BorderSide(
+                                color: hasActiveFilters ? _accent : _border,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                            child: const Icon(Icons.tune, size: 18),
                           ),
                         ),
                       ),
@@ -2170,19 +2143,6 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
     });
   }
 
-  ButtonStyle get _outlineStyle => OutlinedButton.styleFrom(
-    foregroundColor: _ink,
-    backgroundColor: Colors.white,
-    side: const BorderSide(color: _border),
-    textStyle: const TextStyle(
-      fontFamily: _font,
-      fontSize: 11,
-      fontWeight: FontWeight.w600,
-    ),
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-  );
-
   Widget _filterDropdown({
     required double width,
     required IconData icon,
@@ -2461,9 +2421,10 @@ Future<void> showInventoryItemDetails({
     ),
   ),
   transitionBuilder: (context, animation, _, child) => SlideTransition(
-    position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(
-      CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-    ),
+    position: Tween<Offset>(
+      begin: const Offset(1, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
     child: child,
   ),
 );
@@ -3074,6 +3035,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
       },
     );
   }
+
   Widget _buildMobileReferenceDrawer(
     InventoryItem item,
     StockStatus status,
@@ -3163,7 +3125,8 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -3174,7 +3137,9 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                                               [item.manufacturer, item.model]
                                                   .where(
                                                     (part) =>
-                                                        part?.trim().isNotEmpty ==
+                                                        part
+                                                            ?.trim()
+                                                            .isNotEmpty ==
                                                         true,
                                                   )
                                                   .join(' · '),
@@ -3487,10 +3452,13 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                                       child: LinearProgressIndicator(
                                         value: fraction,
                                         minHeight: 7,
-                                        backgroundColor: const Color(0xFFEEECE8),
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          statusColor,
+                                        backgroundColor: const Color(
+                                          0xFFEEECE8,
                                         ),
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              statusColor,
+                                            ),
                                       ),
                                     ),
                                   ),
@@ -3636,8 +3604,8 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
   }
 
   Widget _productImageEditor(InventoryItem item, {required bool canEdit}) {
-    final hasImage = _chosenImageBytes != null ||
-        _imageUrlController.text.trim().isNotEmpty;
+    final hasImage =
+        _chosenImageBytes != null || _imageUrlController.text.trim().isNotEmpty;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -3668,10 +3636,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                     const SizedBox(height: 4),
                     Text(
                       hasImage ? 'Image preview' : 'No image added',
-                      style: const TextStyle(
-                        color: _warmMuted,
-                        fontSize: 12,
-                      ),
+                      style: const TextStyle(color: _warmMuted, fontSize: 12),
                     ),
                   ],
                 ),
@@ -3722,7 +3687,10 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
       onTap: () => setState(() => _referenceTab = index),
       borderRadius: BorderRadius.circular(7),
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: mobile ? 5 : 13, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: mobile ? 5 : 13,
+          vertical: 10,
+        ),
         decoration: BoxDecoration(
           color: _referenceTab == index ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(7),
@@ -3762,16 +3730,13 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
           decoration: _referenceInputDecoration(),
           items: categories
               .map(
-                (category) => DropdownMenuItem(
-                  value: category,
-                  child: Text(category),
-                ),
+                (category) =>
+                    DropdownMenuItem(value: category, child: Text(category)),
               )
               .toList(),
           onChanged: canEdit
-              ? (value) => setState(
-                  () => _categoryValue = value ?? item.category,
-                )
+              ? (value) =>
+                    setState(() => _categoryValue = value ?? item.category)
               : null,
         ),
       ],
@@ -3940,9 +3905,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
       children: [
         Row(
           children: [
-            Expanded(
-              child: _referenceLevelField(canEdit),
-            ),
+            Expanded(child: _referenceLevelField(canEdit)),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

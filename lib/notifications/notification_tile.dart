@@ -17,8 +17,8 @@ class NotificationTile extends StatelessWidget {
     this.onArchive,
   });
 
-  static const Color _darkText = Color(0xFF0F172A);
-  static const Color _mutedText = Color(0xFF64748B);
+  static const Color _darkText = Color(0xFF211F1D);
+  static const Color _mutedText = Color(0xFF827A74);
   static const String _fontFam = 'Hellix';
 
   @override
@@ -37,7 +37,7 @@ class NotificationTile extends StatelessWidget {
         border: Border.all(
           color: isUnread
               ? presentation.accentColor.withValues(alpha: 0.7)
-              : const Color(0xFFE5E7EB),
+              : const Color(0xFFE7E1DA),
           width: isUnread ? 1.4 : 1,
         ),
         boxShadow: [
@@ -175,7 +175,7 @@ class NotificationTile extends StatelessWidget {
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: isUnread ? const Color(0xFF334155) : _mutedText,
+            color: isUnread ? const Color(0xFF5F5955) : _mutedText,
             fontSize: 13,
             height: 1.3,
             fontWeight: FontWeight.w500,

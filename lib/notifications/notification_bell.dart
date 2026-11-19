@@ -28,7 +28,7 @@ class NotificationBell extends StatelessWidget {
 
   const NotificationBell({
     super.key,
-    this.iconColor = const Color(0xFF0F172A),
+    this.iconColor = const Color(0xFF211F1D),
     this.placement = NotificationPanelPlacement.belowBell,
     this.helperMobilePanel = false,
     this.onNotificationSelected,

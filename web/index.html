@@ -18,12 +18,12 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="Inventory Plus for hardware store operations.">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="inventory_plus">
+  <meta name="apple-mobile-web-app-title" content="Inventory Plus">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
@@ -38,7 +38,7 @@
       width: 100%;
       height: 100%;
       margin: 0;
-      background: #f4f6f8;
+      background: #f7f6f4;
     }
 
     .app-loading {
@@ -46,7 +46,7 @@
       inset: 0;
       display: grid;
       place-items: center;
-      color: #0f172a;
+      color: #211f1d;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
@@ -57,16 +57,43 @@
     }
 
     .app-loading__mark {
-      width: 42px;
-      height: 42px;
+      width: 64px;
+      height: 64px;
       display: grid;
       place-items: center;
       border-radius: 12px;
-      background: #2563eb;
+      background: #c83d08;
       color: #fff;
-      font-size: 22px;
-      font-weight: 700;
-      box-shadow: 0 8px 24px rgba(37, 99, 235, 0.22);
+      box-shadow: 0 8px 24px rgba(200, 61, 8, 0.22);
+    }
+
+    .app-loading__mark svg { width: 100%; height: 100%; }
+    .app-loading__package,
+    .app-loading__shelf {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 58;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .app-loading__package {
+      animation: restock-package 850ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+    .app-loading__shelf {
+      animation: restock-shelf 850ms ease-out both;
+    }
+
+    @keyframes restock-package {
+      from { transform: translateY(-4px); }
+      to { transform: translateY(0); }
+    }
+    @keyframes restock-shelf {
+      from { opacity: .7; }
+      to { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .app-loading__package,
+      .app-loading__shelf { animation: none; }
     }
 
     .app-loading__title {
@@ -77,7 +104,7 @@
 
     .app-loading__status {
       margin: 0;
-      color: #64748b;
+      color: #827a74;
       font-size: 13px;
     }
   </style>
@@ -85,7 +112,12 @@
 <body>
   <div id="app-loading" class="app-loading" role="status" aria-live="polite">
     <div class="app-loading__content">
-      <div class="app-loading__mark" aria-hidden="true">I+</div>
+      <div class="app-loading__mark" aria-hidden="true">
+        <svg viewBox="0 0 1024 1024" focusable="false" aria-hidden="true">
+          <path class="app-loading__package" d="M512 252 L760 380 L512 512 L264 380 Z M264 380 L264 660 L512 796 L760 660 L760 380 M512 512 L512 796"/>
+          <path class="app-loading__shelf" d="M264 855 L760 855"/>
+        </svg>
+      </div>
       <div>
         <p class="app-loading__title">Inventory Plus</p>
         <p id="app-loading-status" class="app-loading__status">Restoring your session&hellip;</p>

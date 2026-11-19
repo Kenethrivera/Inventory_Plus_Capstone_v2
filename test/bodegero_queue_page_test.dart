@@ -14,6 +14,7 @@ import 'package:inventory_plus/notifications/notification_service.dart';
 import 'package:inventory_plus/services/staff_presence_service.dart';
 import 'package:inventory_plus/ui/bodegero_queue_page.dart';
 import 'package:inventory_plus/ui/order_queue_page.dart';
+import 'package:inventory_plus/ui/store_map.dart';
 import 'package:inventory_plus/ui/widgets/loading_proof_camera_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -110,6 +111,35 @@ class _QueueController extends InventoryController {
   }) async {
     statusUpdateCalled = true;
   }
+}
+
+class _MappedQueueController extends _QueueController {
+  _MappedQueueController(super.order) {
+    storeLayout = [
+      MapElement(
+        id: 'shelf-1',
+        type: ElementType.shelf,
+        position: const Offset(80, 80),
+        size: const Size(100, 80),
+      ),
+    ];
+  }
+
+  @override
+  InventoryItem? findAnyItemById(String id) => id == 'cement-1'
+      ? InventoryItem(
+          id: id,
+          name: 'Portland cement 40kg',
+          sku: 'CEMENT-1',
+          price: 100,
+          quantity: 5,
+          maxQuantity: 100,
+          category: 'Building materials',
+          description: '',
+          imageUrl: '',
+          locationId: 'shelf-1',
+        )
+      : null;
 }
 
 class _ClaimQueueController extends _QueueController {
@@ -267,6 +297,42 @@ void main() {
       },
     ],
   });
+
+  for (final width in [390.0, 1280.0]) {
+    testWidgets('loading map switches between 2D and 3D at ${width.toInt()}px', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(Size(width, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BodegeroQueuePage(
+            controller: _MappedQueueController(order),
+            onLogout: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start loading'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('3D view'), findsOneWidget);
+      expect(tester.widget<StoreMap>(find.byType(StoreMap)).viewStyle,
+          MapViewStyle.twoD);
+      await tester.tap(find.text('3D view'));
+      await tester.pump();
+      expect(find.text('2D plan'), findsOneWidget);
+      expect(tester.widget<StoreMap>(find.byType(StoreMap)).viewStyle,
+          MapViewStyle.threeD);
+
+      await tester.tap(find.text('2D plan'));
+      await tester.pump();
+      expect(tester.widget<StoreMap>(find.byType(StoreMap)).viewStyle,
+          MapViewStyle.twoD);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   test('Bodegero may use the stock request workflow', () {
     expect(_QueueController(order).canRequestInventoryApproval, isTrue);

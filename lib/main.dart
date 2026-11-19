@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_litert/flutter_litert.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'ui/login_page.dart';
 import 'ui/main_screen.dart';
 import 'logic/inventory_controller.dart';
@@ -17,6 +18,13 @@ import 'ui/widgets/startup_restoration_surface.dart';
 Future<void> main() async {
   final startupStopwatch = Stopwatch()..start();
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS)) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+  }
   AppLogger.configure();
   final initialRequestedPath = readMainSectionPath();
 

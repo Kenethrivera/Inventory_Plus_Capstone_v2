@@ -25,6 +25,7 @@ import 'scanner_search_page.dart';
 import 'store_map.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/loading_proof_camera_page.dart';
+import 'widgets/map_view_toggle_button.dart';
 import 'widgets/staff_role_header.dart';
 
 const _ink = Color(0xFF171717);
@@ -83,6 +84,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   bool _photoPreparing = false;
   bool _clockBusy = false;
   bool _changingBreak = false;
+  MapViewStyle _loadingMapStyle = MapViewStyle.twoD;
   int _tabIndex = 0;
   int _lastMainTabIndex = 0;
   final Set<int> _visitedTabs = {0};
@@ -1614,6 +1616,30 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     ),
   );
 
+  Widget _loadingMapHeader({required double fontSize}) {
+    return Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        Text(
+          'Store map · heavy item locations',
+          style: TextStyle(
+            color: _ink,
+            fontSize: fontSize,
+            fontWeight: FontWeight.w800,
+            fontFamily: _font,
+          ),
+        ),
+        MapViewToggleButton(
+          viewStyle: _loadingMapStyle,
+          onChanged: (style) => setState(() => _loadingMapStyle = style),
+        ),
+      ],
+    );
+  }
+
   Widget _checklist(CustomerOrder order) {
     final items = _heavyItems(order);
     final sharedProgress = OrderWorkProgress.fromOrder(order);
@@ -1749,22 +1775,14 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Store map · heavy item locations',
-                                style: TextStyle(
-                                  color: _ink,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
-                                  fontFamily: _font,
-                                ),
-                              ),
+                              _loadingMapHeader(fontSize: 15),
                               const SizedBox(height: 12),
                               SizedBox(
                                 height: 260,
                                 child: StoreMap(
                                   controller: widget.controller,
                                   mode: MapMode.view,
-                                  viewStyle: MapViewStyle.twoD,
+                                  viewStyle: _loadingMapStyle,
                                   highlightId: highlightId,
                                   pickStopMarkers: markers,
                                   showProductCounts: false,
@@ -1955,14 +1973,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Store map · heavy item locations',
-                                style: TextStyle(
-                                  color: _ink,
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
+                              _loadingMapHeader(fontSize: 21),
                               const SizedBox(height: 20),
                               SizedBox(
                                 height: 560,
@@ -1973,7 +1984,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                                     : StoreMap(
                                         controller: widget.controller,
                                         mode: MapMode.view,
-                                        viewStyle: MapViewStyle.twoD,
+                                        viewStyle: _loadingMapStyle,
                                         highlightId: highlightId,
                                         pickStopMarkers: markers,
                                         showProductCounts: false,

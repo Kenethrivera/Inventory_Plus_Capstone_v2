@@ -2261,7 +2261,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     // Native Android/iOS only; the web/desktop layout is unaffected.
     return NotificationProvider(
       controller: notificationController,
-      child: !kIsWeb &&
+      child:
+          !kIsWeb &&
               (defaultTargetPlatform == TargetPlatform.android ||
                   defaultTargetPlatform == TargetPlatform.iOS)
           ? ColoredBox(
@@ -2526,14 +2527,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         }
 
         if (inventoryIndex >= 0) {
-          pages.add(
-            InventoryPage(
-              controller: widget.controller,
-              onExported: () {
-                _scanExportReminderNotifications();
-              },
-            ),
-          );
+          pages.add(InventoryPage(controller: widget.controller));
         }
 
         if (isAdmin) {

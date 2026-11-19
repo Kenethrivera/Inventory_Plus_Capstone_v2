@@ -602,7 +602,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                                   onPressed: _hasDirtyDraft && !_isSaving
                                       ? () => unawaited(_saveDraft())
                                       : null,
-                                  child: Text(_isSaving ? 'Saving…' : 'Save map'),
+                                  child: Text(
+                                    _isSaving ? 'Saving…' : 'Save map',
+                                  ),
                                 ),
                               ],
                             ),
@@ -633,7 +635,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                             Expanded(child: _buildMapCanvas()),
                             const SizedBox(width: 18),
                             SizedBox(
-                              width: 340,
+                              width: _mode == MapMode.selection ? 400 : 340,
                               child: _mode == MapMode.selection
                                   ? _buildAssignmentPanel()
                                   : _buildFixturePanel(),
@@ -708,15 +710,15 @@ class _MapEditorPageState extends State<MapEditorPage> {
                         ),
                         child: Text(_isSaving ? 'Saving…' : 'Save map'),
                       ),
-                    ],
+                    ] else
+                      _buildMobileViewSwitch(),
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (_viewStyle == MapViewStyle.twoD) ...[
+              if (_viewStyle == MapViewStyle.twoD) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
                     Expanded(
                       child: Container(
                         padding: const EdgeInsets.all(3),
@@ -738,19 +740,10 @@ class _MapEditorPageState extends State<MapEditorPage> {
                       ),
                     ),
                     const SizedBox(width: 8),
+                    _buildMobileViewSwitch(),
                   ],
-                  Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: _mobilePanelDecoration(),
-                    child: Row(
-                      children: [
-                        _mobileViewTab(MapViewStyle.twoD, 'Floor'),
-                        _mobileViewTab(MapViewStyle.threeD, '3D'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
               const SizedBox(height: 8),
               if (_viewStyle == MapViewStyle.twoD &&
                   _mode == MapMode.manage) ...[
@@ -764,12 +757,11 @@ class _MapEditorPageState extends State<MapEditorPage> {
                 const SizedBox(height: 8),
                 _build3DProductsCard(_previewElement!, compact: true),
               ],
-              if (_viewStyle == MapViewStyle.twoD) ...[
+              if (_viewStyle == MapViewStyle.twoD &&
+                  _mode == MapMode.manage) ...[
                 const SizedBox(height: 8),
                 Text(
-                  _mode == MapMode.manage
-                      ? '${_draftLayout.length} elements · Drag to move · Use zoom buttons to zoom'
-                      : '$_assignedCount of ${widget.controller.allItems.length} products assigned',
+                  '${_draftLayout.length} elements · Drag to move · Use zoom buttons to zoom',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: _mobileMuted, fontSize: 11),
                 ),
@@ -777,7 +769,13 @@ class _MapEditorPageState extends State<MapEditorPage> {
               if (_viewStyle == MapViewStyle.twoD &&
                   _mode == MapMode.selection) ...[
                 const SizedBox(height: 8),
-                SizedBox(height: 240, child: _buildAssignmentPanel()),
+                SizedBox(
+                  height: (constraints.maxHeight * 0.44 + 24).clamp(
+                    315.0,
+                    415.0,
+                  ),
+                  child: _buildAssignmentPanel(),
+                ),
               ],
             ],
           ),
@@ -790,6 +788,18 @@ class _MapEditorPageState extends State<MapEditorPage> {
     color: _mobilePanel,
     borderRadius: BorderRadius.circular(14),
     border: Border.all(color: _mobileLine),
+  );
+
+  Widget _buildMobileViewSwitch() => Container(
+    padding: const EdgeInsets.all(3),
+    decoration: _mobilePanelDecoration(),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _mobileViewTab(MapViewStyle.twoD, 'Floor'),
+        _mobileViewTab(MapViewStyle.threeD, '3D'),
+      ],
+    ),
   );
 
   Widget _mobileModeTab(MapMode mode, String label, IconData icon) {
@@ -1217,8 +1227,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                     ],
                   ),
                 ),
-              if (_viewStyle == MapViewStyle.twoD &&
-                  _mode == MapMode.selection)
+              if (_viewStyle == MapViewStyle.twoD && _mode == MapMode.selection)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
@@ -1255,19 +1264,21 @@ class _MapEditorPageState extends State<MapEditorPage> {
                   fitEntireMap: true,
                   showZoomControls: false,
                   showMobileToolbar: false,
-                  placementType: _viewStyle == MapViewStyle.twoD &&
-                          _mode == MapMode.manage
+                  placementType:
+                      _viewStyle == MapViewStyle.twoD && _mode == MapMode.manage
                       ? _placementType
                       : null,
-                  selectedItemId: _viewStyle == MapViewStyle.twoD &&
+                  selectedItemId:
+                      _viewStyle == MapViewStyle.twoD &&
                           _mode == MapMode.selection
                       ? _selectedItemId
                       : null,
-                  highlightId: _viewStyle == MapViewStyle.twoD &&
-                          _mode == MapMode.selection
+                  highlightId: _viewStyle == MapViewStyle.threeD
+                      ? _previewElementId
+                      : _mode == MapMode.selection
                       ? _selectedAssignmentTargetId
                       : null,
-                                    itemAssignmentEnabled:
+                  itemAssignmentEnabled:
                       _viewStyle == MapViewStyle.twoD &&
                       !_hasDirtyDraft &&
                       !_remoteChangePending &&
@@ -1296,7 +1307,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                       : null,
                 ),
               ),
-              if (!mobile && _viewStyle == MapViewStyle.twoD)
+              if (!mobile &&
+                  _viewStyle == MapViewStyle.twoD &&
+                  _mode == MapMode.manage)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
@@ -1308,9 +1321,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                     border: Border(top: BorderSide(color: Color(0xFFE7E1DB))),
                   ),
                   child: Text(
-                    _mode == MapMode.selection
-                        ? '$_assignedCount of ${widget.controller.allItems.length} products assigned'
-                        : '${_draftLayout.length} elements    Drag to move · Delete to remove',
+                    '${_draftLayout.length} elements    Drag to move · Delete to remove',
                     style: const TextStyle(
                       color: Color(0xFF827872),
                       fontSize: 11,
@@ -1344,10 +1355,13 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   /// Read-only product details live outside the 3D canvas, not on top of it.
   Widget _build3DProductsCard(MapElement element, {bool compact = false}) {
-    final assigned = widget.controller.allItems
-        .where((item) => item.locationId == element.id)
-        .toList(growable: false)
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final assigned =
+        widget.controller.allItems
+            .where((item) => item.locationId == element.id)
+            .toList(growable: false)
+          ..sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          );
     final title = element.label.trim().isEmpty
         ? _elementLabel(element.type)
         : element.label.trim();
@@ -1651,28 +1665,32 @@ class _MapEditorPageState extends State<MapEditorPage> {
         Row(
           children: [
             _mobileWidthButton(
-              '◀ L−',
+              'L−',
+              LucideIcons.arrowRight,
               'Decrease from left',
               MapSidebarAction.widthLeftMinus,
               canShrink,
             ),
             const SizedBox(width: 5),
             _mobileWidthButton(
-              'L+ ▶',
+              'L+',
+              LucideIcons.arrowLeft,
               'Increase from left',
               MapSidebarAction.widthLeftPlus,
               canGrow,
             ),
             const SizedBox(width: 5),
             _mobileWidthButton(
-              '◀ R−',
+              'R−',
+              LucideIcons.arrowLeft,
               'Decrease from right',
               MapSidebarAction.widthRightMinus,
               canShrink,
             ),
             const SizedBox(width: 5),
             _mobileWidthButton(
-              'R+ ▶',
+              'R+',
+              LucideIcons.arrowRight,
               'Increase from right',
               MapSidebarAction.widthRightPlus,
               canGrow,
@@ -1702,6 +1720,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   Widget _mobileWidthButton(
     String label,
+    IconData direction,
     String tooltip,
     MapSidebarAction action,
     bool enabled,
@@ -1723,10 +1742,18 @@ class _MapEditorPageState extends State<MapEditorPage> {
             borderRadius: BorderRadius.circular(10),
           ),
         ),
-        child: Text(
-          label,
-          maxLines: 1,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(direction, size: 13),
+            const SizedBox(width: 2),
+            Text(
+              label,
+              maxLines: 1,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
       ),
     ),
@@ -2042,6 +2069,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
   Widget _buildAssignmentPanel() {
     final targets = _assignmentTargets;
     final allItems = widget.controller.allItems;
+    final assignedCount = _assignedCount;
     final items = allItems.where((item) {
       final assigned = targets.containsKey(item.locationId);
       if (_assignFilter == 'Assigned' && !assigned) return false;
@@ -2052,6 +2080,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
           item.sku.toLowerCase().contains(query);
     }).toList();
     items.sort((a, b) {
+      if (a.id == _selectedItemId) return -1;
+      if (b.id == _selectedItemId) return 1;
       final aAssigned = targets.containsKey(a.locationId);
       final bAssigned = targets.containsKey(b.locationId);
       if (aAssigned != bAssigned) return aAssigned ? 1 : -1;
@@ -2060,61 +2090,98 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
     return Container(
       height: 640,
-      decoration: _mapPanelDecoration(),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _mobileLine),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Items to place',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Items to place',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '$assignedCount of ${allItems.length} assigned',
+                      style: const TextStyle(
+                        color: Color(0xFF514A45),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '$_assignedCount of ${allItems.length} products assigned',
-                  style: const TextStyle(
-                    color: Color(0xFF827872),
-                    fontSize: 11,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  onChanged: (value) =>
-                      setState(() => _assignmentSearch = value),
-                  style: const TextStyle(fontSize: 12),
-                  decoration: _mapInputDecoration().copyWith(
-                    hintText: 'Search items or SKU…',
-                    prefixIcon: const Icon(LucideIcons.search, size: 16),
+                const SizedBox(height: 9),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: allItems.isEmpty
+                        ? 0
+                        : assignedCount / allItems.length,
+                    minHeight: 6,
+                    color: _primaryBlue,
+                    backgroundColor: const Color(0xFFECE8E4),
                   ),
                 ),
                 const SizedBox(height: 12),
+                SizedBox(
+                  height: 48,
+                  child: TextField(
+                    onChanged: (value) =>
+                        setState(() => _assignmentSearch = value),
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Search items or SKU...',
+                      hintStyle: const TextStyle(color: _mobileMuted),
+                      prefixIcon: const Icon(LucideIcons.search, size: 20),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(13),
+                        borderSide: const BorderSide(color: _mobileLine),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(13),
+                        borderSide: const BorderSide(color: _mobileLine),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                       child: _assignmentFilterChip('All', allItems.length),
                     ),
-                    const SizedBox(width: 5),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: _assignmentFilterChip(
                         'Unassigned',
-                        allItems.length - _assignedCount,
+                        allItems.length - assignedCount,
                       ),
                     ),
-                    const SizedBox(width: 5),
+                    const SizedBox(width: 6),
                     Expanded(
-                      child: _assignmentFilterChip('Assigned', _assignedCount),
+                      child: _assignmentFilterChip('Assigned', assignedCount),
                     ),
                   ],
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE7E1DB)),
           if (targets.isEmpty)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -2132,7 +2199,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                     itemCount: items.length,
                     itemBuilder: (context, index) {
                       final item = items[index];
@@ -2148,33 +2215,39 @@ class _MapEditorPageState extends State<MapEditorPage> {
                           ? 'Unassigned · ${item.sku}'
                           : '$fixtureLabel${level != null && level.isNotEmpty ? ' · Level $level' : ''}';
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 7),
+                        padding: const EdgeInsets.only(bottom: 3),
                         child: Material(
                           color: selected
-                              ? const Color(0xFFFFF0E8)
+                              ? const Color(0xFFFFF8F4)
                               : Colors.white,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(9),
+                            borderRadius: BorderRadius.circular(13),
                             side: BorderSide(
                               color: selected
                                   ? _primaryBlue
-                                  : const Color(0xFFE7E1DB),
+                                  : Colors.transparent,
                             ),
                           ),
                           child: InkWell(
                             key: ValueKey('map-assign-product-${item.id}'),
-                            borderRadius: BorderRadius.circular(9),
+                            borderRadius: BorderRadius.circular(13),
                             onTap: () => setState(() {
                               _selectedItemId = selected ? null : item.id;
                             }),
                             child: Padding(
-                              padding: const EdgeInsets.all(9),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 10,
+                              ),
                               child: Column(
                                 children: [
                                   Row(
                                     children: [
-                                      _mapProductImage(item),
-                                      const SizedBox(width: 9),
+                                      _mapProductImage(
+                                        item,
+                                        assignmentCard: true,
+                                      ),
+                                      const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
@@ -2185,7 +2258,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: const TextStyle(
-                                                fontSize: 12,
+                                                fontSize: 14,
                                                 fontWeight: FontWeight.w600,
                                               ),
                                             ),
@@ -2195,9 +2268,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
                                                 color: assignedTarget == null
-                                                    ? const Color(0xFF827872)
+                                                    ? const Color(0xFF745849)
                                                     : _primaryBlue,
-                                                fontSize: 11,
+                                                fontSize: 12,
                                               ),
                                             ),
                                           ],
@@ -2248,17 +2321,42 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   Widget _assignmentFilterChip(String label, int count) {
     final selected = _assignFilter == label;
-    return TextButton(
-      onPressed: () => setState(() => _assignFilter = label),
-      style: TextButton.styleFrom(
-        foregroundColor: selected ? Colors.white : const Color(0xFF514A45),
-        backgroundColor: selected ? _primaryBlue : const Color(0xFFF7F5F3),
-        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
-      ),
-      child: Text(
-        '$label $count',
-        maxLines: 1,
-        style: const TextStyle(fontSize: 10),
+    return SizedBox(
+      height: 40,
+      child: OutlinedButton(
+        onPressed: () => setState(() => _assignFilter = label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: selected ? Colors.white : const Color(0xFF201D1A),
+          backgroundColor: selected ? _primaryBlue : Colors.white,
+          side: BorderSide(color: selected ? _primaryBlue : _mobileLine),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+        ),
+        child: label == 'All'
+            ? Text(
+                'All $count',
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text('$count', style: const TextStyle(fontSize: 10)),
+                ],
+              ),
       ),
     );
   }
@@ -2474,8 +2572,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                   children: [
                     Expanded(
                       child: _manageAction(
-                        '│→  −',
+                        '−',
                         MapSidebarAction.widthLeftMinus,
+                        icon: LucideIcons.arrowRight,
                         enabled: canShrink,
                         hoverEdge: MapResizeEdge.left,
                       ),
@@ -2483,8 +2582,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _manageAction(
-                        '←│  +',
+                        '+',
                         MapSidebarAction.widthLeftPlus,
+                        icon: LucideIcons.arrowLeft,
                         enabled: canGrow,
                         hoverEdge: MapResizeEdge.left,
                       ),
@@ -2498,8 +2598,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                   children: [
                     Expanded(
                       child: _manageAction(
-                        '←│  −',
+                        '−',
                         MapSidebarAction.widthRightMinus,
+                        icon: LucideIcons.arrowLeft,
                         enabled: canShrink,
                         hoverEdge: MapResizeEdge.right,
                       ),
@@ -2507,8 +2608,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _manageAction(
-                        '│→  +',
+                        '+',
                         MapSidebarAction.widthRightPlus,
+                        icon: LucideIcons.arrowRight,
                         enabled: canGrow,
                         hoverEdge: MapResizeEdge.right,
                       ),
@@ -2589,6 +2691,7 @@ class _MapEditorPageState extends State<MapEditorPage> {
   Widget _manageAction(
     String label,
     MapSidebarAction action, {
+    IconData? icon,
     bool enabled = true,
     MapResizeEdge? hoverEdge,
   }) {
@@ -2604,7 +2707,17 @@ class _MapEditorPageState extends State<MapEditorPage> {
           minimumSize: const Size(0, 46),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
         ),
-        child: Text(label, style: const TextStyle(fontSize: 16)),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 16),
+              const SizedBox(width: 5),
+            ],
+            Text(label, style: const TextStyle(fontSize: 13)),
+          ],
+        ),
       ),
     );
     if (hoverEdge == null) return button;
@@ -2704,7 +2817,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
                 ),
                 IconButton(
                   tooltip: 'Remove ${item.name} from this fixture',
-                  onPressed: _hasDirtyDraft ||
+                  onPressed:
+                      _hasDirtyDraft ||
                           _remoteChangePending ||
                           _assignmentInFlight
                       ? null
@@ -2779,28 +2893,35 @@ class _MapEditorPageState extends State<MapEditorPage> {
     );
   }
 
-  Widget _mapProductImage(InventoryItem item) => Container(
-    width: 36,
-    height: 36,
-    decoration: _mapPanelDecoration(),
-    clipBehavior: Clip.antiAlias,
-    child: item.imageUrl.isEmpty
-        ? const Icon(LucideIcons.package, size: 18, color: Color(0xFFAAA19B))
-        : Image.network(
-            item.imageUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => const Icon(
-              LucideIcons.package,
-              size: 18,
-              color: Color(0xFFAAA19B),
+  Widget _mapProductImage(InventoryItem item, {bool assignmentCard = false}) {
+    final fallback = Icon(
+      assignmentCard ? LucideIcons.box : LucideIcons.package,
+      size: assignmentCard ? 20 : 18,
+      color: assignmentCard ? const Color(0xFF68615B) : const Color(0xFFAAA19B),
+    );
+    return Container(
+      width: assignmentCard ? 46 : 36,
+      height: assignmentCard ? 46 : 36,
+      decoration: assignmentCard
+          ? BoxDecoration(
+              color: const Color(0xFFF2EFEC),
+              borderRadius: BorderRadius.circular(12),
+            )
+          : _mapPanelDecoration(),
+      clipBehavior: Clip.antiAlias,
+      child: item.imageUrl.trim().isEmpty
+          ? fallback
+          : Image.network(
+              item.imageUrl,
+              fit: BoxFit.cover,
+              loadingBuilder: (_, image, progress) =>
+                  progress == null ? image : fallback,
+              errorBuilder: (_, _, _) => fallback,
             ),
-          ),
-  );
+    );
+  }
 
-  Future<String?> _askAssignmentLevel(
-    InventoryItem item,
-    MapElement element,
-  ) {
+  Future<String?> _askAssignmentLevel(InventoryItem item, MapElement element) {
     var level = item.shelfLevel?.trim() ?? '';
     return showDialog<String>(
       context: context,

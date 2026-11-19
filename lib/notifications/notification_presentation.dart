@@ -23,7 +23,7 @@ class NotificationPresentation {
 class NotificationPresentationResolver {
   NotificationPresentationResolver._();
 
-  static const Color _blue = Color(0xFF2563EB);
+  static const Color _brandOrange = Color(0xFFC83D08);
   static const Color _green = Color(0xFF16A34A);
   static const Color _amber = Color(0xFFF59E0B);
   static const Color _orange = Color(0xFFEA580C);
@@ -48,7 +48,7 @@ class NotificationPresentationResolver {
         return _style(
           icon: LucideIcons.packageCheck,
           badgeIcon: LucideIcons.check,
-          color: _blue,
+          color: _brandOrange,
           label: 'Ready',
         );
       case NotificationType.orderCancelled:
@@ -163,7 +163,7 @@ class NotificationPresentationResolver {
         return _style(
           icon: LucideIcons.store,
           badgeIcon: LucideIcons.check,
-          color: _blue,
+          color: _brandOrange,
           label: 'Store active',
         );
       case 'logoutWarning':

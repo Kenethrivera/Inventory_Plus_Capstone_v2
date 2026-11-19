@@ -123,7 +123,7 @@ class StoreMap extends StatefulWidget {
     this.compactZoomControls = false,
     this.miniZoomControls = false,
     this.showZoomControls = true,
-    this.zoomAccentColor = const Color(0xFF2563EB),
+    this.zoomAccentColor = const Color(0xFFC83D08),
     this.layout,
     this.itemAssignmentEnabled = true,
     this.onSelectionAssigned,
@@ -185,12 +185,20 @@ class StoreMapState extends State<StoreMap>
   Size _currentViewportSize = Size.zero;
   ({double minX, double minY, double width, double height})? _dragCanvasBounds;
   bool _viewportRecenterQueued = false;
+  Size? _viewportBeforeResize;
+  bool _pendingBoundsRecenter = false;
+  bool _cameraSwitchPending = false;
+  int _cameraSwitchRevision = 0;
+  final Map<String, ({Matrix4 transform, Size viewport})> _cameraStates = {};
   StreamSubscription<List<MapElement>>? _mapLayoutSubscription;
   StreamSubscription<List<InventoryItem>>? _inventorySubscription;
   bool _mapLayoutLoadFailed = false;
 
   List<MapElement> get _layout =>
       widget.layout ?? widget.controller.storeLayout;
+
+  String _cameraKey(MapViewStyle viewStyle, MapMode mode) =>
+      '${viewStyle.name}:${mode.name}';
 
   MapElement? get _itemLocationElement {
     if (!widget.centerOnSelectedItem || widget.selectedItemId == null) {
@@ -379,21 +387,50 @@ class StoreMapState extends State<StoreMap>
     if (!identical(oldWidget.layout, widget.layout)) {
       _resolveCurrentPopupSelection();
     }
-    if (oldWidget.selectedItemId != widget.selectedItemId ||
-        oldWidget.centerOnSelectedItem != widget.centerOnSelectedItem) {
+    final cameraChanged =
+        oldWidget.mode != widget.mode ||
+        oldWidget.viewStyle != widget.viewStyle ||
+        oldWidget.fitEntireMap != widget.fitEntireMap;
+    if (cameraChanged) {
+      if (_hasAppliedInitialTransform && _currentViewportSize != Size.zero) {
+        _cameraStates[_cameraKey(oldWidget.viewStyle, oldWidget.mode)] = (
+          transform: _transformationController.value.clone(),
+          viewport: _currentViewportSize,
+        );
+      }
+      _cameraSwitchPending = true;
+      _viewportBeforeResize = null;
+      _pendingBoundsRecenter = false;
+      final revision = ++_cameraSwitchRevision;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
+        if (!mounted || revision != _cameraSwitchRevision) return;
+        _cameraSwitchPending = false;
+        final saved = _cameraStates[_cameraKey(widget.viewStyle, widget.mode)];
+        if (saved == null) {
+          _recenterMap();
+        } else {
+          final offset = Offset(
+            (_currentViewportSize.width - saved.viewport.width) / 2,
+            (_currentViewportSize.height - saved.viewport.height) / 2,
+          );
+          _transformationController.value = Matrix4.translationValues(
+            offset.dx,
+            offset.dy,
+            0,
+          )..multiply(saved.transform.clone());
+        }
+      });
+    }
+    if ((widget.centerOnSelectedItem || oldWidget.centerOnSelectedItem) &&
+        (oldWidget.selectedItemId != widget.selectedItemId ||
+            oldWidget.centerOnSelectedItem != widget.centerOnSelectedItem)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _cameraSwitchPending) return;
         final selectedItemId = widget.selectedItemId;
         if (widget.showItemPopup && selectedItemId != null) {
           _autoOpenItemCard(selectedItemId);
         }
         _recenterMap(preserveScale: _isInitialScaleSet);
-      });
-    }
-    if (oldWidget.viewStyle != widget.viewStyle ||
-        oldWidget.fitEntireMap != widget.fitEntireMap) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _recenterMap();
       });
     }
     // Each mode starts with a clean selection. In particular, an object
@@ -1002,23 +1039,21 @@ class StoreMapState extends State<StoreMap>
     final mini = compact && widget.miniZoomControls;
     final buttonSize = mini ? 20.0 : (compact ? 26.0 : 48.0);
     final iconSize = mini ? 12.0 : (compact ? 14.0 : 24.0);
-    final iconColor = compact ? widget.zoomAccentColor : Colors.white;
+    final iconColor = widget.zoomAccentColor;
     return Positioned(
       bottom: compact ? 6 : 20,
       right: compact ? 6 : 20,
       child: Container(
         decoration: BoxDecoration(
-          color: compact ? Colors.white : const Color(0xFF1E293B),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(mini ? 6 : (compact ? 8 : 16)),
           border: Border.all(
-            color: compact
-                ? widget.zoomAccentColor.withValues(alpha: 0.35)
-                : Colors.blueGrey.withOpacity(0.5),
+            color: widget.zoomAccentColor.withValues(alpha: 0.35),
             width: compact ? 1 : 1.5,
           ),
           boxShadow: [
             BoxShadow(
-              color: compact ? const Color(0x220F172A) : Colors.black45,
+              color: const Color(0x220F172A),
               blurRadius: compact ? 3 : 8,
               offset: Offset(0, compact ? 2 : 4),
             ),
@@ -1039,9 +1074,7 @@ class StoreMapState extends State<StoreMap>
             Container(
               height: 1,
               width: mini ? 16 : (compact ? 20 : 40),
-              color: compact
-                  ? widget.zoomAccentColor.withValues(alpha: 0.15)
-                  : Colors.blueGrey.withOpacity(0.5),
+              color: widget.zoomAccentColor.withValues(alpha: 0.15),
             ),
             IconButton(
               constraints: BoxConstraints.tightFor(
@@ -1055,9 +1088,7 @@ class StoreMapState extends State<StoreMap>
             Container(
               height: 1,
               width: mini ? 16 : (compact ? 20 : 40),
-              color: compact
-                  ? widget.zoomAccentColor.withValues(alpha: 0.15)
-                  : Colors.blueGrey.withOpacity(0.5),
+              color: widget.zoomAccentColor.withValues(alpha: 0.15),
             ),
             IconButton(
               constraints: BoxConstraints.tightFor(
@@ -2152,26 +2183,48 @@ class StoreMapState extends State<StoreMap>
             _currentMapHeight != mapHeight ||
             _currentMapMinX != minX ||
             _currentMapMinY != minY;
+        final previousViewport = _currentViewportSize;
         _currentViewportSize = nextViewport;
         _currentMapWidth = mapWidth;
         _currentMapHeight = mapHeight;
         _currentMapMinX = minX;
         _currentMapMinY = minY;
 
-        // Manage/Assign use a sidebar; Preview has a wider canvas.
-        // Keep the current zoom, but recenter when the viewport changes.
-        if ((viewportChanged || (widget.fitEntireMap && mapBoundsChanged)) &&
+        // Opening the 3D details panel changes the viewport. Keep the camera's
+        // zoom and pan, shifting only by the change in viewport center.
+        if (!_cameraSwitchPending &&
+            (viewportChanged || (widget.fitEntireMap && mapBoundsChanged)) &&
             _isInitialScaleSet &&
-            !_viewportRecenterQueued &&
             nextViewport.width > 0 &&
             nextViewport.height > 0) {
-          _viewportRecenterQueued = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _viewportRecenterQueued = false;
-            if (mounted) {
-              _recenterMap(preserveScale: !widget.fitEntireMap);
-            }
-          });
+          if (viewportChanged) {
+            _viewportBeforeResize ??= previousViewport;
+          }
+          _pendingBoundsRecenter |= mapBoundsChanged;
+          if (!_viewportRecenterQueued) {
+            _viewportRecenterQueued = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _viewportRecenterQueued = false;
+              final beforeResize = _viewportBeforeResize;
+              final boundsChanged = _pendingBoundsRecenter;
+              _viewportBeforeResize = null;
+              _pendingBoundsRecenter = false;
+              if (!mounted || _cameraSwitchPending) return;
+              if (boundsChanged) {
+                _recenterMap(preserveScale: true);
+              } else if (beforeResize != null) {
+                final offset = Offset(
+                  (_currentViewportSize.width - beforeResize.width) / 2,
+                  (_currentViewportSize.height - beforeResize.height) / 2,
+                );
+                _transformationController.value = Matrix4.translationValues(
+                  offset.dx,
+                  offset.dy,
+                  0,
+                )..multiply(_transformationController.value);
+              }
+            });
+          }
         }
 
         if (!_isInitialScaleSet && constraints.maxWidth > 0) {
@@ -2902,6 +2955,24 @@ class StoreMapState extends State<StoreMap>
     final double hitOuterHeight =
         el.size.height + 40 + hitTopExtra + hitBottomExtra;
 
+    Widget paint3DModel(CustomPainter painter) {
+      // Models rise well beyond their floor footprints. Give the painter a
+      // canvas that contains the whole model so repaints near the viewport
+      // edge cannot clip individual shelves or rack faces.
+      final canvasSize = Size(
+        el.size.width + modelHeight * 40 + 80,
+        el.size.height + modelHeight * 40 + 80,
+      );
+      return OverflowBox(
+        alignment: Alignment.center,
+        minWidth: canvasSize.width,
+        maxWidth: canvasSize.width,
+        minHeight: canvasSize.height,
+        maxHeight: canvasSize.height,
+        child: CustomPaint(painter: painter, size: canvasSize),
+      );
+    }
+
     Widget shelf = widget.viewStyle == MapViewStyle.twoD
         ? (isHighlighted
               ? AnimatedBuilder(
@@ -2956,22 +3027,6 @@ class StoreMapState extends State<StoreMap>
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            if (showObjectGlow && !isHighlighted)
-                              // The glow is made from the SAME 3D painter, so it
-                              // follows the rendered object instead of its floor tile.
-                              ColorFiltered(
-                                colorFilter: const ColorFilter.mode(
-                                  Color(0xBBFF9800),
-                                  BlendMode.srcIn,
-                                ),
-                                child: Transform.scale(
-                                  scale: 1.045,
-                                  child: CustomPaint(
-                                    painter: modelPainter,
-                                    size: Size(el.size.width, el.size.height),
-                                  ),
-                                ),
-                              ),
                             if (isHovered)
                               ColorFiltered(
                                 key: ValueKey('map-hover-glow-$sourceId'),
@@ -2981,21 +3036,16 @@ class StoreMapState extends State<StoreMap>
                                 ),
                                 child: Transform.scale(
                                   scale: 1.025,
-                                  child: CustomPaint(
-                                    painter: modelPainter,
-                                    size: Size(el.size.width, el.size.height),
-                                  ),
+                                  child: paint3DModel(modelPainter),
                                 ),
                               ),
-                            CustomPaint(
-                              painter: modelPainter,
-                              size: Size(el.size.width, el.size.height),
-                            ),
-                            if (isHighlighted)
+                            paint3DModel(modelPainter),
+                            if (showObjectGlow)
                               AnimatedBuilder(
+                                key: ValueKey('map-selected-outline-$sourceId'),
                                 animation: _animController,
-                                builder: (context, child) => CustomPaint(
-                                  painter: _ObjectSilhouettePainter(
+                                builder: (context, child) => paint3DModel(
+                                  _ObjectSilhouettePainter(
                                     width: modelWidth,
                                     height: modelHeight,
                                     depth: modelDepth,
@@ -3003,7 +3053,6 @@ class StoreMapState extends State<StoreMap>
                                     rotationY: true3DRotationY,
                                     pulse: _animController.value,
                                   ),
-                                  size: Size(el.size.width, el.size.height),
                                 ),
                               ),
                           ],
@@ -3195,7 +3244,10 @@ class StoreMapState extends State<StoreMap>
                         }
                         setState(() {});
                         if (assign == null) {
-                          AppToast.success(context, "Item assigned to location!");
+                          AppToast.success(
+                            context,
+                            "Item assigned to location!",
+                          );
                         }
                       }
                     } else if (widget.mode == MapMode.pick) {

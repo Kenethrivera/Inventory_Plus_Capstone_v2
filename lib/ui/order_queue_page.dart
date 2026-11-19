@@ -13,6 +13,7 @@ import '../services/app_logger.dart';
 import '../services/staff_presence_service.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
+import 'widgets/map_view_toggle_button.dart';
 import 'store_map.dart';
 import 'scanner_search_page.dart';
 
@@ -1769,7 +1770,7 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
               child: Column(
                 children: [
                   Container(
-                    color: const Color(0xFFEFF6FF),
+                    color: const Color(0xFFF7F6F4),
                     padding: const EdgeInsets.fromLTRB(16, 8, 8, 10),
                     child: Row(
                       children: [
@@ -1786,31 +1787,15 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                             ),
                           ),
                         ),
-                        for (final style in MapViewStyle.values)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: ChoiceChip(
-                              label: Text(
-                                style == MapViewStyle.twoD ? '2D' : '3D',
-                              ),
-                              selected: viewStyle == style,
-                              showCheckmark: false,
-                              onSelected: (_) =>
-                                  setDialogState(() => viewStyle = style),
-                              selectedColor: const Color(0xFFDBEAFE),
-                              backgroundColor: Colors.white,
-                              labelStyle: TextStyle(
-                                color: viewStyle == style
-                                    ? const Color(0xFF1D4ED8)
-                                    : const Color(0xFF475569),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
+                        MapViewToggleButton(
+                          viewStyle: viewStyle,
+                          onChanged: (style) =>
+                              setDialogState(() => viewStyle = style),
+                        ),
                         IconButton(
                           icon: const Icon(
                             Icons.close,
-                            color: Color(0xFF1D4ED8),
+                            color: Color(0xFFC83D08),
                           ),
                           onPressed: () => Navigator.pop(dialogContext),
                         ),
@@ -2076,49 +2061,10 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEDEBE6),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (final style in MapViewStyle.values)
-                              GestureDetector(
-                                onTap: () =>
-                                    setState(() => _mobileMapStyle = style),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 9,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: _mobileMapStyle == style
-                                        ? Colors.white
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(7),
-                                  ),
-                                  child: Text(
-                                    style == MapViewStyle.twoD
-                                        ? '2D plan'
-                                        : '3D view',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: _mobileMapStyle == style
-                                          ? FontWeight.w700
-                                          : FontWeight.w500,
-                                      color: _mobileMapStyle == style
-                                          ? ink
-                                          : muted,
-                                      fontFamily: _fontFam,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+                      MapViewToggleButton(
+                        viewStyle: _mobileMapStyle,
+                        onChanged: (style) =>
+                            setState(() => _mobileMapStyle = style),
                       ),
                       const SizedBox(height: 16),
                       SizedBox(
@@ -2522,53 +2468,10 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                                         fontFamily: _fontFam,
                                       ),
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFEDEBE6),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          for (final style in MapViewStyle.values)
-                                            InkWell(
-                                              onTap: () => setState(
-                                                  () => _mobileMapStyle = style),
-                                              borderRadius:
-                                                  BorderRadius.circular(7),
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 12,
-                                                  vertical: 8,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: _mobileMapStyle == style
-                                                      ? Colors.white
-                                                      : Colors.transparent,
-                                                  borderRadius:
-                                                      BorderRadius.circular(7),
-                                                ),
-                                                child: Text(
-                                                  style == MapViewStyle.twoD
-                                                      ? '2D plan'
-                                                      : '3D view',
-                                                  style: TextStyle(
-                                                    color: _mobileMapStyle == style
-                                                        ? _helperInk
-                                                        : _helperMuted,
-                                                    fontFamily: _fontFam,
-                                                    fontWeight:
-                                                        _mobileMapStyle == style
-                                                            ? FontWeight.w700
-                                                            : FontWeight.w500,
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                        ],
+                                    MapViewToggleButton(
+                                      viewStyle: _mobileMapStyle,
+                                      onChanged: (style) => setState(
+                                        () => _mobileMapStyle = style,
                                       ),
                                     ),
                                   ],

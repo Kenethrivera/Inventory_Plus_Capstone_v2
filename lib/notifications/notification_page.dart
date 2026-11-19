@@ -47,10 +47,10 @@ class NotificationPage extends StatefulWidget {
 }
 
 class _NotificationPageState extends State<NotificationPage> {
-  static const Color _primaryBlue = Color(0xFF2563EB);
-  static const Color _darkText = Color(0xFF0F172A);
-  static const Color _mutedText = Color(0xFF64748B);
-  static const Color _softBg = Color(0xFFF4F6F8);
+  static const Color _primaryOrange = Color(0xFFC83D08);
+  static const Color _darkText = Color(0xFF211F1D);
+  static const Color _mutedText = Color(0xFF827A74);
+  static const Color _softBg = Color(0xFFF7F6F4);
   static const String _fontFam = 'Hellix';
 
   NotificationFilter _filter = NotificationFilter.all;
@@ -121,7 +121,7 @@ class _NotificationPageState extends State<NotificationPage> {
                   _buildFilters(),
                   Expanded(
                     child: RefreshIndicator(
-                      color: _primaryBlue,
+                      color: _primaryOrange,
                       onRefresh: _filter == NotificationFilter.archived
                           ? widget.controller.loadArchivedNotifications
                           : widget.controller.refresh,
@@ -187,7 +187,7 @@ class _NotificationPageState extends State<NotificationPage> {
       width: double.infinity,
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1)),
+        border: Border(bottom: BorderSide(color: Color(0xFFE7E1DA), width: 1)),
       ),
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
       child: SingleChildScrollView(
@@ -217,10 +217,10 @@ class _NotificationPageState extends State<NotificationPage> {
                     vertical: 9,
                   ),
                   decoration: BoxDecoration(
-                    color: selected ? _primaryBlue : const Color(0xFFF8FAFC),
+                    color: selected ? _primaryOrange : const Color(0xFFFFFAF7),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                      color: selected ? _primaryBlue : const Color(0xFFE2E8F0),
+                      color: selected ? _primaryOrange : const Color(0xFFE7E1DA),
                     ),
                   ),
                   child: Text(
@@ -305,7 +305,7 @@ class _NotificationPageState extends State<NotificationPage> {
         
     if (loading && notifications.isEmpty) {
       return const Center(
-        child: CircularProgressIndicator(color: _primaryBlue),
+        child: CircularProgressIndicator(color: _primaryOrange),
       );
     }
 

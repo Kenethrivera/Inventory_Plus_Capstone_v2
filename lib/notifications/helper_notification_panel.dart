@@ -35,6 +35,7 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
   static const _ink = Color(0xFF211F1D);
   static const _muted = Color(0xFF827A74);
   static const _line = Color(0xFFE7E1DA);
+  static const _orange = Color(0xFFC83D08);
   _HelperNotificationFilter _filter = _HelperNotificationFilter.all;
 
   @override
@@ -187,7 +188,7 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: selected ? _ink : Colors.transparent,
+            color: selected ? _orange : Colors.transparent,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
@@ -215,7 +216,9 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
         : widget.controller.errorMessage;
 
     if (widget.controller.isLoading && notifications.isEmpty) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+      return const Center(
+        child: CircularProgressIndicator(strokeWidth: 2, color: _orange),
+      );
     }
     if (widget.controller.errorMessage != null && notifications.isEmpty) {
       return Center(
@@ -277,13 +280,13 @@ class _HelperNotificationPanelState extends State<HelperNotificationPanel> {
               radius: 16,
               backgroundColor: approval
                   ? const Color(0xFFFFEBDD)
-                  : const Color(0xFFE2EDFB),
+                  : const Color(0xFFFFEBDD),
               child: Icon(
                 approval ? LucideIcons.shieldCheck : LucideIcons.shoppingBag,
                 size: 16,
                 color: approval
                     ? const Color(0xFFD4460B)
-                    : const Color(0xFF1761AD),
+                    : _orange,
               ),
             ),
             const SizedBox(width: 12),

@@ -1,11 +1,11 @@
 {
-    "name": "inventory_plus",
-    "short_name": "inventory_plus",
+    "name": "Inventory Plus",
+    "short_name": "Inventory Plus",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F7F6F4",
+    "theme_color": "#C83D08",
+    "description": "Inventory Plus for hardware store operations.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
