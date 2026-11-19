@@ -255,8 +255,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   // compare the selected duration with the immediately preceding duration.
   DateTime _comparisonStart(DateTime start, DateTime end) =>
       _period == 'Last month'
-          ? DateTime(start.year, start.month - 1)
-          : start.subtract(end.difference(start));
+      ? DateTime(start.year, start.month - 1)
+      : start.subtract(end.difference(start));
 
   double get _revenue => (_summary?['revenue'] as num?)?.toDouble() ?? 0;
   double get _unitsSold => (_summary?['units_sold'] as num?)?.toDouble() ?? 0;
@@ -659,7 +659,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                           children: [
                             Expanded(child: _categoryCard()),
                             const SizedBox(width: 20),
-                            Expanded(child: _weekdayCard(matchCategoryHeight: true)),
+                            Expanded(
+                              child: _weekdayCard(matchCategoryHeight: true),
+                            ),
                           ],
                         ),
                       )
@@ -689,7 +691,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       children: [
         const Text(
           'Analytics',
-          style: TextStyle(fontSize: 26, fontWeight: FontWeight.w600, color: _ink),
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w600,
+            color: _ink,
+          ),
         ),
         const SizedBox(height: 5),
         const Text(
@@ -708,14 +714,20 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           height: 44,
           child: AppStyledDropdown<String>(
             value: _period,
-            items: const [
-              'Today',
-              'This week',
-              'This month',
-              'Last month',
-              'This year',
-              'Custom range',
-            ].map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+            items:
+                const [
+                      'Today',
+                      'This week',
+                      'This month',
+                      'Last month',
+                      'This year',
+                      'Custom range',
+                    ]
+                    .map(
+                      (value) =>
+                          DropdownMenuItem(value: value, child: Text(value)),
+                    )
+                    .toList(),
             onChanged: (value) {
               if (value == 'Custom range') {
                 unawaited(_selectCustomRange());
@@ -755,11 +767,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         if (narrow || limits.maxWidth < 1200) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              heading,
-              const SizedBox(height: 16),
-              actions,
-            ],
+            children: [heading, const SizedBox(height: 16), actions],
           );
         }
         return Row(
@@ -769,10 +777,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             const SizedBox(width: 18),
             Flexible(
               flex: 3,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: actions,
-              ),
+              child: Align(alignment: Alignment.centerRight, child: actions),
             ),
           ],
         );
@@ -1586,7 +1591,10 @@ class _AnalyticsTrendChartState extends State<_AnalyticsTrendChart> {
                           top: 8,
                           child: ConstrainedBox(
                             constraints: BoxConstraints(
-                              maxWidth: math.max(0.0, constraints.maxWidth - 16),
+                              maxWidth: math.max(
+                                0.0,
+                                constraints.maxWidth - 16,
+                              ),
                             ),
                             child: DecoratedBox(
                               decoration: BoxDecoration(

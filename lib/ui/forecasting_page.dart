@@ -39,6 +39,31 @@ const _trackingAccentSoft = Color(0xFFFFF3EA);
 const _trackingSubtle = Color(0xFFF9FAFB);
 const _forecastOverviewTrace = bool.fromEnvironment('FORECAST_OVERVIEW_TRACE');
 
+// FORECAST_ACCURACY_DEMO_START (UI PROTOTYPE ONLY — NOT LIVE DATA)
+// TODO(FORECAST_ACCURACY_DEMO): Remove this flag, demo widget, and view branch
+// after saved 28-day forecast evaluations are available for verification.
+// This intentionally has NO influence on live forecasting or evaluation logic.
+const bool _forecastAccuracyDemoEnabled = bool.fromEnvironment(
+  'FORECAST_ACCURACY_DEMO',
+  defaultValue: false,
+);
+// FORECAST_ACCURACY_DEMO_END
+
+
+// FORECAST_OVERVIEW_DEMO_START
+// TEMPORARY UI PROTOTYPE FOR CHAPTER 4 SCREENSHOT ONLY.
+// Data for Restock Priorities and Sales History Coverage is HARD-CODED.
+// Enable ONLY with --dart-define=FORECAST_OVERVIEW_DEMO=true.
+// This MUST NOT be treated as live forecasting/recommendation output.
+// TODO(FORECAST_OVERVIEW_DEMO): Remove demo flag, cards, and wiring after the
+// authoritative store-wide, model-independent APIs become operational.
+const bool _forecastOverviewDemoEnabled = bool.fromEnvironment(
+  'FORECAST_OVERVIEW_DEMO',
+  defaultValue: false,
+);
+// FORECAST_OVERVIEW_DEMO_END
+
+
 // Selection policy only: numerical forecasting and job identity stay server-side.
 List<ForecastSnapshotItem> reactiveForecastCandidates(
     List<ForecastSnapshotItem> rows, {required String model, required String? locationId}) {
@@ -1778,7 +1803,23 @@ class _ForecastingPageState extends State<ForecastingPage> {
           children: [
             _buildTrackingAccuracyControls(),
             const SizedBox(height: 16),
-            if (_selectedProductId == null)
+            // FORECAST_ACCURACY_DEMO_START: Replace only Accuracy content
+            // with unmistakably illustrative UI when explicitly enabled.
+            if (_forecastAccuracyDemoEnabled)
+              _ForecastAccuracyDemo(
+                productName: _items
+                        .where((item) => item.id == _selectedProductId)
+                        .map((item) => item.name)
+                        .firstOrNull ??
+                    'Selected product',
+                unit: _items
+                        .where((item) => item.id == _selectedProductId)
+                        .map((item) => item.unit)
+                        .firstOrNull ??
+                    'pcs',
+              )
+            // FORECAST_ACCURACY_DEMO_END: normal live behavior below.
+            else if (_selectedProductId == null)
               const _MessageCard(
                 icon: LucideIcons.history,
                 title: 'Select a product to review forecast accuracy',
@@ -4561,25 +4602,32 @@ class ForecastOverviewDashboard extends StatelessWidget {
                 : _savedScopes(savedPage!, products);
             final selectedScope = availableScopes.where((scope) =>
                 scope.key == selectedScopeKey).firstOrNull ?? availableScopes.firstOrNull;
-            final priorities = _PlanningPriorityCard(
-              pageScoped: savedPage != null,
-              unavailable: savedPage != null || products.where((item) =>
-                  selectedScope == null || selectedScope.productIds.contains(item.id))
-                  .any((item) => !analyses.containsKey(item.id)),
-              priorities: value.priorities.where((item) =>
-                  selectedScope == null || selectedScope.productIds.contains(item.productId)).toList(growable: false),
-              onSelectProduct: onSelectProduct,
-            );
+            // FORECAST_OVERVIEW_DEMO: demo-only placeholder; live card is kept.
+            final priorities = _forecastOverviewDemoEnabled
+                ? const _DemoRestockPrioritiesCard()
+                : _PlanningPriorityCard(
+                    pageScoped: savedPage != null,
+                    unavailable: savedPage != null || products.where((item) =>
+                        selectedScope == null || selectedScope.productIds.contains(item.id))
+                        .any((item) => !analyses.containsKey(item.id)),
+                    priorities: value.priorities.where((item) =>
+                        selectedScope == null || selectedScope.productIds.contains(item.productId)).toList(growable: false),
+                    onSelectProduct: onSelectProduct,
+                  );
             final supporting = Column(
               children: [
                 _CategoryOutlookCard(snapshot: value, window: selectedWindow),
                 const SizedBox(height: 16),
-                _SalesEvidenceCard(
-                  savedCoverage: loading ? null : savedPage?.salesHistoryCoverage,
-                  evidenceAvailable: savedPage == null,
-                  analyses: analyses.values.toList(growable: false),
-                  products: products.where((item) => selectedScope == null || selectedScope.productIds.contains(item.id)).toList(growable: false),
-                ),
+                // FORECAST_OVERVIEW_DEMO: demo-only placeholder; live card is kept.
+                if (_forecastOverviewDemoEnabled)
+                  const _DemoSalesHistoryCoverageCard()
+                else
+                  _SalesEvidenceCard(
+                    savedCoverage: loading ? null : savedPage?.salesHistoryCoverage,
+                    evidenceAvailable: savedPage == null,
+                    analyses: analyses.values.toList(growable: false),
+                    products: products.where((item) => selectedScope == null || selectedScope.productIds.contains(item.id)).toList(growable: false),
+                  ),
               ],
             );
             if (constraints.maxWidth < 900) {
@@ -6922,6 +6970,306 @@ class _CategoryDemandRow extends StatelessWidget {
   );
 }
 
+
+// ---------------------------------------------------------------------------
+// FORECAST_OVERVIEW_DEMO_START - HARDCODED UI / SCREENSHOT PROTOTYPE ONLY
+// Source of values below: illustrative design fixtures, NOT Supabase, stored
+// snapshots, actual demand, or restocking recommendations. Remove this entire
+// section together with _forecastOverviewDemoEnabled and its two call sites.
+// IMPORTANT: Keep the "DEMO DATA" indicators visible in Chapter 4 screenshots.
+// ---------------------------------------------------------------------------
+class _DemoRestockPriority {
+  const _DemoRestockPriority(this.name, this.category, this.status, this.note);
+
+  final String name;
+  final String category;
+  final String status;
+  final String note;
+}
+
+class _DemoRestockPrioritiesCard extends StatelessWidget {
+  const _DemoRestockPrioritiesCard();
+
+  // HARDCODED FIXTURES — NOT LIVE RESTOCK RECOMMENDATIONS.
+  static const _items = <_DemoRestockPriority>[
+    _DemoRestockPriority(
+      'Adjustable Wrench', 'Hand Tools', 'Restock Suggested',
+      'Check replenishment quantity against current stock.',
+    ),
+    _DemoRestockPriority(
+      'Padlock 40 mm', 'Security Hardware', 'Review Replenishment',
+      'Confirm supplier lead time and safety stock.',
+    ),
+    _DemoRestockPriority(
+      'Tile Adhesive', 'Tile Installation', 'Approaching Suggested Stock Level',
+      'Inventory is nearing a planning threshold.',
+    ),
+    _DemoRestockPriority(
+      'Hand Drill', 'Hand Tools', 'Monitor Stock Level',
+      'Continue monitoring; no urgent action established.',
+    ),
+    _DemoRestockPriority(
+      'Cement 40 kg', 'Masonry Materials', 'Recommendation Unavailable',
+      'Review product history and replenishment limitations.',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: _forecastLine),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              const Text(
+                'Restock priorities',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600,
+                    color: _forecastInk),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _forecastAccentSoft,
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: const Text('DEMO DATA',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                      color: _forecastAccentDark)),
+              ),
+            ],
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Text(
+            'Intended store-wide, model-independent planning view. '
+            'The entries below are illustrative, not live recommendations.',
+            style: TextStyle(fontSize: 11, color: _forecastMuted, height: 1.4),
+          ),
+        ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 490;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!compact)
+                  const ColoredBox(
+                    color: _forecastBackground,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Row(children: [
+                        Expanded(flex: 3, child: Text('PRODUCT',
+                            style: TextStyle(fontSize: 10, color: _forecastMuted))),
+                        SizedBox(width: 8),
+                        Expanded(flex: 4, child: Text('STATUS / DESCRIPTION',
+                            style: TextStyle(fontSize: 10, color: _forecastMuted))),
+                        SizedBox(width: 90, child: Text('ACTION',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(fontSize: 10, color: _forecastMuted))),
+                      ]),
+                    ),
+                  ),
+                for (final item in _items)
+                  _DemoPriorityRow(item: item, compact: compact),
+              ],
+            );
+          },
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(20, 12, 20, 16),
+          child: Text(
+            'UI prototype only. No stock action is calculated or submitted here.',
+            style: TextStyle(fontSize: 11, color: _forecastMuted),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _DemoPriorityRow extends StatelessWidget {
+  const _DemoPriorityRow({required this.item, required this.compact});
+  final _DemoRestockPriority item;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+              color: _forecastInk)),
+        Text(item.category, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 10, color: _forecastMuted)),
+      ],
+    );
+    final status = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ForecastDefinition(
+          label: item.status,
+          definition: _restockStatusDefinitions[item.status] ?? item.note,
+        ),
+        Text(item.note, maxLines: compact ? 3 : 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 10, color: _forecastMuted)),
+      ],
+    );
+    final action = TextButton(
+      onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(
+          'Demo data only. No live restock recommendation is attached to this row.',
+        )),
+      ),
+      style: TextButton.styleFrom(
+        foregroundColor: _forecastAccentDark,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        minimumSize: const Size(0, 32),
+      ),
+      child: const Text('View details',
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+    );
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 64),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: _forecastHairline)),
+      ),
+      child: compact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                name,
+                const SizedBox(height: 8),
+                status,
+                Align(alignment: Alignment.centerRight, child: action),
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(flex: 3, child: name),
+                const SizedBox(width: 8),
+                Expanded(flex: 4, child: status),
+                SizedBox(width: 90, child: action),
+              ],
+            ),
+    );
+  }
+}
+
+class _DemoSalesHistoryCoverageCard extends StatelessWidget {
+  const _DemoSalesHistoryCoverageCard();
+
+  // HARDCODED ILLUSTRATIVE COUNTS — 7 + 14 + 18 + 3 = 42.
+  // They do not reflect actual recorded sales or model readiness.
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: _forecastLine),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          const Expanded(
+            child: Text('Sales History Coverage',
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                  color: _forecastInk)),
+          ),
+          const _ForecastDefinition(
+            label: 'Coverage definitions',
+            iconOnly: true,
+            definition: 'This card is a prototype. The final implementation '
+                'will evaluate all store products independent of selected '
+                'forecast model or product scope, using verified completed-sales '
+                'history and explicit not-evaluated states.',
+          ),
+          IconButton(
+            onPressed: null,
+            tooltip: 'Demo card: refresh unavailable',
+            icon: const Icon(LucideIcons.refreshCw,
+                size: 16, color: _forecastFaint),
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            padding: EdgeInsets.zero,
+          ),
+        ]),
+        const SizedBox(height: 3),
+        const Text('Store-wide · independent of selected model',
+          style: TextStyle(fontSize: 11, color: _forecastMuted)),
+        const SizedBox(height: 10),
+        const Text('42 products assessed (illustrative)',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+              color: _forecastInk)),
+        const SizedBox(height: 10),
+        const _DemoCoverageBullet(count: '7', label: 'No recorded sales',
+            color: Color(0xFFB45309)),
+        const _DemoCoverageBullet(count: '14', label: 'Limited sales history',
+            color: Color(0xFFB45309)),
+        const _DemoCoverageBullet(count: '18', label: 'Sufficient sales history',
+            color: Color(0xFF15803D)),
+        const _DemoCoverageBullet(count: '3', label: 'Not evaluated',
+            color: _forecastMuted),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(color: _forecastAccentSoft,
+              borderRadius: BorderRadius.circular(5)),
+          child: const Text('DEMO DATA · not connected to sales history',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                color: _forecastAccentDark)),
+        ),
+      ],
+    ),
+  );
+}
+
+class _DemoCoverageBullet extends StatelessWidget {
+  const _DemoCoverageBullet({
+    required this.count, required this.label, required this.color,
+  });
+  final String count;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(children: [
+      Icon(LucideIcons.circle, size: 7, color: color),
+      const SizedBox(width: 9),
+      Expanded(child: Text(label,
+        style: const TextStyle(fontSize: 12, color: _forecastBody))),
+      Text(count, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
+          color: color)),
+    ]),
+  );
+}
+// FORECAST_OVERVIEW_DEMO_END
+// ---------------------------------------------------------------------------
+
 class _PlanningPriorityCard extends StatelessWidget {
   const _PlanningPriorityCard({
     this.unavailable = false,
@@ -8127,6 +8475,320 @@ class _ForecastContextMetric extends StatelessWidget {
     ),
   );
 }
+
+
+// FORECAST_ACCURACY_DEMO_START -------------------------------------------------
+// TEMPORARY HARDCODED CHAPTER 4 UI PROTOTYPE — DEMO DATA, NOT REAL EVALUATIONS.
+// These values have NOT been calculated from Supabase, saved forecasts or sales.
+// This widget is gated by --dart-define=FORECAST_ACCURACY_DEMO=true.
+// TODO(FORECAST_ACCURACY_DEMO): Delete the widget and demo branch once genuine
+// completed saved-forecast evaluations can populate the existing live widgets.
+// Illustrative math: (|112-100| + |95-105|) / (100+105) *100 = 10.7% WAPE;
+// bias: ((112+95) - (100+105)) / (100+105) *100 = +1.0% (rounded).
+class _ForecastAccuracyDemo extends StatefulWidget {
+  const _ForecastAccuracyDemo({
+    required this.productName,
+    required this.unit,
+  });
+
+  final String productName;
+  final String unit;
+
+  @override
+  State<_ForecastAccuracyDemo> createState() => _ForecastAccuracyDemoState();
+}
+
+class _ForecastAccuracyDemoState extends State<_ForecastAccuracyDemo> {
+  bool _showMethodology = false;
+
+  Widget _card(Widget child) => Container(
+    width: double.infinity,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: _trackingLine),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: child,
+  );
+
+  Widget _label(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 11, color: _trackingMuted)),
+        const SizedBox(height: 5),
+        Text(value, style: const TextStyle(
+          fontSize: 19, fontWeight: FontWeight.w600, color: _trackingInk,
+        )),
+      ],
+    ),
+  );
+
+  Widget _monitorRow(String period, String progress, double fraction) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: LayoutBuilder(builder: (context, limits) {
+          final label = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.productName, maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13,
+                    fontWeight: FontWeight.w600, color: _trackingInk)),
+              const SizedBox(height: 3),
+              Text(period, style: const TextStyle(fontSize: 12,
+                  color: _trackingMuted)),
+              const SizedBox(height: 3),
+              const Text('Eligibility: Awaiting period completion',
+                  style: TextStyle(fontSize: 11, color: _trackingAccentStrong)),
+            ],
+          );
+          final meter = Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(progress, style: const TextStyle(fontSize: 12,
+                  color: _trackingBody)),
+              const SizedBox(height: 7),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(
+                  value: fraction,
+                  minHeight: 5,
+                  color: _trackingAccent,
+                  backgroundColor: _trackingLine,
+                ),
+              ),
+            ],
+          );
+          if (limits.maxWidth < 390) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [label, const SizedBox(height: 10), meter],
+            );
+          }
+          return Row(children: [
+            Expanded(child: label),
+            const SizedBox(width: 14),
+            SizedBox(width: 116, child: meter),
+          ]);
+        }),
+      );
+
+  Widget _tableRow(List<String> values, List<int> widths,
+      {bool header = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+      decoration: BoxDecoration(
+        color: header ? _trackingSubtle : Colors.white,
+        border: const Border(bottom: BorderSide(color: _trackingLine)),
+      ),
+      child: Row(children: [
+        for (var i = 0; i < values.length; i++)
+          Expanded(
+            flex: widths[i],
+            child: Padding(
+              padding: EdgeInsets.only(left: i == 0 ? 0 : 9),
+              child: Text(
+                values[i],
+                maxLines: header ? 3 : 4,
+                overflow: TextOverflow.ellipsis,
+                textAlign: i == 0 ? TextAlign.left : TextAlign.right,
+                style: TextStyle(
+                  fontSize: header ? 11 : 12,
+                  color: header ? _trackingMuted : _trackingInk,
+                  fontWeight: header ? FontWeight.w500 : FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+
+  Widget _horizontalTable({required double minimumWidth,
+      required List<Widget> rows}) => _card(
+    LayoutBuilder(builder: (context, limits) =>
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: max(minimumWidth, limits.maxWidth),
+          child: Column(children: rows),
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _card(Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 10,
+                children: [
+                  const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.insights_outlined, color: _trackingAccent,
+                        size: 25),
+                    SizedBox(width: 10),
+                    Text('Forecast performance preview', style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w600,
+                      color: _trackingInk,
+                    )),
+                  ]),
+
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Illustrative interface for monitoring saved 28-day forecasts '
+                'and evaluating completed periods against recorded customer sales.',
+                style: TextStyle(fontSize: 12, height: 1.45,
+                    color: _trackingMuted),
+              ),
+              const SizedBox(height: 18),
+              LayoutBuilder(builder: (context, limits) {
+                final values = [
+                  _label('Saved forecasts monitored', '4'),
+                  _label('Completed eligible evaluations', '2'),
+                  _label('Current status', '2 awaiting evaluation'),
+                ];
+                if (limits.maxWidth < 540) {
+                  return Wrap(spacing: 22, runSpacing: 14,
+                    children: [for (final value in values)
+                      SizedBox(width: limits.maxWidth < 350
+                        ? limits.maxWidth
+                        : (limits.maxWidth - 22) / 2,
+                        child: value)],
+                  );
+                }
+                return Row(children: [
+                  for (final value in values) Expanded(child: value),
+                ]);
+              }),
+              const SizedBox(height: 16),
+              const Divider(color: _trackingLine),
+              const SizedBox(height: 12),
+              const Text('Monitored 28-day forecasts', style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600,
+                  color: _trackingInk)),
+              _monitorRow('Nov 1–28, 2026', '19 / 28 days', 19 / 28),
+              const Divider(height: 1, color: _trackingLine),
+              _monitorRow('Nov 15–Dec 12, 2026', '5 / 28 days', 5 / 28),
+              const SizedBox(height: 5),
+              const Text('Example monitoring progress only. Periods and '
+                'percentages are not linked to saved forecasts.',
+                style: TextStyle(fontSize: 11, color: _trackingMuted)),
+            ],
+          ),
+        )),
+        const SizedBox(height: 20),
+        const Text('Historical Forecast Performance',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600,
+              color: _trackingInk)),
+        const SizedBox(height: 5),
+        const Text('Sample evaluation summary by inventory unit · '
+          'not measured system accuracy',
+          style: TextStyle(fontSize: 12, color: _trackingMuted)),
+        const SizedBox(height: 10),
+        _horizontalTable(minimumWidth: 610, rows: [
+          _tableRow(['Inventory Unit', 'Eligible Evaluations', 'WAPE',
+            'Forecast Bias'], [25, 27, 23, 25], header: true),
+          _tableRow([widget.unit, '2', '10.7%', '+1.0%'],
+            [25, 27, 23, 25]),
+        ]),
+        const SizedBox(height: 18),
+        const Text('Completed forecast evaluations · sample records',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
+              color: _trackingInk)),
+        const SizedBox(height: 10),
+        _horizontalTable(minimumWidth: 850, rows: [
+          _tableRow(['Saved / Product', 'Forecast Period',
+             'Forecasted Demand', 'Actual Sales', 'Status'],
+             [29, 23, 17, 16, 15], header: true),
+          _tableRow(['Jul 31, 2026\n${widget.productName}',
+             'Aug 1–28, 2026', '112 ${widget.unit}',
+             '100 ${widget.unit}', 'Evaluated'],
+             [29, 23, 17, 16, 15]),
+          _tableRow(['Aug 31, 2026\n${widget.productName}',
+             'Sep 1–28, 2026', '95 ${widget.unit}',
+             '105 ${widget.unit}', 'Evaluated'],
+             [29, 23, 17, 16, 15]),
+        ]),
+        const SizedBox(height: 14),
+        _card(Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InkWell(
+              onTap: () => setState(() =>
+                  _showMethodology = !_showMethodology),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 13),
+                child: Row(children: [
+                  const Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('How is forecast performance measured?',
+                        style: TextStyle(fontWeight: FontWeight.w600,
+                          color: _trackingInk, fontSize: 13)),
+                      SizedBox(height: 3),
+                      Text('Data eligibility, WAPE and Bias',
+                        style: TextStyle(color: _trackingMuted,
+                          fontSize: 12)),
+                    ],
+                  )),
+                  Icon(_showMethodology
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                      color: _trackingMuted),
+                ]),
+              ),
+            ),
+            if (_showMethodology)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Divider(color: _trackingLine),
+                    SizedBox(height: 12),
+                    Text('WAPE = Σ|forecast − actual| ÷ Σactual × 100',
+                      style: TextStyle(fontSize: 12, color: _trackingInk)),
+                    SizedBox(height: 8),
+                    Text('Bias = (Σforecast − Σactual) ÷ Σactual × 100',
+                      style: TextStyle(fontSize: 12, color: _trackingInk)),
+                    SizedBox(height: 9),
+                    Text('Example: forecast totals 207 and actual sales '
+                      'total 205, so WAPE = 22/205 = 10.7% and Bias = '
+                      '2/205 = +1.0%. A saved 28-day period must finish '
+                      'before real sales can be evaluated.',
+                      style: TextStyle(fontSize: 12, height: 1.45,
+                        color: _trackingMuted)),
+                  ],
+                ),
+              ),
+          ],
+        )),
+        const SizedBox(height: 10),
+        const Text('DEMONSTRATION ONLY: Values above are hardcoded '
+          'illustrations for a UI prototype, not measured forecast results.',
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+            color: _trackingAccentStrong)),
+      ],
+    );
+  }
+}
+// FORECAST_ACCURACY_DEMO_END ---------------------------------------------------
 
 class _TrackingForecastAccuracy extends StatefulWidget {
   const _TrackingForecastAccuracy({
