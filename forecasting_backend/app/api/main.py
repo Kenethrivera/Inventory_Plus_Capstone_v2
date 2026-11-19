@@ -370,6 +370,8 @@ def create_app(
         model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"] = "blend",
         unit: str | None = Query(default=None, max_length=50),
         search: str | None = Query(default=None, max_length=120),
+        scope_category: str | None = Query(default=None, max_length=120),
+        scope_product_id: UUID | None = None,
         page: int = Query(default=1, ge=1, le=10000),
         page_size: int = Query(default=25, ge=1, le=50),
         authorization: str | None = Header(default=None),
@@ -393,8 +395,48 @@ def create_app(
                     page_size=page_size,
                     unit=unit,
                     search=search,
+                    category=scope_category,
+                    product_id=str(scope_product_id) if scope_product_id else None,
                 )
                 rows = result.get("items")
+                # Bound guidance work independently of the page size. Reuse the
+                # product read path, which only decodes saved demand and applies
+                # the existing calculators to live stock (never fits models).
+                guidance_rows = []
+                if isinstance(rows, list):
+                    for row in rows:
+                        if row.get("status") != "completed":
+                            continue
+                        if len(guidance_rows) >= 5:
+                            break
+                        product_id = row["product"]["product_id"]
+                        try:
+                            detail = forecast_product_snapshot(
+                                response=Response(), product_id=product_id,
+                                location_id=profile.location_id, model=normalized_model,
+                                authorization=authorization,
+                            )
+                            if detail.get("status") == "completed" and detail.get("analysis") is not None:
+                                row["analysis"] = detail["analysis"]
+                            row["guidance_error"] = detail.get("guidance_error")
+                        except HTTPException as error:
+                            if error.status_code in (401, 403):
+                                raise
+                            row["guidance_error"] = "Current-stock guidance is unavailable."
+                        guidance_rows.append(product_id)
+                result["guidance_coverage"] = {
+                    "evaluated_product_ids": guidance_rows,
+                    "scope": "current_page", "limit": 5,
+                }
+                try:
+                    result["sales_history_coverage"] = snapshot_repository.history_coverage(
+                        location_id=profile.location_id, model_key=normalized_model,
+                        unit=unit, search=search, category=scope_category,
+                        product_id=str(scope_product_id) if scope_product_id else None,
+                    )
+                except (DataUnavailableError, httpx.HTTPError) as error:
+                    logger.warning("snapshot_history_coverage_unavailable category=%s", type(error).__name__)
+                    result["sales_history_coverage"] = {"available": False}
                 log_duration(
                     "snapshot.overview.read",
                     started,

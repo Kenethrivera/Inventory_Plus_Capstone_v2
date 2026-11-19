@@ -38,6 +38,8 @@ abstract interface class ForecastingApiService {
     required int pageSize,
     String? unit,
     String? search,
+    String? scopeCategory,
+    String? scopeProductId,
   });
 
   Future<ForecastSnapshotItem> loadProductSnapshot({
@@ -187,6 +189,8 @@ class ForecastApiClient implements ForecastingApiService {
     required int pageSize,
     String? unit,
     String? search,
+    String? scopeCategory,
+    String? scopeProductId,
   }) async {
     final query = <String, String>{
       'location_id': locationId,
@@ -195,6 +199,8 @@ class ForecastApiClient implements ForecastingApiService {
       'page_size': '$pageSize',
       if (unit != null && unit.isNotEmpty) 'unit': unit,
       if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      if (scopeCategory != null) 'scope_category': scopeCategory,
+      if (scopeProductId != null) 'scope_product_id': scopeProductId,
     };
     final uri = _baseUri
         .resolve('/v1/forecasting/snapshots/overview')
@@ -777,8 +783,10 @@ class ForecastSnapshotPage {
     required this.totalCount,
     required this.pageCount,
     required this.items,
+    this.salesHistoryCoverage,
   });
 
+  final Map<String, dynamic>? salesHistoryCoverage;
   final int page;
   final int pageSize;
   final int totalCount;
@@ -791,6 +799,8 @@ class ForecastSnapshotPage {
       throw const FormatException('forecast snapshot items are invalid');
     }
     return ForecastSnapshotPage(
+      salesHistoryCoverage: json['sales_history_coverage'] is Map
+          ? Map<String, dynamic>.from(json['sales_history_coverage'] as Map) : null,
       page: _integer(json['page'], 'page'),
       pageSize: _integer(json['page_size'], 'page_size'),
       totalCount: _integer(json['total_count'], 'total_count'),

@@ -64,6 +64,8 @@ class RecordingForecastApi implements ForecastingApiService {
     required int pageSize,
     String? unit,
     String? search,
+    String? scopeCategory,
+    String? scopeProductId,
   }) => throw UnsupportedError('not used');
 
   @override

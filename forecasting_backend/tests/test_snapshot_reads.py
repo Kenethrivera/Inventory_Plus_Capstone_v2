@@ -60,6 +60,9 @@ class RecordingSnapshotRepository:
             "items": [],
         }
 
+    def history_coverage(self, **kwargs):
+        return {"available": False}
+
     def product(self, **kwargs):
         self.product_calls.append(kwargs)
         return {"items": [{"status": "queued", "product": {"product_id": kwargs["product_id"]}}]}
@@ -115,6 +118,41 @@ class SnapshotReadApiTests(unittest.TestCase):
         )
         self.assertEqual(wrong_scope.status_code, 403)
         self.assertEqual(len(self.repository.overview_calls), 1)
+
+    def test_overview_guidance_reads_are_capped_at_five(self):
+        rows = [{"status": "completed", "product": {
+            "product_id": f"31000000-0000-4000-8000-{index:012d}"},
+            "snapshot": {}} for index in range(8)]
+        with patch.object(self.repository, "overview", return_value={
+            "page": 1, "page_size": 25, "total_count": 8, "page_count": 1,
+            "items": rows,
+        }):
+            response = self.client.get("/v1/forecasting/snapshots/overview",
+                headers={"Authorization": f"Bearer {TOKEN}"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(self.repository.product_calls), 5)
+        self.assertEqual(response.json()["guidance_coverage"]["limit"], 5)
+
+    def test_scope_coverage_is_forwarded_without_model_execution(self):
+        with patch.object(self.repository, "history_coverage", return_value={
+            "available": True, "total": 3, "no_sales": 0, "limited": 1,
+            "sufficient": 1, "not_evaluated": 1,
+        }) as coverage:
+            response = self.client.get("/v1/forecasting/snapshots/overview",
+                params={"unit": "pcs", "scope_category": "Tools", "model": "lightgbm"},
+                headers={"Authorization": f"Bearer {TOKEN}"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["sales_history_coverage"]["not_evaluated"], 1)
+        self.assertEqual(coverage.call_args.kwargs["category"], "Tools")
+        self.assertEqual(coverage.call_args.kwargs["model_key"], "lightgbm")
+        self.assertEqual(self.repository.product_calls, [])
+
+    def test_missing_coverage_rpc_does_not_fabricate_zero_counts(self):
+        with patch.object(self.repository, "history_coverage", side_effect=DataUnavailableError("unavailable")):
+            response = self.client.get("/v1/forecasting/snapshots/overview",
+                headers={"Authorization": f"Bearer {TOKEN}"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["sales_history_coverage"], {"available": False})
 
     def test_product_snapshot_requires_admin_session_and_uses_scoped_read(self) -> None:
         denied = self.client.get(
@@ -311,7 +349,45 @@ class SnapshotRepositoryTests(unittest.TestCase):
         self.assertEqual(len(captured), 1)
         self.assertEqual(captured[0].headers["apikey"], "sb_secret_test")
         self.assertNotIn("authorization", captured[0].headers)
-        self.assertEqual(captured[0].url.path, "/rest/v1/rpc/forecast_snapshot_page_v1")
+        self.assertEqual(captured[0].url.path, "/rest/v1/rpc/forecast_snapshot_page_v2")
+
+    def test_v2_scope_reads_preserve_product_v1_contract(self):
+        captured = []
+        def respond(request):
+            captured.append(request)
+            return httpx.Response(200, json={"page": 1, "page_size": 25,
+                "total_count": 0, "page_count": 0, "items": []})
+        repository = ForecastSnapshotReadRepository(url="https://project.example.test",
+            secret_key="sb_secret_test", timeout_seconds=1,
+            client=httpx.Client(transport=httpx.MockTransport(respond)))
+        self.addCleanup(repository.close)
+        repository.overview(location_id="location-1", model_key="lightgbm",
+            page=1, page_size=25, category="Tools", product_id="product-1")
+        repository.product(location_id="location-1", product_id="product-1", model_key="lightgbm")
+        import json
+        payload = json.loads(captured[0].content)
+        self.assertEqual(captured[0].url.path, "/rest/v1/rpc/forecast_snapshot_page_v2")
+        self.assertEqual(payload["p_scope_category"], "Tools")
+        self.assertEqual(payload["p_scope_product_id"], "product-1")
+        self.assertEqual(captured[1].url.path, "/rest/v1/rpc/forecast_snapshot_page_v1")
+        self.assertNotIn("p_scope_category", json.loads(captured[1].content))
+
+    def test_coverage_v2_preserves_incomplete_evidence_as_unevaluated(self):
+        captured = []
+        def respond(request):
+            captured.append(request)
+            return httpx.Response(200, json={"available": True, "total": 2,
+                "no_sales": 0, "limited": 0, "sufficient": 0, "not_evaluated": 2,
+                "sales_evidence_complete": False, "order_limit": 5000})
+        repository = ForecastSnapshotReadRepository(url="https://project.example.test",
+            secret_key="sb_secret_test", timeout_seconds=1,
+            client=httpx.Client(transport=httpx.MockTransport(respond)))
+        self.addCleanup(repository.close)
+        result = repository.history_coverage(location_id="location-1", model_key="mean28")
+        self.assertEqual(captured[0].url.path, "/rest/v1/rpc/forecast_history_coverage_v2")
+        self.assertEqual(result["not_evaluated"], 2)
+        self.assertFalse(result["sales_evidence_complete"])
+        self.assertEqual(result["order_limit"], 5000)
 
     def test_upstream_rpc_error_is_not_returned_as_success(self) -> None:
         client = httpx.Client(

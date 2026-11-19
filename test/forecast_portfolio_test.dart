@@ -74,6 +74,65 @@ PortfolioForecastSnapshot snapshot({
 );
 
 void main() {
+  test('reactive preparation reuses snapshots and jobs, isolates scope and bounds models', () {
+    ForecastSnapshotItem row(String id, String status, {String? job, String location = 'location-1'}) =>
+      ForecastSnapshotItem(status: status, product: {'product_id': id, 'location_id': location,
+        'name': id, 'unit': 'pcs'}, job: {'status': job});
+    final rows = [row('current', 'completed'), row('failed', 'no_forecast', job: 'failed'),
+      row('cancelled', 'no_forecast', job: 'cancelled'), row('other', 'no_forecast', location: 'other'),
+      for (var i = 0; i < 8; i++) row('missing-$i', 'no_forecast')];
+    expect(reactiveForecastCandidates(rows, model: 'blend', locationId: 'location-1'), isEmpty);
+    expect(reactiveForecastCandidates(rows, model: 'mean28', locationId: 'location-1').length, 5);
+    expect(reactiveForecastCandidates(rows, model: 'lightgbm', locationId: 'location-1').length, 5);
+    expect(reactiveForecastCandidates(rows, model: 'seasonal_experimental', locationId: 'location-1').length, 1);
+    for (final status in ['queued', 'running']) {
+      expect(reactiveForecastCandidates([...rows, row('active', 'no_forecast', job: status)],
+        model: 'lightgbm', locationId: 'location-1'), isEmpty);
+    }
+    expect(reactiveForecastCandidates([row('old', 'stale')],
+      model: 'mean28', locationId: 'location-1').single.productId, 'old');
+  });
+
+  testWidgets('priority definition opens and details preserve exact product identity', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1300, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final item = product(id: 'exact-product-uuid', name: 'Tool', category: 'Tools', unit: 'pcs');
+    final analyses = {item.id: analysis(id: item.id, name: item.name,
+      unit: item.unit, daily: List.filled(28, 2))};
+    String? selected;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: SingleChildScrollView(
+      child: ForecastOverviewDashboard(snapshot: snapshot(products: [item], analyses: analyses),
+        products: [item], analyses: analyses, selectedWindow: ForecastWindow.next28Days,
+        onWindowChanged: (_) {}, onSelectProduct: (id) => selected = id),
+    ))));
+    await tester.tap(find.text('Restock Suggested'));
+    await tester.pump();
+    expect(find.textContaining('The existing restocking logic indicates'), findsOneWidget);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pump();
+    await tester.tap(find.text('View details'));
+    expect(selected, item.id);
+  });
+
+  testWidgets('saved coverage distinguishes unevaluated from zero no-sales', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1300, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final item = product(id: 'tool', name: 'Tool', category: 'Tools', unit: 'pcs');
+    final page = ForecastSnapshotPage(page: 1, pageSize: 25, totalCount: 38,
+      pageCount: 2, items: const [], salesHistoryCoverage: const {
+        'available': true, 'total': 38, 'no_sales': 0, 'limited': 1,
+        'sufficient': 5, 'not_evaluated': 32,
+      });
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: SingleChildScrollView(
+      child: ForecastOverviewDashboard(snapshot: snapshot(products: [item], analyses: {}),
+        savedPage: page, products: [item], selectedWindow: ForecastWindow.next28Days,
+        onWindowChanged: (_) {}),
+    ))));
+    expect(find.textContaining('32 not evaluated'), findsOneWidget);
+    expect(find.text('All products have recorded sales.'), findsNothing);
+    expect(find.textContaining('Current restock priorities are unavailable'), findsOneWidget);
+  });
+
   testWidgets('current saved pcs forecast survives local inventory scope and period changes', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1300, 1400));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -148,19 +207,19 @@ void main() {
       )),
     ));
     await tester.pumpWidget(view(ForecastWindow.next7Days));
-    expect(find.textContaining('42.78'), findsWidgets);
+    expect(find.textContaining('≈43', findRichText: true), findsWidgets);
     expect(find.textContaining('All pcs'), findsOneWidget);
     await tester.pumpWidget(view(ForecastWindow.next28Days));
-    expect(find.textContaining('161.24'), findsWidgets);
-    expect(find.textContaining('Includes stale saved forecasts'), findsOneWidget);
+    expect(find.textContaining('≈161', findRichText: true), findsWidgets);
+    expect(find.textContaining('1 stale'), findsOneWidget);
     await tester.pumpWidget(view(ForecastWindow.next28Days,
       shownPage: bagPage, scopeKey: 'unit:bag'));
     expect(find.textContaining('28 bag'), findsWidgets);
     await tester.pumpWidget(view(ForecastWindow.next28Days,
       shownPage: seasonalPage, model: 'seasonal_experimental'));
-    expect(find.textContaining('161.24'), findsNothing);
+    expect(find.textContaining('≈161', findRichText: true), findsNothing);
     await tester.pumpWidget(view(ForecastWindow.next28Days, scopeKey: 'unit:pcs'));
-    expect(find.textContaining('161.24'), findsWidgets);
+    expect(find.textContaining('≈161', findRichText: true), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 
@@ -178,9 +237,9 @@ void main() {
     ))));
     expect(find.byKey(const Key('forecast-overview-dashboard')), findsOneWidget);
     expect(find.byKey(const Key('forecast-primary-demand-chart')), findsOneWidget);
-    expect(find.textContaining('14 pcs'), findsWidgets);
-    expect(find.textContaining('Totals below cover this page only'), findsOneWidget);
-    expect(find.textContaining('Includes stale saved forecasts'), findsOneWidget);
+    expect(find.textContaining('≈14 pcs', findRichText: true), findsWidgets);
+    expect(find.textContaining('Demand totals cover this page only'), findsOneWidget);
+    expect(find.textContaining('1 stale'), findsOneWidget);
     expect(find.text('Saved product forecasts'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -430,10 +489,10 @@ void main() {
         ),
       );
 
-      expect(find.text('View all recommendations'), findsOneWidget);
-      expect(find.text('Product'), findsOneWidget);
-      expect(find.text('On hand'), findsOneWidget);
-      expect(find.text('Suggested restock'), findsOneWidget);
+      expect(find.text('PRODUCT'), findsOneWidget);
+      expect(find.text('STATUS'), findsOneWidget);
+      expect(find.text('ACTION'), findsOneWidget);
+      expect(find.text('View details'), findsNWidgets(5));
       expect(find.text('Show all 7'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('forecast-category-show-all')));
@@ -532,7 +591,7 @@ void main() {
       find.textContaining('1 product forecast(s) were unavailable'),
       findsOneWidget,
     );
-    expect(find.textContaining('14 pcs'), findsWidgets);
+    expect(find.textContaining('≈14 pcs', findRichText: true), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 

@@ -1,4 +1,3 @@
-
 -- REVIEW ONLY. Forward patch based on the installed Stage 6 recovery-aware enqueue RPC.
 -- Preserves recovery-generation uniqueness, service-role boundary and historical rows.
 -- Requires separate SQL approval; no database operation is part of this source edit.
@@ -55,10 +54,11 @@ BEGIN
            OR v_item.requested_model_version IS DISTINCT FROM '1'
            OR v_item.horizon_days IS DISTINCT FROM 28
            OR v_item.history_window_days IS DISTINCT FROM
-              (CASE
-                  WHEN v_item.requested_model_key = 'seasonal_experimental' THEN 1095
-                  ELSE 365
-               END)
+   (CASE
+      WHEN v_item.requested_model_key = 'seasonal_experimental'
+      THEN 1095
+      ELSE 365
+    END)
            OR v_item.as_of_business_date IS NULL
            OR v_item.as_of_at IS DISTINCT FROM
               (v_item.as_of_business_date::timestamp AT TIME ZONE 'Asia/Manila')

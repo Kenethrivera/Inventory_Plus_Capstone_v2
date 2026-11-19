@@ -11,7 +11,7 @@ BEGIN
    WHERE tgrelid='public.order_history'::regclass AND NOT tgisinternal
     AND tgfoid=to_regprocedure('private.track_order_history_demand_revision_v1()')
     AND tgenabled IN ('O','A')) THEN
-  RAISE EXCEPTION 'Installed demand contribution/trigger contract must be verified before Stage 6B';
+  RAISE EXCEPTION 'Installed demand contribution/trigger contract muast be verified before Stage 6B';
  END IF;
 END $$;
 ALTER TABLE private.forecast_input_revisions
