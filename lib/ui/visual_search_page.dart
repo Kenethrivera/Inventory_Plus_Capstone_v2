@@ -20,6 +20,7 @@ import 'package:inventory_plus/services/app_error_mapper.dart';
 import 'package:inventory_plus/services/app_logger.dart';
 import 'package:inventory_plus/ui/widgets/app_error_dialog.dart';
 import 'package:inventory_plus/ui/widgets/app_toast.dart';
+import 'package:inventory_plus/ui/widgets/camera_footer.dart';
 
 const Color _primaryAccent = Color(0xFFC83D08);
 const Color _lightAccent = Color(0xFFEA580C);
@@ -2452,23 +2453,24 @@ class _VisualSearchPageState extends State<VisualSearchPage>
             child: _isAnalyzing
                 ? const SizedBox.shrink() // the overlay below handles this state
                 : _isMobileScanner
-                ? Row(
-                    children: [
-                      _buildMobileCameraControl(flashlight: true),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: _isLiveMode
-                            ? (_currentLiveDetection != null &&
-                                      _currentLiveDetection!.source !=
-                                          LiveDetectionSource.yoloWeak &&
-                                      !_isGeminiFallbackRunning
-                                  ? const SizedBox.shrink()
-                                  : Center(child: _buildAnimatedLiveStatus()))
-                            : _buildScanButton(),
-                      ),
-                      const SizedBox(width: 4),
-                      _buildMobileCameraControl(flashlight: false),
-                    ],
+                ? CameraFooter(
+                    leading: _buildMobileCameraControl(flashlight: true),
+                    center: _isLiveMode
+                        ? (_currentLiveDetection != null &&
+                                  _currentLiveDetection!.source !=
+                                      LiveDetectionSource.yoloWeak &&
+                                  !_isGeminiFallbackRunning
+                              ? const Text(
+                                  'LIVE SCAN',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1.2,
+                                  ),
+                                )
+                              : _buildAnimatedLiveStatus())
+                        : _buildScanButton(),
+                    trailing: _buildMobileCameraControl(flashlight: false),
                   )
                 : (_isLiveMode
                       ? (_currentLiveDetection != null &&

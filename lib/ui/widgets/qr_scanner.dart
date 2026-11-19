@@ -4,6 +4,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/app_error_mapper.dart';
 import '../../services/app_logger.dart';
 import 'app_toast.dart';
+import 'camera_footer.dart';
 import 'qr_web_torch_stub.dart'
     if (dart.library.html) 'qr_web_torch_web.dart'
     as web_torch;
@@ -199,55 +200,74 @@ class _QRScannerState extends State<QRScanner>
 
           _buildDecorativeElements(),
 
-          if (widget.isScanning &&
-              MediaQuery.sizeOf(context).shortestSide < 600)
+          if (widget.isScanning)
             Positioned(
-              left: 20,
-              right: 20,
-              bottom: 120,
+              left: 12,
+              right: 12,
+              bottom: MediaQuery.paddingOf(context).bottom + 24,
               child: ValueListenableBuilder<MobileScannerState>(
                 valueListenable: _scannerController,
                 builder: (context, state, _) {
                   final isOn = kIsWeb
                       ? _isWebTorchOn
                       : state.torchState == TorchState.on;
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      IconButton.filled(
-                        tooltip: isOn
-                            ? 'Turn flashlight off'
-                            : 'Turn flashlight on',
-                        onPressed: state.isInitialized
-                            ? _toggleFlashlight
-                            : null,
-                        style: IconButton.styleFrom(
-                          backgroundColor: isOn
-                              ? _scannerOrangeBright
-                              : _scannerOrange,
-                          foregroundColor: Colors.white,
-                          fixedSize: const Size(52, 52),
-                        ),
-                        icon: Icon(
-                          isOn ? Icons.flashlight_on : Icons.flashlight_off,
-                        ),
+                  return CameraFooter(
+                    leading: IconButton.filled(
+                      tooltip: isOn
+                          ? 'Turn flashlight off'
+                          : 'Turn flashlight on',
+                      onPressed: state.isInitialized ? _toggleFlashlight : null,
+                      style: IconButton.styleFrom(
+                        backgroundColor: isOn
+                            ? _scannerOrangeBright
+                            : _scannerOrange,
+                        foregroundColor: Colors.white,
+                        fixedSize: const Size(52, 52),
                       ),
-                      IconButton.filled(
-                        tooltip: 'Flip camera',
-                        onPressed:
-                            state.isInitialized &&
-                                (state.availableCameras == null ||
-                                    state.availableCameras! > 1)
-                            ? _flipCamera
-                            : null,
-                        style: IconButton.styleFrom(
-                          backgroundColor: _scannerOrange,
-                          foregroundColor: Colors.white,
-                          fixedSize: const Size(52, 52),
-                        ),
-                        icon: const Icon(Icons.cameraswitch_outlined),
+                      icon: Icon(
+                        isOn ? Icons.flashlight_on : Icons.flashlight_off,
                       ),
-                    ],
+                    ),
+                    center: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Scan QR',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            shadows: [Shadow(blurRadius: 10)],
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Hold code steady',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                            shadows: [Shadow(blurRadius: 10)],
+                          ),
+                        ),
+                      ],
+                    ),
+                    trailing: IconButton.filled(
+                      tooltip: 'Flip camera',
+                      onPressed:
+                          state.isInitialized &&
+                              (state.availableCameras == null ||
+                                  state.availableCameras! > 1)
+                          ? _flipCamera
+                          : null,
+                      style: IconButton.styleFrom(
+                        backgroundColor: _scannerOrange,
+                        foregroundColor: Colors.white,
+                        fixedSize: const Size(52, 52),
+                      ),
+                      icon: const Icon(Icons.cameraswitch_outlined),
+                    ),
                   );
                 },
               ),

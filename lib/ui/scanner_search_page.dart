@@ -64,7 +64,6 @@ class _ScannerSearchPageState extends State<ScannerSearchPage> {
             right: 0,
             child: _buildHeader(),
           ),
-          _buildScannerInstructions(),
         ],
       ),
     );
@@ -116,31 +115,4 @@ class _ScannerSearchPageState extends State<ScannerSearchPage> {
     );
   }
 
-  Widget _buildScannerInstructions() {
-    return Positioned(
-      bottom: 40,
-      left: 0,
-      right: 0,
-      child: Column(
-        children: [
-          const Text(
-            "Scan QR",
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                shadows: [Shadow(blurRadius: 10)]),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            "Hold the code in the frame briefly",
-            style: TextStyle(
-                color: Colors.white.withOpacity(0.8),
-                fontSize: 14,
-                shadows: const [Shadow(blurRadius: 10)]),
-          ),
-        ],
-      ),
-    );
-  }
 }

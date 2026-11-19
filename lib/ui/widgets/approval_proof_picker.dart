@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../services/app_error_mapper.dart';
 import '../../services/app_logger.dart';
+import 'loading_proof_camera_page.dart';
 
 class ApprovalProofSelection {
   const ApprovalProofSelection({
@@ -65,9 +66,19 @@ class _ApprovalProofPickerState extends State<ApprovalProofPicker> {
       _error = null;
     });
     try {
-      final file = await _picker.pickImage(source: source, imageQuality: 88);
+      final XFile? file = source == ImageSource.camera
+          ? await Navigator.push<XFile>(
+              context,
+              MaterialPageRoute(
+                fullscreenDialog: true,
+                builder: (_) => const LoadingProofCameraPage(),
+              ),
+            )
+          : await _picker.pickImage(source: source, imageQuality: 88);
       if (file == null) return;
-      final mimeType = _mimeTypeFor(file);
+      final mimeType = source == ImageSource.camera
+          ? 'image/jpeg'
+          : _mimeTypeFor(file);
       if (mimeType == null) {
         throw const FormatException(
           'Only JPG, PNG, WebP, or GIF images are allowed.',
@@ -79,7 +90,9 @@ class _ApprovalProofPickerState extends State<ApprovalProofPicker> {
       }
       final selection = ApprovalProofSelection(
         bytes: bytes,
-        fileName: file.name,
+        fileName: source == ImageSource.camera
+            ? 'approval_photo_${DateTime.now().millisecondsSinceEpoch}.jpg'
+            : file.name,
         mimeType: mimeType,
       );
       if (!mounted) return;

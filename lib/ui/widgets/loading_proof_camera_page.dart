@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'app_toast.dart';
+import 'camera_footer.dart';
 
 class LoadingProofCameraPage extends StatefulWidget {
   const LoadingProofCameraPage({super.key});
@@ -217,19 +218,19 @@ class _LoadingProofCameraPageState extends State<LoadingProofCameraPage> {
                   ),
                 const Spacer(),
                 Padding(
-                  padding: EdgeInsets.fromLTRB(20, 12, 20, mobile ? 26 : 18),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      IconButton(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                  child: CameraFooter(
+                    leading: IconButton.filledTonal(
                         tooltip: 'Toggle flashlight',
                         onPressed: ready && !_capturing ? _toggleFlash : null,
-                        color: Colors.white,
-                        disabledColor: Colors.white54,
-                        iconSize: mobile ? 28 : 24,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black54,
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size(52, 52),
+                        ),
                         icon: Icon(_flashOn ? Icons.flash_on : Icons.flash_off),
                       ),
-                      IconButton.filled(
+                    center: IconButton.filled(
                         tooltip: 'Capture photo',
                         onPressed: ready && !_capturing ? _takePhoto : null,
                         icon: const Icon(Icons.camera_alt, size: 32),
@@ -240,17 +241,18 @@ class _LoadingProofCameraPageState extends State<LoadingProofCameraPage> {
                           fixedSize: Size.square(mobile ? 76 : 68),
                         ),
                       ),
-                      IconButton(
+                    trailing: IconButton.filledTonal(
                         tooltip: 'Flip camera',
                         onPressed: ready && _cameras.length > 1 && !_capturing
                             ? _flipCamera
                             : null,
-                        color: Colors.white,
-                        disabledColor: Colors.white54,
-                        iconSize: mobile ? 28 : 24,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black54,
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size(52, 52),
+                        ),
                         icon: const Icon(Icons.cameraswitch_outlined),
                       ),
-                    ],
                   ),
                 ),
               ],

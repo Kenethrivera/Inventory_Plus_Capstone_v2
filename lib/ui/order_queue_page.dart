@@ -17,6 +17,10 @@ import 'store_map.dart';
 import 'scanner_search_page.dart';
 
 const Color _primaryBlue = Color(0xFF2563EB);
+const Color _helperOrange = Color(0xFFC83D08);
+const Color _helperInk = Color(0xFF1C1B1A);
+const Color _helperMuted = Color(0xFF7A716C);
+const Color _helperLine = Color(0xFFE2DAD3);
 const String _fontFam = 'Hellix';
 
 class OrderQueuePage extends StatefulWidget {
@@ -935,6 +939,13 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             );
           }
 
+          if (MediaQuery.sizeOf(context).width >= 900) {
+            return _buildDesktopQueue(
+              pendingOrders: pendingOrders,
+              visibleOrders: visiblePendingOrders,
+            );
+          }
+
           final String emptyQueueMessage;
           if (_searchQuery.trim().isNotEmpty) {
             emptyQueueMessage =
@@ -1094,6 +1105,258 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildDesktopQueue({
+    required List<CustomerOrder> pendingOrders,
+    required List<CustomerOrder> visibleOrders,
+  }) {
+    return ColoredBox(
+      color: const Color(0xFFF6F5F2),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(48, 48, 48, 64),
+        children: [
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1600),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (widget.presenceService != null)
+                    AnimatedBuilder(
+                      animation: widget.presenceService!,
+                      builder: (context, _) {
+                        if (!widget.presenceService!.isOnBreak) {
+                          return const SizedBox.shrink();
+                        }
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 24),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 18,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3D4),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(LucideIcons.coffee, color: Color(0xFFA95700)),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  "You're on break. New orders won't be auto-assigned to you until you switch back to Available.",
+                                  style: TextStyle(color: Color(0xFF473013), fontFamily: _fontFam),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Your picking orders',
+                          style: TextStyle(
+                            color: _helperInk,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w800,
+                            fontFamily: _fontFam,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${pendingOrders.length} assigned',
+                        style: const TextStyle(
+                          color: _helperMuted,
+                          fontSize: 16,
+                          fontFamily: _fontFam,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _searchQuery = value),
+                    decoration: InputDecoration(
+                      hintText: 'Search order # or product',
+                      prefixIcon: const Icon(LucideIcons.search),
+                      suffixIcon: _searchQuery.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Clear search',
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                              icon: const Icon(Icons.close),
+                            ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 19),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: _helperLine),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: _helperLine),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  if (visibleOrders.isEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(48),
+                        child: Text(
+                          _searchQuery.trim().isEmpty
+                              ? 'No orders are assigned to you right now.'
+                              : 'No assigned orders match your search.',
+                          style: const TextStyle(color: _helperMuted, fontFamily: _fontFam),
+                        ),
+                      ),
+                    )
+                  else
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final cardWidth = (constraints.maxWidth - 20) / 2;
+                        return Wrap(
+                          spacing: 20,
+                          runSpacing: 20,
+                          children: [
+                            for (final order in visibleOrders)
+                              SizedBox(
+                                width: cardWidth,
+                                child: _buildDesktopOrderCard(order),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopOrderCard(CustomerOrder order) {
+    final items = order.items.where((item) => !item.requiresLoading).toList();
+    final pickedIds = _pickedIds(order);
+    final pickedCount = items.where((item) => pickedIds.contains(item.productId)).length;
+    final progress = OrderWorkProgress.fromOrder(order);
+    final id = order.id.toString().toUpperCase();
+    final shortId = id.length > 8 ? id.substring(0, 8) : id;
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => _openAssignedOrderChecklist(order),
+        child: Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _helperLine),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '#$shortId',
+                      style: const TextStyle(
+                        color: _helperInk,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        fontFamily: _fontFam,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE5F0FF),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      pickedCount > 0 ? 'Picking' : 'Assigned',
+                      style: const TextStyle(
+                        color: Color(0xFF265D9D),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: _fontFam,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              Text(
+                items.map((item) => item.productName).join(', '),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: _helperMuted, fontSize: 14, fontFamily: _fontFam),
+              ),
+              if (progress.isMixed) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Shared order · Bodegero: ${progress.bodegeroSummary}',
+                  style: const TextStyle(color: _helperMuted, fontSize: 12, fontFamily: _fontFam),
+                ),
+              ],
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        value: items.isEmpty ? 0 : pickedCount / items.length,
+                        minHeight: 7,
+                        backgroundColor: const Color(0xFFECEAE6),
+                        valueColor: const AlwaysStoppedAnimation(_helperOrange),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '$pickedCount/${items.length} picked',
+                    style: const TextStyle(color: _helperMuted, fontSize: 12, fontFamily: _fontFam),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      pickedCount > 0 ? 'Continue preparing' : 'Prepare order',
+                      style: const TextStyle(
+                        color: _helperOrange,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: _fontFam,
+                      ),
+                    ),
+                  ),
+                  const Icon(LucideIcons.chevronRight, size: 18, color: _helperOrange),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

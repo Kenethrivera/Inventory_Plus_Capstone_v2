@@ -29,6 +29,10 @@ class _HelperController extends InventoryController {
   List<CustomerOrder> get currentOrders => [order];
 
   @override
+  CustomerOrder? orderById(Object? orderId) =>
+      order.id.toString() == orderId?.toString() ? order : null;
+
+  @override
   Stream<List<CustomerOrder>> get orderSnapshots => updates.stream;
 
   @override
@@ -127,5 +131,52 @@ void main() {
     expect(controller.order.assignedHelperId, 'helper-1');
     expect(find.text('Assigned to you'), findsOneWidget);
     expect(find.text('Claim'), findsNothing);
+  });
+
+  testWidgets('Desktop Helper queue uses the Bodegero-style order cards', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final controller = _HelperController(
+      CustomerOrder.fromJson({
+        'id': 'assigned-order-1',
+        'status': 'pending',
+        'created_at': '2026-11-14T08:00:00Z',
+        'assigned_helper_id': 'helper-1',
+        'assigned_helper_name': 'Helper One',
+        'items': [
+          {
+            'product_id': 'brush-1',
+            'product_name': 'Brush',
+            'quantity': 1,
+            'requires_loading': false,
+          },
+        ],
+      }),
+    );
+    addTearDown(controller.updates.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(1280, 800)),
+          child: OrderQueuePage(controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your picking orders'), findsOneWidget);
+    expect(find.text('1 assigned'), findsOneWidget);
+    expect(find.text('Search order # or product'), findsOneWidget);
+    expect(find.text('Brush'), findsOneWidget);
+    expect(find.text('Prepare order'), findsOneWidget);
+    expect(find.text('Order queue'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('Prepare order'));
+    await tester.pumpAndSettle();
+    expect(find.byType(OrderChecklistPage), findsOneWidget);
   });
 }
