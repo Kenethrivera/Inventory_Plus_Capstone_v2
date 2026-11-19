@@ -153,6 +153,7 @@ class _NotificationPageState extends State<NotificationPage> {
           NotificationActionsMenu(
             controller: widget.controller,
             onArchivedFromSession: widget.onNotificationRemovedFromSession,
+            archivedView: _filter == NotificationFilter.archived,
           ),
           IconButton(
             tooltip: 'Close',

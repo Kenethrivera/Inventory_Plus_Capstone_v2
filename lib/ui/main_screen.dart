@@ -2391,6 +2391,7 @@ void _restoreMainSectionFromPath(String path) {
                 _storeLogoutRemainingSeconds > 0
             ? _buildStoreLogoutCountdownChip()
             : null,
+        storeHours: _cashierStoreStatus(),
         approvalChanges: widget.realtimeSync.approvalRequestChanges,
         presenceService: _staffPresenceService,
         onModuleChanged: (module) =>
@@ -3072,6 +3073,32 @@ void _selectHelperUnifiedTab(
   }
 
   
+// STAFF_STORE_HOURS_HEADER_FIX: Reuse the live store-hours clock for
+  // Helper and Bodegero. The widget reads the existing store-access settings;
+  // no store-hour values are hardcoded.
+  Widget _roleStoreHours() => SizedBox(
+    width: 224,
+    child: AdminStoreStatusClock(
+      resolveWindow: _resolveAdminStoreHoursWindow,
+      closureReason: _adminClosureReason,
+      compact: true,
+    ),
+  );
+
+  // On narrower screens, put store hours on its own compact row so tabs,
+  // availability, notifications, and the logout timer cannot overflow.
+  Widget _roleStoreHoursRow() => Container(
+    width: double.infinity,
+    height: 34,
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    alignment: Alignment.centerLeft,
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      border: Border(bottom: BorderSide(color: Color(0xFFE8E3DF))),
+    ),
+    child: _roleStoreHours(),
+  );
+
 Widget _buildHelperUnifiedWorkspace({
     required List<Widget> pages,
     required int orderQueueIndex,
@@ -3088,7 +3115,9 @@ Widget _buildHelperUnifiedWorkspace({
       );
     }
 
-    final isMobile = MediaQuery.sizeOf(context).width < 600;
+    final width = MediaQuery.sizeOf(context).width;
+    final isMobile = width < 600;
+    final storeHoursBelow = width < 1120;
     final selectedTab = _helperMobileTab.clamp(0, 3);
 
     final helperPages = <Widget>[
@@ -3117,6 +3146,7 @@ Widget _buildHelperUnifiedWorkspace({
 
               onLogout: () => unawaited(_handleLogout()),
               showTabs: selectedTab != 0 || !_helperChecklistVisible,
+              extra: _cashierStoreStatus(),
               availability: _buildHelperUnifiedAvailability(),
               notifications: _buildNotificationControls(
                 orderQueueIndex: orderQueueIndex,
@@ -3127,6 +3157,7 @@ Widget _buildHelperUnifiedWorkspace({
                 helperMobilePanel: isMobile,
               ),
             ),
+            if (storeHoursBelow) _roleStoreHoursRow(),
 
             Expanded(
               child: IndexedStack(index: selectedTab, children: helperPages),

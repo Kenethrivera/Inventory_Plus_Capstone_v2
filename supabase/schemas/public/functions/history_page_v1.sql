@@ -131,6 +131,10 @@ begin
           and assigned_helper_id = v_account_id)
         or (p_domain = 'helperWork' and v_filter = 'prepared'
           and prepared_by_id = v_account_id)
+        -- CASHIER_PENDING_HISTORY_FILTER: UI Pending means status pending or
+        -- solo_picking for orders already scoped to this cashier and location.
+        or (p_domain = 'cashierOrders' and v_filter = 'pending'
+          and lower(status) in ('pending', 'solo_picking'))
         or (p_domain = 'cashierOrders' and v_filter = 'created'
           and created_by_id = v_account_id)
         or (p_domain = 'cashierOrders' and v_filter = 'completed'

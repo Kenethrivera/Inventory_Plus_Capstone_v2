@@ -89,6 +89,7 @@ class _AdminStoreStatusClockState extends State<AdminStoreStatusClock>
         : 'Closed - $reason - opens ${_formatTime(window.opening)}';
     final fontSize = widget.compact ? 12.0 : 14.0;
     return Row(
+      mainAxisSize: widget.compact ? MainAxisSize.min : MainAxisSize.max,
       children: [
         Icon(
           Icons.circle,

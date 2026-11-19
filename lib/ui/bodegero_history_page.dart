@@ -516,6 +516,10 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
       ),
       child: Text(
         normalized.replaceAll('_', ' '),
+        // BODEGERO_STATUS_COLUMN_FIX: Keep the pill inside its own column.
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: completed ? const Color(0xFF168047) : _muted,
           fontSize: 11,
@@ -696,97 +700,136 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
     );
   }
 
-  Widget _searchField({bool compact = false}) => TextField(
-    controller: _searchController,
-    onChanged: (_) {
-      _searchDebounce?.cancel();
-      _searchDebounce = Timer(const Duration(milliseconds: 300), () {
-        if (mounted) _setPage(1);
-      });
-    },
-    decoration: InputDecoration(
-      hintText: 'Search order, truck, or product',
-      isDense: compact,
-      contentPadding: compact
-          ? const EdgeInsets.symmetric(horizontal: 10, vertical: 9)
-          : null,
-      prefixIcon: const Icon(LucideIcons.search, size: 18),
-      prefixIconConstraints: compact
-          ? const BoxConstraints(minWidth: 36, minHeight: 36)
-          : null,
-      suffixIcon: _searchController.text.isEmpty
-          ? null
-          : IconButton(
-              tooltip: 'Clear search',
-              icon: const Icon(Icons.close, size: 18),
-              onPressed: () {
-                _searchDebounce?.cancel();
-                _searchController.clear();
-                _setPage(1);
-              },
-            ),
-      filled: true,
-      fillColor: Colors.white,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+  // HISTORY_FILTER_VISUAL_PARITY: Cashier-style search; Bodegero behavior unchanged.
+  Widget _searchField() => SizedBox(
+    height: 36,
+    child: TextField(
+      controller: _searchController,
+      onChanged: (_) {
+        _searchDebounce?.cancel();
+        _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+          if (mounted) _setPage(1);
+        });
+      },
+      style: const TextStyle(fontSize: 12, color: _ink),
+      decoration: InputDecoration(
+        hintText: 'Search order, truck, or product',
+        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+        prefixIcon: const Icon(LucideIcons.search, size: 17, color: _muted),
+        prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        suffixIcon: _searchController.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Clear search',
+                icon: const Icon(Icons.close, size: 16),
+                onPressed: () {
+                  _searchDebounce?.cancel();
+                  _searchController.clear();
+                  _setPage(1);
+                },
+              ),
+        filled: true,
+        fillColor: const Color(0xFFFAF8F6),
+        contentPadding: EdgeInsets.zero,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: _line),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: _line),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: _orange),
+        ),
+      ),
     ),
   );
 
-  Widget _filterChip(String label, bool selected, VoidCallback onTap) =>
-      ChoiceChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onTap(),
-        showCheckmark: false,
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        selectedColor: _ink,
-        backgroundColor: const Color(0xFFF4F1EE),
-        labelStyle: TextStyle(
-          color: selected ? Colors.white : _muted,
-          fontSize: 12,
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-        ),
-        side: BorderSide.none,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      );
+  // HISTORY_FILTER_VISUAL_PARITY: Match Cashier toolbar DESIGN only.
+  // Bodegero still uses its own all-time/date/status filters and _load().
+  Widget _historyFilters() => Container(
+    padding: const EdgeInsets.all(9),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(11),
+      border: Border.all(color: _line),
+    ),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 600;
+        final groups = <Widget>[
+          _BodegeroHistorySegments(
+            expanded: narrow,
+            options: const ['All time', 'Daily', 'Weekly', 'Monthly'],
+            selected: !_periodActive ? 'All time' : _period.mode.label,
+            onSelected: (value) {
+              if (value == 'All time') {
+                setState(() {
+                  _periodActive = false;
+                  _page = 1;
+                  _history = _load();
+                });
+                return;
+              }
+              final mode = switch (value) {
+                'Daily' => HistoryPeriodMode.daily,
+                'Weekly' => HistoryPeriodMode.weekly,
+                _ => HistoryPeriodMode.monthly,
+              };
+              _changePeriod(_period.withMode(mode));
+            },
+          ),
+          HistoryPeriodControls(
+            selection: _period,
+            onChanged: _changePeriod,
+            fullWidth: narrow,
+          ),
+          _BodegeroHistorySegments(
+            expanded: narrow,
+            options: const ['All', 'Waiting', 'Ready', 'Completed', 'Cancelled'],
+            selected: _statusFilter,
+            onSelected: _changeStatus,
+          ),
+        ];
 
-  Widget _historyFilters() => Wrap(
-    spacing: 4,
-    runSpacing: 4,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    children: [
-      _filterChip('All time', !_periodActive, () {
-        setState(() {
-          _periodActive = false;
-          _page = 1;
-          _history = _load();
-        });
-      }),
-      for (final mode in HistoryPeriodMode.values)
-        _filterChip(
-          mode.label,
-          _periodActive && _period.mode == mode,
-          () => _changePeriod(_period.withMode(mode)),
-        ),
-      HistoryPeriodControls(
-        selection: _period,
-        onChanged: _changePeriod,
-        warmPalette: true,
-      ),
-      for (final status in const [
-        'All',
-        'Waiting',
-        'Ready',
-        'Completed',
-        'Cancelled',
-      ])
-        _filterChip(
-          status,
-          _statusFilter == status,
-          () => _changeStatus(status),
-        ),
-    ],
+        if (narrow) {
+          // No horizontal scrolling or clipped five-option status selector.
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < groups.length; i++) ...[
+                if (i != 0) const SizedBox(height: 9),
+                SizedBox(width: double.infinity, child: groups[i]),
+              ],
+              const SizedBox(height: 10),
+              _searchField(),
+            ],
+          );
+        }
+        if (constraints.maxWidth >= 1020) {
+          return Row(
+            children: [
+              for (var i = 0; i < groups.length; i++) ...[
+                if (i != 0) const SizedBox(width: 8),
+                groups[i],
+              ],
+              const SizedBox(width: 8),
+              Expanded(child: _searchField()),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(spacing: 9, runSpacing: 8, children: groups),
+            const SizedBox(height: 8),
+            _searchField(),
+          ],
+        );
+      },
+    ),
   );
 
   Widget _metric(String label, String value, IconData icon, Color color) =>
@@ -884,7 +927,13 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
           ),
           _desktopCell('Loaded by you', flex: 2, bold: true),
           _desktopCell('${record.items.length}', flex: 1),
-          Expanded(flex: 1, child: _statusBadge(record.status)),
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _statusBadge(record.status),
+            ),
+          ),
           _desktopCell(record.truckPlate, flex: 2),
           const Icon(LucideIcons.chevronRight, color: _muted, size: 18),
         ],
@@ -975,36 +1024,7 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
                 },
               ),
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: _line),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: LayoutBuilder(
-                  builder: (context, constraints) =>
-                      constraints.maxWidth >= 1030
-                      ? Row(
-                          children: [
-                            Expanded(child: _historyFilters()),
-                            const SizedBox(width: 8),
-                            SizedBox(
-                              width: 235,
-                              child: _searchField(compact: true),
-                            ),
-                          ],
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _historyFilters(),
-                            const SizedBox(height: 8),
-                            _searchField(compact: true),
-                          ],
-                        ),
-                ),
-              ),
+              _historyFilters(),
               const SizedBox(height: 12),
               Container(
                 clipBehavior: Clip.antiAlias,
@@ -1027,7 +1047,7 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
                           _desktopCell('DATE & TIME', flex: 2),
                           _desktopCell('ACTIVITY', flex: 2),
                           _desktopCell('ITEMS'),
-                          _desktopCell('STATUS'),
+                          _desktopCell('STATUS', flex: 2),
                           _desktopCell('TRUCK', flex: 2),
                           const SizedBox(width: 18),
                         ],
@@ -1145,8 +1165,6 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
                       style: TextStyle(color: _muted, fontSize: 13),
                     ),
                     const SizedBox(height: 18),
-                    _searchField(),
-                    const SizedBox(height: 10),
                     _historyFilters(),
                   ],
                 ),
@@ -1206,3 +1224,85 @@ class _ProofFallback extends StatelessWidget {
     ),
   );
 }
+
+// HISTORY_FILTER_VISUAL_PARITY: Cashier's segmented visual design, Bodegero options.
+// All time / Waiting / Ready retain their existing query semantics.
+class _BodegeroHistorySegments extends StatelessWidget {
+  const _BodegeroHistorySegments({
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+    this.expanded = false,
+  });
+
+  final List<String> options;
+  final String selected;
+  final ValueChanged<String> onSelected;
+  final bool expanded;
+
+  Widget _segment(String option) {
+    final active = option == selected;
+    return InkWell(
+      onTap: () => onSelected(option),
+      borderRadius: BorderRadius.circular(7),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+          boxShadow: active
+              ? const [BoxShadow(color: Color(0x120F172A), blurRadius: 4,
+                  offset: Offset(0, 1))]
+              : null,
+        ),
+        child: Text(
+          option,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: active ? const Color(0xFF211F1D) : const Color(0xFF756D67),
+            fontSize: 11,
+            fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+            fontFamily: 'Hellix',
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(3),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF2ECE7),
+      borderRadius: BorderRadius.circular(9),
+    ),
+    child: !expanded
+        ? Wrap(children: [for (final option in options) _segment(option)])
+        : LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final columns = options.length >= 5
+                  ? (width < 310 ? 2 : 3)
+                  : options.length >= 4 && width < 320
+                      ? 2
+                      : options.length;
+              const spacing = 4.0;
+              final buttonWidth =
+                  (width - spacing * (columns - 1)) / columns;
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: [
+                  for (final option in options)
+                    SizedBox(width: buttonWidth, child: _segment(option)),
+                ],
+              );
+            },
+          ),
+  );
+}
+

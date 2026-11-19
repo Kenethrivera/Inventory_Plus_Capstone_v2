@@ -61,7 +61,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
 
   List<String> get _filters => _isHelper
       ? const ['All', 'Assigned', 'Prepared']
-      : const ['All', 'Created', 'Completed', 'Cancelled'];
+      : const ['All', 'Pending', 'Completed', 'Cancelled'];
 
   @override
   void initState() {
@@ -995,7 +995,6 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
         builder: (context, constraints) {
           final isNarrow = constraints.maxWidth < 600;
           final groups = <Widget>[
-            if (!_isHelper) _buildSectionSelector(expanded: isNarrow),
             _HistorySegments(
               expanded: isNarrow,
               options: const ['Daily', 'Weekly', 'Monthly'],

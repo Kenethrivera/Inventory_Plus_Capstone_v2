@@ -85,6 +85,17 @@ void main() {
     );
     expect(
       resolveStaffAvailability(
+        isOnline: true,
+        isOnBreak: false,
+        isHelper: false,
+        isBodegero: true,
+        activeOrders: 1,
+        currentModule: staffLoadingModule,
+      ),
+      StaffAvailability.loading,
+    );
+    expect(
+      resolveStaffAvailability(
         isOnline: false,
         isOnBreak: true,
         isHelper: false,

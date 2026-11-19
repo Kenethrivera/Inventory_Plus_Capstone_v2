@@ -234,15 +234,20 @@ Widget _avatar({bool mobile = false}) => CircleAvatar(
                     : const SizedBox.shrink(),
               ),
             ],
-            if (!mobile && extra != null) ...[
-              const SizedBox(width: 12),
-              extra!,
-            ],
-
-            if (availability != null) ...[
-              const SizedBox(width: 4),
-              availability!,
-            ],
+if (!mobile && (extra != null || availability != null))
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (extra != null) IntrinsicWidth(child: extra!),
+                  if (extra != null && availability != null)
+                    const SizedBox(width: 8),
+                  if (availability != null) availability!,
+                ],
+              ),
+if (mobile && availability != null) ...[
+  const SizedBox(width: 4),
+  availability!,
+],
             if (notifications != null) ...[
               const SizedBox(width: 2),
               notifications!,

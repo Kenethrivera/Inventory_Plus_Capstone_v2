@@ -43,6 +43,8 @@ class BodegeroQueuePage extends StatefulWidget {
     this.onModuleChanged,
     this.presenceService,
     this.storeLogoutCountdown,
+    this.storeHours,
+
     this.imagePicker,
   });
 
@@ -53,6 +55,8 @@ class BodegeroQueuePage extends StatefulWidget {
   final StaffPresenceService? presenceService;
   // STORE_LOGOUT_COUNTDOWN_HEADER: Provided by MainScreen, not generated here.
   final Widget? storeLogoutCountdown;
+  // STAFF_STORE_HOURS_HEADER_FIX: Optional live clock supplied by MainScreen.
+  final Widget? storeHours;
   final ImagePicker? imagePicker;
 
   @override
@@ -704,11 +708,18 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   PreferredSizeWidget _header() {
     final name = widget.controller.currentUserName?.trim() ?? 'Bodegero';
-    final desktop = MediaQuery.sizeOf(context).width >= 900;
+    final width = MediaQuery.sizeOf(context).width;
+    final desktop = width >= 900;
     final countdown = widget.storeLogoutCountdown;
     final mobileCountdown = !desktop && countdown != null;
+    // STAFF_STORE_HOURS_HEADER_FIX: Avoid crowding the role's main toolbar.
+    final storeHoursBelow = widget.storeHours != null && width < 1120;
     return PreferredSize(
-      preferredSize: Size.fromHeight(mobileCountdown ? 98 : 67),
+      preferredSize: Size.fromHeight(
+        (width < 600 ? 64.0 : 66.0) +
+        (storeHoursBelow ? 34.0 : 0.0) +
+        (mobileCountdown ? 34.0 : 0.0),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -729,6 +740,8 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           }
         },
         onLogout: widget.onLogout,
+        // STAFF_STORE_HOURS_HEADER_FIX: Show inline only on wide desktop.
+        extra: widget.storeHours,
         availability: widget.presenceService == null
             ? null
             : _availabilityChip(widget.presenceService!),
@@ -757,6 +770,19 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
             : null,
         showTabs: desktop,
           ),
+          // STAFF_STORE_HOURS_HEADER_FIX: Real store hours on mobile/tablet.
+          if (storeHoursBelow)
+            Container(
+              height: 34,
+              width: double.infinity,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: _line)),
+              ),
+              child: widget.storeHours!,
+            ),
           // STORE_LOGOUT_COUNTDOWN_HEADER: Mobile uses a second compact
           // header row so the timer cannot crowd the avatar/bell.
           if (mobileCountdown)
