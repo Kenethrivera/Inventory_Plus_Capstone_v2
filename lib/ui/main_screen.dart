@@ -3803,7 +3803,7 @@ Widget _buildHelperUnifiedWorkspace({
           final label = switch (availability) {
             StaffAvailability.offline => 'Offline',
             StaffAvailability.onBreak => 'On break',
-            StaffAvailability.busy => 'Busy',
+            StaffAvailability.busy => 'Preparing',
             StaffAvailability.available => 'Available',
           };
           final background = switch (availability) {

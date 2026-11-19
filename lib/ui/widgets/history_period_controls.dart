@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-const _inventoryBlue = Color(0xFF2563EB);
-const _inventoryBlueSoft = Color(0xFFEFF6FF);
-const _inventoryBlueRange = Color(0xFFDBEAFE);
-const _pickerText = Color(0xFF0F172A);
-const _pickerMuted = Color(0xFF64748B);
-const _pickerBorder = Color(0xFFE2E8F0);
-const _pickerDisabled = Color(0xFFCBD5E1);
+const _inventoryBlue = Color(0xFFC83D08);
+const _inventoryBlueSoft = Color(0xFFFFF1E9);
+const _inventoryBlueRange = Color(0xFFFFDDC9);
+const _pickerText = Color(0xFF211F1D);
+const _pickerMuted = Color(0xFF756D67);
+const _pickerBorder = Color(0xFFE3DED7);
+const _pickerDisabled = Color(0xFFC7C0BB);
 
 enum HistoryPeriodMode { daily, weekly, monthly }
 
@@ -276,7 +276,7 @@ class HistoryPeriodControls extends StatelessWidget {
     return Container(
       height: 36,
       decoration: BoxDecoration(
-        color: warmPalette ? Colors.white : const Color(0xFFF8FAFC),
+        color: warmPalette ? Colors.white : const Color(0xFFFAF8F6),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: border),
       ),
@@ -338,7 +338,7 @@ Future<DateTime?> _showInventoryDatePicker(
 
   return showDialog<DateTime>(
     context: context,
-    barrierColor: const Color(0xFF0F172A).withValues(alpha: 0.42),
+    barrierColor: const Color(0xFF211F1D).withValues(alpha: 0.42),
     builder: (dialogContext) => StatefulBuilder(
       builder: (context, setDialogState) {
         final firstDay = DateTime(visibleMonth.year, visibleMonth.month);
@@ -533,7 +533,7 @@ class _PeriodPickerDialog extends StatelessWidget {
             border: Border.all(color: _pickerBorder),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x240F172A),
+                color: Color(0x24211F1D),
                 blurRadius: 28,
                 offset: Offset(0, 12),
               ),
@@ -644,7 +644,7 @@ class _PickerNavigationHeader extends StatelessWidget {
     return Container(
       height: 42,
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: const Color(0xFFFAF8F6),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: _pickerBorder),
       ),
@@ -828,7 +828,7 @@ Future<DateTime?> _showInventoryMonthPicker(
 
   return showDialog<DateTime>(
     context: context,
-    barrierColor: const Color(0xFF0F172A).withValues(alpha: 0.42),
+    barrierColor: const Color(0xFF211F1D).withValues(alpha: 0.42),
     builder: (dialogContext) => StatefulBuilder(
       builder: (context, setDialogState) {
         return _PeriodPickerDialog(

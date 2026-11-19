@@ -26,6 +26,8 @@ class _QueueController extends InventoryController {
   final CustomerOrder order;
   bool statusUpdateCalled = false;
   int proofFetchCount = 0;
+  String? lastHistoryStatus;
+  DateTime? lastHistoryStart;
 
   @override
   List<CustomerOrder> get currentOrders => [order];
@@ -45,27 +47,34 @@ class _QueueController extends InventoryController {
   Future<BodegeroLoadingHistoryPage> fetchMyLoadingHistory({
     int page = 1,
     String search = '',
-  }) async => BodegeroLoadingHistoryPage(
-    records: [
-      BodegeroLoadingRecord(
-        orderId: 'loaded-123456',
-        truckPlate: 'ABC-1234',
-        status: 'prepared',
-        capturedAt: DateTime.utc(2026, 11, 14, 9),
-        items: const [BodegeroLoadingItem(name: 'Cement', quantity: 2)],
-      ),
-      BodegeroLoadingRecord(
-        orderId: 'older-123456',
-        truckPlate: 'XYZ-88',
-        status: 'completed',
-        capturedAt: DateTime.utc(2026, 11, 13, 9),
-        items: const [BodegeroLoadingItem(name: 'Roofing', quantity: 3)],
-      ),
-    ],
-    totalCount: 2,
-    page: page,
-    pageSize: 20,
-  );
+    DateTime? start,
+    DateTime? end,
+    String status = 'all',
+  }) async {
+    lastHistoryStatus = status;
+    lastHistoryStart = start;
+    return BodegeroLoadingHistoryPage(
+      records: [
+        BodegeroLoadingRecord(
+          orderId: 'loaded-123456',
+          truckPlate: 'ABC-1234',
+          status: 'prepared',
+          capturedAt: DateTime.utc(2026, 11, 14, 9),
+          items: const [BodegeroLoadingItem(name: 'Cement', quantity: 2)],
+        ),
+        BodegeroLoadingRecord(
+          orderId: 'older-123456',
+          truckPlate: 'XYZ-88',
+          status: 'completed',
+          capturedAt: DateTime.utc(2026, 11, 13, 9),
+          items: const [BodegeroLoadingItem(name: 'Roofing', quantity: 3)],
+        ),
+      ],
+      totalCount: 2,
+      page: page,
+      pageSize: 20,
+    );
+  }
 
   @override
   Future<Map<String, dynamic>?> getOrderLoadingProof(String orderId) async {
@@ -230,7 +239,7 @@ void main() {
     expect(_QueueController(order).canRequestInventoryApproval, isTrue);
   });
 
-  testWidgets('Bodegero header shows Busy for assigned loading', (
+  testWidgets('Bodegero header shows Preparing for assigned loading', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
@@ -247,7 +256,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Busy'), findsOneWidget);
+    expect(find.text('Preparing'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -542,6 +551,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Load onto truck'), findsOneWidget);
+      expect(find.text('Pause loading'), findsNothing);
+      expect(find.text('Resume loading'), findsNothing);
       expect(find.text('Scan shelf QR'), findsOneWidget);
       expect(find.text('Truck loading proof'), findsOneWidget);
       if (size.width >= 900) {
@@ -556,6 +567,28 @@ void main() {
         await tester.tap(find.text('Queue'));
         await tester.pump(const Duration(milliseconds: 100));
         expect(find.text('Your loading orders'), findsOneWidget);
+        await tester.tap(find.text('History'));
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('My Loading History'), findsOneWidget);
+        expect(find.text('My Records'), findsOneWidget);
+        expect(find.text('DATE & TIME'), findsOneWidget);
+        expect(find.text('TRUCK'), findsOneWidget);
+        expect(find.text('Daily'), findsOneWidget);
+        expect(find.text('Weekly'), findsOneWidget);
+        expect(find.text('Monthly'), findsOneWidget);
+        expect(find.byTooltip('Refresh history'), findsNothing);
+        expect(
+          tester.getTopLeft(find.text('My Loading History')).dx,
+          greaterThan(70),
+        );
+        expect(
+          tester.widget<Text>(find.text('My Loading History')).style?.fontSize,
+          22,
+        );
+        await tester.tap(find.text('#LOADED-1'));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('LOADING PROOF'), findsOneWidget);
       }
       expect(tester.takeException(), isNull);
     });
@@ -588,6 +621,17 @@ void main() {
     await tester.tap(find.text('History'));
     await tester.pumpAndSettle();
     expect(find.text('My loading history'), findsOneWidget);
+    expect(controller.lastHistoryStart, isNull);
+    expect(find.byTooltip('Previous monthly'), findsOneWidget);
+    await tester.tap(find.text('Monthly'));
+    await tester.pumpAndSettle();
+    expect(controller.lastHistoryStart, isNotNull);
+    await tester.tap(find.text('Ready'));
+    await tester.pumpAndSettle();
+    expect(controller.lastHistoryStatus, 'ready');
+    await tester.tap(find.text('All'));
+    await tester.pumpAndSettle();
+    expect(controller.lastHistoryStatus, 'all');
     expect(find.text('SAT, NOV 14'), findsOneWidget);
     expect(find.text('FRI, NOV 13'), findsOneWidget);
     expect(find.textContaining('Truck ABC-1234'), findsOneWidget);
@@ -644,6 +688,46 @@ void main() {
     await tester.tap(find.text('Queue'));
     await tester.pumpAndSettle();
     expect(find.text('Your loading orders'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Bodegero desktop requests use the shared request layout', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BodegeroQueuePage(
+          controller: _QueueController(order),
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Request'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('My requests'), findsOneWidget);
+    expect(
+      find.text('Restock and write-off requests you’ve sent.'),
+      findsOneWidget,
+    );
+    expect(find.text('All  0'), findsOneWidget);
+    expect(find.text('New request'), findsOneWidget);
+
+    await tester.tap(find.text('New request'));
+    await tester.pumpAndSettle();
+    expect(find.text('New request'), findsWidgets);
+    expect(find.text('Scan shelf QR'), findsOneWidget);
+    expect(
+      find.textContaining('Supporting photo', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.text('Send request'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -100,8 +100,10 @@ class _StaffPageState extends State<StaffPage> {
         if (!mounted) return;
         setState(() {
           _staff = rows
-              .where((person) =>
-                  person['role']?.toString().trim().toLowerCase() != 'admin')
+              .where(
+                (person) =>
+                    person['role']?.toString().trim().toLowerCase() != 'admin',
+              )
               .toList(growable: false);
           _loading = false;
           _error = widget.controller.staffConfigurationLoadFailed
@@ -355,9 +357,15 @@ class _StaffPageState extends State<StaffPage> {
     final horizontalPadding = MediaQuery.sizeOf(context).width < 600
         ? 16.0
         : 32.0;
-    final online = widget.presence?.activeStaff.where((person) =>
-            person['user_role']?.toString().trim().toLowerCase() != 'admin')
-        .length ?? 0;
+    final online =
+        widget.presence?.activeStaff
+            .where(
+              (person) =>
+                  person['user_role']?.toString().trim().toLowerCase() !=
+                  'admin',
+            )
+            .length ??
+        0;
     final rows = _filtered;
     if (_showPerformance) {
       return ColoredBox(
@@ -581,8 +589,10 @@ class _StaffPageState extends State<StaffPage> {
       if (mounted)
         setState(() {
           _staff = rows
-              .where((person) =>
-                  person['role']?.toString().trim().toLowerCase() != 'admin')
+              .where(
+                (person) =>
+                    person['role']?.toString().trim().toLowerCase() != 'admin',
+              )
               .toList(growable: false);
           _loading = false;
         });
@@ -798,8 +808,7 @@ class _StaffPageState extends State<StaffPage> {
           ? '—'
           : '${(record?['completed_count'] as num?)?.toInt() ?? 0}';
       final active = _activeOrderCounts[person['id']?.toString() ?? ''] ?? 0;
-      final median = (record?['median_minutes'] as num?)?.round();
-      return '$loaded loaded  ·  ${median == null ? '—' : '$median min'} median  ·  $active active';
+      return '$loaded loaded  ·  $active active';
     }
     final record = _findRecord(
       role == 'helper' ? _helperToday : _cashierToday,
@@ -807,15 +816,12 @@ class _StaffPageState extends State<StaffPage> {
     );
     if (record == null) {
       return role == 'helper'
-          ? '0 handled  ·  — avg  ·  0 active'
-          : '0 orders  ·  — avg  ·  ₱0.00 sales';
+          ? '0 handled  ·  0 active'
+          : '0 orders  ·  ₱0.00 sales';
     }
-    final average = record.averageMinutes == null
-        ? '—'
-        : '${record.averageMinutes!.round()} min';
     return role == 'helper'
-        ? '${record.completedCount} handled  ·  $average avg  ·  ${record.currentWorkload} active'
-        : '${record.completedCount} orders  ·  $average avg  ·  ${_money(record.salesHandled)} sales';
+        ? '${record.completedCount} handled  ·  ${record.currentWorkload} active'
+        : '${record.completedCount} orders  ·  ${_money(record.salesHandled)} sales';
   }
 
   Widget _identity(Map<String, dynamic> person) {
@@ -908,7 +914,6 @@ class _StaffPageState extends State<StaffPage> {
       final loaded = _bodegeroToday == null
           ? '—'
           : '${(record?['completed_count'] as num?)?.toInt() ?? 0}';
-      final median = (record?['median_minutes'] as num?)?.round();
       final active = _activeOrderCounts[id] ?? 0;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -922,7 +927,7 @@ class _StaffPageState extends State<StaffPage> {
             ),
           ),
           Text(
-            '${median == null ? '—' : '$median min'} median · $active active',
+            '$active active',
             style: const TextStyle(color: _muted, fontSize: 12),
           ),
         ],
@@ -938,7 +943,7 @@ class _StaffPageState extends State<StaffPage> {
         ? '${record.completedCount} handled'
         : '${record.completedCount} orders';
     final secondary = role == 'helper'
-        ? '${record.averageMinutes == null ? '—' : '${record.averageMinutes!.round()} min'} avg · ${record.currentWorkload} active'
+        ? '${record.currentWorkload} active'
         : _money(record.salesHandled);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1737,7 +1742,10 @@ class _StaffEditorState extends State<_StaffEditor> {
                   prefixIcon: phone
                       ? const Center(
                           widthFactor: 1,
-                          child: Text('+63', style: TextStyle(color: _ink, fontSize: 14)),
+                          child: Text(
+                            '+63',
+                            style: TextStyle(color: _ink, fontSize: 14),
+                          ),
                         )
                       : null,
                   prefixIconConstraints: phone

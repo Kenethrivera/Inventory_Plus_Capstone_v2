@@ -665,7 +665,9 @@ class InventoryController {
       while (true) {
         final rows = await supabase
             .from('transaction_history')
-            .select('product_id, quantity_change, created_at, operation_scope, operation_id')
+            .select(
+              'product_id, quantity_change, created_at, operation_scope, operation_id',
+            )
             .eq('location_id', locId)
             .eq('transaction_type', 'checkout')
             .gte('created_at', cutoff.toIso8601String())
@@ -1033,8 +1035,10 @@ class InventoryController {
       } catch (_) {
         response = await supabase
             .from('store_settings')
-            .select('gcash_qr_url, gcash_account_name, gcash_number, '
-                'cashier_auto_approved_discount_limit_pct')
+            .select(
+              'gcash_qr_url, gcash_account_name, gcash_number, '
+              'cashier_auto_approved_discount_limit_pct',
+            )
             .eq('location_id', locationId)
             .maybeSingle();
       }
@@ -1045,7 +1049,8 @@ class InventoryController {
       gcashAccountName = response?['gcash_account_name']?.toString() ?? '';
       gcashNumber = response?['gcash_number']?.toString() ?? '';
       alternateGcashQrUrl = response?['gcash_alt_qr_url']?.toString() ?? '';
-      alternateGcashAccountName = response?['gcash_alt_account_name']?.toString() ?? '';
+      alternateGcashAccountName =
+          response?['gcash_alt_account_name']?.toString() ?? '';
       alternateGcashNumber = response?['gcash_alt_number']?.toString() ?? '';
       cashierAutoApprovedDiscountLimitPct =
           (response?['cashier_auto_approved_discount_limit_pct'] as num?)
@@ -1568,17 +1573,26 @@ class InventoryController {
   Future<BodegeroLoadingHistoryPage> fetchMyLoadingHistory({
     int page = 1,
     String search = '',
+    DateTime? start,
+    DateTime? end,
+    String status = 'all',
   }) async {
     if (currentUserRole?.toLowerCase() != 'bodegero') {
       throw StateError('Only Bodegero accounts may view loading history.');
     }
+    final filtered = start != null || end != null || status != 'all';
     final response = await supabase.rpc(
-      'bodegero_loading_history_v1',
+      filtered ? 'bodegero_loading_history_v2' : 'bodegero_loading_history_v1',
       params: <String, dynamic>{
         'p_session_token': _requireSessionToken(),
         'p_page': page,
         'p_search': search.trim(),
         'p_page_size': 20,
+        if (filtered) ...{
+          'p_start': start?.toUtc().toIso8601String(),
+          'p_end': end?.toUtc().toIso8601String(),
+          'p_status': status,
+        },
       },
     );
     return BodegeroLoadingHistoryPage.fromJson(
@@ -1819,10 +1833,12 @@ class InventoryController {
               'p_page': key.page,
               'p_page_size': key.pageSize,
               if (key.requestedFrom != null || key.requestedBefore != null) ...{
-                'p_requested_from':
-                    key.requestedFrom?.toUtc().toIso8601String(),
-                'p_requested_before':
-                    key.requestedBefore?.toUtc().toIso8601String(),
+                'p_requested_from': key.requestedFrom
+                    ?.toUtc()
+                    .toIso8601String(),
+                'p_requested_before': key.requestedBefore
+                    ?.toUtc()
+                    .toIso8601String(),
               },
             },
           );
@@ -4671,21 +4687,6 @@ class InventoryController {
       params: <String, dynamic>{
         'p_session_token': _requireSessionToken(),
         'p_order_id': orderId,
-      },
-    );
-    return Map<String, dynamic>.from(response as Map);
-  }
-
-  Future<Map<String, dynamic>> setOrderLoadingPause(
-    String orderId, {
-    required bool paused,
-  }) async {
-    final response = await supabase.rpc(
-      'set_order_loading_pause_v1',
-      params: <String, dynamic>{
-        'p_session_token': _requireSessionToken(),
-        'p_order_id': orderId,
-        'p_paused': paused,
       },
     );
     return Map<String, dynamic>.from(response as Map);

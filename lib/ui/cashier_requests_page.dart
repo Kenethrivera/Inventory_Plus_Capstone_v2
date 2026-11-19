@@ -27,11 +27,13 @@ class CashierRequestsPage extends StatefulWidget {
     required this.controller,
     required this.onOpenRegister,
     this.approvalChanges,
+    this.showDiscountApprovals = true,
   });
 
   final InventoryController controller;
   final VoidCallback onOpenRegister;
   final Stream<void>? approvalChanges;
+  final bool showDiscountApprovals;
 
   @override
   State<CashierRequestsPage> createState() => _CashierRequestsPageState();
@@ -47,7 +49,9 @@ class _CashierRequestsPageState extends State<CashierRequestsPage> {
   void initState() {
     super.initState();
     _history = widget.controller.fetchMyInventoryApprovalRequests();
-    _discountStream = widget.controller.streamDiscountApproval();
+    _discountStream = widget.showDiscountApprovals
+        ? widget.controller.streamDiscountApproval()
+        : Stream<InventoryApprovalRequest?>.value(null);
     _subscription = widget.approvalChanges?.listen((_) => _refresh());
   }
 
@@ -117,11 +121,11 @@ class _CashierRequestsPageState extends State<CashierRequestsPage> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              const Text(
                                 'My requests',
                                 style: TextStyle(
                                   fontSize: 22,
@@ -129,10 +133,15 @@ class _CashierRequestsPageState extends State<CashierRequestsPage> {
                                   color: _ink,
                                 ),
                               ),
-                              SizedBox(height: 5),
+                              const SizedBox(height: 5),
                               Text(
-                                'Restock, write-off, and discount approvals.',
-                                style: TextStyle(fontSize: 13, color: _muted),
+                                widget.showDiscountApprovals
+                                    ? 'Restock, write-off, and discount approvals.'
+                                    : 'Restock and write-off requests you’ve sent.',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: _muted,
+                                ),
                               ),
                             ],
                           ),
@@ -979,6 +988,7 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
       return;
     }
     setState(() => _submitting = true);
+    var requestStage = 'supporting photo upload';
     try {
       final operationId = widget.controller.newOperationId(
         'inventory-approval',
@@ -990,6 +1000,7 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
         fileName: photo.fileName,
         mimeType: photo.mimeType,
       );
+      requestStage = 'stock request submission';
       await widget.controller.submitInventoryApprovalRequest(
         operationId: operationId,
         type: _type,
@@ -1004,14 +1015,20 @@ class _NewRequestPanelState extends State<_NewRequestPanel> {
       if (mounted) Navigator.pop(context, true);
     } catch (error, stackTrace) {
       AppLogger.error(
-        'Cashier stock request failed',
+        'Inventory $requestStage failed',
         error: error,
         stackTrace: stackTrace,
       );
       if (mounted) {
+        final message = AppErrorMapper.message(
+          error,
+          fallback: AppErrorCategory.dataSave,
+        );
         AppToast.error(
           context,
-          AppErrorMapper.message(error, fallback: AppErrorCategory.dataSave),
+          message == AppErrorMapper.permission
+              ? 'The server rejected the $requestStage. Please contact your administrator.'
+              : message,
         );
       }
     } finally {
