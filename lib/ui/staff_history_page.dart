@@ -60,7 +60,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
   bool get _isHelper => _role == 'helper';
 
   List<String> get _filters => _isHelper
-      ? const ['All', 'Assigned', 'Prepared']
+      ? const ['All', 'Pending', 'Prepared']
       : const ['All', 'Pending', 'Completed', 'Cancelled'];
 
   @override
@@ -689,7 +689,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
         const Color(0xFFC3273C),
         const Color(0xFFFCE8EA),
       ),
-      _ => ('Assigned', _accent, const Color(0xFFFFF1E9)),
+      _ => ('Pending', _accent, const Color(0xFFFFF1E9)),
     };
     final created = order.createdAt.toLocal();
     final today = DateTime.now();

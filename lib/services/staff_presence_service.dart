@@ -22,6 +22,7 @@ class StaffPresenceService extends ChangeNotifier {
   StreamSubscription<void>? _realtimeSubscription;
   String _currentModule = 'Main Screen';
   String? _workMode;
+  String? _workOrderId;
 
   Future<void> _heartbeatQueue = Future<void>.value();
   List<Map<String, dynamic>> _activeStaff = const [];
@@ -139,7 +140,11 @@ class StaffPresenceService extends ChangeNotifier {
         'is_online': !_isOnBreak,
         'current_module': _isOnBreak
             ? 'On break'
-            : (_workMode ?? _currentModule),
+            : _workMode == null
+                ? _currentModule
+                : _workOrderId == null
+                    ? _workMode
+                    : '$_workMode:$_workOrderId',
         'last_seen_at': now,
       }, onConflict: 'user_id');
     });
@@ -147,7 +152,7 @@ class StaffPresenceService extends ChangeNotifier {
     return _heartbeatQueue;
   }
 
-  Future<void> setWorkMode(String? mode) async {
+  Future<void> setWorkMode(String? mode, {String? orderId}) async {
     if (_disposed || !_started) return;
 
     if (mode != null &&
@@ -157,9 +162,14 @@ class StaffPresenceService extends ChangeNotifier {
     }
 
     if (mode != null && _isOnBreak) return;
-    if (_workMode == mode) return;
+    final trimmedOrderId = orderId?.trim();
+    final activeOrderId = mode == null || trimmedOrderId == null || trimmedOrderId.isEmpty
+        ? null
+        : trimmedOrderId;
+    if (_workMode == mode && _workOrderId == activeOrderId) return;
 
     _workMode = mode;
+    _workOrderId = activeOrderId;
 
     // Update the local header immediately.
     notifyListeners();
@@ -225,6 +235,7 @@ class StaffPresenceService extends ChangeNotifier {
     _started = false;
     _isOnBreak = false;
     _workMode = null;
+    _workOrderId = null;
 
     try {
       await _heartbeatQueue;

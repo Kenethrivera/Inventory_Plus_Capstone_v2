@@ -1337,9 +1337,7 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
   Widget _inventoryReferenceRow(InventoryItem item, bool disabled) {
     final status = widget.controller.stockStatusFor(item);
     final sevenDaySales = widget.controller.baselineFor(item);
-    final color = disabled || sevenDaySales <= 0
-        ? _warmMuted
-        : _statusColor(status);
+    final color = disabled ? _warmMuted : _statusColor(status);
     final label = disabled
         ? 'Inactive'
         : status == StockStatus.ok
@@ -1426,23 +1424,29 @@ class _InventoryRedesignState extends State<InventoryRedesign> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Tooltip(
-                        message: sevenDaySales <= 0
-                            ? 'No checkout sales in the last 7 days'
-                            : 'Full bar means at least 1 week of stock at the recent sales rate',
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: fraction,
-                            minHeight: 5,
-                            backgroundColor: const Color(0xFFEEECE8),
-                            valueColor: AlwaysStoppedAnimation<Color>(color),
+                      if (sevenDaySales > 0)
+                        Tooltip(
+                          message: 'Full bar means at least 1 week of stock at the recent sales rate',
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: fraction,
+                              minHeight: 5,
+                              backgroundColor: const Color(0xFFEEECE8),
+                              valueColor: AlwaysStoppedAnimation<Color>(color),
+                            ),
                           ),
+                        )
+                      else
+                        const Text(
+                          'Coverage unavailable',
+                          style: TextStyle(fontSize: 10, color: _warmMuted),
                         ),
-                      ),
                       const SizedBox(height: 4),
                       Text(
-                        _stockCoverageLabel(item.quantity, sevenDaySales),
+                        sevenDaySales <= 0
+                            ? 'No sales in last 7 days'
+                            : _stockCoverageLabel(item.quantity, sevenDaySales),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 10, color: _warmMuted),
@@ -3049,9 +3053,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         ? 'Low'
         : _statusLabel(status);
     final sevenDaySales = widget.controller.baselineFor(item);
-    final statusColor = disabled || sevenDaySales <= 0
-        ? _warmMuted
-        : _statusColor(status);
+    final statusColor = disabled ? _warmMuted : _statusColor(status);
     final canEdit = widget.controller.isAdmin;
 
     return SafeArea(
@@ -3183,34 +3185,40 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                               ],
                             ),
                             const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: LinearProgressIndicator(
-                                    value: _stockCoverageFraction(
+                            if (sevenDaySales > 0)
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: LinearProgressIndicator(
+                                      value: _stockCoverageFraction(
+                                        item.quantity,
+                                        sevenDaySales,
+                                      ),
+                                      minHeight: 5,
+                                      backgroundColor: const Color(0xFFEEECE8),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        statusColor,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _stockCoverageLabel(
                                       item.quantity,
                                       sevenDaySales,
                                     ),
-                                    minHeight: 5,
-                                    backgroundColor: const Color(0xFFEEECE8),
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      statusColor,
+                                    style: const TextStyle(
+                                      color: _warmMuted,
+                                      fontSize: 9,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _stockCoverageLabel(
-                                    item.quantity,
-                                    sevenDaySales,
-                                  ),
-                                  style: const TextStyle(
-                                    color: _warmMuted,
-                                    fontSize: 9,
-                                  ),
-                                ),
-                              ],
-                            ),
+                                ],
+                              )
+                            else
+                              const Text(
+                                'Coverage unavailable · no sales in 7 days',
+                                style: TextStyle(color: _warmMuted, fontSize: 9),
+                              ),
                             const SizedBox(height: 6),
                             Text(
                               '${_qty(item.quantity)} ${item.unit} on hand · '
@@ -3325,9 +3333,7 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         ? 'Low'
         : _statusLabel(status);
     final sevenDaySales = widget.controller.baselineFor(item);
-    final statusColor = disabled || sevenDaySales <= 0
-        ? _warmMuted
-        : _statusColor(status);
+    final statusColor = disabled ? _warmMuted : _statusColor(status);
     final fraction = _stockCoverageFraction(item.quantity, sevenDaySales);
     final canEdit = widget.controller.isAdmin;
     return SafeArea(
@@ -3440,42 +3446,46 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
                               ),
                             ),
                             const SizedBox(height: 14),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Tooltip(
-                                    message: sevenDaySales <= 0
-                                        ? 'No checkout sales in the last 7 days'
-                                        : 'Full bar means at least 1 week of stock at the recent sales rate',
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: LinearProgressIndicator(
-                                        value: fraction,
-                                        minHeight: 7,
-                                        backgroundColor: const Color(
-                                          0xFFEEECE8,
+                            if (sevenDaySales > 0)
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Tooltip(
+                                      message: 'Full bar means at least 1 week of stock at the recent sales rate',
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: LinearProgressIndicator(
+                                          value: fraction,
+                                          minHeight: 7,
+                                          backgroundColor: const Color(
+                                            0xFFEEECE8,
+                                          ),
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                statusColor,
+                                              ),
                                         ),
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              statusColor,
-                                            ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 20),
-                                Text(
-                                  _stockCoverageLabel(
-                                    item.quantity,
-                                    sevenDaySales,
+                                  const SizedBox(width: 20),
+                                  Text(
+                                    _stockCoverageLabel(
+                                      item.quantity,
+                                      sevenDaySales,
+                                    ),
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: _warmMuted,
+                                    ),
                                   ),
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: _warmMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
+                                ],
+                              )
+                            else
+                              const Text(
+                                'Coverage unavailable · no sales in 7 days',
+                                style: TextStyle(fontSize: 13, color: _warmMuted),
+                              ),
                             const SizedBox(height: 5),
                             Text(
                               '${_qty(item.quantity)} ${item.unit} on hand · '

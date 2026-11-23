@@ -240,7 +240,7 @@ class _Presence extends StaffPresenceService {
   String? get workMode => _workMode;
 
   @override
-  Future<void> setWorkMode(String? mode) async {
+  Future<void> setWorkMode(String? mode, {String? orderId}) async {
     if (mode != null && _onBreak) return;
     _workMode = mode;
     notifyListeners();

@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f7f4">
+  <meta name="description" content="A visual order queue showing staff availability and the progress of open orders.">
+  <title>Order queue</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f8f7f4;
+      --panel: #f2f1ed;
+      --card: #fff;
+      --ink: #0b1018;
+      --muted: #79756f;
+      --line: #e3e0d9;
+      --track: #eeece8;
+      --orange: #e74917;
+      --online: #27835b;
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--page);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page {
+      width: 100%;
+      max-width: 1800px;
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 27px 19px 4px 32px;
+    }
+
+    h1, h2, p { margin: 0; }
+
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    .connection { display: flex; align-items: center; gap: 12px; margin-top: 10px; color: var(--muted); font-size: 13px; }
+    .connection-text { white-space: nowrap; }
+    .connection-text::before { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: #aca8a0; content: ""; }
+    .connection-text.live::before { background: var(--online); }
+    .connection-text.error::before { background: var(--orange); }
+    button { font: inherit; cursor: pointer; }
+    .text-button { padding: 3px 0; border: 0; background: none; color: #7d5a48; font-size: 13px; }
+    .text-button:hover, .text-button:focus-visible { text-decoration: underline; }
+    .auth-panel { width: min(420px, 100%); margin: 60px auto 0; padding: 27px; border: 1px solid var(--line); border-radius: 17px; background: var(--card); }
+    .auth-panel h2 { font-size: 21px; }
+    .auth-panel p { margin: 9px 0 23px; color: var(--muted); line-height: 1.45; }
+    .auth-panel label { display: block; margin: 15px 0 6px; font-size: 14px; font-weight: 600; }
+    .auth-panel input { width: 100%; height: 42px; padding: 0 12px; border: 1px solid #d6d2cb; border-radius: 9px; background: #fff; color: var(--ink); font: inherit; }
+    .auth-panel input:focus { outline: 2px solid #e9b49e; outline-offset: 1px; }
+    .submit-button { width: 100%; min-height: 43px; margin-top: 22px; border: 0; border-radius: 9px; background: var(--orange); color: #fff; font-weight: 700; }
+    .submit-button:disabled { opacity: .65; cursor: wait; }
+    .form-error { min-height: 18px; margin-top: 12px; color: #ba3510; font-size: 13px; }
+
+    h1 {
+      font-size: 28px;
+      line-height: 1.25;
+      font-weight: 700;
+      letter-spacing: -.8px;
+    }
+
+    .subtitle {
+      margin-top: 9px;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.35;
+      letter-spacing: .05px;
+    }
+
+    .team {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 22px 19px;
+      min-height: 82px;
+      margin-top: 29px;
+      padding: 17px 0 16px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .member {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex: 0 1 261px;
+      min-width: 245px;
+    }
+
+    .avatar {
+      position: relative;
+      display: inline-grid;
+      flex: none;
+      place-items: center;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: #efeeea;
+      color: #2c2b29;
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .avatar::after {
+      position: absolute;
+      right: -2px;
+      bottom: -3px;
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--page);
+      border-radius: 50%;
+      background: var(--online);
+      content: "";
+    }
+
+    .member.offline { color: #989590; }
+    .member.offline .avatar { color: #a8a49e; background: #f3f2ee; }
+    .member.offline .avatar::after { background: #e1ded8; }
+
+    .member-name {
+      margin-bottom: 4px;
+      font-size: 16px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .member-role { margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+
+    .member-status {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .mini-progress { display: flex; gap: 3px; }
+    .mini-progress span {
+      display: block;
+      width: 25px;
+      height: 7px;
+      border-radius: 10px;
+      background: var(--track);
+    }
+    .mini-progress .filled { background: var(--orange); }
+    .offline .mini-progress span { background: #f0efeb; }
+    .offline .member-status { color: #b5b1aa; }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 20px;
+      margin-top: 30px;
+    }
+
+    .lane {
+      min-width: 0;
+      min-height: max(498px, calc(100vh - 240px));
+      padding: 19px 13px 13px;
+      border-radius: 20px;
+      background: var(--panel);
+    }
+
+    .lane-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 7px 15px;
+    }
+
+    .lane-heading h2 {
+      font-size: 16px;
+      line-height: 1.25;
+      font-weight: 700;
+    }
+
+    .lane-count { color: var(--muted); font-size: 16px; }
+    .lane-note { margin: -7px 7px 14px; color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .empty { margin-top: 45px; color: var(--muted); text-align: center; font-size: 15px; }
+
+    .order {
+      padding: 16px 17px 17px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--card);
+    }
+    .order + .order { margin-top: 10px; }
+
+    .order-top, .order-footer, .progress-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .order-id { font-size: 20px; line-height: 1.2; font-weight: 700; }
+
+    .age {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      flex: none;
+      color: var(--muted);
+      font-size: 15px;
+      white-space: nowrap;
+    }
+    .age svg { width: 15px; height: 15px; stroke: currentColor; }
+
+    .order-meta {
+      margin-top: 8px;
+      overflow: hidden;
+      color: #8a6957;
+      font-size: 16px;
+      line-height: 1.3;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .progress-heading { margin-top: 13px; color: var(--muted); font-size: 12px; }
+    .progress-track {
+      margin-top: 5px;
+      height: 5px;
+      flex: 1;
+      overflow: hidden;
+      border-radius: 10px;
+      background: var(--track);
+    }
+    .progress-fill { height: 100%; background: var(--orange); }
+    .waiting-detail { margin-top: 12px; color: var(--orange); font-size: 13px; font-weight: 600; }
+    .loading-state { margin-top: 9px; color: var(--muted); font-size: 12px; }
+    .loading-state.verified { color: var(--online); }
+
+    .order-footer { margin-top: 18px; align-items: flex-end; }
+    .order-assignees { display: grid; min-width: 0; gap: 7px; }
+    .assignee { display: flex; min-width: 0; align-items: center; gap: 6px; font-size: 13px; }
+    .assignee-role { color: var(--muted); }
+    .assignee .avatar { width: 25px; height: 25px; font-size: 11px; }
+    .assignee .avatar::after { width: 11px; height: 11px; right: -3px; bottom: -3px; border-color: var(--card); }
+    .assignee.offline .avatar::after { background: #e1ded8; }
+    .assignee.offline .assignee-name { color: var(--muted); }
+    .assignee-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .total { flex: none; font-size: 16px; font-weight: 700; white-space: nowrap; }
+
+    .order.compact { padding-top: 16px; padding-bottom: 16px; }
+    .order.compact .order-footer { margin-top: 14px; }
+
+    @media (max-width: 1100px) {
+      .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .lane { min-height: 400px; }
+    }
+
+    @media (max-width: 650px) {
+      .page { padding: 24px 16px 16px; }
+      .page-header { display: block; }
+      .connection { margin-top: 14px; }
+      .auth-panel { margin-top: 35px; }
+      h1 { font-size: 26px; }
+      .subtitle { font-size: 16px; }
+      .team { margin-top: 24px; gap: 18px; }
+      .member { flex-basis: calc(50% - 10px); min-width: 0; gap: 10px; }
+      .member-name { overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+      .member-status { font-size: 14px; }
+      .mini-progress span { width: 17px; }
+      .board { grid-template-columns: 1fr; gap: 14px; margin-top: 20px; }
+      .lane { min-height: 0; padding-bottom: 13px; }
+      .lane:has(.empty) { min-height: 145px; }
+      .empty { margin-top: 28px; }
+    }
+
+    @media (max-width: 390px) {
+      .member { flex-basis: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-header">
+      <div>
+        <h1>Order queue</h1>
+        <p class="subtitle">Every open order, who handles each part, and how far along it is.</p>
+      </div>
+      <div class="connection" role="status" aria-live="polite">
+        <span id="connection-text" class="connection-text">Connecting</span>
+        <button id="refresh-button" class="text-button" type="button" hidden>Refresh</button>
+        <button id="logout-button" class="text-button" type="button" hidden>Sign out</button>
+      </div>
+    </header>
+
+    <section id="auth-panel" class="auth-panel" aria-labelledby="auth-title" hidden>
+      <h2 id="auth-title">Staff sign in</h2>
+      <p>Use an Inventory Plus admin account to view the live queue for your store.</p>
+      <form id="login-form">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button id="login-button" class="submit-button" type="submit">Sign in</button>
+        <div id="login-error" class="form-error" role="alert" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <div id="dashboard" hidden>
+      <section id="team" class="team" aria-label="Team availability"></section>
+      <div class="board" aria-label="Open orders by stage">
+        <section class="lane" aria-labelledby="waiting-title">
+          <div class="lane-heading"><h2 id="waiting-title">Waiting for staff</h2><span id="waiting-count" class="lane-count">0</span></div>
+          <div id="waiting-orders"></div>
+        </section>
+        <section class="lane" aria-labelledby="assigned-title">
+          <div class="lane-heading"><h2 id="assigned-title">Assigned</h2><span id="assigned-count" class="lane-count">0</span></div>
+          <div id="assigned-orders"></div>
+        </section>
+        <section class="lane" aria-labelledby="preparing-title">
+          <div class="lane-heading"><h2 id="preparing-title">Preparing / loading</h2><span id="preparing-count" class="lane-count">0</span></div>
+          <p class="lane-note">An order moves here when its checklist opens or picking/QR scanning starts.</p>
+          <div id="preparing-orders"></div>
+        </section>
+        <section class="lane" aria-labelledby="ready-title">
+          <div class="lane-heading"><h2 id="ready-title">Ready for cashier review</h2><span id="ready-count" class="lane-count">0</span></div>
+          <div id="ready-orders"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="config.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

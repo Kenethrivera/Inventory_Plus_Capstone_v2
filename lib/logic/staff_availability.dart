@@ -55,11 +55,15 @@ StaffAvailability resolveStaffAvailability({
     return StaffAvailability.offline;
   }
 
-  if (isHelper && currentModule?.trim() == staffPreparingModule) {
+  if (isHelper &&
+      (currentModule?.trim() == staffPreparingModule ||
+          currentModule?.trim().startsWith('$staffPreparingModule:') == true)) {
     return StaffAvailability.preparing;
   }
 
-  if (isBodegero && currentModule?.trim() == staffLoadingModule) {
+  if (isBodegero &&
+      (currentModule?.trim() == staffLoadingModule ||
+          currentModule?.trim().startsWith('$staffLoadingModule:') == true)) {
     return StaffAvailability.loading;
   }
 

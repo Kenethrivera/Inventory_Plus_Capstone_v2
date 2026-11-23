@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales Invoice - SPRJ Paint Center</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    /* Reset & Base */
+    body { 
+      font-family: Arial, sans-serif; 
+      background-color: #e2e8f0; 
+      margin: 0; 
+      padding: 20px; 
+      color: #000; 
+    }
+    
+    .warning-banner { 
+      max-width: 600px;
+      margin: 0 auto 10px auto;
+      background: #fff3cd; 
+      color: #856404; 
+      border: 1px solid #ffeeba; 
+      border-radius: 6px;
+      padding: 10px; 
+      font-size: 11px; 
+      text-align: center; 
+      font-weight: bold;
+    }
+
+    /* Paper Container */
+    .receipt-paper { 
+      max-width: 600px; 
+      margin: 0 auto; 
+      background: #fdfbf7; /* Slight off-white paper color */
+      padding: 30px; 
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+      position: relative;
+    }
+
+    /* Header Section */
+    .header {
+      text-align: center;
+      font-family: 'Times New Roman', Times, serif;
+      line-height: 1.3;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+    }
+    .header p {
+      margin: 0;
+      font-size: 11px;
+    }
+    .header .tin {
+      font-weight: bold;
+    }
+
+    /* Invoice Title & Number */
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+    .title-row h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: bold;
+      font-family: Arial, sans-serif;
+    }
+    .invoice-num {
+      color: #d32f2f; /* Red ink */
+      font-size: 18px;
+      font-family: 'Courier New', Courier, monospace;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    .invoice-num span {
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 16px;
+      margin-right: 5px;
+    }
+
+    /* Customer Form Area */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 20px;
+      row-gap: 6px;
+      margin-bottom: 15px;
+    }
+    .form-line {
+      display: flex;
+      font-size: 11px;
+      align-items: flex-end;
+    }
+    .form-label {
+      white-space: nowrap;
+      margin-right: 5px;
+    }
+    .form-value {
+      flex-grow: 1;
+      border-bottom: 1px solid #000;
+      min-height: 14px;
+      font-weight: bold;
+      font-size: 11px;
+      padding-bottom: 1px;
+    }
+
+    /* Invoice Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin-bottom: 15px;
+    }
+    th, td {
+      border: 1px solid #000;
+      padding: 6px 4px;
+    }
+    th {
+      font-weight: bold;
+      text-align: center;
+      text-transform: uppercase;
+    }
+    .col-qty, .col-unit { width: 10%; text-align: center; }
+    .col-articles { width: 45%; }
+    .col-price, .col-amount { width: 17.5%; text-align: right; }
+    
+    .empty-row td { height: 20px; border-bottom: 1px solid #000; }
+    
+    .total-label {
+      font-weight: bold;
+      font-size: 10px;
+    }
+    .total-val {
+      font-weight: bold;
+      text-align: right;
+    }
+    .no-border { border: none !important; }
+
+    /* Footer Section */
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-top: 20px;
+    }
+    .footer-left {
+      font-size: 8px;
+      line-height: 1.3;
+      font-weight: bold;
+      width: 60%;
+    }
+    .footer-left .italic-note {
+      font-style: italic;
+      font-size: 9px;
+      margin-top: 10px;
+      display: block;
+    }
+    .footer-right {
+      width: 35%;
+      text-align: center;
+    }
+    .signature-line {
+      border-bottom: 1px solid #000;
+      margin-bottom: 3px;
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      font-weight: bold;
+      min-height: 16px;
+    }
+    .signature-label {
+      font-size: 9px;
+    }
+    .printer-accreditation {
+      font-size: 7px;
+      margin-top: 10px;
+    }
+
+    .loading, .error { text-align: center; padding: 40px; font-size: 14px; color: #6b7280; font-family: Arial, sans-serif;}
+  </style>
+</head>
+<body>
+
+<div class="warning-banner">
+  ⚠️ Note: This digital receipt will automatically delete after 1 month. Please take a screenshot.
+</div>
+
+<div class="receipt-paper" id="receipt">
+  <div class="loading" id="status">Loading receipt...</div>
+</div>
+
+<script>
+  const SUPABASE_URL = "https://pzotcznujkuzymndluwl.supabase.co"; 
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b3Rjem51amt1enltbmRsdXdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0OTMwMDYsImV4cCI6MjEwNjA2OTAwNn0.OWa1GKXI0rYhlRndI-oMkr9LLccJFj4-LU6YenvdqgY";
+  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const urlParams = new URLSearchParams(window.location.search);
+  const orderId = urlParams.get('id');
+  const queryPaymentMode = urlParams.get('mode') || 'Cash'; // Grab payment mode if passed
+
+  async function loadReceipt() {
+    const receiptContainer = document.getElementById('receipt');
+
+    if (!orderId) {
+      receiptContainer.innerHTML = `<div class="error">❌ Invalid Receipt Link.</div>`;
+      return;
+    }
+
+    // 1. Fetch the Order
+    const { data: order, error } = await supabaseClient
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+
+    if (error || !order) {
+      receiptContainer.innerHTML = `<div class="error">⚠️ Receipt not found or has expired.</div>`;
+      return;
+    }
+
+    // 2. Fetch Cashier Name
+    let cashierName = 'Store Staff';
+    if (order.completed_by_name) {
+      cashierName = order.completed_by_name;
+    } else if (order.created_by) {
+      const { data: profile } = await supabaseClient
+        .from('profiles')
+        .select('name')
+        .eq('id', order.created_by)
+        .single();
+        
+      if (profile && profile.name) {
+        cashierName = profile.name;
+      }
+    }
+
+    // 3. FIX: Fetch Products safely without naming specific columns to avoid crashes
+    const { data: productsData, error: productError } = await supabaseClient.from('products').select('*');
+    
+    const priceMap = {};
+    const unitMap = {};
+    
+    if (productsData) {
+      productsData.forEach(p => {
+        const pId = p.id;
+        // Automatically check the most common names for the price column
+        const pPrice = p.price || p.product_price || p.selling_price || 0; 
+        if (pId) {
+          const cleanId = String(pId).trim().toLowerCase();
+          priceMap[cleanId] = parseFloat(pPrice);
+          unitMap[cleanId] = p.unit || p.measurement_unit || 'pcs';
+        }
+      });
+    } else {
+      console.error("Failed to load products:", productError);
+    }
+
+    // 4. Formulate the Date (MM-DD-YYYY format to mimic physical receipt)
+    const dateObj = new Date(order.completed_at || order.created_at);
+    const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+    const day = dateObj.getDate().toString().padStart(2, '0');
+    const year = dateObj.getFullYear();
+    const formattedDate = `${month}-${day}-${year}`;
+
+    // 5. Totals and Items
+    const finalTotal = order.total_amount || 0;
+    const discountAmt = order.discount_amount || 0;
+    const subtotal = finalTotal + discountAmt;
+    const paymentMode = order.payment_mode || queryPaymentMode;
+    const shortId = order.id.substring(0, 8).toUpperCase();
+        
+    let tableRowsHtml = '';
+    let itemCount = 0;
+
+    // Loop through items
+    if (order.items && Array.isArray(order.items)) {
+      order.items.forEach(item => {
+        const name = item.product_name || item.productName || item.name || 'Unknown Item';
+        const qty = item.quantity || 1;
+        
+        // Find the product ID to grab its price and unit
+        const rawId = item.product_id || item.productId || item.id || '';
+        const searchId = String(rawId).trim().toLowerCase();
+        
+        // Map price and unit safely
+        let price = item.price || priceMap[searchId] || 0.00;
+        let unit = item.unit || unitMap[searchId] || 'pcs';
+        
+        // Ensure price is a valid number
+        if (isNaN(price)) {
+            price = 0.00;
+        }
+        
+        const itemTotal = price * qty;
+        
+        // Format Qty to remove .00 if whole number
+        const qtyDisplay = qty % 1 === 0 ? qty : qty.toFixed(2);
+
+        tableRowsHtml += `
+          <tr>
+            <td class="col-qty">${qtyDisplay}</td>
+            <td class="col-unit">${unit}</td>
+            <td class="col-articles">${name}</td>
+            <td class="col-price">${price.toFixed(2)}</td>
+            <td class="col-amount">${itemTotal.toFixed(2)}</td>
+          </tr>
+        `;
+        itemCount++;
+      });
+    }
+
+    // Add empty rows to match physical receipt booklet spacing
+    const emptyRowsNeeded = Math.max(1, 5 - itemCount);
+    for (let i = 0; i < emptyRowsNeeded; i++) {
+      tableRowsHtml += `<tr class="empty-row"><td></td><td></td><td></td><td></td><td></td></tr>`;
+    }
+
+    // Construct the HTML
+    receiptContainer.innerHTML = `
+      <!-- Header -->
+      <div class="header">
+        <h1>SPRJ PAINT CENTER</h1>
+        <p>#64 San Vicente, 4023 San Pedro, Laguna, Philippines</p>
+        <p>Sylvia P. Oroncillo - Prop.</p>
+        <p class="tin">Non-VAT Reg. TIN: 622-145-904-00000</p>
+      </div>
+
+      <!-- Title & Number -->
+      <div class="title-row">
+        <h2>SALES INVOICE</h2>
+        <div class="invoice-num"><span>No.</span>${shortId}</div>
+      </div>
+
+      <!-- Customer Form Grid -->
+      <div class="form-grid">
+        <div class="form-line"><span class="form-label">Sold To:</span><span class="form-value">Walk-in Customer</span></div>
+        <div class="form-line"><span class="form-label">Date:</span><span class="form-value">${formattedDate}</span></div>
+        <div class="form-line"><span class="form-label">TIN:</span><span class="form-value"></span></div>
+        <div class="form-line"><span class="form-label">Terms:</span><span class="form-value">${paymentMode}</span></div>
+        <div class="form-line"><span class="form-label">Address:</span><span class="form-value"></span></div>
+        <div class="form-line"><span class="form-label">OSCA/PWD ID No.:</span><span class="form-value"></span></div>
+        <div class="form-line"><span class="form-label">Business Style:</span><span class="form-value"></span></div>
+        <div class="form-line"><span class="form-label">SC/PWD Signature:</span><span class="form-value"></span></div>
+      </div>
+
+      <!-- Invoice Table -->
+      <table>
+        <thead>
+          <tr>
+            <th class="col-qty">QTY.</th>
+            <th class="col-unit">UNIT</th>
+            <th class="col-articles">ARTICLES</th>
+            <th class="col-price">UNIT<br>PRICE</th>
+            <th class="col-amount">AMOUNT</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRowsHtml}
+          
+          <!-- Totals Area -->
+          <tr>
+            <td colspan="3" class="no-border"></td>
+            <td class="total-label">Total Sales</td>
+            <td class="total-val">${subtotal.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td colspan="3" class="no-border"></td>
+            <td class="total-label">Less: SC/PWD-<br>Discount</td>
+            <td class="total-val">${discountAmt > 0 ? discountAmt.toFixed(2) : ''}</td>
+          </tr>
+          <tr>
+            <td colspan="3" class="no-border"></td>
+            <td class="total-label">TOTAL AMOUNT DUE</td>
+            <td class="total-val">${finalTotal.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Footer Area -->
+      <div class="footer">
+        <div class="footer-left">
+          10 Bklts. (50x2) 0501 - 1000<br>
+          BIR Authority to Print No. OCN: 057AU20240000000043<br>
+          Date Issued: 01-22-2024<br><br>
+          RYAN D. PRINTING SUPPLY AND SERVICES<br>
+          <span style="font-weight: normal;">
+            158 Garcia St. San Vicente, San Pedro, Laguna<br>
+            NON-VAT Reg. TIN: 488-156-983-00000<br>
+            Tel. No.: 8732-0157 / 09463747264
+          </span>
+          <span class="italic-note">"THIS DOCUMENT IS NOT VALID FOR CLAIMING INPUT TAXES"</span>
+        </div>
+        <div class="footer-right">
+          <div class="signature-line">${cashierName}</div>
+          <div class="signature-label">Cashier/Authorized Representative</div>
+          <div class="printer-accreditation">
+            Printer's Accreditation No. 057MP20210000000004<br>
+            Date Issued 10/13/2021 &nbsp;&nbsp;&nbsp;&nbsp; Valid Until: 10/12/2026
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  loadReceipt();
+</script>
+</body>
+</html>

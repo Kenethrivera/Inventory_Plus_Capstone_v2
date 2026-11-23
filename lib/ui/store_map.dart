@@ -563,6 +563,50 @@ class StoreMapState extends State<StoreMap>
         Offset(size.width / 2, size.height / 2);
   }
 
+  ({Offset position, double rotation})? _doorPlacement(
+    Offset rawPosition,
+    Size size,
+  ) {
+    final center = rawPosition + Offset(size.width / 2, size.height / 2);
+    ({Offset position, double rotation})? nearest;
+    var nearestDistance = double.infinity;
+    const snapDistance = 40.0;
+
+    for (final wall in _layout.where((item) => item.type == ElementType.wall)) {
+      final horizontal = wall.size.width >= wall.size.height;
+      final length = horizontal ? wall.size.width : wall.size.height;
+      if (length < size.width) continue;
+
+      final start = horizontal ? wall.position.dx : wall.position.dy;
+      final end = start + length;
+      final along = horizontal ? center.dx : center.dy;
+      final cross = horizontal ? center.dy : center.dx;
+      final wallCross = horizontal
+          ? wall.position.dy + wall.size.height / 2
+          : wall.position.dx + wall.size.width / 2;
+      final snappedAlong = along.clamp(
+        start + size.width / 2,
+        end - size.width / 2,
+      ).toDouble();
+      final snappedCenter = horizontal
+          ? Offset(snappedAlong, wallCross)
+          : Offset(wallCross, snappedAlong);
+      final distance = (center - snappedCenter).distance;
+      if ((cross - wallCross).abs() > snapDistance ||
+          distance > snapDistance ||
+          distance >= nearestDistance) {
+        continue;
+      }
+
+      nearestDistance = distance;
+      nearest = (
+        position: snappedCenter - Offset(size.width / 2, size.height / 2),
+        rotation: horizontal ? 0.0 : math.pi / 2,
+      );
+    }
+    return nearest;
+  }
+
   void _lockDragCanvas() {
     if (_dragCanvasBounds != null) return;
     _dragCanvasBounds = (
@@ -584,13 +628,20 @@ class StoreMapState extends State<StoreMap>
       position: position,
       label: '',
     )..size = size;
-    final snapped = _snapObjectNearWall(element, position, size, 0.0);
+    final doorPlacement = details.data == ElementType.door
+        ? _doorPlacement(position, size)
+        : null;
+    final snapped = doorPlacement?.position ??
+        _snapObjectNearWall(element, position, size, 0.0);
+    final rotation = doorPlacement?.rotation ?? 0.0;
     setState(() {
       _hoveredElementId = null;
       _dragPreviewPos = snapped;
       _dragPreviewSize = size;
-      _dragPreviewValid = !_hasCollision(element, snapped, size, 0.0);
-      _dragPreviewRotation = 0.0;
+      _dragPreviewValid =
+          (details.data != ElementType.door || doorPlacement != null) &&
+          !_hasCollision(element, snapped, size, rotation);
+      _dragPreviewRotation = rotation;
       _dragPreviewType = details.data;
     });
   }
@@ -613,9 +664,25 @@ class StoreMapState extends State<StoreMap>
       position: position,
       label: details.data.name.toUpperCase(),
     )..size = size;
-    final snapped = _snapObjectNearWall(element, position, size, 0.0);
+    final doorPlacement = details.data == ElementType.door
+        ? _doorPlacement(position, size)
+        : null;
+    if (details.data == ElementType.door && doorPlacement == null) {
+      AppToast.error(context, 'Place the door on a wall.');
+      setState(() {
+        _dragCanvasBounds = null;
+        _dragPreviewPos = null;
+        _dragPreviewSize = null;
+        _dragPreviewType = null;
+      });
+      return;
+    }
+    final snapped = doorPlacement?.position ??
+        _snapObjectNearWall(element, position, size, 0.0);
+    final rotation = doorPlacement?.rotation ?? 0.0;
     element.position = snapped;
-    if (!_hasCollision(element, snapped, size, 0.0)) {
+    element.rotation = rotation;
+    if (!_hasCollision(element, snapped, size, rotation)) {
       setState(() => _layout.add(element));
       widget.onLayoutEdited?.call();
     } else {
@@ -643,12 +710,22 @@ class StoreMapState extends State<StoreMap>
       size: size,
       label: type.name.toUpperCase(),
     );
-    final snapped = _snapObjectNearWall(element, position, size, 0);
-    if (_hasCollision(element, snapped, size, 0)) {
+    final doorPlacement = type == ElementType.door
+        ? _doorPlacement(position, size)
+        : null;
+    if (type == ElementType.door && doorPlacement == null) {
+      AppToast.error(context, 'Place the door on a wall.');
+      return;
+    }
+    final snapped = doorPlacement?.position ??
+        _snapObjectNearWall(element, position, size, 0);
+    final rotation = doorPlacement?.rotation ?? 0.0;
+    if (_hasCollision(element, snapped, size, rotation)) {
       AppToast.error(context, 'Cannot place an element over another fixture.');
       return;
     }
     element.position = snapped;
+    element.rotation = rotation;
     setState(() {
       _layout.add(element);
       _activeElementId = element.id;
@@ -1213,6 +1290,8 @@ class StoreMapState extends State<StoreMap>
   }
 
   bool canUpdateElement(MapElement element) =>
+      (element.type != ElementType.door ||
+          _doorPlacement(element.position, element.size) != null) &&
       !_hasCollision(element, element.position, element.size, element.rotation);
 
   void setPaletteDragActive(bool active) {
@@ -1238,6 +1317,7 @@ class StoreMapState extends State<StoreMap>
 
     // Search outward from the original, snapping to the existing 40-unit grid.
     Offset? freePosition;
+    var freeRotation = clone.rotation;
     for (int radius = 1; radius <= 16 && freePosition == null; radius++) {
       for (int dy = -radius; dy <= radius && freePosition == null; dy++) {
         for (int dx = -radius; dx <= radius; dx++) {
@@ -1247,8 +1327,15 @@ class StoreMapState extends State<StoreMap>
             clone.size,
             clone.type,
           );
-          if (!_hasCollision(clone, candidate, clone.size, clone.rotation)) {
-            freePosition = candidate;
+          final doorPlacement = clone.type == ElementType.door
+              ? _doorPlacement(candidate, clone.size)
+              : null;
+          if (clone.type == ElementType.door && doorPlacement == null) continue;
+          final nextPosition = doorPlacement?.position ?? candidate;
+          final nextRotation = doorPlacement?.rotation ?? clone.rotation;
+          if (!_hasCollision(clone, nextPosition, clone.size, nextRotation)) {
+            freePosition = nextPosition;
+            freeRotation = nextRotation;
             break;
           }
         }
@@ -1259,6 +1346,7 @@ class StoreMapState extends State<StoreMap>
       return;
     }
     clone.position = freePosition;
+    clone.rotation = freeRotation;
     setState(() {
       _layout.add(clone);
       _activeElementId = clone.id;
@@ -1300,6 +1388,10 @@ class StoreMapState extends State<StoreMap>
       return;
     }
     if (action == MapSidebarAction.rotate) {
+      if (el.type == ElementType.door) {
+        AppToast.error(context, 'Door direction follows its wall.');
+        return;
+      }
       if (el.type == ElementType.wall) {
         final center =
             el.position + Offset(el.size.width / 2, el.size.height / 2);
@@ -1428,8 +1520,17 @@ class StoreMapState extends State<StoreMap>
 
   void _nudgeElement(MapElement el, Offset delta) {
     final Offset newPosition = el.position + delta;
+    final doorPlacement = el.type == ElementType.door
+        ? _doorPlacement(newPosition, el.size)
+        : null;
+    if (el.type == ElementType.door && doorPlacement == null) {
+      AppToast.error(context, 'Doors must stay on a wall.');
+      return;
+    }
+    final snappedPosition = doorPlacement?.position ?? newPosition;
+    final rotation = doorPlacement?.rotation ?? el.rotation;
 
-    if (_hasCollision(el, newPosition, el.size, el.rotation)) {
+    if (_hasCollision(el, snappedPosition, el.size, rotation)) {
       AppToast.error(
         context,
         "Cannot nudge. It would overlap another element.",
@@ -1438,7 +1539,8 @@ class StoreMapState extends State<StoreMap>
     }
 
     setState(() {
-      el.position = newPosition;
+      el.position = snappedPosition;
+      el.rotation = rotation;
     });
     widget.onLayoutEdited?.call();
   }
@@ -1521,7 +1623,12 @@ class StoreMapState extends State<StoreMap>
     final center =
         door.position + Offset(door.size.width / 2, door.size.height / 2);
     final nextPosition = center - Offset(nextSize.width / 2, depth / 2);
-    if (_hasCollision(door, nextPosition, nextSize, door.rotation)) {
+    final placement = _doorPlacement(nextPosition, nextSize);
+    if (placement == null) {
+      AppToast.error(context, 'This door size does not fit on the wall.');
+      return;
+    }
+    if (_hasCollision(door, placement.position, nextSize, placement.rotation)) {
       AppToast.error(
         context,
         'Cannot change door type. It would overlap another object.',
@@ -1529,8 +1636,9 @@ class StoreMapState extends State<StoreMap>
       return;
     }
     setState(() {
-      door.position = nextPosition;
+      door.position = placement.position;
       door.size = nextSize;
+      door.rotation = placement.rotation;
     });
     widget.onLayoutEdited?.call();
   }
@@ -1587,6 +1695,10 @@ class StoreMapState extends State<StoreMap>
           label: "Rotate",
           color: Colors.blue,
           onTap: () {
+            if (activeEl.type == ElementType.door) {
+              AppToast.error(context, 'Door direction follows its wall.');
+              return;
+            }
             setState(() {
               if (activeEl.type == ElementType.wall) {
                 // FIX: Walls must swap physical dimensions to preserve intersection math!
@@ -2818,7 +2930,12 @@ class StoreMapState extends State<StoreMap>
     final bool isPreviewSelected =
         widget.mode == MapMode.view && _selectedPopupElement?.id == sourceId;
     final bool showObjectGlow = isActive || isPreviewSelected || isHighlighted;
+    final passiveThreeDFixture = widget.viewStyle == MapViewStyle.threeD &&
+        widget.mode != MapMode.manage &&
+        el.type != ElementType.rack &&
+        el.type != ElementType.shelf;
     final bool isHovered =
+        !passiveThreeDFixture &&
         sourceId == _hoveredElementId &&
         !_isPaletteDragActive &&
         _dragPreviewType == null &&
@@ -2834,7 +2951,6 @@ class StoreMapState extends State<StoreMap>
       (e) => e.id == sourceId,
       orElse: () => el,
     );
-
     final bool isWall = el.type == ElementType.wall;
     final bool isHorizontal = isWall ? el.size.width > 20 : false;
     final bool isVertical = isWall ? el.size.height > 20 : false;
@@ -3233,7 +3349,9 @@ class StoreMapState extends State<StoreMap>
                   hitTopExtra +
                   hitBottomExtra +
                   hitPadding * 2,
-              child: MouseRegion(
+              child: IgnorePointer(
+                ignoring: passiveThreeDFixture,
+                child: MouseRegion(
                 cursor: widget.mode == MapMode.view && !widget.showItemPopup
                     ? SystemMouseCursors.basic
                     : SystemMouseCursors.click,
@@ -3248,8 +3366,17 @@ class StoreMapState extends State<StoreMap>
                 },
                 child: GestureDetector(
                   behavior: HitTestBehavior.deferToChild,
+                  onTapUp: widget.mode == MapMode.manage &&
+                          widget.viewStyle == MapViewStyle.twoD &&
+                          widget.placementType != null
+                      ? (details) => _placeElementAt(
+                          details.globalPosition,
+                          widget.placementType!,
+                        )
+                      : null,
                   onTap: () async {
                     if (widget.mode == MapMode.manage) {
+                      if (widget.placementType != null) return;
                       setState(() {
                         if (_activeElementId != interactiveEl.id) {
                           _isAdjustingWidth = false;
@@ -3361,27 +3488,41 @@ class StoreMapState extends State<StoreMap>
 
                             _rawDragPosition =
                                 _rawDragPosition! + Offset(mapDx, mapDy);
-                            final Offset snappedPos = _snapObjectNearWall(
-                              interactiveEl,
-                              _rawDragPosition!,
-                              interactiveEl.size,
-                              interactiveEl.rotation,
-                            );
+                            final doorPlacement =
+                                interactiveEl.type == ElementType.door
+                                ? _doorPlacement(
+                                    _rawDragPosition!,
+                                    interactiveEl.size,
+                                  )
+                                : null;
+                            final Offset snappedPos = doorPlacement?.position ??
+                                _snapObjectNearWall(
+                                  interactiveEl,
+                                  _rawDragPosition!,
+                                  interactiveEl.size,
+                                  interactiveEl.rotation,
+                                );
+                            final rotation = doorPlacement?.rotation ??
+                                interactiveEl.rotation;
 
-                            final bool isValid = !_hasCollision(
+                            final bool isValid =
+                                (interactiveEl.type != ElementType.door ||
+                                    doorPlacement != null) &&
+                                !_hasCollision(
                               interactiveEl,
                               snappedPos,
                               interactiveEl.size,
-                              interactiveEl.rotation,
+                              rotation,
                             );
                             _dragPreviewPos = snappedPos;
                             _dragPreviewSize = interactiveEl.size;
                             _dragPreviewValid = isValid;
-                            _dragPreviewRotation = interactiveEl.rotation;
+                            _dragPreviewRotation = rotation;
                             _dragPreviewType = interactiveEl.type;
 
                             if (isValid) {
                               interactiveEl.position = snappedPos;
+                              interactiveEl.rotation = rotation;
                             }
                           });
                         }
@@ -3438,6 +3579,7 @@ class StoreMapState extends State<StoreMap>
                     ],
                   ),
                 ),
+              ),
               ),
             ),
           ],

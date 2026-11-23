@@ -3393,83 +3393,121 @@ class _PosCartPageState extends State<PosCartPage> {
     if (change != null && change > 0) {
       publicReceiptUrl += "&change=${change.toStringAsFixed(2)}";
     }
+    final previewQrSize = math.min(
+      200.0,
+      math.max(80.0, MediaQuery.sizeOf(context).width - 112),
+    );
 
-    showDialog(
+    showDialog<void>(
       context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.white,
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                "Scan Digital Receipt",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.qrCode,
+        color: _cashierAccent,
+        title: 'Scan Digital Receipt',
+        subtitle: 'Order #${orderId.substring(0, 8).toUpperCase()}',
+        maxWidth: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3CD),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFFEEBA)),
               ),
-              const SizedBox(height: 16),
-
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF3CD),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFFFEEBA)),
-                ),
-                child: const Text(
-                  "⚠️ This receipt will expire in 48 hours. Ask customer to screenshot.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xFF856404),
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              QrImageView(
-                data: publicReceiptUrl,
-                version: QrVersions.auto,
-                size: 200.0,
-                backgroundColor: Colors.white,
-              ),
-
-              const SizedBox(height: 16),
-              Text(
-                "Order #${orderId.substring(0, 8).toUpperCase()}",
+              child: const Text(
+                '⚠️ This receipt will expire after 1 month. Ask customer to screenshot.',
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.grey.shade600,
+                  color: Color(0xFF856404),
+                  fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 24),
-
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _cashierAccent,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                    "Close",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+            ),
+            const SizedBox(height: 20),
+            Center(
+              child: InkWell(
+                onTap: () => _showReceiptQRZoom(publicReceiptUrl, orderId),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: QrImageView(
+                    data: publicReceiptUrl,
+                    version: QrVersions.auto,
+                    size: previewQrSize,
+                    backgroundColor: Colors.white,
                   ),
                 ),
               ),
-            ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Click the QR code to enlarge',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _cashierMuted, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _cashierAccent,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReceiptQRZoom(String receiptUrl, String orderId) {
+    final screen = MediaQuery.sizeOf(context);
+    final qrSize = math.max(
+      80.0,
+      math.min(520.0, math.min(screen.width - 112, screen.height - 250)),
+    );
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.qrCode,
+        color: _cashierAccent,
+        title: 'Digital Receipt QR',
+        subtitle: 'Order #${orderId.substring(0, 8).toUpperCase()}',
+        maxWidth: 620,
+        child: Center(
+          child: QrImageView(
+            data: receiptUrl,
+            version: QrVersions.auto,
+            size: qrSize,
+            backgroundColor: Colors.white,
           ),
         ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _cashierAccent,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }

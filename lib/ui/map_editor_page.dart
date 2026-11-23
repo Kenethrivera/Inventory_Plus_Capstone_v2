@@ -137,6 +137,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
 
   void _selectPreviewElement(MapElement element) {
     if (_viewStyle != MapViewStyle.threeD || !mounted) return;
+    if (element.type != ElementType.rack &&
+        element.type != ElementType.shelf) return;
     setState(() => _previewElementId = element.id);
   }
 
@@ -1208,7 +1210,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          '${mobile ? 'Tap' : 'Click'} anywhere on the grid to place a ${_elementLabel(_placementType!).toLowerCase()}.',
+                          _placementType == ElementType.door
+                              ? '${mobile ? 'Tap' : 'Click'} a wall to place a door.'
+                              : '${mobile ? 'Tap' : 'Click'} anywhere on the grid to place a ${_elementLabel(_placementType!).toLowerCase()}.',
                           style: TextStyle(
                             color: mobile ? _mobileOrange : _primaryBlue,
                             fontSize: 12,

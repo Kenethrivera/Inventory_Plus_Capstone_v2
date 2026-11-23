@@ -68,7 +68,6 @@ class BodegeroQueuePage extends StatefulWidget {
 }
 
 class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
-  final _truckController = TextEditingController();
   final _searchController = TextEditingController();
   late Stream<List<CustomerOrder>> _ordersStream;
   late Stream<List<CustomerOrder>> _availabilityOrdersStream;
@@ -209,7 +208,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       }
     }
     unawaited(_autoClaimSubscription?.cancel());
-    _truckController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -288,6 +286,14 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   Future<bool> _open(CustomerOrder order) async {
     if (_busy || _clockBusy) return false;
+    if (order.truckIdentifier == null || order.bodegeroNote == null) {
+      try {
+        await widget.controller.retryOrdersSnapshot();
+      } catch (_) {
+        // The cached order remains available if the refresh fails.
+      }
+      if (!mounted) return false;
+    }
     order = widget.controller.orderById(order.id) ?? order;
     if ((order.status != 'pending' && order.status != 'solo_picking') ||
         order.loadingVerifiedAt != null ||
@@ -338,7 +344,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     } finally {
       if (mounted) setState(() => _clockBusy = false);
     }
-    _truckController.text = order.truckIdentifier ?? '';
     setState(() {
       _selectedOrderId = order.id;
       _completedOrder = null;
@@ -347,7 +352,10 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     });
     final presence = widget.presenceService;
     if (presence != null) {
-      unawaited(presence.setWorkMode(_tabIndex == 0 ? staffLoadingModule : null));
+      unawaited(presence.setWorkMode(
+        _tabIndex == 0 ? staffLoadingModule : null,
+        orderId: _tabIndex == 0 ? order.id : null,
+      ));
     }
     return true;
   }
@@ -618,7 +626,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       _message('Scan every heavy product first.');
       return;
     }
-    final plate = _truckController.text.trim();
+    final plate = order.truckIdentifier?.trim() ?? '';
     if (plate.isEmpty || _truckPhotoJpeg == null || _goodsPhotoJpeg == null) {
       _message(
         'The cashier must provide the truck identifier; capture both proof photos.',
@@ -817,7 +825,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       final mode = index == 0 && _selectedOrderId != null
           ? staffLoadingModule
           : null;
-      unawaited(presence.setWorkMode(mode));
+      unawaited(presence.setWorkMode(mode, orderId: _selectedOrderId));
     }
   }
 
@@ -1518,9 +1526,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           style: TextStyle(color: _muted, fontSize: 13, fontFamily: _font),
         ),
         const SizedBox(height: 16),
-        TextField(
-          controller: _truckController,
-          readOnly: true,
+        InputDecorator(
           decoration: InputDecoration(
             labelText: 'Truck plate / identifier from cashier',
             prefixIcon: const Icon(LucideIcons.truck, size: 18),
@@ -1528,11 +1534,51 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
             fillColor: const Color(0xFFFAF9F7),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
+          child: Text(
+            order.truckIdentifier?.trim().isNotEmpty == true
+                ? order.truckIdentifier!.trim()
+                : 'No truck identifier saved for this order',
+            style: TextStyle(
+              color: order.truckIdentifier?.trim().isNotEmpty == true
+                  ? _ink
+                  : _muted,
+              fontFamily: _font,
+            ),
+          ),
         ),
-        if (order.bodegeroNote?.isNotEmpty == true) ...[
-          const SizedBox(height: 10),
-          Text('Cashier note: ${order.bodegeroNote}'),
-        ],
+        const SizedBox(height: 14),
+        const Text(
+          'CASHIER NOTE',
+          style: TextStyle(
+            color: _muted,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            fontFamily: _font,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFAF9F7),
+            border: Border.all(color: _line),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            order.bodegeroNote?.trim().isNotEmpty == true
+                ? order.bodegeroNote!.trim()
+                : 'No cashier note saved for this order.',
+            style: TextStyle(
+              color: order.bodegeroNote?.trim().isNotEmpty == true
+                  ? _ink
+                  : _muted,
+              fontSize: 13,
+              fontFamily: _font,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         _proofPhotoField(
           title: '1. Truck identifier photo',
           photo: _truckPhotoJpeg,
@@ -1620,7 +1666,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     final sharedProgress = OrderWorkProgress.fromOrder(order);
     final scanned = items.where((item) => item.heavyVerified).length;
     final allScanned = scanned == items.length;
-    final truckReady = _truckController.text.trim().isNotEmpty;
+    final truckReady = order.truckIdentifier?.trim().isNotEmpty == true;
     final photoReady = _truckPhotoJpeg != null && _goodsPhotoJpeg != null;
     final canFinish =
         order.assignedBodegeroId != null &&
@@ -1848,7 +1894,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         order.assignedBodegeroId != null &&
         !_photoPreparing &&
         allScanned &&
-        _truckController.text.trim().isNotEmpty &&
+        order.truckIdentifier?.trim().isNotEmpty == true &&
         _truckPhotoJpeg != null &&
         _goodsPhotoJpeg != null;
     final nextLabel = _busy
@@ -1857,7 +1903,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         ? 'Preparing photo…'
         : !allScanned
         ? 'Scan ${items.length - scanned} more ${items.length - scanned == 1 ? 'item' : 'items'}'
-        : _truckController.text.trim().isEmpty ||
+        : order.truckIdentifier?.trim().isNotEmpty != true ||
               _truckPhotoJpeg == null ||
               _goodsPhotoJpeg == null
         ? 'Add truck and both photos'
