@@ -5,7 +5,6 @@
   const storageKey = 'inventory-plus-order-queue-session';
   const pollMs = 5000;
   const clockSvg = '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>';
-  const money = value => '₱' + new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value) || 0);
   const $ = id => document.getElementById(id);
   let session = null;
   let timer = null;
@@ -66,7 +65,7 @@
     const all = [];
     for (let offset = 0; ; offset += 1000) {
       const page = await table('orders', {
-        select: 'id,status,items,created_at,total_amount,created_by_name,assigned_helper_id,assigned_helper_name,assigned_bodegero_id,assigned_bodegero_name,loading_verified_at',
+        select: 'id,status,items,created_at,created_by_name,assigned_helper_id,assigned_helper_name,assigned_bodegero_id,assigned_bodegero_name,loading_verified_at',
         location_id: locationFilter,
         status: 'in.(pending,prepared,solo_picking)',
         order: 'created_at.asc,id.asc',
@@ -87,7 +86,6 @@
     $('dashboard').hidden = true;
     $('auth-panel').hidden = false;
     $('logout-button').hidden = true;
-    $('refresh-button').hidden = true;
     $('login-error').textContent = message;
     setConnection('Sign in required');
   }
@@ -103,7 +101,6 @@
     $('auth-panel').hidden = true;
     $('dashboard').hidden = false;
     $('logout-button').hidden = false;
-    $('refresh-button').hidden = false;
     setConnection('Loading live orders');
     await refreshQueue();
     clearInterval(timer);
@@ -156,54 +153,6 @@
     if (activeOrderIds.has(String(order.id)) || status === 'solo_picking' || order.loading_verified_at ||
         items.some(item => item?.picked === true || item?.heavy_verified === true)) return 'preparing';
     return 'assigned';
-  }
-
-  function renderTeam(profiles, presence, orders, capacity) {
-    const byId = new Map(presence.map(person => [String(person.user_id), person]));
-    const workloads = new Map();
-    for (const order of orders) {
-      const status = String(order.status || '').toLowerCase();
-      if (status !== 'pending' && status !== 'solo_picking') continue;
-      const items = Array.isArray(order.items) ? order.items : [];
-      if (status === 'pending' && order.assigned_helper_id) {
-        const id = String(order.assigned_helper_id);
-        workloads.set(id, (workloads.get(id) || 0) + 1);
-      }
-      if (order.assigned_bodegero_id && !order.loading_verified_at && items.some(item => item?.requires_loading === true)) {
-        const id = String(order.assigned_bodegero_id);
-        workloads.set(id, (workloads.get(id) || 0) + 1);
-      }
-    }
-    const fragment = document.createDocumentFragment();
-    for (const profile of profiles) {
-      const id = String(profile.id);
-      const role = String(profile.role || '').toLowerCase();
-      const person = byId.get(id);
-      const online = isOnline(person);
-      const count = workloads.get(id) || 0;
-      const member = node('div', online ? 'member' : 'member offline');
-      member.append(avatar(profile.name));
-      const detail = node('div');
-      detail.append(node('p', 'member-name', profile.name));
-      detail.append(node('p', 'member-role', role === 'bodegero' ? 'Bodegero' : 'Helper'));
-      const status = node('div', 'member-status');
-      if (role === 'helper') {
-        const progress = node('span', 'mini-progress');
-        progress.setAttribute('aria-hidden', 'true');
-        const segments = Math.min(capacity, 8);
-        for (let i = 0; i < segments; i++) progress.append(node('span', online && i < Math.ceil(count / capacity * segments) ? 'filled' : ''));
-        status.append(progress);
-      }
-      const workMode = String(person?.current_module || '').startsWith('Preparing order') ? 'Preparing' :
-        String(person?.current_module || '').startsWith('Loading order') ? 'Loading' : '';
-      const workload = role === 'helper' ? `${count}/${capacity}` : `${count} active`;
-      status.append(node('span', '', online ? `${workMode ? workMode + ' · ' : ''}${workload}` : 'Offline'));
-      detail.append(status);
-      member.append(detail);
-      fragment.append(member);
-    }
-    if (!profiles.length) fragment.append(node('p', 'empty-team', 'No Helpers or Bodegeros are configured for this store.'));
-    $('team').replaceChildren(fragment);
   }
 
   function orderCard(order, group, onlineStaff) {
@@ -270,7 +219,7 @@
     if (heavyItems.length) {
       addAssignee('Bodegero', String(order.assigned_bodegero_name || '').trim(), order.assigned_bodegero_id);
     }
-    footer.append(assignees, node('span', 'total', money(order.total_amount)));
+    footer.append(assignees);
     card.append(footer);
     return card;
   }
@@ -305,22 +254,17 @@
       await validateSession();
       if (!session) return;
       const filter = 'eq.' + session.locationId;
-      const [orders, profiles, presence, settings] = await Promise.all([
+      const [orders, presence] = await Promise.all([
         loadOpenOrders(filter),
-        table('profiles', { select: 'id,name,role', location_id: filter, role: 'in.(helper,bodegero)', is_active: 'eq.true', order: 'id.asc' }),
         table('staff_presence', { select: 'user_id,is_online,last_seen_at,current_module', location_id: filter, user_role: 'in.(helper,bodegero)' }),
-        table('store_settings', { select: 'max_active_orders_per_helper', location_id: filter, limit: '1' }).catch(() => []),
       ]);
       if (!session) return;
-      const capacity = Math.max(1, Number(settings[0]?.max_active_orders_per_helper) || 3);
-      lastSnapshot = { orders, profiles, presence, capacity };
-      renderTeam(profiles, presence, orders, capacity);
+      lastSnapshot = { orders, presence };
       renderOrders(orders, presence);
       setConnection('Live · updated ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), 'live');
     } catch (error) {
       if (session) {
         if (lastSnapshot) {
-          renderTeam(lastSnapshot.profiles, lastSnapshot.presence, lastSnapshot.orders, lastSnapshot.capacity);
           renderOrders(lastSnapshot.orders, lastSnapshot.presence);
         }
         setConnection(lastSnapshot ? 'Retrying live updates' : 'Could not load orders', 'error');
@@ -360,7 +304,6 @@
     }
   });
 
-  $('refresh-button').addEventListener('click', refreshQueue);
   $('logout-button').addEventListener('click', async () => {
     const token = session?.token;
     showSignIn();

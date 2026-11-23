@@ -360,28 +360,28 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   String _bucketLabel(DateTime date, String grouping) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     if (grouping == 'Hourly') {
       final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
       return '$hour ${date.hour < 12 ? 'AM' : 'PM'}';
     }
     if (grouping == 'Monthly') {
-      const months = [
-        'Jan',
-        'Feb',
-        'Mar',
-        'Apr',
-        'May',
-        'Jun',
-        'Jul',
-        'Aug',
-        'Sep',
-        'Oct',
-        'Nov',
-        'Dec',
-      ];
       return '${months[date.month - 1]} ${date.year}';
     }
-    return '${date.month}/${date.day}';
+    return '${months[date.month - 1]} ${date.day}';
   }
 
   List<_AnalyticsBucket> _salesBuckets() {

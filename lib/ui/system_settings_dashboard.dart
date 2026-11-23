@@ -670,7 +670,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                     ),
                   ],
                 );
-                if (mobile && _selectedSettingsSection == _SettingsSection.hours) {
+                if (_selectedSettingsSection == _SettingsSection.hours) {
                   return Row(
                     children: [
                       Expanded(child: heading),
@@ -680,9 +680,9 @@ extension _SettingsDashboard on _SystemSettingsPageState {
                           foregroundColor: _orange,
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                         ),
-                        child: const Text(
+                        child: Text(
                           'Copy Mon to all',
-                          style: TextStyle(fontSize: 12),
+                          style: TextStyle(fontSize: mobile ? 12 : 13),
                         ),
                       ),
                     ],

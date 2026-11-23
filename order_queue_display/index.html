@@ -68,34 +68,6 @@
       letter-spacing: -.8px;
     }
 
-    .subtitle {
-      margin-top: 9px;
-      color: var(--muted);
-      font-size: 18px;
-      line-height: 1.35;
-      letter-spacing: .05px;
-    }
-
-    .team {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 22px 19px;
-      min-height: 82px;
-      margin-top: 29px;
-      padding: 17px 0 16px;
-      border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
-    }
-
-    .member {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex: 0 1 261px;
-      min-width: 245px;
-    }
-
     .avatar {
       position: relative;
       display: inline-grid;
@@ -122,40 +94,6 @@
       content: "";
     }
 
-    .member.offline { color: #989590; }
-    .member.offline .avatar { color: #a8a49e; background: #f3f2ee; }
-    .member.offline .avatar::after { background: #e1ded8; }
-
-    .member-name {
-      margin-bottom: 4px;
-      font-size: 16px;
-      line-height: 1;
-      white-space: nowrap;
-    }
-
-    .member-role { margin-bottom: 6px; color: var(--muted); font-size: 12px; }
-
-    .member-status {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      color: var(--muted);
-      font-size: 16px;
-      line-height: 1;
-    }
-
-    .mini-progress { display: flex; gap: 3px; }
-    .mini-progress span {
-      display: block;
-      width: 25px;
-      height: 7px;
-      border-radius: 10px;
-      background: var(--track);
-    }
-    .mini-progress .filled { background: var(--orange); }
-    .offline .mini-progress span { background: #f0efeb; }
-    .offline .member-status { color: #b5b1aa; }
-
     .board {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -165,7 +103,7 @@
 
     .lane {
       min-width: 0;
-      min-height: max(498px, calc(100vh - 240px));
+      min-height: max(498px, calc(100vh - 150px));
       padding: 19px 13px 13px;
       border-radius: 20px;
       background: var(--panel);
@@ -250,7 +188,6 @@
     .assignee.offline .avatar::after { background: #e1ded8; }
     .assignee.offline .assignee-name { color: var(--muted); }
     .assignee-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .total { flex: none; font-size: 16px; font-weight: 700; white-space: nowrap; }
 
     .order.compact { padding-top: 16px; padding-bottom: 16px; }
     .order.compact .order-footer { margin-top: 14px; }
@@ -266,21 +203,12 @@
       .connection { margin-top: 14px; }
       .auth-panel { margin-top: 35px; }
       h1 { font-size: 26px; }
-      .subtitle { font-size: 16px; }
-      .team { margin-top: 24px; gap: 18px; }
-      .member { flex-basis: calc(50% - 10px); min-width: 0; gap: 10px; }
-      .member-name { overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
-      .member-status { font-size: 14px; }
-      .mini-progress span { width: 17px; }
       .board { grid-template-columns: 1fr; gap: 14px; margin-top: 20px; }
       .lane { min-height: 0; padding-bottom: 13px; }
       .lane:has(.empty) { min-height: 145px; }
       .empty { margin-top: 28px; }
     }
 
-    @media (max-width: 390px) {
-      .member { flex-basis: 100%; }
-    }
   </style>
 </head>
 <body>
@@ -288,11 +216,9 @@
     <header class="page-header">
       <div>
         <h1>Order queue</h1>
-        <p class="subtitle">Every open order, who handles each part, and how far along it is.</p>
       </div>
       <div class="connection" role="status" aria-live="polite">
         <span id="connection-text" class="connection-text">Connecting</span>
-        <button id="refresh-button" class="text-button" type="button" hidden>Refresh</button>
         <button id="logout-button" class="text-button" type="button" hidden>Sign out</button>
       </div>
     </header>
@@ -311,7 +237,6 @@
     </section>
 
     <div id="dashboard" hidden>
-      <section id="team" class="team" aria-label="Team availability"></section>
       <div class="board" aria-label="Open orders by stage">
         <section class="lane" aria-labelledby="waiting-title">
           <div class="lane-heading"><h2 id="waiting-title">Waiting for staff</h2><span id="waiting-count" class="lane-count">0</span></div>
