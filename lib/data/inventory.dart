@@ -206,6 +206,8 @@ class CustomerOrderItem {
   final bool picked;
   final bool requiresLoading;
   final bool heavyVerified;
+  final String? truckIdentifier;
+  final String? bodegeroNote;
   final String? unit;
   final double? unitPrice;
   final double? lineTotal;
@@ -217,6 +219,8 @@ class CustomerOrderItem {
     this.picked = false,
     this.requiresLoading = false,
     this.heavyVerified = false,
+    this.truckIdentifier,
+    this.bodegeroNote,
     this.unit,
     this.unitPrice,
     this.lineTotal,
@@ -243,6 +247,8 @@ class CustomerOrderItem {
     picked: json['picked'] == true,
     requiresLoading: json['requires_loading'] == true,
     heavyVerified: json['heavy_verified'] == true,
+    truckIdentifier: json['truck_identifier']?.toString(),
+    bodegeroNote: json['bodegero_note']?.toString(),
     unit: json['unit']?.toString(),
     unitPrice: (json['unit_price'] as num?)?.toDouble(),
     lineTotal: (json['line_total'] as num?)?.toDouble(),
@@ -250,6 +256,24 @@ class CustomerOrderItem {
 }
 
 class CustomerOrder {
+  String? get truckIdentifier {
+    for (final item in items) {
+      if (item.requiresLoading && item.truckIdentifier?.isNotEmpty == true) {
+        return item.truckIdentifier;
+      }
+    }
+    return null;
+  }
+
+  String? get bodegeroNote {
+    for (final item in items) {
+      if (item.requiresLoading && item.bodegeroNote?.isNotEmpty == true) {
+        return item.bodegeroNote;
+      }
+    }
+    return null;
+  }
+
   final String id;
   final List<CustomerOrderItem> items;
   final String status;

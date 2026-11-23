@@ -1,0 +1,63 @@
+---
+config:
+  theme: default
+  look: classic
+  layout: dagre
+  usecase:
+    nodeSpacing: 22
+    rankSpacing: 32
+    diagramPadding: 10
+    actorFontSize: 14
+    usecaseFontSize: 13
+---
+usecase-beta
+direction LR
+
+actor Admin("Admin")
+actor Helper("Helper")
+actor Cashier("Cashier")
+actor Bodegero("Bodegero")
+
+systemBoundary "Inventory Plus"
+  SignIn("Sign in")
+  ManageInventory("Manage inventory")
+  ManageStaff("Manage staff")
+  ReviewApprovals("Review approvals")
+  ViewReports("View analytics and forecasts")
+  ProcessSales("Process sales")
+  ViewHistory("View transaction history")
+  RequestStock("Request restock or write-off")
+  ViewOrders("View assigned orders")
+  PrepareOrders("Prepare light items")
+  LoadOrders("Load heavy items")
+  ScanShelf("Scan shelf QR")
+  LoadingProof("Capture loading proof")
+  SetAvailability("Set availability")
+end
+
+Admin --> SignIn
+Admin --> ManageInventory
+Admin --> ManageStaff
+Admin --> ReviewApprovals
+Admin --> ViewReports
+
+Helper --> SignIn
+Helper --> ViewOrders
+Helper --> PrepareOrders
+Helper --> RequestStock
+Helper --> SetAvailability
+
+SignIn --> Cashier
+ProcessSales --> Cashier
+ViewHistory --> Cashier
+RequestStock --> Cashier
+
+SignIn --> Bodegero
+ViewOrders --> Bodegero
+LoadOrders --> Bodegero
+RequestStock --> Bodegero
+SetAvailability --> Bodegero
+
+PrepareOrders ..> : include ScanShelf
+LoadOrders ..> : include ScanShelf
+LoadOrders ..> : include LoadingProof

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -211,17 +212,20 @@ class OrderDetailsDrawer extends StatelessWidget {
                                 if (order.loadingVerifiedAt != null)
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4,
+                                      horizontal: 10,
+                                      vertical: 4,
                                     ),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFE8F5EC),
                                       borderRadius: BorderRadius.circular(20),
                                     ),
-                                    child: const Text('✓  Loaded',
-                                        style: TextStyle(
-                                          color: Color(0xFF15803D),
-                                          fontSize: 11,
-                                        )),
+                                    child: const Text(
+                                      '✓  Loaded',
+                                      style: TextStyle(
+                                        color: Color(0xFF15803D),
+                                        fontSize: 11,
+                                      ),
+                                    ),
                                   ),
                               ],
                             ),
@@ -231,32 +235,56 @@ class OrderDetailsDrawer extends StatelessWidget {
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      const Text('Bodegero',
-                                          style: TextStyle(color: _muted, fontSize: 12)),
+                                      const Text(
+                                        'Bodegero',
+                                        style: TextStyle(
+                                          color: _muted,
+                                          fontSize: 12,
+                                        ),
+                                      ),
                                       const SizedBox(height: 5),
                                       Row(
                                         children: [
                                           CircleAvatar(
                                             radius: 11,
-                                            backgroundColor: const Color(0xFFFFEBDD),
+                                            backgroundColor: const Color(
+                                              0xFFFFEBDD,
+                                            ),
                                             child: Text(
-                                              order.assignedBodegeroName?.trim().isNotEmpty == true
-                                                  ? order.assignedBodegeroName!.trim()[0].toUpperCase()
+                                              order.assignedBodegeroName
+                                                          ?.trim()
+                                                          .isNotEmpty ==
+                                                      true
+                                                  ? order.assignedBodegeroName!
+                                                        .trim()[0]
+                                                        .toUpperCase()
                                                   : '?',
-                                              style: const TextStyle(color: _orange, fontSize: 11),
+                                              style: const TextStyle(
+                                                color: _orange,
+                                                fontSize: 11,
+                                              ),
                                             ),
                                           ),
                                           const SizedBox(width: 7),
                                           Expanded(
                                             child: Text(
-                                              order.assignedBodegeroName?.trim().isNotEmpty == true
-                                                  ? order.assignedBodegeroName!.trim()
+                                              order.assignedBodegeroName
+                                                          ?.trim()
+                                                          .isNotEmpty ==
+                                                      true
+                                                  ? order.assignedBodegeroName!
+                                                        .trim()
                                                   : 'Unassigned',
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(color: _ink, fontSize: 13, fontWeight: FontWeight.w600),
+                                              style: const TextStyle(
+                                                color: _ink,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -280,9 +308,16 @@ class OrderDetailsDrawer extends StatelessWidget {
                               const Divider(height: 1, color: _line),
                               const SizedBox(height: 5),
                               TextButton.icon(
-                                onPressed: () => _showLoadingProof(context),
-                                icon: const Icon(Icons.photo_outlined, size: 17),
-                                label: const Text('View loading photo and counts'),
+                                onPressed: () => showLoadingProof(
+                                  context,
+                                  order: order,
+                                  loader: loadLoadingProof!,
+                                ),
+                                icon: const Icon(
+                                  Icons.photo_outlined,
+                                  size: 17,
+                                ),
+                                label: const Text('View truck and item photos'),
                                 style: TextButton.styleFrom(
                                   foregroundColor: _orange,
                                   padding: EdgeInsets.zero,
@@ -452,12 +487,14 @@ class OrderDetailsDrawer extends StatelessWidget {
     child: Text(label, style: TextStyle(color: color, fontSize: 12)),
   );
 
-  Future<void> _showLoadingProof(BuildContext context) async {
-    final loader = loadLoadingProof;
-    if (loader == null) return;
+  static Future<bool> showLoadingProof(
+    BuildContext context, {
+    required CustomerOrder order,
+    required Future<Map<String, dynamic>?> Function(String orderId) loader,
+  }) async {
     try {
       final proof = await loader(order.id);
-      if (!context.mounted) return;
+      if (!context.mounted) return false;
       if (proof == null) throw StateError('Loading proof was not found.');
       // PostgreSQL encode(bytea, 'base64') wraps long output with line breaks.
       final encodedPhoto = (proof['photo_base64']?.toString() ?? '').replaceAll(
@@ -465,50 +502,33 @@ class OrderDetailsDrawer extends StatelessWidget {
         '',
       );
       final bytes = base64Decode(encodedPhoto);
+      final encodedTruckPhoto = (proof['truck_photo_base64']?.toString() ?? '')
+          .replaceAll(RegExp(r'\s+'), '');
+      final truckBytes = encodedTruckPhoto.isEmpty
+          ? null
+          : base64Decode(encodedTruckPhoto);
       final counts = Map<String, dynamic>.from(
         proof['loaded_quantities'] as Map? ?? const <String, dynamic>{},
       );
       await showDialog<void>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Truck loading proof'),
-          content: SizedBox(
-            width: MediaQuery.sizeOf(context).width < 560
-                ? MediaQuery.sizeOf(context).width - 80
-                : 480,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Truck: ${proof['truck_plate'] ?? ''}'),
-                  Text('Captured: ${proof['captured_at'] ?? ''}'),
-                  const SizedBox(height: 8),
-                  for (final item in order.items.where(
-                    (item) => item.requiresLoading,
-                  ))
-                    Text(
-                      '${item.productName}: ${counts[item.productId] ?? '—'} ${item.unit ?? ''}',
-                    ),
-                  const SizedBox(height: 12),
-                  Image.memory(bytes, fit: BoxFit.contain),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Close'),
-            ),
-          ],
+        builder: (dialogContext) => _LoadingProofDialog(
+          order: order,
+          truckPlate: proof['truck_plate']?.toString() ?? '',
+          capturedAt: DateTime.tryParse(proof['captured_at']?.toString() ?? ''),
+          counts: counts,
+          truckPhoto: truckBytes,
+          goodsPhoto: bytes,
         ),
       );
+      return true;
     } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not load the loading proof: $error')),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not load the loading proof: $error')),
+        );
+      }
+      return false;
     }
   }
 
@@ -705,6 +725,380 @@ class OrderDetailsDrawer extends StatelessWidget {
         : '${date.month}/${date.day}/${date.year}';
     return '$prefix, ${_time(date)}';
   }
+}
+
+class _LoadingProofDialog extends StatelessWidget {
+  const _LoadingProofDialog({
+    required this.order,
+    required this.truckPlate,
+    required this.capturedAt,
+    required this.counts,
+    required this.truckPhoto,
+    required this.goodsPhoto,
+  });
+
+  final CustomerOrder order;
+  final String truckPlate;
+  final DateTime? capturedAt;
+  final Map<String, dynamic> counts;
+  final Uint8List? truckPhoto;
+  final Uint8List goodsPhoto;
+
+  @override
+  Widget build(BuildContext context) {
+    const ink = Color(0xFF201D1A);
+    const muted = Color(0xFF827B75);
+    const line = Color(0xFFE7E1DB);
+    const orange = Color(0xFFC83D08);
+    final localizations = MaterialLocalizations.of(context);
+    final loadedAt = capturedAt?.toLocal();
+    final shortId = order.id.length <= 8
+        ? order.id.toUpperCase()
+        : order.id.substring(0, 8).toUpperCase();
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 720,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'LOADING PROOF',
+                          style: TextStyle(
+                            color: orange,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '#$shortId',
+                          style: const TextStyle(
+                            color: ink,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close loading proof',
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFFF4F2F0),
+                      foregroundColor: ink,
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, size: 20),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Divider(height: 1, color: line),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 9,
+                runSpacing: 7,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF4F2F0),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Text(
+                      order.status,
+                      style: const TextStyle(color: muted, fontSize: 12),
+                    ),
+                  ),
+                  Text(
+                    loadedAt == null
+                        ? 'Loading verified'
+                        : 'Loaded ${localizations.formatMediumDate(loadedAt)} at ${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(loadedAt))}',
+                    style: const TextStyle(color: muted, fontSize: 12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F7F5),
+                  border: Border.all(color: line),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(LucideIcons.truck, size: 18, color: orange),
+                        const SizedBox(width: 9),
+                        const Text(
+                          'TRUCK',
+                          style: TextStyle(
+                            color: muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const Spacer(),
+                        Flexible(
+                          child: Text(
+                            truckPlate,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: ink,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      child: Divider(height: 1, color: line),
+                    ),
+                    const Text(
+                      'LOADED ITEMS',
+                      style: TextStyle(
+                        color: muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    for (final item in order.items.where(
+                      (item) => item.requiresLoading,
+                    ))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: Text(
+                          '${item.productName} · ${counts[item.productId] ?? '—'} loaded',
+                          style: const TextStyle(color: ink, fontSize: 13),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              _ProofPhotoTabs(truckPhoto: truckPhoto, goodsPhoto: goodsPhoto),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProofPhotoTabs extends StatefulWidget {
+  const _ProofPhotoTabs({required this.truckPhoto, required this.goodsPhoto});
+
+  final Uint8List? truckPhoto;
+  final Uint8List goodsPhoto;
+
+  @override
+  State<_ProofPhotoTabs> createState() => _ProofPhotoTabsState();
+}
+
+class _ProofPhotoTabsState extends State<_ProofPhotoTabs> {
+  int _selected = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final truckPhoto = widget.truckPhoto;
+    if (truckPhoto == null) {
+      return _ProofPhotoPanel(
+        title: 'LOADED ITEMS AND QUANTITIES PHOTO',
+        bytes: widget.goodsPhoto,
+      );
+    }
+
+    Widget tab(String label, int index) {
+      final selected = _selected == index;
+      return Expanded(
+        child: InkWell(
+          key: ValueKey('proof-photo-tab-$index'),
+          onTap: () => setState(() => _selected = index),
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? Colors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: selected
+                  ? const [BoxShadow(color: Color(0x14000000), blurRadius: 4)]
+                  : null,
+            ),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: selected
+                    ? const Color(0xFFC83D08)
+                    : const Color(0xFF827B75),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2EFEC),
+            border: Border.all(color: const Color(0xFFE7E1DB)),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Row(
+            children: [tab('Truck identifier', 0), tab('Loaded items', 1)],
+          ),
+        ),
+        const SizedBox(height: 14),
+        IndexedStack(
+          index: _selected,
+          children: [
+            _ProofPhotoPanel(
+              title: 'TRUCK IDENTIFIER PHOTO',
+              bytes: truckPhoto,
+            ),
+            _ProofPhotoPanel(
+              title: 'LOADED ITEMS AND QUANTITIES PHOTO',
+              bytes: widget.goodsPhoto,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ProofPhotoPanel extends StatefulWidget {
+  const _ProofPhotoPanel({required this.title, required this.bytes});
+
+  final String title;
+  final Uint8List bytes;
+
+  @override
+  State<_ProofPhotoPanel> createState() => _ProofPhotoPanelState();
+}
+
+class _ProofPhotoPanelState extends State<_ProofPhotoPanel> {
+  final TransformationController _zoom = TransformationController();
+
+  @override
+  void dispose() {
+    _zoom.dispose();
+    super.dispose();
+  }
+
+  void _changeZoom(double factor) {
+    final scale = (_zoom.value.getMaxScaleOnAxis() * factor).clamp(1.0, 5.0);
+    _zoom.value = Matrix4.diagonal3Values(scale, scale, 1);
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              widget.title,
+              style: const TextStyle(
+                color: Color(0xFF201D1A),
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+          const Text(
+            'Pinch to zoom',
+            style: TextStyle(color: Color(0xFF827B75), fontSize: 12),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Container(
+        height: 300,
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F7F5),
+          border: Border.all(color: const Color(0xFFE7E1DB)),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(9),
+          child: ColoredBox(
+            color: const Color(0xFFF1F0EE),
+            child: InteractiveViewer(
+              transformationController: _zoom,
+              minScale: 1,
+              maxScale: 5,
+              child: Center(
+                child: Image.memory(widget.bytes, fit: BoxFit.contain),
+              ),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          const Text(
+            'ZOOM',
+            style: TextStyle(color: Color(0xFF827B75), fontSize: 11),
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: 'Zoom out ${widget.title}',
+            onPressed: () => _changeZoom(0.8),
+            icon: const Icon(Icons.remove),
+          ),
+          TextButton(
+            onPressed: () => _zoom.value = Matrix4.identity(),
+            child: const Text('Reset'),
+          ),
+          IconButton(
+            tooltip: 'Zoom in ${widget.title}',
+            onPressed: () => _changeZoom(1.25),
+            icon: const Icon(Icons.add),
+          ),
+        ],
+      ),
+    ],
+  );
 }
 
 class _OrderActions extends StatefulWidget {

@@ -68,8 +68,7 @@ class OrderAutoAssignmentService {
     final signedInHelperIsAvailable =
         _presenceService.userRole.toLowerCase() == 'helper' &&
         _presenceService.userId == _accountId &&
-        _presenceService.isStarted &&
-        !_presenceService.isOnBreak;
+        _presenceService.isStarted;
     return signedInHelperIsAvailable ||
         _presenceService.eligibleHelpersForAssignment.isNotEmpty;
   }

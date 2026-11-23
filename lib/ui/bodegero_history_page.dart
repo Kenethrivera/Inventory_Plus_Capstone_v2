@@ -168,8 +168,11 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
           '',
         );
         if (encoded.isEmpty) return null;
+        final encodedTruck = (proof['truck_photo_base64']?.toString() ?? '')
+            .replaceAll(RegExp(r'\s+'), '');
         return _LoadingProof(
           bytes: base64Decode(encoded),
+          truckBytes: encodedTruck.isEmpty ? null : base64Decode(encodedTruck),
           truckPlate: proof['truck_plate']?.toString(),
         );
       });
@@ -177,6 +180,7 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
   Future<void> _showProof(BodegeroLoadingRecord record) async {
     final zoom = TransformationController();
     var proofFuture = _proofFor(record.orderId);
+    var selectedPhoto = 0;
     try {
       await showDialog<void>(
         context: context,
@@ -352,18 +356,86 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
                         ),
                       ),
                       const SizedBox(height: 14),
+                      FutureBuilder<_LoadingProof?>(
+                        future: proofFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.data?.truckBytes == null) {
+                            return const SizedBox.shrink();
+                          }
+                          Widget tab(String label, int index) => Expanded(
+                            child: InkWell(
+                              key: ValueKey('history-proof-tab-$index'),
+                              onTap: () => updateDialog(() {
+                                selectedPhoto = index;
+                                zoom.value = Matrix4.identity();
+                              }),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                alignment: Alignment.center,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: selectedPhoto == index
+                                      ? Colors.white
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  label,
+                                  style: TextStyle(
+                                    color: selectedPhoto == index
+                                        ? _orange
+                                        : _muted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 14),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF2EFEC),
+                                border: Border.all(color: _line),
+                                borderRadius: BorderRadius.circular(11),
+                              ),
+                              child: Row(
+                                children: [
+                                  tab('Truck identifier', 0),
+                                  tab('Loaded items', 1),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                       Row(
                         children: [
-                          const Text(
-                            'LOADING PHOTO',
-                            style: TextStyle(
-                              color: _ink,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.8,
+                          Expanded(
+                            child: FutureBuilder<_LoadingProof?>(
+                              future: proofFuture,
+                              builder: (context, snapshot) => Text(
+                                snapshot.data?.truckBytes == null
+                                    ? 'LOADING PHOTO'
+                                    : selectedPhoto == 0
+                                    ? 'TRUCK IDENTIFIER PHOTO'
+                                    : 'LOADED ITEMS AND QUANTITIES PHOTO',
+                                maxLines: 2,
+                                style: const TextStyle(
+                                  color: _ink,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
                             ),
                           ),
-                          const Spacer(),
+                          const SizedBox(width: 8),
                           const Text(
                             'Pinch to zoom',
                             style: TextStyle(color: _muted, fontSize: 12),
@@ -415,7 +487,11 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
                                             width: constraints.maxWidth,
                                             height: constraints.maxHeight,
                                             child: Image.memory(
-                                              snapshot.data!.bytes,
+                                              snapshot.data!.truckBytes == null
+                                                  ? snapshot.data!.bytes
+                                                  : selectedPhoto == 0
+                                                  ? snapshot.data!.truckBytes!
+                                                  : snapshot.data!.bytes,
                                               fit: BoxFit.contain,
                                               errorBuilder:
                                                   (context, error, stack) =>
@@ -716,7 +792,10 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
         hintText: 'Search order, truck, or product',
         hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
         prefixIcon: const Icon(LucideIcons.search, size: 17, color: _muted),
-        prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        prefixIconConstraints: const BoxConstraints(
+          minWidth: 36,
+          minHeight: 36,
+        ),
         suffixIcon: _searchController.text.isEmpty
             ? null
             : IconButton(
@@ -788,7 +867,13 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
           ),
           _BodegeroHistorySegments(
             expanded: narrow,
-            options: const ['All', 'Waiting', 'Ready', 'Completed', 'Cancelled'],
+            options: const [
+              'All',
+              'Waiting',
+              'Ready',
+              'Completed',
+              'Cancelled',
+            ],
             selected: _statusFilter,
             onSelected: _changeStatus,
           ),
@@ -1207,9 +1292,10 @@ class _BodegeroHistoryPageState extends State<BodegeroHistoryPage> {
 }
 
 class _LoadingProof {
-  const _LoadingProof({required this.bytes, this.truckPlate});
+  const _LoadingProof({required this.bytes, this.truckBytes, this.truckPlate});
 
   final Uint8List bytes;
+  final Uint8List? truckBytes;
   final String? truckPlate;
 }
 
@@ -1253,8 +1339,13 @@ class _BodegeroHistorySegments extends StatelessWidget {
           color: active ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(7),
           boxShadow: active
-              ? const [BoxShadow(color: Color(0x120F172A), blurRadius: 4,
-                  offset: Offset(0, 1))]
+              ? const [
+                  BoxShadow(
+                    color: Color(0x120F172A),
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
+                  ),
+                ]
               : null,
         ),
         child: Text(
@@ -1288,11 +1379,10 @@ class _BodegeroHistorySegments extends StatelessWidget {
               final columns = options.length >= 5
                   ? (width < 310 ? 2 : 3)
                   : options.length >= 4 && width < 320
-                      ? 2
-                      : options.length;
+                  ? 2
+                  : options.length;
               const spacing = 4.0;
-              final buttonWidth =
-                  (width - spacing * (columns - 1)) / columns;
+              final buttonWidth = (width - spacing * (columns - 1)) / columns;
               return Wrap(
                 spacing: spacing,
                 runSpacing: spacing,
@@ -1305,4 +1395,3 @@ class _BodegeroHistorySegments extends StatelessWidget {
           ),
   );
 }
-

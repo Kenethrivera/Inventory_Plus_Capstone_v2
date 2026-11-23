@@ -78,12 +78,12 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
   bool _autoClaimErrorShown = false;
   String? _selectedOrderId;
   String _search = '';
-  Uint8List? _photoJpeg;
+  Uint8List? _truckPhotoJpeg;
+  Uint8List? _goodsPhotoJpeg;
   CustomerOrder? _completedOrder;
   bool _busy = false;
   bool _photoPreparing = false;
   bool _clockBusy = false;
-  bool _changingBreak = false;
   MapViewStyle _loadingMapStyle = MapViewStyle.twoD;
   int _tabIndex = 0;
   int _lastMainTabIndex = 0;
@@ -121,7 +121,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     final presence = widget.presenceService;
     if (presence == null ||
         !presence.isStarted ||
-        presence.isOnBreak ||
         !widget.controller.hasUsableOrdersSnapshot ||
         widget.controller.currentUserId != presence.userId ||
         widget.controller.activeLocationId != presence.locationId) {
@@ -154,7 +153,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           if (!mounted ||
               presence == null ||
               !presence.isStarted ||
-              presence.isOnBreak) {
+              widget.controller.currentUserId != presence.userId) {
             break;
           }
           attemptedOrderIds.add(order.id);
@@ -220,29 +219,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value)));
   }
 
-  Future<void> _toggleBreak() async {
-    final presence = widget.presenceService;
-    if (presence == null ||
-        !presence.isStarted ||
-        _changingBreak ||
-        _busy ||
-        _clockBusy) {
-      return;
-    }
-    setState(() => _changingBreak = true);
-    try {
-      await presence.setOnBreak(!presence.isOnBreak);
-    } on StateError catch (error) {
-      if (mounted) AppToast.error(context, error.message);
-    } catch (_) {
-      if (mounted) {
-        AppToast.error(context, 'Could not update your availability.');
-      }
-    } finally {
-      if (mounted) setState(() => _changingBreak = false);
-    }
-  }
-
   Widget _availabilityChip(StaffPresenceService presence) => AnimatedBuilder(
     animation: presence,
     builder: (context, _) => StreamBuilder<List<CustomerOrder>>(
@@ -256,7 +232,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
             0;
         final availability = resolveStaffAvailability(
           isOnline: presence.isStarted,
-          isOnBreak: presence.isOnBreak,
+          isOnBreak: false,
           isHelper: false,
           isBodegero: true,
           activeOrders: activeOrders,
@@ -264,7 +240,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         );
         final label = switch (availability) {
           StaffAvailability.offline => 'Offline',
-          StaffAvailability.onBreak => 'On break',
+          StaffAvailability.onBreak => 'Offline',
           StaffAvailability.preparing => 'Preparing',
           StaffAvailability.loading => 'Loading',
           StaffAvailability.available => 'Available',
@@ -277,15 +253,8 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         };
         return Padding(
           padding: const EdgeInsets.only(right: 4),
-          child: ActionChip(
-            tooltip: presence.isOnBreak
-                ? 'Switch to Available'
-                : 'Switch to On break',
-            onPressed: _changingBreak || _busy || _clockBusy || !presence.isStarted
-                ? null
-                : _toggleBreak,
+          child: Chip(
             backgroundColor: background,
-            disabledColor: const Color(0xFF45413E),
             side: BorderSide.none,
             shape: const StadiumBorder(),
             label: Row(
@@ -319,10 +288,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   Future<bool> _open(CustomerOrder order) async {
     if (_busy || _clockBusy) return false;
-    if (widget.presenceService?.isOnBreak == true) {
-      AppToast.error(context, 'Switch to Available before loading an order.');
-      return false;
-    }
     order = widget.controller.orderById(order.id) ?? order;
     if ((order.status != 'pending' && order.status != 'solo_picking') ||
         order.loadingVerifiedAt != null ||
@@ -357,10 +322,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       }
     }
     if (!mounted) return false;
-    if (widget.presenceService?.isOnBreak == true) {
-      AppToast.error(context, 'Switch to Available before loading an order.');
-      return false;
-    }
     setState(() => _clockBusy = true);
     try {
       await widget.controller.startOrderLoadingClock(order.id);
@@ -368,7 +329,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     } catch (error) {
       if (error.toString().contains('bodegero_unavailable')) {
         if (mounted) {
-          AppToast.error(context, 'Switch to Available before loading an order.');
+          AppToast.error(context, 'This order is unavailable for loading.');
         }
       } else {
         _message('Could not start the loading timer: $error');
@@ -377,15 +338,16 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     } finally {
       if (mounted) setState(() => _clockBusy = false);
     }
-    _truckController.clear();
+    _truckController.text = order.truckIdentifier ?? '';
     setState(() {
       _selectedOrderId = order.id;
       _completedOrder = null;
-      _photoJpeg = null;
+      _truckPhotoJpeg = null;
+      _goodsPhotoJpeg = null;
     });
     final presence = widget.presenceService;
     if (presence != null) {
-      unawaited(presence.setWorkMode(staffLoadingModule));
+      unawaited(presence.setWorkMode(_tabIndex == 0 ? staffLoadingModule : null));
     }
     return true;
   }
@@ -452,7 +414,9 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                 order.id,
                 expected.productId,
               );
-              _message('${expected.productName} verified. Load the ordered quantity.');
+              _message(
+                '${expected.productName} verified. Load the ordered quantity.',
+              );
             } catch (error) {
               _message('Could not verify this item: $error');
             } finally {
@@ -464,7 +428,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     );
   }
 
-  Future<void> _capturePhoto() async {
+  Future<void> _capturePhoto({required bool truckIdentifier}) async {
     if (_photoPreparing || _busy) return;
     final source = await _choosePhotoSource();
     if (source == null || !mounted) return;
@@ -493,7 +457,15 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       }
       final bytes = await loading_proof_photo
           .prepareLoadingProofPhotoFromPicker(image);
-      if (mounted) setState(() => _photoJpeg = bytes);
+      if (mounted) {
+        setState(() {
+          if (truckIdentifier) {
+            _truckPhotoJpeg = bytes;
+          } else {
+            _goodsPhotoJpeg = bytes;
+          }
+        });
+      }
     } catch (error) {
       _message('Photo capture failed: $error');
     } finally {
@@ -647,8 +619,10 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       return;
     }
     final plate = _truckController.text.trim();
-    if (plate.isEmpty || _photoJpeg == null) {
-      _message('Enter the truck plate and capture a loading photo.');
+    if (plate.isEmpty || _truckPhotoJpeg == null || _goodsPhotoJpeg == null) {
+      _message(
+        'The cashier must provide the truck identifier; capture both proof photos.',
+      );
       return;
     }
     final quantities = <String, double>{
@@ -660,7 +634,8 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         orderId: order.id,
         truckPlate: plate,
         loadedQuantities: quantities,
-        photoJpeg: _photoJpeg!,
+        truckPhotoJpeg: _truckPhotoJpeg!,
+        goodsPhotoJpeg: _goodsPhotoJpeg!,
       );
       if (!mounted) return;
       final notifications = NotificationProvider.maybeOf(context);
@@ -672,7 +647,8 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       setState(() {
         _selectedOrderId = null;
         _completedOrder = updated;
-        _photoJpeg = null;
+        _truckPhotoJpeg = null;
+        _goodsPhotoJpeg = null;
       });
       final presence = widget.presenceService;
       if (presence != null) {
@@ -722,68 +698,72 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     return PreferredSize(
       preferredSize: Size.fromHeight(
         (width < 600 ? 64.0 : 66.0) +
-        (storeHoursBelow ? 34.0 : 0.0) +
-        (mobileCountdown ? 34.0 : 0.0),
+            (storeHoursBelow ? 34.0 : 0.0) +
+            (mobileCountdown ? 34.0 : 0.0),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           StaffRoleHeader(
-        userName: name,
-        tabs: const ['Queue', 'Map', 'History', 'Request'],
-        selectedTab: _tabIndex,
-        onTabSelected: _selectTab,
-        onProfile: () {
-          // BODEGERO_PROFILE_NAV_PARITY_V1: The main app opens the shared
-          // profile dialog on web/desktop, and a push route with back arrow
-          // on mobile. Do not replace the active queue tab or show bottom
-          // navigation behind the mobile profile.
-          final openSharedProfile = widget.onProfile;
-          if (openSharedProfile != null) {
-            openSharedProfile();
-            return;
-          }
-          // Preserve existing behavior for legacy/standalone callers.
-          setState(() {
-            _tabIndex = 4;
-            _visitedTabs.add(4);
-          });
-          widget.onModuleChanged?.call('Profile');
-          final presence = widget.presenceService;
-          if (presence != null) {
-            unawaited(presence.setWorkMode(null));
-          }
-        },
-        onLogout: widget.onLogout,
-        // STAFF_STORE_HOURS_HEADER_FIX: Show inline only on wide desktop.
-        extra: widget.storeHours,
-        availability: widget.presenceService == null
-            ? null
-            : _availabilityChip(widget.presenceService!),
-        notifications: (desktop && countdown != null) ||
-                NotificationProvider.maybeOf(context) != null
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (desktop && countdown != null) ...[
-                    countdown,
-                    const SizedBox(width: 4),
-                  ],
-                  if (NotificationProvider.maybeOf(context) != null)
-                    NotificationBell(
-                iconColor: _ink,
-                helperMobilePanel: true,
-                isActionable: (notification) =>
-                    (notification.type == NotificationType.newOrder ||
-                        notification.type == NotificationType.orderAssigned) &&
-                    (notification.payload['orderId']?.toString().isNotEmpty ??
-                        false),
-                onNotificationSelected: _openNotifiedLoadingOrder,
-              ),
-                ],
-              )
-            : null,
-        showTabs: desktop,
+            userName: name,
+            tabs: const ['Queue', 'Map', 'History', 'Request'],
+            selectedTab: _tabIndex,
+            onTabSelected: _selectTab,
+            onProfile: () {
+              // BODEGERO_PROFILE_NAV_PARITY_V1: The main app opens the shared
+              // profile dialog on web/desktop, and a push route with back arrow
+              // on mobile. Do not replace the active queue tab or show bottom
+              // navigation behind the mobile profile.
+              final openSharedProfile = widget.onProfile;
+              if (openSharedProfile != null) {
+                openSharedProfile();
+                return;
+              }
+              // Preserve existing behavior for legacy/standalone callers.
+              setState(() {
+                _tabIndex = 4;
+                _visitedTabs.add(4);
+              });
+              widget.onModuleChanged?.call('Profile');
+              final presence = widget.presenceService;
+              if (presence != null) {
+                unawaited(presence.setWorkMode(null));
+              }
+            },
+            onLogout: widget.onLogout,
+            // STAFF_STORE_HOURS_HEADER_FIX: Show inline only on wide desktop.
+            extra: widget.storeHours,
+            availability: widget.presenceService == null
+                ? null
+                : _availabilityChip(widget.presenceService!),
+            notifications:
+                (desktop && countdown != null) ||
+                    NotificationProvider.maybeOf(context) != null
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (desktop && countdown != null) ...[
+                        countdown,
+                        const SizedBox(width: 4),
+                      ],
+                      if (NotificationProvider.maybeOf(context) != null)
+                        NotificationBell(
+                          iconColor: _ink,
+                          helperMobilePanel: true,
+                          isActionable: (notification) =>
+                              (notification.type == NotificationType.newOrder ||
+                                  notification.type ==
+                                      NotificationType.orderAssigned) &&
+                              (notification.payload['orderId']
+                                      ?.toString()
+                                      .isNotEmpty ??
+                                  false),
+                          onNotificationSelected: _openNotifiedLoadingOrder,
+                        ),
+                    ],
+                  )
+                : null,
+            showTabs: desktop,
           ),
           // STAFF_STORE_HOURS_HEADER_FIX: Real store hours on mobile/tablet.
           if (storeHoursBelow)
@@ -867,9 +847,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: _busy || _clockBusy
-            ? null
-            : () => unawaited(_open(order)),
+        onTap: _busy || _clockBusy ? null : () => unawaited(_open(order)),
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -980,9 +958,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: _busy || _clockBusy
-            ? null
-            : () => unawaited(_open(order)),
+        onTap: _busy || _clockBusy ? null : () => unawaited(_open(order)),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1027,41 +1003,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     );
   }
 
-  Widget _breakNotice({required bool compact}) {
-    final presence = widget.presenceService;
-    if (presence == null) return const SizedBox.shrink();
-    return AnimatedBuilder(
-      animation: presence,
-      builder: (context, _) {
-        if (!presence.isOnBreak) return const SizedBox.shrink();
-        return Container(
-          margin: EdgeInsets.only(bottom: compact ? 20 : 24),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF3D4),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Row(
-            children: [
-              Icon(LucideIcons.coffee, size: 18, color: Color(0xFFA95700)),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  "You're on break. New heavy orders won't be auto-assigned to you until you switch back to Available.",
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF473013),
-                    fontFamily: _font,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Widget _queue(List<CustomerOrder> orders) {
     final myId = widget.controller.currentUserId;
     final matching = orders
@@ -1101,7 +1042,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _breakNotice(compact: true),
                     Row(
                       children: [
                         const Expanded(
@@ -1233,7 +1173,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _breakNotice(compact: false),
               Row(
                 children: [
                   const Expanded(
@@ -1397,51 +1336,58 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     final verified = item.heavyVerified;
     final Widget scanAction = verified
         ? compact
-            ? const Tooltip(
-                message: 'QR verified',
-                child: Icon(
-                  LucideIcons.circleCheck,
-                  size: 22,
-                  color: Color(0xFF168047),
-                ),
-              )
-            : const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(LucideIcons.circleCheck, size: 18, color: Color(0xFF168047)),
-                  SizedBox(width: 7),
-                  Text('QR verified', style: TextStyle(
+              ? const Tooltip(
+                  message: 'QR verified',
+                  child: Icon(
+                    LucideIcons.circleCheck,
+                    size: 22,
                     color: Color(0xFF168047),
-                    fontWeight: FontWeight.w700,
-                    fontFamily: _font,
-                  )),
-                ],
-              )
-        : compact
-            ? SizedBox(
-                width: 44,
-                height: 44,
-                child: IconButton.filled(
-                  tooltip: 'Scan shelf QR',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-                  onPressed: _busy ? null : () => _scan(order, item),
-                  icon: const Icon(LucideIcons.scanLine, size: 20),
-                  style: IconButton.styleFrom(backgroundColor: _ink),
-                ),
-              )
-            : FilledButton.icon(
-                onPressed: _busy ? null : () => _scan(order, item),
-                icon: const Icon(LucideIcons.scanLine, size: 17),
-                label: const Text('Scan shelf QR'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _ink,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(9),
                   ),
-                ),
-              );
+                )
+              : const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      LucideIcons.circleCheck,
+                      size: 18,
+                      color: Color(0xFF168047),
+                    ),
+                    SizedBox(width: 7),
+                    Text(
+                      'QR verified',
+                      style: TextStyle(
+                        color: Color(0xFF168047),
+                        fontWeight: FontWeight.w700,
+                        fontFamily: _font,
+                      ),
+                    ),
+                  ],
+                )
+        : compact
+        ? SizedBox(
+            width: 44,
+            height: 44,
+            child: IconButton.filled(
+              tooltip: 'Scan shelf QR',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+              onPressed: _busy ? null : () => _scan(order, item),
+              icon: const Icon(LucideIcons.scanLine, size: 20),
+              style: IconButton.styleFrom(backgroundColor: _ink),
+            ),
+          )
+        : FilledButton.icon(
+            onPressed: _busy ? null : () => _scan(order, item),
+            icon: const Icon(LucideIcons.scanLine, size: 17),
+            label: const Text('Scan shelf QR'),
+            style: FilledButton.styleFrom(
+              backgroundColor: _ink,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(9),
+              ),
+            ),
+          );
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -1539,7 +1485,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     );
   }
 
-  Widget _proofCard() => Container(
+  Widget _proofCard(CustomerOrder order) => Container(
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
       color: Colors.white,
@@ -1568,52 +1514,81 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         ),
         const SizedBox(height: 6),
         const Text(
-          'Record the truck and photograph the goods after loading.',
+          'Follow the cashier instructions and photograph both proofs.',
           style: TextStyle(color: _muted, fontSize: 13, fontFamily: _font),
         ),
         const SizedBox(height: 16),
         TextField(
           controller: _truckController,
-          maxLength: 32,
-          enabled: !_busy,
-          onChanged: (_) => setState(() {}),
+          readOnly: true,
           decoration: InputDecoration(
-            labelText: 'Truck plate / identifier',
+            labelText: 'Truck plate / identifier from cashier',
             prefixIcon: const Icon(LucideIcons.truck, size: 18),
             filled: true,
             fillColor: const Color(0xFFFAF9F7),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
-        OutlinedButton.icon(
-          onPressed: _busy || _photoPreparing ? null : _capturePhoto,
-          icon: const Icon(LucideIcons.camera, size: 18),
-          label: Text(
-            _photoPreparing
-                ? 'Preparing photo…'
-                : _photoJpeg == null
-                ? 'Capture loaded goods'
-                : 'Retake photo',
-          ),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _orange,
-            side: const BorderSide(color: _line),
-          ),
-        ),
-        if (_photoJpeg != null) ...[
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Image.memory(
-              _photoJpeg!,
-              height: 190,
-              width: double.infinity,
-              fit: BoxFit.contain,
-            ),
-          ),
+        if (order.bodegeroNote?.isNotEmpty == true) ...[
+          const SizedBox(height: 10),
+          Text('Cashier note: ${order.bodegeroNote}'),
         ],
+        _proofPhotoField(
+          title: '1. Truck identifier photo',
+          photo: _truckPhotoJpeg,
+          truckIdentifier: true,
+        ),
+        const SizedBox(height: 16),
+        _proofPhotoField(
+          title: '2. Loaded items and quantities photo',
+          photo: _goodsPhotoJpeg,
+          truckIdentifier: false,
+        ),
       ],
     ),
+  );
+
+  Widget _proofPhotoField({
+    required String title,
+    required Uint8List? photo,
+    required bool truckIdentifier,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 8),
+      OutlinedButton.icon(
+        onPressed: _busy || _photoPreparing
+            ? null
+            : () => _capturePhoto(truckIdentifier: truckIdentifier),
+        icon: const Icon(LucideIcons.camera, size: 18),
+        label: Text(
+          _photoPreparing
+              ? 'Preparing photo…'
+              : photo == null
+              ? (truckIdentifier
+                    ? 'Capture truck photo'
+                    : 'Capture goods photo')
+              : 'Retake photo',
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _orange,
+          side: const BorderSide(color: _line),
+        ),
+      ),
+      if (photo != null) ...[
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.memory(
+            photo,
+            height: 190,
+            width: double.infinity,
+            fit: BoxFit.contain,
+          ),
+        ),
+      ],
+    ],
   );
 
   Widget _loadingMapHeader({required double fontSize}) {
@@ -1646,7 +1621,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     final scanned = items.where((item) => item.heavyVerified).length;
     final allScanned = scanned == items.length;
     final truckReady = _truckController.text.trim().isNotEmpty;
-    final photoReady = _photoJpeg != null;
+    final photoReady = _truckPhotoJpeg != null && _goodsPhotoJpeg != null;
     final canFinish =
         order.assignedBodegeroId != null &&
         !_photoPreparing &&
@@ -1660,7 +1635,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         : !allScanned
         ? 'Scan ${items.length - scanned} more ${items.length - scanned == 1 ? 'item' : 'items'}'
         : !truckReady || !photoReady
-        ? 'Add truck and photo'
+        ? 'Add truck and both photos'
         : 'Confirm loaded onto truck';
     final markers = <PickStopMarker>[];
     for (var i = 0; i < items.length; i++) {
@@ -1693,9 +1668,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
             children: [
               IconButton(
                 tooltip: 'Back to queue',
-                onPressed: _busy
-                    ? null
-                    : _closeLoadingChecklist,
+                onPressed: _busy ? null : _closeLoadingChecklist,
                 icon: const Icon(LucideIcons.arrowLeft, color: _muted),
               ),
               const SizedBox(width: 4),
@@ -1814,7 +1787,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                       for (var i = 0; i < items.length; i++)
                         _itemCard(order, items[i], i + 1),
                       const SizedBox(height: 8),
-                      _proofCard(),
+                      _proofCard(order),
                     ],
                   ),
                 ),
@@ -1876,15 +1849,18 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
         !_photoPreparing &&
         allScanned &&
         _truckController.text.trim().isNotEmpty &&
-        _photoJpeg != null;
+        _truckPhotoJpeg != null &&
+        _goodsPhotoJpeg != null;
     final nextLabel = _busy
         ? 'Saving loading proof…'
         : _photoPreparing
         ? 'Preparing photo…'
         : !allScanned
         ? 'Scan ${items.length - scanned} more ${items.length - scanned == 1 ? 'item' : 'items'}'
-        : _truckController.text.trim().isEmpty || _photoJpeg == null
-        ? 'Add truck and photo'
+        : _truckController.text.trim().isEmpty ||
+              _truckPhotoJpeg == null ||
+              _goodsPhotoJpeg == null
+        ? 'Add truck and both photos'
         : 'Confirm loaded onto truck';
     final markers = <PickStopMarker>[];
     for (var i = 0; i < items.length; i++) {
@@ -1917,9 +1893,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
             children: [
               IconButton(
                 tooltip: 'Back to queue',
-                onPressed: _busy
-                    ? null
-                    : _closeLoadingChecklist,
+                onPressed: _busy ? null : _closeLoadingChecklist,
                 icon: const Icon(LucideIcons.arrowLeft),
               ),
               const SizedBox(width: 18),
@@ -2024,7 +1998,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                             for (var i = 0; i < items.length; i++)
                               _itemCard(order, items[i], i + 1),
                             const SizedBox(height: 8),
-                            _proofCard(),
+                            _proofCard(order),
                           ],
                         ),
                       ),
@@ -2248,11 +2222,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
     return ColoredBox(
       color: Colors.white,
-      child: SafeArea(
-        top: true,
-        bottom: false,
-        child: workspace,
-      ),
+      child: SafeArea(top: true, bottom: false, child: workspace),
     );
   }
 

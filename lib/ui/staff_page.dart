@@ -886,7 +886,7 @@ class _StaffPageState extends State<StaffPage> {
 
     final availability = resolveStaffAvailability(
       isOnline: online,
-      isOnBreak: (helper || bodegero) && (presence?.isUserOnBreak(id) ?? false),
+      isOnBreak: false,
       isHelper: helper,
       isBodegero: bodegero,
       activeOrders: _activeOrderCounts[id] ?? 0,
@@ -895,7 +895,7 @@ class _StaffPageState extends State<StaffPage> {
 
     final label = switch (availability) {
       StaffAvailability.offline => 'Offline',
-      StaffAvailability.onBreak => 'On break',
+      StaffAvailability.onBreak => 'Offline',
       StaffAvailability.preparing => 'Preparing',
       StaffAvailability.loading => 'Loading',
       StaffAvailability.available => 'Available',
@@ -903,7 +903,7 @@ class _StaffPageState extends State<StaffPage> {
 
     final color = switch (availability) {
       StaffAvailability.offline => _muted,
-      StaffAvailability.onBreak => const Color(0xFF9A5B00),
+      StaffAvailability.onBreak => _muted,
       StaffAvailability.preparing => _orange,
       StaffAvailability.loading => _orange,
       StaffAvailability.available => _green,
@@ -1261,18 +1261,20 @@ class _StaffPageState extends State<StaffPage> {
               border: Border.all(color: _line),
               borderRadius: BorderRadius.circular(9),
             ),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                SelectableText(
-                  password,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
+                Expanded(
+                  child: SelectableText(
+                    password,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 8),
                 TextButton.icon(
                   onPressed: () async {
                     await Clipboard.setData(ClipboardData(text: password));

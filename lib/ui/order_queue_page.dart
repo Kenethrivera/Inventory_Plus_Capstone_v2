@@ -98,7 +98,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
     final presence = widget.presenceService;
     if (presence == null ||
         !presence.isStarted ||
-        presence.isOnBreak ||
         !widget.controller.hasUsableOrdersSnapshot ||
         widget.controller.currentUserId != presence.userId ||
         widget.controller.activeLocationId != presence.locationId) {
@@ -129,7 +128,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
           if (!mounted ||
               presence == null ||
               !presence.isStarted ||
-              presence.isOnBreak) {
+              widget.controller.currentUserId != presence.userId) {
             break;
           }
           attemptedOrderIds.add(order.id);
@@ -222,11 +221,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   bool _openAssignedOrderChecklist(CustomerOrder order) {
 
-    if (widget.presenceService?.isOnBreak == true) {
-      AppToast.error(context, 'Switch to Available before preparing an order.');
-      return false;
-    }
-    
     final CustomerOrder? latestOrder = widget.controller.orderById(order.id);
 
     if (latestOrder == null ||
@@ -336,45 +330,9 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
     const ink = Color(0xFF171717);
     const muted = Color(0xFF78716C);
     const border = Color(0xFFE1DCD5);
-    final presence = widget.presenceService;
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
       children: [
-        if (presence != null)
-          AnimatedBuilder(
-            animation: presence,
-            builder: (context, _) => presence.isOnBreak
-                ? Container(
-                    margin: const EdgeInsets.only(bottom: 30),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF2D0),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(
-                          LucideIcons.coffee,
-                          size: 18,
-                          color: Color(0xFFA65A00),
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            "You're on break. New orders won't be auto-assigned to you until you switch back to Available.",
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: ink,
-                              height: 1.45,
-                              fontFamily: _fontFam,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
         Row(
           children: [
             const Expanded(
@@ -615,9 +573,7 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: claiming || widget.presenceService?.isOnBreak == true
-            ? null
-            : () => unawaited(_claimOrder(order)),
+        onTap: claiming ? null : () => unawaited(_claimOrder(order)),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -962,48 +918,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (widget.presenceService != null)
-                  AnimatedBuilder(
-                    animation: widget.presenceService!,
-                    builder: (context, _) {
-                      if (!widget.presenceService!.isOnBreak) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 20),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFF3D4),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(
-                                LucideIcons.coffee,
-                                size: 18,
-                                color: Color(0xFFA95700),
-                              ),
-                              SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  "You're on break. New orders won't be auto-assigned to you until you switch back to Available.",
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Color(0xFF473013),
-                                    fontFamily: _fontFam,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
                 const Text(
                   'Order queue',
                   style: TextStyle(
@@ -1125,38 +1039,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (widget.presenceService != null)
-                    AnimatedBuilder(
-                      animation: widget.presenceService!,
-                      builder: (context, _) {
-                        if (!widget.presenceService!.isOnBreak) {
-                          return const SizedBox.shrink();
-                        }
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 24),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 18,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFF3D4),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(LucideIcons.coffee, color: Color(0xFFA95700)),
-                              SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  "You're on break. New orders won't be auto-assigned to you until you switch back to Available.",
-                                  style: TextStyle(color: Color(0xFF473013), fontFamily: _fontFam),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
                   Row(
                     children: [
                       const Expanded(

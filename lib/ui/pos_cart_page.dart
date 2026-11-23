@@ -17,6 +17,7 @@ import 'widgets/app_toast.dart';
 import 'widgets/app_dialog.dart';
 import 'widgets/helper_assignment_selector.dart';
 import 'widgets/order_checklist_view.dart';
+import 'widgets/order_details_drawer.dart';
 import 'widgets/cashier_order_preparation.dart';
 import 'widgets/gcash_qr_image.dart';
 import 'widgets/app_styled_dropdown.dart';
@@ -85,6 +86,11 @@ class _PosCartPageState extends State<PosCartPage> {
   String _searchQuery = '';
   final TextEditingController _productSearchController =
       TextEditingController();
+  final TextEditingController _truckIdentifierController =
+      TextEditingController();
+  final TextEditingController _bodegeroNoteController = TextEditingController();
+  final Set<String> _reviewedLoadingProofOrderIds = <String>{};
+  final ValueNotifier<int> _proofReviewVersion = ValueNotifier<int>(0);
   String _selectedCategory = 'All';
   final Map<String, double> _cart = {};
   bool _isProcessingCart = false;
@@ -130,6 +136,9 @@ class _PosCartPageState extends State<PosCartPage> {
   @override
   void dispose() {
     _productSearchController.dispose();
+    _truckIdentifierController.dispose();
+    _bodegeroNoteController.dispose();
+    _proofReviewVersion.dispose();
     unawaited(_runtimeSettingsSubscription?.cancel());
     unawaited(_discountApprovalSubscription?.cancel());
     widget.controller.clearDiscountApprovalTracking();
@@ -224,12 +233,20 @@ class _PosCartPageState extends State<PosCartPage> {
       if (_cart.isEmpty) {
         _discountValue = 0.0;
         _discountReason = '';
+        _truckIdentifierController.clear();
+        _bodegeroNoteController.clear();
       }
     });
   }
 
   Future<void> _processOrder() async {
     if (_cart.isEmpty || _isProcessingCart) return;
+    if (_cartHasHeavyItems &&
+        (_truckIdentifierController.text.trim().isEmpty ||
+            _bodegeroNoteController.text.trim().isEmpty)) {
+      AppToast.error(context, 'Add the truck identifier and Bodegero note.');
+      return;
+    }
     final subtotalBeforeDiscount = _calculateTotal();
     if (_requiresDiscountApproval(subtotalBeforeDiscount) &&
         !_hasUsableDiscountApproval(subtotalBeforeDiscount)) {
@@ -254,10 +271,13 @@ class _PosCartPageState extends State<PosCartPage> {
       final double discountAmt = discount.discountAmount;
       final double totalDue = discount.total;
       final assignedHelper = _soloMode || !_cartHasLightItems
-          ? null : _selectedEligibleHelper();
+          ? null
+          : _selectedEligibleHelper();
       final assignedBodegero = _soloMode || !_cartHasHeavyItems
-          ? null : _selectedEligibleBodegero();
-      if (_cartHasHeavyItems && _selectedBodegeroId != null &&
+          ? null
+          : _selectedEligibleBodegero();
+      if (_cartHasHeavyItems &&
+          _selectedBodegeroId != null &&
           assignedBodegero == null) {
         throw StateError(
           'Selected Bodegero is no longer available. Select Auto-assign or another available Bodegero.',
@@ -279,6 +299,8 @@ class _PosCartPageState extends State<PosCartPage> {
             soloHandled: _soloMode,
             assignedHelper: assignedHelper,
             assignedBodegero: assignedBodegero,
+            truckIdentifier: _truckIdentifierController.text.trim(),
+            bodegeroNote: _bodegeroNoteController.text.trim(),
           );
       if (createdOrder == null) {
         throw Exception('Order could not be created.');
@@ -331,6 +353,8 @@ class _PosCartPageState extends State<PosCartPage> {
         _discountReason = '';
         _selectedHelperId = null;
         _selectedBodegeroId = null;
+        _truckIdentifierController.clear();
+        _bodegeroNoteController.clear();
       });
 
       if (_soloMode) {
@@ -421,6 +445,11 @@ class _PosCartPageState extends State<PosCartPage> {
     CustomerOrder order, {
     VoidCallback? onCompleted,
   }) async {
+    if (order.items.any((item) => item.requiresLoading) &&
+        !_reviewedLoadingProofOrderIds.contains(order.id)) {
+      AppToast.error(context, 'Review the truck and item photos first.');
+      return;
+    }
     final double orderSubtotal = order.totalAmount + order.discountAmount;
     double orderQty = 0;
     for (final item in order.items) {
@@ -1121,6 +1150,145 @@ class _PosCartPageState extends State<PosCartPage> {
         },
       ),
     );
+  }
+
+  Future<void> _showLoadingInstructionsDialog(BuildContext context) async {
+    final truckDraft = TextEditingController(
+      text: _truckIdentifierController.text,
+    );
+    final noteDraft = TextEditingController(text: _bodegeroNoteController.text);
+    String? error;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, updateDialog) => Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: SizedBox(
+            width: 360,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Loading instructions',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: _cashierInk,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(LucideIcons.x, size: 20),
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Send the truck identifier and loading note to Bodegero.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF655C56)),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: truckDraft,
+                    maxLength: 32,
+                    onChanged: (_) => updateDialog(() => error = null),
+                    decoration: InputDecoration(
+                      labelText: 'Truck plate / identifier',
+                      hintText: 'Enter the truck identifier',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: _cashierAccent),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: noteDraft,
+                    maxLength: 240,
+                    minLines: 2,
+                    maxLines: 3,
+                    onChanged: (_) => updateDialog(() => error = null),
+                    decoration: InputDecoration(
+                      labelText: 'Note to Bodegero',
+                      hintText: 'What should be loaded and verified?',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: _cashierAccent),
+                      ),
+                    ),
+                  ),
+                  if (error != null) ...[
+                    Text(
+                      error!,
+                      style: const TextStyle(
+                        color: Colors.redAccent,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _cashierPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () {
+                        if (truckDraft.text.trim().isEmpty ||
+                            noteDraft.text.trim().isEmpty) {
+                          updateDialog(
+                            () => error =
+                                'Enter both the truck identifier and note.',
+                          );
+                          return;
+                        }
+                        Navigator.pop(dialogContext, true);
+                      },
+                      child: const Text(
+                        'Save instructions',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (saved == true && mounted) {
+      setState(() {
+        _truckIdentifierController.text = truckDraft.text.trim();
+        _bodegeroNoteController.text = noteDraft.text.trim();
+      });
+    }
   }
 
   Future<_CompletedPayment?> _showPaymentDialog({
@@ -3538,6 +3706,35 @@ class _PosCartPageState extends State<PosCartPage> {
                                       ),
                                       children: [
                                         CashierOrderPreparation(order: o),
+                                        if (o.loadingVerifiedAt != null &&
+                                            o.items.any(
+                                              (item) => item.requiresLoading,
+                                            )) ...[
+                                          const SizedBox(height: 10),
+                                          OutlinedButton.icon(
+                                            onPressed: () async {
+                                              final reviewed =
+                                                  await OrderDetailsDrawer.showLoadingProof(
+                                                    dialogContext,
+                                                    order: o,
+                                                    loader: widget
+                                                        .controller
+                                                        .getOrderLoadingProof,
+                                                  );
+                                              if (reviewed && mounted) {
+                                                _reviewedLoadingProofOrderIds
+                                                    .add(o.id);
+                                                _proofReviewVersion.value++;
+                                              }
+                                            },
+                                            icon: const Icon(
+                                              Icons.photo_outlined,
+                                            ),
+                                            label: const Text(
+                                              'Review truck and item photos',
+                                            ),
+                                          ),
+                                        ],
                                         const SizedBox(height: 10),
                                         ...o.items.map(
                                           (item) => CashierOrderItemRow(
@@ -3547,41 +3744,55 @@ class _PosCartPageState extends State<PosCartPage> {
                                         ),
                                         if (isReady) ...[
                                           const SizedBox(height: 16),
-                                          SizedBox(
-                                            width: double.infinity,
-                                            height: 44,
-                                            child: ElevatedButton.icon(
-                                              icon: const Icon(
-                                                LucideIcons.check,
-                                                color: Colors.white,
-                                                size: 18,
-                                              ),
-                                              label: const Text(
-                                                'Complete Transaction',
-                                                style: TextStyle(
+                                          ValueListenableBuilder<int>(
+                                            valueListenable:
+                                                _proofReviewVersion,
+                                            builder: (context, _, child) => SizedBox(
+                                              width: double.infinity,
+                                              height: 44,
+                                              child: ElevatedButton.icon(
+                                                icon: const Icon(
+                                                  LucideIcons.check,
                                                   color: Colors.white,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 14,
+                                                  size: 18,
                                                 ),
-                                              ),
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.green,
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                elevation: 0,
-                                              ),
-                                              onPressed: () =>
-                                                  _completeOrderFlow(
-                                                    o,
-                                                    onCompleted: () {
-                                                      if (dialogContext.mounted)
-                                                        Navigator.pop(
-                                                          dialogContext,
-                                                        );
-                                                    },
+                                                label: const Text(
+                                                  'Complete Transaction',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
                                                   ),
+                                                ),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.green,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                  ),
+                                                  elevation: 0,
+                                                ),
+                                                onPressed:
+                                                    o.items.any(
+                                                          (item) => item
+                                                              .requiresLoading,
+                                                        ) &&
+                                                        !_reviewedLoadingProofOrderIds
+                                                            .contains(o.id)
+                                                    ? null
+                                                    : () => _completeOrderFlow(
+                                                        o,
+                                                        onCompleted: () {
+                                                          if (dialogContext
+                                                              .mounted)
+                                                            Navigator.pop(
+                                                              dialogContext,
+                                                            );
+                                                        },
+                                                      ),
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -5334,6 +5545,56 @@ class _PosCartPageState extends State<PosCartPage> {
                     ),
                     const SizedBox(height: 12),
                   ],
+                  if (_cartHasHeavyItems) ...[
+                    InkWell(
+                      onTap: () => _showLoadingInstructionsDialog(context),
+                      borderRadius: BorderRadius.circular(9),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 13,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(9),
+                          border: Border.all(color: _cashierWarmBorder),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _truckIdentifierController.text.isEmpty
+                                  ? LucideIcons.plus
+                                  : LucideIcons.pencil,
+                              size: 16,
+                              color: _cashierMuted,
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Text(
+                                _truckIdentifierController.text.isEmpty
+                                    ? 'Add loading instructions'
+                                    : 'Edit loading instructions · ${_truckIdentifierController.text}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _cashierInk,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              LucideIcons.chevronRight,
+                              size: 16,
+                              color: _cashierMuted,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   _buildHelperAssignmentControl(),
                   const SizedBox(height: 12),
 
@@ -5536,8 +5797,9 @@ class _PosCartPageState extends State<PosCartPage> {
             final bodegeros = presenceService.eligibleBodegerosForAssignment
                 .toList();
             bodegeros.sort((a, b) {
-              final load = (bodegeroWorkloads[a.id] ?? 0)
-                  .compareTo(bodegeroWorkloads[b.id] ?? 0);
+              final load = (bodegeroWorkloads[a.id] ?? 0).compareTo(
+                bodegeroWorkloads[b.id] ?? 0,
+              );
               if (load != 0) return load;
               final aId = BigInt.tryParse(a.id);
               final bId = BigInt.tryParse(b.id);
@@ -5570,11 +5832,14 @@ class _PosCartPageState extends State<PosCartPage> {
       helpers: hasLightItems ? helpers : const <HelperAssignmentCandidate>[],
       workloads: helperWorkloads,
       selectedHelperId: hasLightItems ? _selectedHelperId : null,
-      enabled: hasLightItems && !_isProcessingCart &&
-          widget.presenceService != null,
-      onChanged: hasLightItems ? (id) {
-        if (_selectedHelperId != id) setState(() => _selectedHelperId = id);
-      } : null,
+      enabled:
+          hasLightItems && !_isProcessingCart && widget.presenceService != null,
+      onChanged: hasLightItems
+          ? (id) {
+              if (_selectedHelperId != id)
+                setState(() => _selectedHelperId = id);
+            }
+          : null,
       roleName: 'Helper',
       showInlineLabel: false,
       compact: true,
@@ -5596,23 +5861,24 @@ class _PosCartPageState extends State<PosCartPage> {
       compact: true,
     );
 
-    return LayoutBuilder(builder: (context, constraints) {
-      if (constraints.maxWidth < 300) {
-        // Very narrow panels: avoid overflowing either dropdown.
-        return Column(children: [
-          helper,
-          const SizedBox(height: 8),
-          bodegero,
-        ]);
-      }
-      return Row(children: [
-        Expanded(child: helper),
-        const SizedBox(width: 8),
-        Expanded(child: bodegero),
-      ]);
-    });
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 300) {
+          // Very narrow panels: avoid overflowing either dropdown.
+          return Column(
+            children: [helper, const SizedBox(height: 8), bodegero],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: helper),
+            const SizedBox(width: 8),
+            Expanded(child: bodegero),
+          ],
+        );
+      },
+    );
   }
-
 }
 
 class _DashedDivider extends StatelessWidget {

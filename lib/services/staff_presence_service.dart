@@ -88,18 +88,8 @@ class StaffPresenceService extends ChangeNotifier {
       return;
     }
 
-    // A browser refresh should keep an unfinished break. Explicit logout clears it.
-    if (userRole.toLowerCase() == 'helper' ||
-        userRole.toLowerCase() == 'bodegero') {
-      final existing = await supabase
-          .from('staff_presence')
-          .select('current_module,logged_out_at')
-          .eq('user_id', userId)
-          .maybeSingle();
-      _isOnBreak =
-          existing?['current_module'] == 'On break' &&
-          existing?['logged_out_at'] == null;
-    }
+    // A new session clears any legacy break state left by older clients.
+    _isOnBreak = false;
 
     final now = DateTime.now().toUtc().toIso8601String();
 

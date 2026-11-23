@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inventory_plus/data/inventory.dart';
@@ -6,6 +8,24 @@ import 'package:inventory_plus/ui/models_3d.dart';
 import 'package:inventory_plus/ui/store_map.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+class _ShelfWithItemController extends InventoryController {
+  @override
+  List<InventoryItem> get allItems => [
+    InventoryItem(
+      id: 'item-1',
+      name: 'Item',
+      sku: 'ITEM-1',
+      price: 1,
+      quantity: 1,
+      maxQuantity: 1,
+      category: 'Tools',
+      description: '',
+      imageUrl: '',
+      locationId: 'shelf-1',
+    ),
+  ];
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +36,97 @@ void main() {
       url: 'https://example.supabase.co',
       publishableKey: 'test-publishable-key',
     );
+  });
+
+  testWidgets('2D shelf labels and counts stay upright when rotated', (
+    tester,
+  ) async {
+    final controller = _ShelfWithItemController();
+
+    for (final rotation in [math.pi / 2, math.pi]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 700,
+              height: 450,
+              child: StoreMap(
+                controller: controller,
+                layout: [
+                  MapElement(
+                    id: 'shelf-1',
+                    type: ElementType.shelf,
+                    position: const Offset(80, 80),
+                    size: const Size(160, 50),
+                    rotation: rotation,
+                  ),
+                ],
+                viewStyle: MapViewStyle.twoD,
+                showItemPopup: false,
+                showZoomControls: false,
+                showMobileToolbar: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      for (final label in ['SHELF', '1']) {
+        final text = tester.renderObject<RenderBox>(find.text(label));
+        final transform = text.getTransformTo(null);
+        final angle = math.atan2(transform.entry(1, 0), transform.entry(0, 0));
+        expect(angle.abs(), lessThan(0.001), reason: '$label at $rotation');
+      }
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('selected 3D cashier glow follows the painted model', (
+    tester,
+  ) async {
+    final key = GlobalKey<StoreMapState>();
+    final controller = InventoryController();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 700,
+            height: 450,
+            child: StoreMap(
+              key: key,
+              controller: controller,
+              layout: [
+                MapElement(
+                  id: 'cashier-1',
+                  type: ElementType.cashier,
+                  position: const Offset(80, 80),
+                  size: const Size(180, 64),
+                ),
+              ],
+              mode: MapMode.manage,
+              viewStyle: MapViewStyle.threeD,
+              showZoomControls: false,
+              showMobileToolbar: false,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    key.currentState!.selectManageElement('cashier-1');
+    await tester.pump();
+
+    final glow = find.byKey(const ValueKey('map-selected-outline-cashier-1'));
+    expect(glow, findsOneWidget);
+    final glowPaint = find.descendant(
+      of: glow,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter is CashierPainter,
+      ),
+    );
+    expect(glowPaint, findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('3D selection stays highlighted without resetting zoom or pan', (

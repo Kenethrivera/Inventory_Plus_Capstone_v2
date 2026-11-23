@@ -4054,6 +4054,8 @@ class InventoryController {
     bool soloHandled = false,
     HelperAssignmentCandidate? assignedHelper,
     HelperAssignmentCandidate? assignedBodegero,
+    String? truckIdentifier,
+    String? bodegeroNote,
   }) async {
     final locId = activeLocationId;
     if (locId == null) return null;
@@ -4068,25 +4070,24 @@ class InventoryController {
       // POS_BODEGERO_ASSIGNMENT_V1: use existing checkout RPC for auto;
       // opt into the guarded atomic RPC only for explicit manual selection.
       final rpcParams = <String, dynamic>{
-          'p_session_token': _requireSessionToken(),
-          'p_items': items.map((i) => i.toJson()).toList(growable: false),
-          'p_total_amount': totalAmount,
-          'p_discount_amount': discountAmount,
-          'p_discount_mode': discountMode,
-          'p_discount_value': discountValue,
-          'p_discount_reason': discountReason?.trim(),
-          'p_checkout_token': checkoutToken,
-          'p_discount_approval_request_id': discountApprovalRequestId,
-          'p_solo_handled': soloHandled,
-          'p_assigned_helper_id': initialAssignment['assigned_helper_id'],
-          'p_assigned_helper_name': initialAssignment['assigned_helper_name'],
-          'p_assigned_at': initialAssignment['assigned_at'],
-          'p_assigned_by_admin_id': initialAssignment['assigned_by_admin_id'],
-          'p_assigned_by_admin_name':
-              initialAssignment['assigned_by_admin_name'],
-          'p_payment_mode': paymentMode ?? 'Cash',
-          'p_cash_given': cashGiven,
-          'p_change_amount': changeAmount,
+        'p_session_token': _requireSessionToken(),
+        'p_items': items.map((i) => i.toJson()).toList(growable: false),
+        'p_total_amount': totalAmount,
+        'p_discount_amount': discountAmount,
+        'p_discount_mode': discountMode,
+        'p_discount_value': discountValue,
+        'p_discount_reason': discountReason?.trim(),
+        'p_checkout_token': checkoutToken,
+        'p_discount_approval_request_id': discountApprovalRequestId,
+        'p_solo_handled': soloHandled,
+        'p_assigned_helper_id': initialAssignment['assigned_helper_id'],
+        'p_assigned_helper_name': initialAssignment['assigned_helper_name'],
+        'p_assigned_at': initialAssignment['assigned_at'],
+        'p_assigned_by_admin_id': initialAssignment['assigned_by_admin_id'],
+        'p_assigned_by_admin_name': initialAssignment['assigned_by_admin_name'],
+        'p_payment_mode': paymentMode ?? 'Cash',
+        'p_cash_given': cashGiven,
+        'p_change_amount': changeAmount,
       };
       if (assignedBodegero != null) {
         rpcParams['p_selected_bodegero_id'] = assignedBodegero.id;
@@ -4097,7 +4098,26 @@ class InventoryController {
             : 'create_customer_order_with_bodegero_v1',
         params: rpcParams,
       );
-      return CustomerOrder.fromJson(Map<String, dynamic>.from(response as Map));
+      var order = CustomerOrder.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
+      if (items.any(
+        (item) => findAnyItemById(item.productId)?.requiresLoading == true,
+      )) {
+        final updated = await supabase.rpc(
+          'set_order_loading_instructions_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_order_id': order.id,
+            'p_truck_identifier': truckIdentifier,
+            'p_bodegero_note': bodegeroNote,
+          },
+        );
+        order = CustomerOrder.fromJson(
+          Map<String, dynamic>.from(updated as Map),
+        );
+      }
+      return order;
     } catch (error, stackTrace) {
       _throwCriticalOperationError(
         'Transactional checkout failed',
@@ -4723,7 +4743,7 @@ class InventoryController {
 
   Future<Map<String, dynamic>?> getOrderLoadingProof(String orderId) async {
     final response = await supabase.rpc(
-      'get_order_loading_proof_v1',
+      'get_order_loading_proof_v2',
       params: <String, dynamic>{
         'p_session_token': _requireSessionToken(),
         'p_order_id': orderId,
@@ -4736,16 +4756,18 @@ class InventoryController {
     required String orderId,
     required String truckPlate,
     required Map<String, double> loadedQuantities,
-    required Uint8List photoJpeg,
+    required Uint8List truckPhotoJpeg,
+    required Uint8List goodsPhotoJpeg,
   }) async {
     final response = await supabase.rpc(
-      'finish_order_loading_v1',
+      'finish_order_loading_v2',
       params: <String, dynamic>{
         'p_session_token': _requireSessionToken(),
         'p_order_id': orderId,
         'p_truck_plate': truckPlate,
         'p_loaded_quantities': loadedQuantities,
-        'p_photo_base64': base64Encode(photoJpeg),
+        'p_truck_photo_base64': base64Encode(truckPhotoJpeg),
+        'p_goods_photo_base64': base64Encode(goodsPhotoJpeg),
       },
     );
     final order = _acceptUpdatedOrder(response);

@@ -1698,6 +1698,8 @@ class StoreMapState extends State<StoreMap>
   Widget _buildWidthAdjustmentMenu(MapElement activeEl) {
     final canShrink = canResizeMapElementWidth(activeEl, grow: false);
     final canGrow = canResizeMapElementWidth(activeEl, grow: true);
+    final verticalWall = activeEl.type == ElementType.wall &&
+        activeEl.size.height > activeEl.size.width;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1716,7 +1718,7 @@ class StoreMapState extends State<StoreMap>
         const SizedBox(width: 12),
         _buildActionMenuButton(
           icon: Icons.remove,
-          label: "Dec Left",
+          label: verticalWall ? "Dec Top" : "Dec Left",
           hoverEdge: MapResizeEdge.left,
           color: Colors.orangeAccent,
           onTap: canShrink
@@ -1727,7 +1729,7 @@ class StoreMapState extends State<StoreMap>
         const SizedBox(width: 12),
         _buildActionMenuButton(
           icon: Icons.add,
-          label: "Inc Left",
+          label: verticalWall ? "Inc Top" : "Inc Left",
           hoverEdge: MapResizeEdge.left,
           color: Colors.greenAccent,
           onTap: canGrow
@@ -1739,7 +1741,7 @@ class StoreMapState extends State<StoreMap>
         const SizedBox(width: 12),
         _buildActionMenuButton(
           icon: Icons.remove,
-          label: "Dec Right",
+          label: verticalWall ? "Dec Bottom" : "Dec Right",
           hoverEdge: MapResizeEdge.right,
           color: Colors.orangeAccent,
           onTap: canShrink
@@ -1750,7 +1752,7 @@ class StoreMapState extends State<StoreMap>
         const SizedBox(width: 12),
         _buildActionMenuButton(
           icon: Icons.add,
-          label: "Inc Right",
+          label: verticalWall ? "Inc Bottom" : "Inc Right",
           hoverEdge: MapResizeEdge.right,
           color: Colors.greenAccent,
           onTap: canGrow
@@ -2489,15 +2491,20 @@ class StoreMapState extends State<StoreMap>
         );
         continue;
       }
+      final halfWidth =
+          (fixture.size.width * math.cos(fixture.rotation).abs() +
+              fixture.size.height * math.sin(fixture.rotation).abs()) /
+          2;
+      final halfHeight =
+          (fixture.size.width * math.sin(fixture.rotation).abs() +
+              fixture.size.height * math.cos(fixture.rotation).abs()) /
+          2;
+      final center = fixture.position +
+          Offset(fixture.size.width / 2, fixture.size.height / 2);
       badges.add(
         Positioned(
-          left:
-              fixture.position.dx -
-              minX +
-              fixture.size.width -
-              11 -
-              offset * 24,
-          top: fixture.position.dy - minY - 11,
+          left: center.dx - minX + halfWidth - 11 - offset * 24,
+          top: center.dy - minY - halfHeight - 11,
           child: IgnorePointer(
             child: Semantics(
               label: 'Pick stop ${marker.number}',
@@ -2529,6 +2536,7 @@ class StoreMapState extends State<StoreMap>
   Widget _buildFlatElement(
     ElementType type,
     Size size, {
+    required double rotation,
     bool selected = false,
     bool highlighted = false,
     double highlightPulse = 1,
@@ -2626,17 +2634,20 @@ class StoreMapState extends State<StoreMap>
                 Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: RotatedBox(
-                      quarterTurns: size.height > size.width * 1.8 ? 3 : 0,
-                      child: Text(
-                        displayLabel,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF243244),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
+                    child: Transform.rotate(
+                      angle: -rotation,
+                      child: RotatedBox(
+                        quarterTurns: size.height > size.width * 1.8 ? 3 : 0,
+                        child: Text(
+                          displayLabel,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF243244),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ),
@@ -2652,20 +2663,23 @@ class StoreMapState extends State<StoreMap>
           Positioned(
             top: -9,
             right: -9,
-            child: Container(
-              width: 21,
-              height: 21,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: Color(0xFF171717),
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                '$productCount',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
+            child: Transform.rotate(
+              angle: -rotation,
+              child: Container(
+                width: 21,
+                height: 21,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF171717),
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '$productCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
@@ -2678,7 +2692,7 @@ class StoreMapState extends State<StoreMap>
   /// interaction wrapper — used for the drag/move ghost preview.
   Widget _buildElementVisual(ElementType type, Size size, double rotation) {
     if (widget.viewStyle == MapViewStyle.twoD) {
-      return _buildFlatElement(type, size);
+      return _buildFlatElement(type, size, rotation: rotation);
     }
     final double modelWidth = size.width / 40.0;
     final double modelDepth = size.height / 40.0;
@@ -2980,6 +2994,7 @@ class StoreMapState extends State<StoreMap>
                   builder: (context, child) => _buildFlatElement(
                     el.type,
                     el.size,
+                    rotation: el.rotation,
                     highlighted: true,
                     highlightPulse: _animController.value,
                     label: el.label,
@@ -2991,6 +3006,7 @@ class StoreMapState extends State<StoreMap>
               : _buildFlatElement(
                   el.type,
                   el.size,
+                  rotation: el.rotation,
                   selected: showObjectGlow || isHovered,
                   label: el.label,
                   productCount: widget.controller.allItems
@@ -3004,7 +3020,10 @@ class StoreMapState extends State<StoreMap>
               color: modelPainter == null
                   ? baseColor.withOpacity(0.3)
                   : Colors.transparent,
-              border: !useFootprintOutline && isActive
+              border:
+                  !useFootprintOutline &&
+                      isActive &&
+                      el.type != ElementType.cashier
                   ? Border.all(color: Colors.blue.shade600, width: 3)
                   : null,
             ),
@@ -3039,8 +3058,28 @@ class StoreMapState extends State<StoreMap>
                                   child: paint3DModel(modelPainter),
                                 ),
                               ),
+                            if (showObjectGlow &&
+                                el.type == ElementType.cashier)
+                              AnimatedBuilder(
+                                key: ValueKey('map-selected-outline-$sourceId'),
+                                animation: _animController,
+                                builder: (context, child) => ColorFiltered(
+                                  colorFilter: ColorFilter.mode(
+                                    const Color(0xFFFF9800).withValues(
+                                      alpha:
+                                          0.55 + 0.35 * _animController.value,
+                                    ),
+                                    BlendMode.srcIn,
+                                  ),
+                                  child: Transform.scale(
+                                    scale: 1.035 + 0.01 * _animController.value,
+                                    child: paint3DModel(modelPainter!),
+                                  ),
+                                ),
+                              ),
                             paint3DModel(modelPainter),
-                            if (showObjectGlow)
+                            if (showObjectGlow &&
+                                el.type != ElementType.cashier)
                               AnimatedBuilder(
                                 key: ValueKey('map-selected-outline-$sourceId'),
                                 animation: _animController,
@@ -3104,30 +3143,42 @@ class StoreMapState extends State<StoreMap>
         isActive &&
         _resizePreviewEdge != null) {
       final previewLeft = _resizePreviewEdge == MapResizeEdge.left;
+      final verticalWall =
+          el.type == ElementType.wall && el.size.height > el.size.width;
       shelf = Stack(
         clipBehavior: Clip.none,
         children: [
           shelf,
           Positioned(
-            left: previewLeft ? 0 : null,
-            right: previewLeft ? null : 0,
-            top: 0,
-            bottom: 0,
+            left: verticalWall ? 0 : (previewLeft ? 0 : null),
+            right: verticalWall ? 0 : (previewLeft ? null : 0),
+            top: verticalWall ? (previewLeft ? 0 : null) : 0,
+            bottom: verticalWall ? (previewLeft ? null : 0) : 0,
             child: Container(
-              width: 7,
+              width: verticalWall ? null : 7,
+              height: verticalWall ? 7 : null,
               decoration: BoxDecoration(
                 color: const Color(0xFFC83D08),
-                borderRadius: BorderRadius.horizontal(
-                  left: previewLeft ? const Radius.circular(3) : Radius.zero,
-                  right: previewLeft ? Radius.zero : const Radius.circular(3),
-                ),
+                borderRadius: verticalWall
+                    ? BorderRadius.vertical(
+                        top: previewLeft ? const Radius.circular(3) : Radius.zero,
+                        bottom: previewLeft ? Radius.zero : const Radius.circular(3),
+                      )
+                    : BorderRadius.horizontal(
+                        left: previewLeft ? const Radius.circular(3) : Radius.zero,
+                        right: previewLeft ? Radius.zero : const Radius.circular(3),
+                      ),
               ),
             ),
           ),
           Positioned(
-            left: previewLeft ? -8 : null,
-            right: previewLeft ? null : -8,
-            top: -29,
+            left: verticalWall ? null : (previewLeft ? -8 : null),
+            right: verticalWall
+                ? el.size.width + 8
+                : (previewLeft ? null : -8),
+            top: verticalWall
+                ? (previewLeft ? -10 : el.size.height - 10)
+                : -29,
             child: Transform.rotate(
               angle: -el.rotation,
               child: DecoratedBox(
@@ -3141,7 +3192,9 @@ class StoreMapState extends State<StoreMap>
                     vertical: 4,
                   ),
                   child: Text(
-                    previewLeft ? 'Left edge' : 'Right edge',
+                    verticalWall
+                        ? (previewLeft ? 'Top edge' : 'Bottom edge')
+                        : (previewLeft ? 'Left edge' : 'Right edge'),
                     style: const TextStyle(
                       color: Color(0xFFC83D08),
                       fontSize: 12,

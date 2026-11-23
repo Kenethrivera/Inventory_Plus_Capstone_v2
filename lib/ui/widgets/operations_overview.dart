@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -10,7 +12,7 @@ import '../../logic/order_assignment_status.dart';
 import 'order_details_drawer.dart';
 
 /// The admin landing page. All figures come from the current store snapshots.
-class OperationsOverview extends StatelessWidget {
+class OperationsOverview extends StatefulWidget {
   const OperationsOverview({
     super.key,
     required this.name,
@@ -48,6 +50,48 @@ class OperationsOverview extends StatelessWidget {
   static const muted = Color(0xFF817A75);
   static const line = Color(0xFFE8E3DF);
   static const canvas = Color(0xFFF7F5F3);
+
+  @override
+  State<OperationsOverview> createState() => _OperationsOverviewState();
+}
+
+class _OperationsOverviewState extends State<OperationsOverview> {
+  Timer? _clock;
+
+  @override
+  void initState() {
+    super.initState();
+    _clock = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
+  }
+
+  static const orange = OperationsOverview.orange;
+  static const ink = OperationsOverview.ink;
+  static const muted = OperationsOverview.muted;
+  static const line = OperationsOverview.line;
+  static const canvas = OperationsOverview.canvas;
+
+  String get name => widget.name;
+  List<CustomerOrder> get orders => widget.orders;
+  List<InventoryItem> get items => widget.items;
+  List<InventoryApprovalRequest> get approvals => widget.approvals;
+  int get approvalCount => widget.approvalCount;
+  StaffPresenceService? get presence => widget.presence;
+  VoidCallback get onOrders => widget.onOrders;
+  VoidCallback get onApprovals => widget.onApprovals;
+  VoidCallback get onInventory => widget.onInventory;
+  VoidCallback get onStaff => widget.onStaff;
+  VoidCallback get onPayments => widget.onPayments;
+  Stream<List<CustomerOrder>>? get orderUpdates => widget.orderUpdates;
+  Future<Map<String, dynamic>?> Function(String orderId)? get loadLoadingProof =>
+      widget.loadLoadingProof;
 
   @override
   Widget build(BuildContext context) {
@@ -1089,7 +1133,7 @@ class _InteractiveSalesChartState extends State<_InteractiveSalesChart>
                                             ),
                                             const SizedBox(height: 5),
                                             Text(
-                                              'Running total: ${OperationsOverview._money(runningTotal)}',
+                                              'Running total: ${_OperationsOverviewState._money(runningTotal)}',
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: const TextStyle(

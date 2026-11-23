@@ -96,7 +96,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Timer? _orderDelayTimer;
   StreamSubscription<void>? _orderDelaySubscription;
   StaffPresenceService? _staffPresenceService;
-  bool _changingHelperBreak = false;
   int _helperMobileTab = 0;
   bool _helperChecklistVisible = false;
   String? _helperLocationName;
@@ -2839,25 +2838,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _toggleHelperBreak() async {
-    final presence = _staffPresenceService;
-    if (presence == null || !presence.isStarted || _changingHelperBreak) return;
-    setState(() => _changingHelperBreak = true);
-    try {
-      await presence.setOnBreak(!presence.isOnBreak);
-    } on StateError catch (error) {
-      if (mounted) {
-        AppToast.error(context, error.message);
-      }
-    } catch (_) {
-      if (mounted) {
-        AppToast.error(context, 'Could not update your availability.');
-      }
-    } finally {
-      if (mounted) setState(() => _changingHelperBreak = false);
-    }
-  }
-
   Future<void> _loadHelperLocationName(String locationId) async {
     try {
       final row = await widget.controller.supabase
@@ -2963,7 +2943,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
           final availability = resolveStaffAvailability(
             isOnline: presence.isStarted,
-            isOnBreak: presence.isOnBreak,
+            isOnBreak: false,
             isHelper: true,
             activeOrders: activeOrders,
             currentModule: presence.workMode,
@@ -2971,7 +2951,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
           final label = switch (availability) {
             StaffAvailability.offline => 'Offline',
-            StaffAvailability.onBreak => 'On break',
+            StaffAvailability.onBreak => 'Offline',
             StaffAvailability.preparing => 'Preparing',
             StaffAvailability.loading => 'Loading',
             StaffAvailability.available => 'Available',
@@ -2986,15 +2966,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
           return Padding(
             padding: const EdgeInsets.only(right: 2),
-            child: ActionChip(
-              tooltip: presence.isOnBreak
-                  ? 'Switch to Available'
-                  : 'Switch to On break',
-              onPressed: _changingHelperBreak || !presence.isStarted
-                  ? null
-                  : _toggleHelperBreak,
+            child: Chip(
               backgroundColor: color,
-              disabledColor: const Color(0xFF45413E),
               side: BorderSide.none,
               shape: const StadiumBorder(),
               label: Text(
@@ -3797,14 +3770,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               0;
           final availability = resolveStaffAvailability(
             isOnline: presence.isStarted,
-            isOnBreak: presence.isOnBreak,
+            isOnBreak: false,
             isHelper: true,
             activeOrders: activeOrders,
             currentModule: presence.workMode,
           );
           final label = switch (availability) {
             StaffAvailability.offline => 'Offline',
-            StaffAvailability.onBreak => 'On break',
+            StaffAvailability.onBreak => 'Offline',
             StaffAvailability.preparing => 'Preparing',
             StaffAvailability.loading => 'Loading',
             StaffAvailability.available => 'Available',
@@ -3815,15 +3788,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             StaffAvailability.available => const Color(0xFF168047),
             _ => const Color(0xFF45413E),
           };
-          return ActionChip(
-            tooltip: presence.isOnBreak
-                ? 'Switch to Available'
-                : 'Switch to On break',
-            onPressed: _changingHelperBreak || !presence.isStarted
-                ? null
-                : _toggleHelperBreak,
+          return Chip(
             backgroundColor: background,
-            disabledColor: const Color(0xFF45413E),
             side: BorderSide.none,
             shape: const StadiumBorder(),
             label: Text(

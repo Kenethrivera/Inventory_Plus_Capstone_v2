@@ -1,0 +1,86 @@
+---
+config:
+  theme: default
+  look: classic
+  layout: dagre
+  flowchart:
+    nodeSpacing: 24
+    rankSpacing: 42
+---
+flowchart LR
+  %% Level 1 DFD: rectangles = external entities, rounded nodes = processes,
+  %% data-store shapes = persistent data. Every store is accessed by a process.
+
+  subgraph EXTERNAL[External entities]
+    Admin[Administrator]
+    Cashier[Cashier]
+    Helper[Helper]
+    Bodegero[Bodegero]
+  end
+
+  subgraph SYSTEM[Inventory Plus - Level 1 processes]
+    P1([1.0 Manage user access])
+    P2([2.0 Process sales and payments])
+    P3([3.0 Fulfill orders])
+    P4([4.0 Manage inventory and stock requests])
+    P5([5.0 Generate reports and forecasts])
+  end
+
+  subgraph STORES[Data stores]
+    D1@{ shape: datastore, label: "D1 User profiles" }
+    D2@{ shape: datastore, label: "D2 Products and stock" }
+    D3@{ shape: datastore, label: "D3 Orders" }
+    D4@{ shape: datastore, label: "D4 Approval requests" }
+    D5@{ shape: datastore, label: "D5 Transactions" }
+    D6@{ shape: datastore, label: "D6 Product forecasts" }
+  end
+
+  Admin -->|credentials and account changes| P1
+  Cashier -->|credentials| P1
+  Helper -->|credentials| P1
+  Bodegero -->|credentials| P1
+  P1 -->|account updates| D1
+  D1 -->|profile and role| P1
+  P1 -->|access result| Admin
+  P1 -->|access result| Cashier
+  P1 -->|access result| Helper
+  P1 -->|access result| Bodegero
+
+  Cashier -->|cart and payment details| P2
+  P2 -->|product lookup and stock change| D2
+  D2 -->|product, price and availability| P2
+  P2 -->|new order| D3
+  P2 -->|payment record| D5
+  P2 -->|receipt and sale status| Cashier
+
+  D3 -->|assigned orders| P3
+  Helper -->|light-item QR scans and picking progress| P3
+  Bodegero -->|heavy-item QR scans and loading proof| P3
+  P3 -->|fulfillment status| D3
+  P3 -->|order ready status| Cashier
+
+  Admin -->|stock edits and approval decisions| P4
+  Cashier -->|restock or write-off request and photo| P4
+  Helper -->|restock or write-off request and photo| P4
+  Bodegero -->|restock or write-off request and photo| P4
+  P4 -->|request and decision records| D4
+  D4 -->|pending requests| P4
+  P4 -->|approved stock adjustment| D2
+  P4 -->|request status| Admin
+  P4 -->|request status| Cashier
+  P4 -->|request status| Helper
+  P4 -->|request status| Bodegero
+
+  Admin -->|report and forecast criteria| P5
+  D2 -->|inventory levels| P5
+  D3 -->|order history| P5
+  D5 -->|sales history| P5
+  P5 -->|forecast results| D6
+  P5 -->|dashboard and forecast views| Admin
+
+  classDef external fill:#fff7ed,stroke:#c83d08,color:#1c1b1a
+  classDef process fill:#ffffff,stroke:#c83d08,stroke-width:2px,color:#1c1b1a
+  classDef store fill:#f8fafc,stroke:#64748b,color:#1c1b1a
+  class Admin,Cashier,Helper,Bodegero external
+  class P1,P2,P3,P4,P5 process
+  class D1,D2,D3,D4,D5,D6 store

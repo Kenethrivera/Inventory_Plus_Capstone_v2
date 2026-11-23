@@ -88,6 +88,7 @@ class _HelperMePageState extends State<HelperMePage> {
     return switch (role) {
       'helper' => 'Order helper',
       'admin' => 'Administrator',
+      'staff' => 'Cashier',
       'cashier' => 'Cashier',
       _ =>
         role.isEmpty ? 'Staff' : '${role[0].toUpperCase()}${role.substring(1)}',

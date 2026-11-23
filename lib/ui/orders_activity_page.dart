@@ -1202,9 +1202,9 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
             _cell(
               orderAssignedStaffLabel(order),
               widths[5],
-              color:
-                  orderAssignedStaffLabel(order).contains('unassigned') ||
-                      orderAssignedStaffLabel(order) == 'Unassigned'
+              color: orderAssignedStaffLabel(order)
+                      .toLowerCase()
+                      .contains('unassigned')
                   ? _orange
                   : _ink,
             ),

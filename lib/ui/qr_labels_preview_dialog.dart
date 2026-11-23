@@ -324,11 +324,6 @@ pw.Widget _pdfLabel(InventoryItem item, double size, double fontScale) =>
             ),
             maxLines: 1,
           ),
-          pw.SizedBox(height: 4 * fontScale),
-          pw.Text(
-            'SKU: ${item.sku}',
-            style: pw.TextStyle(fontSize: 12 * fontScale),
-          ),
           pw.SizedBox(height: 10 * fontScale),
           pw.Expanded(
             child: pw.BarcodeWidget(

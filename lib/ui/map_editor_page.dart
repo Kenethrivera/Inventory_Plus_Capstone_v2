@@ -1659,39 +1659,41 @@ class _MapEditorPageState extends State<MapEditorPage> {
   Widget _buildMobileWidthControls(MapElement element) {
     final canShrink = canResizeMapElementWidth(element, grow: false);
     final canGrow = canResizeMapElementWidth(element, grow: true);
+    final verticalWall =
+        element.type == ElementType.wall && element.size.height > element.size.width;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
           children: [
             _mobileWidthButton(
-              'L−',
-              LucideIcons.arrowRight,
-              'Decrease from left',
+              verticalWall ? 'T−' : 'L−',
+              verticalWall ? LucideIcons.arrowDown : LucideIcons.arrowRight,
+              verticalWall ? 'Decrease from top' : 'Decrease from left',
               MapSidebarAction.widthLeftMinus,
               canShrink,
             ),
             const SizedBox(width: 5),
             _mobileWidthButton(
-              'L+',
-              LucideIcons.arrowLeft,
-              'Increase from left',
+              verticalWall ? 'T+' : 'L+',
+              verticalWall ? LucideIcons.arrowUp : LucideIcons.arrowLeft,
+              verticalWall ? 'Increase from top' : 'Increase from left',
               MapSidebarAction.widthLeftPlus,
               canGrow,
             ),
             const SizedBox(width: 5),
             _mobileWidthButton(
-              'R−',
-              LucideIcons.arrowLeft,
-              'Decrease from right',
+              verticalWall ? 'B−' : 'R−',
+              verticalWall ? LucideIcons.arrowUp : LucideIcons.arrowLeft,
+              verticalWall ? 'Decrease from bottom' : 'Decrease from right',
               MapSidebarAction.widthRightMinus,
               canShrink,
             ),
             const SizedBox(width: 5),
             _mobileWidthButton(
-              'R+',
-              LucideIcons.arrowRight,
-              'Increase from right',
+              verticalWall ? 'B+' : 'R+',
+              verticalWall ? LucideIcons.arrowDown : LucideIcons.arrowRight,
+              verticalWall ? 'Increase from bottom' : 'Increase from right',
               MapSidebarAction.widthRightPlus,
               canGrow,
             ),
@@ -2490,6 +2492,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
   Widget _buildManageSelectionControls(MapElement element) {
     final canShrink = canResizeMapElementWidth(element, grow: false);
     final canGrow = canResizeMapElementWidth(element, grow: true);
+    final verticalWall =
+        element.type == ElementType.wall && element.size.height > element.size.width;
     final doorStyle = element.type == ElementType.door
         ? DoorStyle.fromWidth(element.size.width)
         : null;
@@ -2566,7 +2570,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 14),
-                const Text('Left edge', style: TextStyle(fontSize: 12)),
+                Text(verticalWall ? 'Top edge' : 'Left edge',
+                    style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 7),
                 Row(
                   children: [
@@ -2574,7 +2579,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                       child: _manageAction(
                         '−',
                         MapSidebarAction.widthLeftMinus,
-                        icon: LucideIcons.arrowRight,
+                        icon: verticalWall
+                            ? LucideIcons.arrowDown
+                            : LucideIcons.arrowRight,
                         enabled: canShrink,
                         hoverEdge: MapResizeEdge.left,
                       ),
@@ -2584,7 +2591,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                       child: _manageAction(
                         '+',
                         MapSidebarAction.widthLeftPlus,
-                        icon: LucideIcons.arrowLeft,
+                        icon: verticalWall
+                            ? LucideIcons.arrowUp
+                            : LucideIcons.arrowLeft,
                         enabled: canGrow,
                         hoverEdge: MapResizeEdge.left,
                       ),
@@ -2592,7 +2601,8 @@ class _MapEditorPageState extends State<MapEditorPage> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                const Text('Right edge', style: TextStyle(fontSize: 12)),
+                Text(verticalWall ? 'Bottom edge' : 'Right edge',
+                    style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 7),
                 Row(
                   children: [
@@ -2600,7 +2610,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                       child: _manageAction(
                         '−',
                         MapSidebarAction.widthRightMinus,
-                        icon: LucideIcons.arrowLeft,
+                        icon: verticalWall
+                            ? LucideIcons.arrowUp
+                            : LucideIcons.arrowLeft,
                         enabled: canShrink,
                         hoverEdge: MapResizeEdge.right,
                       ),
@@ -2610,7 +2622,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
                       child: _manageAction(
                         '+',
                         MapSidebarAction.widthRightPlus,
-                        icon: LucideIcons.arrowRight,
+                        icon: verticalWall
+                            ? LucideIcons.arrowDown
+                            : LucideIcons.arrowRight,
                         enabled: canGrow,
                         hoverEdge: MapResizeEdge.right,
                       ),
