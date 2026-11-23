@@ -150,6 +150,86 @@ class ForecastPerformanceTests(unittest.TestCase):
         self.assertIsNone(item["actual_completed_sales"])
         self.assertEqual(adapter.calls, [])
 
+    def test_duplicate_snapshots_count_as_one_accuracy_observation(self) -> None:
+        adapter = DemandAdapter([demand("2026-08-10", "5")])
+        rows = [
+            tracking_row(9, start="2026-08-01", end="2026-08-28", predicted="50"),
+            tracking_row(3, start="2026-08-01", end="2026-08-28", predicted="20"),
+            tracking_row(5, start="2026-08-01", end="2026-08-28", predicted="20"),
+        ]
+        rows[0]["recommendation_date"] = "2026-08-02T00:00:00+08:00"
+        report = self.evaluate(adapter, rows)
+        self.assertEqual(report["saved_recommendation_count"], 3)
+        self.assertEqual(report["unique_forecast_window_count"], 1)
+        self.assertEqual(len(report["items"]), 1)
+        item = report["items"][0]
+        self.assertEqual(item["recommendation_id"], 3)
+        self.assertEqual(item["source_recommendation_count"], 3)
+        self.assertTrue(item["prediction_conflict"])
+        self.assertEqual(item["first_eligible_evaluation_date"], date(2026, 8, 29))
+        summary = report["summaries_by_unit"][0]
+        self.assertEqual(summary["evaluation_count"], 1)
+        self.assertEqual(summary["actual_total"], Decimal("5"))
+        self.assertEqual(summary["absolute_error_total"], Decimal("15"))
+        self.assertEqual(summary["wape"], Decimal("300"))
+        self.assertEqual(summary["forecast_bias"], Decimal("300"))
+
+    def test_distinct_windows_and_units_remain_distinct(self) -> None:
+        adapter = DemandAdapter([demand("2026-08-20", "5")])
+        report = self.evaluate(adapter, [
+            tracking_row(1, start="2026-08-01", end="2026-08-28", predicted="10"),
+            tracking_row(2, start="2026-08-15", end="2026-09-11", predicted="10"),
+            tracking_row(3, start="2026-08-01", end="2026-08-28", predicted="10", unit="box"),
+        ])
+        self.assertEqual(report["unique_forecast_window_count"], 3)
+        self.assertEqual(len(report["items"]), 3)
+        self.assertEqual(len(adapter.calls), 1)
+        by_id = {item["recommendation_id"]: item for item in report["items"]}
+        self.assertEqual(by_id[3]["evaluation_status"], "insufficient_sales_data")
+        self.assertEqual(report["summaries_by_unit"][0]["evaluation_count"], 2)
+
+    def test_duplicate_pending_window_has_one_row_and_future_eligibility(self) -> None:
+        adapter = DemandAdapter([demand("2026-11-10", "999")])
+        report = self.evaluate(adapter, [
+            tracking_row(4, start="2026-11-23", end="2026-12-20", predicted="20"),
+            tracking_row(5, start="2026-11-23", end="2026-12-20", predicted="20"),
+            tracking_row(6, start="2026-11-23", end="2026-12-20", predicted="20"),
+            tracking_row(7, start="2026-11-23", end="2026-12-20", predicted="20"),
+        ])
+        self.assertEqual(report["saved_recommendation_count"], 4)
+        self.assertEqual(report["unique_forecast_window_count"], 1)
+        self.assertEqual(report["items"][0]["first_eligible_evaluation_date"], date(2026, 12, 21))
+        self.assertEqual(report["items"][0]["evaluation_status"], "awaiting_completion")
+        self.assertEqual(report["summaries_by_unit"], [])
+        self.assertEqual(adapter.calls, [])
+
+    def test_duplicate_completed_zero_sales_is_one_eligible_evaluation(self) -> None:
+        report = self.evaluate(DemandAdapter(), [
+            tracking_row(1, start="2026-08-01", end="2026-08-28", predicted="4"),
+            tracking_row(2, start="2026-08-01", end="2026-08-28", predicted="4"),
+        ])
+        self.assertEqual(report["items"][0]["evaluation_status"], "completed_zero_sales")
+        self.assertEqual(report["summaries_by_unit"][0]["evaluation_count"], 1)
+        self.assertIsNone(report["summaries_by_unit"][0]["wape"])
+
+    def test_model_and_version_are_part_of_observation_identity(self) -> None:
+        rows = [
+            tracking_row(1, start="2026-08-01", end="2026-08-28", predicted="10"),
+            tracking_row(2, start="2026-08-01", end="2026-08-28", predicted="10"),
+            tracking_row(3, start="2026-08-01", end="2026-08-28", predicted="10"),
+        ]
+        rows[1]["forecast_version"] = "2"
+        rows[2]["forecast_model"] = "mean28"
+        report = self.evaluate(DemandAdapter([demand("2026-08-10", "5")]), rows)
+        self.assertEqual(report["unique_forecast_window_count"], 3)
+        self.assertEqual(report["summaries_by_unit"][0]["evaluation_count"], 3)
+
+    def test_unexpected_location_is_rejected_before_aggregation(self) -> None:
+        row = tracking_row(1, start="2026-08-01", end="2026-08-28", predicted="10")
+        row["location_id_snapshot"] = "22222222-2222-4222-8222-222222222222"
+        with self.assertRaises(DataUnavailableError):
+            self.evaluate(DemandAdapter(), [row])
+
     def test_completed_over_under_and_zero_sales_with_unit_wape(self) -> None:
         adapter = DemandAdapter(
             [

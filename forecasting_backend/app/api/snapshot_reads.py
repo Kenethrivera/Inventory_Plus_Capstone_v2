@@ -81,6 +81,32 @@ class ForecastSnapshotReadRepository:
         except (httpx.HTTPError, ValueError) as error:
             raise DataUnavailableError("Sales history coverage is unavailable") from error
 
+    def history_breakdown(self, *, location_id: str, model_key: str,
+                          state: str, page: int, page_size: int,
+                          unit: str | None = None, search: str | None = None,
+                          scope_search: str | None = None,
+                          category: str | None = None,
+                          product_id: str | None = None) -> dict[str, Any]:
+        """Read one classified product page; the database owns classification."""
+        try:
+            response = self._client.post(
+                f"{self._url}/rest/v1/rpc/forecast_history_breakdown_page_v1",
+                headers=self._headers,
+                json={"p_location_id": location_id, "p_model_key": model_key,
+                      "p_unit": unit, "p_search": search,
+                      "p_category": category, "p_product_id": product_id,
+                      "p_state": state, "p_page": page,
+                      "p_page_size": page_size,
+                      "p_scope_search": scope_search},
+            )
+            response.raise_for_status()
+            value = response.json()
+            if not isinstance(value, dict) or not isinstance(value.get("items"), list):
+                raise ValueError("invalid history breakdown")
+            return value
+        except (httpx.HTTPError, ValueError) as error:
+            raise DataUnavailableError("Sales history breakdown is unavailable") from error
+
     def product(
         self, *, location_id: str, product_id: str, model_key: str
     ) -> dict[str, Any]:

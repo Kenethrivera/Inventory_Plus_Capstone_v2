@@ -1723,6 +1723,40 @@ class InventoryController {
     reviewNote: reviewNote,
   );
 
+  /// Read-only verification after an approval response is lost. A missing row
+  /// means the outcome is unknown; callers must never infer that retry is safe.
+  Future<InventoryApprovalRequest?> verifyInventoryApprovalOutcome(
+    String requestId,
+  ) async {
+    if (!isAdmin) throw StateError('Only Admin accounts may review approvals.');
+    final accountId = currentUserId;
+    final locationId = activeLocationId;
+    for (final status in const ['approved', 'pending', 'rejected']) {
+      for (var page = 1; page <= 20; page++) {
+        final response = Map<String, dynamic>.from(await supabase.rpc(
+          'approval_requests_page_v1',
+          params: <String, dynamic>{
+            'p_session_token': _requireSessionToken(),
+            'p_status': status,
+            'p_page': page,
+            'p_page_size': 100,
+          },
+        ) as Map);
+        if (accountId != currentUserId || locationId != activeLocationId) {
+          throw StateError('Approval scope changed during verification.');
+        }
+        final records = response['records'] as List<dynamic>? ?? const [];
+        for (final record in records) {
+          final row = InventoryApprovalRequest.fromJson(
+            Map<String, dynamic>.from(record as Map));
+          if (row.id == requestId && row.locationId == locationId) return row;
+        }
+        if (page * 100 >= ((response['total_count'] as num?)?.toInt() ?? 0)) break;
+      }
+    }
+    return null;
+  }
+
   Future<InventoryApprovalRequest> rejectInventoryApprovalRequest(
     String requestId, {
     String? reviewNote,
@@ -1740,6 +1774,7 @@ class InventoryController {
     if (!isAdmin) {
       throw StateError('Only Admin accounts may review approval requests.');
     }
+    final approvalRpcTimer = Stopwatch()..start();
     final response = await supabase.rpc(
       approve
           ? 'approve_inventory_approval_request_v1'
@@ -1750,10 +1785,32 @@ class InventoryController {
         'p_review_note': reviewNote?.trim(),
       },
     );
+    if (kDebugMode) {
+      debugPrint('[ApprovalTiming] approval_rpc_ms=${approvalRpcTimer.elapsedMilliseconds}');
+    }
     final request = InventoryApprovalRequest.fromJson(
       Map<String, dynamic>.from(response as Map),
     );
     _invalidateApprovalPages(refreshVisible: true);
+    if (approve && request.type == InventoryApprovalType.restock &&
+        request.transactionId != null) {
+      // The RPC has committed. Refresh and notification delivery continue in
+      // the background so neither can delay the authoritative approval result.
+      unawaited(() async {
+        final refreshTimer = Stopwatch()..start();
+        try {
+          await _refreshInventoryFromDatabase();
+        } catch (_) {
+          debugPrint('[InventoryController] Approved inventory refresh pending');
+        } finally {
+          if (kDebugMode) {
+            debugPrint('[ApprovalTiming] inventory_refresh_ms=${refreshTimer.elapsedMilliseconds}');
+          }
+        }
+      }());
+      unawaited(_notifyApprovalLifecycle(request));
+      return request;
+    }
     if (approve && request.transactionId != null) {
       // Approval is already committed. A read refresh failure must not be
       // reported as a failed mutation or encourage another approval attempt.
@@ -3142,6 +3199,47 @@ class InventoryController {
     _productHistoryRequests[key] = request;
     _productHistoryRequestGenerations[key] = generation;
     return request;
+  }
+
+  /// Reads the exact stock mutation linked to an approved inventory request.
+  /// A missing or inconsistent row is not converted into a projected balance.
+  Future<({double onHand, double after, double change})?>
+      loadApprovedInventoryStock(InventoryApprovalRequest request) async {
+    final transactionId = request.transactionId;
+    final locationId = activeLocationId;
+    if (request.status != InventoryApprovalStatus.approved ||
+        request.isDiscount || transactionId == null || transactionId.isEmpty ||
+        locationId == null || locationId != request.locationId) {
+      return null;
+    }
+    final row = await supabase
+        .from('transaction_history')
+        .select('id, location_id, product_id, transaction_type, quantity_change, new_quantity')
+        .eq('id', transactionId)
+        .eq('location_id', locationId)
+        .eq('product_id', request.productId)
+        .maybeSingle();
+    if (activeLocationId != locationId) return null;
+    if (row == null || row['id']?.toString() != transactionId ||
+        row['location_id']?.toString() != locationId ||
+        row['product_id']?.toString() != request.productId ||
+        row['transaction_type'] !=
+            (request.type == InventoryApprovalType.restock ? 'stock_in' : 'write_off')) {
+      return null;
+    }
+    double? finiteNumber(Object? value) {
+      final number = value is num ? value.toDouble() : double.tryParse(value?.toString() ?? '');
+      return number != null && number.isFinite ? number : null;
+    }
+    final change = finiteNumber(row['quantity_change']);
+    final after = finiteNumber(row['new_quantity']);
+    if (change == null || after == null || after < 0) return null;
+    final expectedChange = request.type == InventoryApprovalType.restock
+        ? request.quantity : -request.quantity;
+    final onHand = after - change;
+    if ((change - expectedChange).abs() > 0.000001 || onHand < 0 ||
+        !onHand.isFinite) return null;
+    return (onHand: onHand, after: after, change: change);
   }
 
   void _invalidateProductTransactionHistory() {

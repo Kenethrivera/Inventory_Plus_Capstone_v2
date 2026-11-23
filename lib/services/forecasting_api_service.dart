@@ -30,6 +30,17 @@ class ForecastApiException implements Exception {
 
 abstract interface class ForecastingApiService {
   Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken, String model = "blend"});
+  Future<ForecastJobsPage> loadForecastJobs({
+    required String sessionToken,
+    required int page,
+    required int pageSize,
+    required bool latestOnly,
+    String? search,
+    String? model,
+    String? status,
+    String? fromDate,
+    String? toDate,
+  });
   Future<ForecastSnapshotPage> loadSnapshotOverview({
     required String locationId,
     required String sessionToken,
@@ -40,6 +51,37 @@ abstract interface class ForecastingApiService {
     String? search,
     String? scopeCategory,
     String? scopeProductId,
+  });
+  Future<Map<String, dynamic>> loadRestockPriorities({
+    required String sessionToken,
+    required int page,
+    int pageSize = 5,
+    String view = 'actionable',
+    String? unit,
+    String? scopeCategory,
+    String? scopeProductId,
+    String? search,
+    String? scopeSearch,
+    bool refresh = false,
+  });
+  Future<Map<String, dynamic>> loadRestockPriorityCoverage({
+    required String sessionToken,
+    String? unit,
+    String? scopeCategory,
+    String? scopeProductId,
+    String? search,
+  });
+  Future<Map<String, dynamic>> loadHistoryCoverageProducts({
+    required String sessionToken,
+    required String model,
+    required String state,
+    required int page,
+    int pageSize = 25,
+    String? unit,
+    String? scopeCategory,
+    String? scopeProductId,
+    String? search,
+    String? scopeSearch,
   });
 
   Future<ForecastSnapshotItem> loadProductSnapshot({
@@ -104,6 +146,12 @@ abstract interface class ForecastingApiService {
     String? productId,
   });
 
+  Future<ApprovalRecommendationTracking> loadApprovalRecommendationTracking({
+    required String requestId,
+    required String locationId,
+    required String sessionToken,
+  });
+
   Future<ForecastPerformanceReport> loadForecastPerformance({
     required String productId,
     required String locationId,
@@ -128,12 +176,51 @@ abstract interface class ForecastingApiService {
   });
 }
 
-class ForecastApiClient implements ForecastingApiService {
+abstract interface class HistoricalForecastService {
+  Future<Map<String, dynamic>> loadHistoricalSimulation({required String productId,
+    required String sessionToken, required String model, required String cutoff,
+    required String actualThrough});
+}
+
+class ForecastApiClient implements ForecastingApiService, HistoricalForecastService {
+  @override
+  Future<ForecastJobsPage> loadForecastJobs({
+    required String sessionToken,
+    required int page,
+    required int pageSize,
+    required bool latestOnly,
+    String? search,
+    String? model,
+    String? status,
+    String? fromDate,
+    String? toDate,
+  }) async {
+    final uri = _baseUri.resolve('/v1/forecasting/jobs').replace(queryParameters: {
+      'page': '$page', 'page_size': '$pageSize', 'latest_only': '$latestOnly',
+      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      if (model != null) 'model': _snapshotModelKey(model),
+      if (status != null) 'status': status,
+      if (fromDate != null) 'from_date': fromDate,
+      if (toDate != null) 'to_date': toDate,
+    });
+    return ForecastJobsPage.fromJson(
+      await _send(() => _client.get(uri, headers: _headers(sessionToken))));
+  }
+
+  @override
+  Future<Map<String, dynamic>> loadHistoricalSimulation({required String productId,
+      required String sessionToken, required String model, required String cutoff,
+      required String actualThrough}) {
+    final uri = _baseUri.resolve('/v1/forecasting/products/$productId/historical-simulation')
+        .replace(queryParameters: {'cutoff': cutoff, 'actual_through': actualThrough, 'model': model});
+    return _send(() => _client.get(uri, headers: _headers(sessionToken)), requestTimeout: seasonalTimeout);
+  }
   @override
   Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken, String model = "blend"}) {
     final uri = _baseUri.resolve('/v1/forecasting/jobs/bootstrap')
         .replace(queryParameters: {'product_id': productId, 'model': _snapshotModelKey(model)});
-    return _send(() => _client.post(uri, headers: _headers(sessionToken)));
+    return _send(() => _client.post(uri, headers: _headers(sessionToken)),
+        requestTimeout: model == 'seasonal_experimental' ? seasonalTimeout : timeout);
   }
   ForecastApiClient({
     required Uri baseUri,
@@ -180,6 +267,8 @@ class ForecastApiClient implements ForecastingApiService {
   final Duration timeout;
   final Duration seasonalTimeout;
 
+  void close() => _client.close();
+
   @override
   Future<ForecastSnapshotPage> loadSnapshotOverview({
     required String locationId,
@@ -197,6 +286,7 @@ class ForecastApiClient implements ForecastingApiService {
       'model': _snapshotModelKey(model),
       'page': '$page',
       'page_size': '$pageSize',
+      'include_guidance': 'false',
       if (unit != null && unit.isNotEmpty) 'unit': unit,
       if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
       if (scopeCategory != null) 'scope_category': scopeCategory,
@@ -207,8 +297,89 @@ class ForecastApiClient implements ForecastingApiService {
         .replace(queryParameters: query);
     final response = await _send(
       () => _client.get(uri, headers: _headers(sessionToken)),
+      requestTimeout: const Duration(seconds: 45),
     );
     return ForecastSnapshotPage.fromJson(response);
+  }
+
+  @override
+  Future<Map<String, dynamic>> loadRestockPriorities({
+    required String sessionToken,
+    required int page,
+    int pageSize = 5,
+    String view = 'actionable',
+    String? unit,
+    String? scopeCategory,
+    String? scopeProductId,
+    String? search,
+    String? scopeSearch,
+    bool refresh = false,
+  }) async {
+    final query = <String, String>{
+      'page': '$page',
+      'page_size': '$pageSize',
+      'view': view,
+      if (unit != null && unit.isNotEmpty) 'unit': unit,
+      if (scopeCategory != null) 'scope_category': scopeCategory,
+      if (scopeProductId != null) 'scope_product_id': scopeProductId,
+      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      if (scopeSearch != null && scopeSearch.trim().isNotEmpty) 'scope_search': scopeSearch.trim(),
+      if (refresh) 'refresh': 'true',
+    };
+    final uri = _baseUri.resolve('/v1/forecasting/restock-priorities')
+        .replace(queryParameters: query);
+    return _send(() => _client.get(uri, headers: _headers(sessionToken)),
+        requestTimeout: const Duration(seconds: 120));
+  }
+
+  @override
+  Future<Map<String, dynamic>> loadRestockPriorityCoverage({
+    required String sessionToken,
+    String? unit,
+    String? scopeCategory,
+    String? scopeProductId,
+    String? search,
+  }) async {
+    final query = <String, String>{
+      if (unit != null && unit.isNotEmpty) 'unit': unit,
+      if (scopeCategory != null) 'scope_category': scopeCategory,
+      if (scopeProductId != null) 'scope_product_id': scopeProductId,
+      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+    };
+    final uri = _baseUri.resolve('/v1/forecasting/restock-priorities/coverage')
+        .replace(queryParameters: query);
+    return _send(() => _client.get(uri, headers: _headers(sessionToken)),
+        requestTimeout: const Duration(seconds: 45));
+  }
+
+  @override
+  Future<Map<String, dynamic>> loadHistoryCoverageProducts({
+    required String sessionToken,
+    required String model,
+    required String state,
+    required int page,
+    int pageSize = 25,
+    String? unit,
+    String? scopeCategory,
+    String? scopeProductId,
+    String? search,
+    String? scopeSearch,
+  }) async {
+    final query = <String, String>{
+      'model': model,
+      'state': state,
+      'page': '$page',
+      'page_size': '$pageSize',
+      if (unit != null && unit.isNotEmpty) 'unit': unit,
+      if (scopeCategory != null) 'scope_category': scopeCategory,
+      if (scopeProductId != null) 'scope_product_id': scopeProductId,
+      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      if (scopeSearch != null && scopeSearch.trim().isNotEmpty) 'scope_search': scopeSearch.trim(),
+    };
+    final uri = _baseUri.resolve('/v1/forecasting/history-coverage/products')
+        .replace(queryParameters: query);
+    return _send(() => _client.get(uri, headers: _headers(sessionToken)),
+      requestTimeout: const Duration(seconds: 60));
   }
 
   @override
@@ -517,6 +688,21 @@ class ForecastApiClient implements ForecastingApiService {
   }
 
   @override
+  Future<ApprovalRecommendationTracking> loadApprovalRecommendationTracking({
+    required String requestId,
+    required String locationId,
+    required String sessionToken,
+  }) async {
+    final uri = _baseUri.resolve(
+      '/v1/forecasting/recommendations/by-approval/$requestId',
+    ).replace(queryParameters: {'location_id': locationId});
+    final response = await _send(
+      () => _client.get(uri, headers: _headers(sessionToken)),
+    );
+    return ApprovalRecommendationTracking.fromJson(response);
+  }
+
+  @override
   Future<ForecastPerformanceReport> loadForecastPerformance({
     required String productId,
     required String locationId,
@@ -595,10 +781,11 @@ class ForecastApiClient implements ForecastingApiService {
   };
 
   Future<Map<String, dynamic>> _send(
-    Future<http.Response> Function() request,
-  ) async {
+    Future<http.Response> Function() request, {
+    Duration? requestTimeout,
+  }) async {
     try {
-      final response = await request().timeout(timeout);
+      final response = await request().timeout(requestTimeout ?? timeout);
       final decoded = _decodeObject(response.body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final detail = decoded?['detail']?.toString();
@@ -776,6 +963,95 @@ class ReplenishmentConfiguration {
       );
 }
 
+class ForecastJobsPage {
+  const ForecastJobsPage({required this.page, required this.pageSize,
+    required this.totalCount, required this.pageCount, required this.latestOnly,
+    required this.generatedAt, required this.counts, required this.items});
+
+  final int page;
+  final int pageSize;
+  final int totalCount;
+  final int pageCount;
+  final bool latestOnly;
+  final String generatedAt;
+  final Map<String, int> counts;
+  final List<ForecastJobItem> items;
+
+  factory ForecastJobsPage.fromJson(Map<String, dynamic> json) {
+    final rawCounts = _map(json['counts'], 'forecast job counts');
+    final rawItems = json['items'];
+    if (rawItems is! List || json['latest_only'] is! bool) {
+      throw const FormatException('forecast jobs response is invalid');
+    }
+    return ForecastJobsPage(
+      page: _integer(json['page'], 'page'),
+      pageSize: _integer(json['page_size'], 'page_size'),
+      totalCount: _integer(json['total_count'], 'total_count'),
+      pageCount: _integer(json['page_count'], 'page_count'),
+      latestOnly: json['latest_only'] as bool,
+      generatedAt: _text(json['generated_at'], 'generated_at'),
+      counts: rawCounts.map((key, value) => MapEntry(key,
+        _integer(value, 'job count'))),
+      items: rawItems.map((value) => ForecastJobItem.fromJson(
+        _map(value, 'forecast job'))).toList(growable: false),
+    );
+  }
+}
+
+class ForecastJobItem {
+  const ForecastJobItem({required this.jobId, required this.productId,
+    required this.modelKey, required this.status, required this.displayStatus,
+    required this.createdAt, required this.horizonDays,
+    required this.attemptCount, required this.maxAttempts,
+    this.productName, this.sku, this.modelVersion, this.businessDate,
+    this.startedAt, this.completedAt, this.updatedAt, this.durationSeconds,
+    this.safeErrorCode, this.resultId, this.resultCreatedAt});
+
+  final String jobId;
+  final String productId;
+  final String? productName;
+  final String? sku;
+  final String modelKey;
+  final String? modelVersion;
+  final String? businessDate;
+  final int horizonDays;
+  final String status;
+  final String displayStatus;
+  final String createdAt;
+  final String? startedAt;
+  final String? completedAt;
+  final String? updatedAt;
+  final double? durationSeconds;
+  final int attemptCount;
+  final int maxAttempts;
+  final String? safeErrorCode;
+  final String? resultId;
+  final String? resultCreatedAt;
+
+  factory ForecastJobItem.fromJson(Map<String, dynamic> json) => ForecastJobItem(
+    jobId: _text(json['job_id'], 'job ID'),
+    productId: _text(json['product_id'], 'product ID'),
+    productName: json['product_name']?.toString(),
+    sku: json['sku']?.toString(),
+    modelKey: _text(json['model_key'], 'model key'),
+    modelVersion: json['model_version']?.toString(),
+    businessDate: json['as_of_business_date']?.toString(),
+    horizonDays: _integer(json['horizon_days'], 'horizon days'),
+    status: _text(json['status'], 'job status'),
+    displayStatus: _text(json['display_status'], 'display status'),
+    createdAt: _text(json['created_at'], 'job creation time'),
+    startedAt: json['started_at']?.toString(),
+    completedAt: json['completed_at']?.toString(),
+    updatedAt: json['updated_at']?.toString(),
+    durationSeconds: _optionalNumber(json['duration_seconds']),
+    attemptCount: _integer(json['attempt_count'], 'attempt count'),
+    maxAttempts: _integer(json['max_attempts'], 'maximum attempts'),
+    safeErrorCode: json['safe_error_code']?.toString(),
+    resultId: json['result_id']?.toString(),
+    resultCreatedAt: json['result_created_at']?.toString(),
+  );
+}
+
 class ForecastSnapshotPage {
   const ForecastSnapshotPage({
     required this.page,
@@ -784,9 +1060,11 @@ class ForecastSnapshotPage {
     required this.pageCount,
     required this.items,
     this.salesHistoryCoverage,
+    this.actualSalesByProduct = const {},
   });
 
   final Map<String, dynamic>? salesHistoryCoverage;
+  final Map<String, List<ForecastDailyPoint>> actualSalesByProduct;
   final int page;
   final int pageSize;
   final int totalCount;
@@ -799,6 +1077,21 @@ class ForecastSnapshotPage {
       throw const FormatException('forecast snapshot items are invalid');
     }
     return ForecastSnapshotPage(
+      actualSalesByProduct: json['actual_sales_by_product'] is Map
+          ? (json['actual_sales_by_product'] as Map).map(
+              (key, value) => MapEntry(
+                key.toString(),
+                value is List
+                    ? value
+                        .whereType<Map>()
+                        .map((item) => ForecastDailyPoint.fromJson(
+                              Map<String, dynamic>.from(item),
+                            ))
+                        .toList(growable: false)
+                    : const <ForecastDailyPoint>[],
+              ),
+            )
+          : const <String, List<ForecastDailyPoint>>{},
       salesHistoryCoverage: json['sales_history_coverage'] is Map
           ? Map<String, dynamic>.from(json['sales_history_coverage'] as Map) : null,
       page: _integer(json['page'], 'page'),
@@ -895,6 +1188,9 @@ class ForecastAnalysis {
     required this.forecast,
     required this.preliminaryRestockingInsight,
     required this.recommendation,
+    this.selectedModelPreliminaryInsight,
+    this.preliminaryComparisonEligible = false,
+    this.actualSales = const [],
   });
 
   final String schemaVersion;
@@ -904,11 +1200,22 @@ class ForecastAnalysis {
   final ForecastProductSummary product;
   final ForecastSummary forecast;
   final PreliminaryRestockingInsight preliminaryRestockingInsight;
+  final PreliminaryRestockingInsight? selectedModelPreliminaryInsight;
+  final bool preliminaryComparisonEligible;
   final RecommendationSummary recommendation;
+  final List<ForecastDailyPoint> actualSales;
 
   factory ForecastAnalysis.fromJson(Map<String, dynamic> json) {
     final scope = _map(json['authorized_scope'], 'authorized_scope');
     return ForecastAnalysis(
+      actualSales: json['actual_sales'] is List
+          ? (json['actual_sales'] as List)
+              .whereType<Map>()
+              .map((item) => ForecastDailyPoint.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .toList(growable: false)
+          : const <ForecastDailyPoint>[],
       schemaVersion: _text(json['schema_version'], 'schema_version'),
       dataAdapter: _text(json['data_adapter'], 'data_adapter'),
       synthetic: json['synthetic'] == true,
@@ -923,6 +1230,15 @@ class ForecastAnalysis {
           'preliminary_restocking_insight',
         ),
       ),
+      selectedModelPreliminaryInsight:
+          json['selected_model_preliminary_insight'] is Map
+              ? PreliminaryRestockingInsight.fromJson(
+                  Map<String, dynamic>.from(
+                    json['selected_model_preliminary_insight'] as Map),
+                )
+              : null,
+      preliminaryComparisonEligible:
+          json['preliminary_comparison_eligible'] == true,
       recommendation: RecommendationSummary.fromJson(
         _map(json['recommendation'], 'recommendation'),
       ),
@@ -1374,6 +1690,9 @@ class RecommendationTrackingItem {
     this.firstReceiptDate,
     this.lastReceiptDate,
     this.reconciledAt,
+    this.allocatedReceiptCount,
+    this.allocatedReceivedQuantity,
+    this.reconciliationStateVerified = false,
   });
 
   final int? recommendationId;
@@ -1408,6 +1727,9 @@ class RecommendationTrackingItem {
   final DateTime? lastReceiptDate;
   final int receiptCount;
   final DateTime? reconciledAt;
+  final int? allocatedReceiptCount;
+  final double? allocatedReceivedQuantity;
+  final bool reconciliationStateVerified;
   final String forecastModel;
   final String forecastVersion;
   String get forecastLabel => forecastModel == 'Not recorded'
@@ -1416,7 +1738,8 @@ class RecommendationTrackingItem {
   final int? trainingHistoryDays;
   final List<String> assumptions;
 
-  bool get isReconciled => transactionId != null || evaluationStatus.toLowerCase() == 'reconciled';
+  bool get isReconciled =>
+      reconciledAt != null || evaluationStatus.toLowerCase() == 'reconciled';
 
   factory RecommendationTrackingItem.fromJson(
     Map<String, dynamic> json,
@@ -1448,6 +1771,10 @@ class RecommendationTrackingItem {
     lastReceiptDate: _optionalTimestamp(json['last_receipt_date']),
     receiptCount: _integer(json['receipt_count'] ?? 0, 'receipt_count'),
     reconciledAt: _optionalTimestamp(json['reconciled_at']),
+    allocatedReceiptCount: json['allocated_receipt_count'] == null
+        ? null : _integer(json['allocated_receipt_count'], 'allocated_receipt_count'),
+    allocatedReceivedQuantity: _optionalNumber(json['allocated_received_quantity']),
+    reconciliationStateVerified: json['reconciliation_state_verified'] == true,
     forecastModel: (json['forecast_model']?.toString().trim().isNotEmpty ?? false)
         ? json['forecast_model'].toString().trim() : 'Not recorded',
     // Missing historical metadata is valid for an applied inventory transaction.
@@ -1455,6 +1782,41 @@ class RecommendationTrackingItem {
     trainingHistoryDays: json['training_history_days'] == null ? null : _integer(json['training_history_days'], 'training_history_days'),
     assumptions: _restockAssumptions(json['assumptions']),
   );
+}
+
+class ApprovalRecommendationTracking {
+  const ApprovalRecommendationTracking({
+    required this.approvalConfirmed,
+    required this.snapshotExists,
+    this.recommendationId,
+    this.receiptCount = 0,
+    this.transactionId,
+    this.approvedQuantity,
+    this.reconciledAt,
+  });
+
+  final bool approvalConfirmed;
+  final bool snapshotExists;
+  final int? recommendationId;
+  final int receiptCount;
+  final String? transactionId;
+  final double? approvedQuantity;
+  final DateTime? reconciledAt;
+
+  factory ApprovalRecommendationTracking.fromJson(Map<String, dynamic> json) {
+    final exists = json['snapshot_exists'] == true;
+    return ApprovalRecommendationTracking(
+      approvalConfirmed: json['approval_confirmed'] == true,
+      snapshotExists: exists,
+      recommendationId: exists
+          ? _integer(json['recommendation_id'], 'recommendation_id')
+          : null,
+      receiptCount: exists ? _integer(json['receipt_count'], 'receipt_count') : 0,
+      transactionId: json['transaction_id']?.toString(),
+      approvedQuantity: _optionalNumber(json['approved_quantity']),
+      reconciledAt: _optionalTimestamp(json['reconciled_at']),
+    );
+  }
 }
 
 // Fail clearly on a malformed historical contract rather than stringifying JSON objects.
@@ -1473,6 +1835,9 @@ class ForecastPerformanceReport {
     required this.items,
     required this.summariesByUnit,
     required this.limitations,
+    this.savedRecommendationCount,
+    this.uniqueForecastWindowCount,
+    this.representativePolicy = 'One saved prediction is evaluated per exact forecast window.',
     this.dataSourceWarning,
   });
 
@@ -1482,6 +1847,9 @@ class ForecastPerformanceReport {
   final List<ForecastPerformanceItem> items;
   final List<ForecastPerformanceSummary> summariesByUnit;
   final List<String> limitations;
+  final int? savedRecommendationCount;
+  final int? uniqueForecastWindowCount;
+  final String representativePolicy;
 
   factory ForecastPerformanceReport.fromJson(Map<String, dynamic> json) {
     final items = json['items'];
@@ -1508,6 +1876,12 @@ class ForecastPerformanceReport {
           )
           .toList(growable: false),
       limitations: _strings(json['limitations']),
+      savedRecommendationCount: json['saved_recommendation_count'] == null
+          ? items.length : _integer(json['saved_recommendation_count'], 'saved_recommendation_count'),
+      uniqueForecastWindowCount: json['unique_forecast_window_count'] == null
+          ? items.length : _integer(json['unique_forecast_window_count'], 'unique_forecast_window_count'),
+      representativePolicy: json['representative_policy']?.toString() ??
+          'One saved prediction is evaluated per exact forecast window.',
     );
   }
 }
@@ -1533,6 +1907,9 @@ class ForecastPerformanceItem {
     required this.syntheticSales,
     required this.salesProvenance,
     required this.stockAvailabilityKnown,
+    this.firstEligibleEvaluationDate = '',
+    this.sourceRecommendationCount = 1,
+    this.predictionConflict = false,
     this.actualCompletedSales,
     this.signedForecastError,
     this.absoluteError,
@@ -1564,6 +1941,9 @@ class ForecastPerformanceItem {
   final bool syntheticSales;
   final String salesProvenance;
   final bool stockAvailabilityKnown;
+  final String firstEligibleEvaluationDate;
+  final int sourceRecommendationCount;
+  final bool predictionConflict;
 
   factory ForecastPerformanceItem.fromJson(
     Map<String, dynamic> json,
@@ -1603,6 +1983,12 @@ class ForecastPerformanceItem {
     syntheticSales: json['synthetic_sales'] == true,
     salesProvenance: _text(json['sales_provenance'], 'sales_provenance'),
     stockAvailabilityKnown: json['stock_availability_known'] == true,
+    firstEligibleEvaluationDate: json['first_eligible_evaluation_date']?.toString() ??
+        DateTime.parse(_text(json['forecast_period_end'], 'forecast_period_end'))
+            .add(const Duration(days: 1)).toIso8601String().substring(0, 10),
+    sourceRecommendationCount: json['source_recommendation_count'] == null
+        ? 1 : _integer(json['source_recommendation_count'], 'source_recommendation_count'),
+    predictionConflict: json['prediction_conflict'] == true,
   );
 }
 

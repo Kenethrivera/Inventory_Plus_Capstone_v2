@@ -204,7 +204,7 @@ def current_stock_analysis(
         manual_demand=manual,
     )
     requested_role = _object(_object(bundle["outputs"], "outputs").get("requested_forecasts"), "requested role")
-    return analysis_response(
+    response = analysis_response(
         profile=profile,
         context=replace(context, source_data_as_of=source_data_as_of),
         forecasts=list(requested),
@@ -222,3 +222,60 @@ def current_stock_analysis(
         recommendation_forecast_model=recommendation[0].metadata.model_name,
         experimental_forecast_used_for_replenishment=False,
     )
+    # Keep the existing LightGBM preliminary field for approval tracking. The
+    # selected-model estimate is exploratory and uses the same calculator on
+    # the saved requested series; no model is fitted during this read.
+    if "preliminary_restocking_insight" not in response:
+        return response
+    response["preliminary_comparison_eligible"] = False
+    if horizon == 28:
+        selected_insight = service._preliminary_insights.calculate(
+            forecast=DemandForecastSnapshot(
+                forecasts=requested, generated_at=generated_at,
+                source_data_as_of=source_data_as_of,
+            ),
+            inventory=context.inventory,
+        )
+        selected_payload = dict(response["preliminary_restocking_insight"])
+        selected_payload.update({
+            "status": selected_insight.status.value,
+            "reliability": selected_insight.reliability,
+            "predicted_demand": (
+                float(selected_insight.predicted_demand)
+                if selected_insight.predicted_demand is not None else None
+            ),
+            "available_inventory": (
+                float(selected_insight.available_inventory)
+                if selected_insight.available_inventory is not None else None
+            ),
+            "suggested_restock_quantity": (
+                float(selected_insight.suggested_restock_quantity)
+                if selected_insight.suggested_restock_quantity is not None else None
+            ),
+            "forecast_basis": {
+                **selected_payload["forecast_basis"],
+                "requested_model": str(requested_model["key"]),
+                "model": selected_insight.forecast_model,
+                "version": selected_insight.forecast_version,
+                "history_window_days": int(snapshot["history_window_days"]),
+                "uses_experimental_seasonal_forecast": (
+                    str(requested_model["key"]) == "seasonal_experimental"
+                    and requested_role.get("fallback_reason") is None
+                ),
+            },
+            "assumptions": [
+                "Uses the selected saved 28-day forecast for this exploratory estimate.",
+                *list(selected_insight.assumptions)[1:],
+            ],
+            "limitations": list(selected_insight.limitations),
+            "requires_owner_review": selected_insight.requires_owner_review,
+        })
+        response["selected_model_preliminary_insight"] = selected_payload
+        response["preliminary_comparison_eligible"] = all(
+            selected.forecast_date == baseline.forecast_date
+            and selected.product_id == baseline.product_id
+            and selected.location_id == baseline.location_id
+            and selected.unit.casefold() == baseline.unit.casefold()
+            for selected, baseline in zip(requested, preliminary, strict=True)
+        )
+    return response

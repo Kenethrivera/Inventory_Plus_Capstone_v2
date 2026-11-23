@@ -33,6 +33,19 @@ InventoryApprovalRequest restockRequest({
 
 class RecordingForecastApi implements ForecastingApiService {
   @override
+  Future<ForecastJobsPage> loadForecastJobs({
+    required String sessionToken,
+    required int page,
+    required int pageSize,
+    required bool latestOnly,
+    String? search,
+    String? model,
+    String? status,
+    String? fromDate,
+    String? toDate,
+  }) => throw UnsupportedError('not used');
+
+  @override
   Future<Map<String, dynamic>> prepareForecast({
     String? model,
     required String productId,
@@ -66,6 +79,43 @@ class RecordingForecastApi implements ForecastingApiService {
     String? search,
     String? scopeCategory,
     String? scopeProductId,
+  }) => throw UnsupportedError('not used');
+
+  @override
+  Future<Map<String, dynamic>> loadRestockPriorities({
+    required String sessionToken,
+    required int page,
+    int pageSize = 5,
+    String view = 'actionable',
+    String? unit,
+    String? scopeCategory,
+    String? scopeProductId,
+    String? search,
+    String? scopeSearch,
+    bool refresh = false,
+  }) => throw UnsupportedError('not used');
+
+  @override
+  Future<Map<String, dynamic>> loadRestockPriorityCoverage({
+    required String sessionToken,
+    String? unit,
+    String? scopeCategory,
+    String? scopeProductId,
+    String? search,
+  }) => throw UnsupportedError('not used');
+
+  @override
+  Future<Map<String, dynamic>> loadHistoryCoverageProducts({
+    required String sessionToken,
+    required String model,
+    required String state,
+    required int page,
+    int pageSize = 25,
+    String? unit,
+    String? scopeCategory,
+    String? scopeProductId,
+    String? search,
+    String? scopeSearch,
   }) => throw UnsupportedError('not used');
 
   @override

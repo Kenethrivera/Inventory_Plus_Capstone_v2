@@ -21,6 +21,7 @@ ELIGIBLE_STATUSES = frozenset(
 @dataclass(frozen=True)
 class _SavedForecast:
     recommendation_id: int
+    location_id: str
     product_id: str
     product_name: str
     product_sku: str
@@ -29,6 +30,8 @@ class _SavedForecast:
     period_start: date
     period_end: date
     predicted_demand: Decimal
+    forecast_model: str
+    forecast_version: str
 
 
 class ForecastPerformanceEvaluator:
@@ -56,10 +59,41 @@ class ForecastPerformanceEvaluator:
         manila = ZoneInfo(BUSINESS_TIMEZONE)
         today = now.astimezone(manila).date()
         forecasts = tuple(
-            _parse_saved_forecast(row, expected_product_id=product_id)
+            _parse_saved_forecast(
+                row, expected_product_id=product_id,
+                expected_location_id=profile.location_id,
+            )
             for row in tracking_rows
         )
-        completed = tuple(value for value in forecasts if value.period_end < today)
+        grouped: dict[tuple[object, ...], list[_SavedForecast]] = {}
+        for forecast in forecasts:
+            key = (
+                forecast.product_id, forecast.location_id,
+                forecast.forecast_model, forecast.forecast_version,
+                forecast.inventory_unit, forecast.period_start, forecast.period_end,
+            )
+            grouped.setdefault(key, []).append(forecast)
+        representatives = tuple(sorted(
+            (min(group, key=lambda value: (
+                value.recommendation_date, value.recommendation_id,
+            )) for group in grouped.values()),
+            key=lambda value: (value.recommendation_date, value.recommendation_id),
+        ))
+        # Use the representative ID as the lookup key, including when the
+        # input RPC order differs from the earliest-saved ordering.
+        source_counts = {
+            min(group, key=lambda value: (
+                value.recommendation_date, value.recommendation_id,
+            )).recommendation_id: len(group)
+            for group in grouped.values()
+        }
+        prediction_conflicts = {
+            min(group, key=lambda value: (
+                value.recommendation_date, value.recommendation_id,
+            )).recommendation_id: len({value.predicted_demand for value in group}) > 1
+            for group in grouped.values()
+        }
+        completed = tuple(value for value in representatives if value.period_end < today)
 
         demand_rows: tuple[DailyDemand, ...] = ()
         retrieval_error: str | None = None
@@ -87,13 +121,20 @@ class ForecastPerformanceEvaluator:
                 demand_rows=demand_rows,
                 retrieval_error=retrieval_error,
             )
-            for value in forecasts
+            for value in representatives
         ]
+        for item in items:
+            recommendation_id = int(item["recommendation_id"])
+            item["source_recommendation_count"] = source_counts[recommendation_id]
+            item["prediction_conflict"] = prediction_conflicts[recommendation_id]
         return {
             "schema_version": "forecast-performance-v1",
             "read_only": True,
             "business_timezone": BUSINESS_TIMEZONE,
             "scope": "saved_recommendation_forecasts_only",
+            "saved_recommendation_count": len(forecasts),
+            "unique_forecast_window_count": len(representatives),
+            "representative_policy": "Earliest saved prediction per exact product, location, model/version, unit, and forecast window; recommendation ID breaks timestamp ties.",
             "generated_at": now,
             "data_source_available": retrieval_error is None,
             "data_source_warning": retrieval_error,
@@ -103,6 +144,8 @@ class ForecastPerformanceEvaluator:
                 "Only immutable 28-day LightGBM forecasts saved with a restock recommendation are evaluated.",
                 "Completed sales measure observed purchases, not unmet demand during stockouts.",
                 "Restock receipts and recommendation variance are excluded from forecast accuracy.",
+                "Different forecast windows can overlap and share completed-sales evidence.",
+                "Repeated recommendation snapshots for an identical window count once; differing predictions use the earliest saved prediction.",
             ],
         }
 
@@ -150,9 +193,10 @@ class ForecastPerformanceEvaluator:
             "recommendation_date": forecast.recommendation_date,
             "forecast_period_start": forecast.period_start,
             "forecast_period_end": forecast.period_end,
+            "first_eligible_evaluation_date": forecast.period_end + timedelta(days=1),
             "predicted_demand": forecast.predicted_demand,
-            "forecast_model": "lightgbm",
-            "forecast_version": "1",
+            "forecast_model": forecast.forecast_model,
+            "forecast_version": forecast.forecast_version,
             "training_history_days": 365,
             "synthetic_sales": _is_simulation_sku(forecast.product_sku),
             "sales_provenance": (
@@ -263,13 +307,19 @@ class ForecastPerformanceEvaluator:
 
 
 def _parse_saved_forecast(
-    row: Mapping[str, object], *, expected_product_id: str
+    row: Mapping[str, object], *, expected_product_id: str,
+    expected_location_id: str,
 ) -> _SavedForecast:
     try:
         product_id = str(row["product_id_snapshot"])
         if product_id != expected_product_id:
             raise DataUnavailableError(
                 "Recommendation tracking returned an unexpected product"
+            )
+        location_id = str(row.get("location_id_snapshot", expected_location_id))
+        if location_id != expected_location_id:
+            raise DataUnavailableError(
+                "Recommendation tracking returned an unexpected location"
             )
         recommendation_date = datetime.fromisoformat(
             str(row["recommendation_date"]).replace("Z", "+00:00")
@@ -278,6 +328,7 @@ def _parse_saved_forecast(
             raise ValueError("recommendation_date has no timezone")
         return _SavedForecast(
             recommendation_id=int(row["recommendation_id"]),
+            location_id=location_id,
             product_id=product_id,
             product_name=str(row["product_name_snapshot"]).strip(),
             product_sku=str(row["product_sku_snapshot"]).strip(),
@@ -286,6 +337,8 @@ def _parse_saved_forecast(
             period_start=date.fromisoformat(str(row["forecast_period_start"])),
             period_end=date.fromisoformat(str(row["forecast_period_end"])),
             predicted_demand=Decimal(str(row["predicted_demand"])),
+            forecast_model=str(row.get("forecast_model") or "lightgbm").strip().lower(),
+            forecast_version=str(row.get("forecast_version") or "1").strip(),
         )
     except (KeyError, TypeError, ValueError, ArithmeticError) as error:
         raise DataUnavailableError(

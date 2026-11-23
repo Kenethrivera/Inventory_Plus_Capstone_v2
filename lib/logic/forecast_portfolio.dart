@@ -79,6 +79,7 @@ class ReplenishmentPriority {
   const ReplenishmentPriority({
     required this.productId,
     required this.productName,
+    this.sku = '',
     required this.category,
     required this.status,
     required this.inventoryUnit,
@@ -87,6 +88,7 @@ class ReplenishmentPriority {
 
   final String productId;
   final String productName;
+  final String sku;
   final String category;
   final String status;
   final String inventoryUnit;

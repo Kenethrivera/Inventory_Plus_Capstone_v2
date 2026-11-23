@@ -120,6 +120,30 @@ class SupabaseSecretRestClient:
             stage=f"trusted_supabase_rpc:{function_name}:pagination_limit",
         )
 
+    def read_rows(self, table_name: str, params: Mapping[str, str]) -> list[Mapping[str, object]]:
+        if table_name != "approval_requests":
+            raise ValueError("Unsupported recommendation tracking read")
+        try:
+            response = self._client.get(
+                f"{self._base_url}/rest/v1/{table_name}",
+                headers=self._headers, params=dict(params),
+            )
+        except (httpx.TimeoutException, httpx.NetworkError) as error:
+            error.data_stage = f"trusted_supabase_read:{table_name}"
+            raise
+        if response.status_code >= 400:
+            raise DataUnavailableError("Recommendation tracking read unavailable",
+                                       stage=f"trusted_supabase_read:{table_name}")
+        try:
+            rows = response.json()
+        except ValueError as error:
+            raise DataUnavailableError("Invalid recommendation tracking read",
+                                       stage=f"trusted_supabase_read:{table_name}") from error
+        if not isinstance(rows, list) or any(not isinstance(row, Mapping) for row in rows):
+            raise DataUnavailableError("Invalid recommendation tracking rows",
+                                       stage=f"trusted_supabase_read:{table_name}")
+        return rows
+
 
 class SupabaseRecommendationPersistenceAdapter(RecommendationPersistenceAdapter):
     def __init__(self, settings: ApiSettings) -> None:
@@ -156,6 +180,15 @@ class SupabaseRecommendationPersistenceAdapter(RecommendationPersistenceAdapter)
                 stage="trusted_supabase_rpc:forecast_recommendation_snapshot_by_request_v1",
             )
         return payload
+
+    def approved_restock_by_request(
+        self, *, request_id: UUID, location_id: str,
+    ) -> Mapping[str, object] | None:
+        rows = self._client.read_rows("approval_requests", {
+            "select": "id,location_id,product_id,request_type,status,transaction_id,requested_quantity",
+            "id": f"eq.{request_id}", "location_id": f"eq.{location_id}", "limit": "1",
+        })
+        return rows[0] if rows else None
 
     def save_snapshot(
         self,

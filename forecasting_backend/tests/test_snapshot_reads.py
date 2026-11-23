@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timedelta
+from decimal import Decimal
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi.testclient import TestClient
@@ -11,6 +14,7 @@ from app.api.adapters import SyntheticDevelopmentAdapter
 from app.api.contracts import DataUnavailableError
 from app.api.snapshot_reads import ForecastSnapshotReadRepository
 from app.api.settings import ApiSettings
+from app.data.models import DailyDemand
 
 
 TOKEN = "snapshot-read-test-admin-token"
@@ -81,6 +85,9 @@ class ReadOnlyForecastAdapter(SyntheticDevelopmentAdapter):
     def load_analysis_context(self, **kwargs):
         raise AssertionError("snapshot reads must not load demand history or fit models")
 
+    def load_daily_demand(self, **kwargs):
+        return ()
+
 
 class SnapshotReadApiTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -119,6 +126,26 @@ class SnapshotReadApiTests(unittest.TestCase):
         self.assertEqual(wrong_scope.status_code, 403)
         self.assertEqual(len(self.repository.overview_calls), 1)
 
+    def test_overview_actual_sales_fills_recorded_zero_days(self) -> None:
+        product_id = "31000000-0000-4000-8000-000000000001"
+        location_id = self.adapter.authenticate(TOKEN).location_id
+        today = datetime.now(ZoneInfo("Asia/Manila")).date()
+        sales = (
+            DailyDemand(today - timedelta(days=3), location_id, product_id,
+                        "Simulated item", "pcs", Decimal("4"), 1),
+            DailyDemand(today - timedelta(days=1), location_id, product_id,
+                        "Simulated item", "pcs", Decimal("2"), 1),
+        )
+        page = {"page": 1, "page_size": 25, "total_count": 1, "page_count": 1,
+                "items": [{"status": "queued", "product": {"product_id": product_id}}]}
+        with patch.object(self.repository, "overview", return_value=page), \
+             patch.object(self.adapter, "load_daily_demand", return_value=sales):
+            response = self.client.get("/v1/forecasting/snapshots/overview",
+                headers={"Authorization": f"Bearer {TOKEN}"})
+        self.assertEqual(response.status_code, 200, response.text)
+        actual = response.json()["actual_sales_by_product"][product_id]
+        self.assertEqual([point["quantity"] for point in actual], ["4", "0", "2"])
+
     def test_overview_guidance_reads_are_capped_at_five(self):
         rows = [{"status": "completed", "product": {
             "product_id": f"31000000-0000-4000-8000-{index:012d}"},
@@ -132,6 +159,21 @@ class SnapshotReadApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(self.repository.product_calls), 5)
         self.assertEqual(response.json()["guidance_coverage"]["limit"], 5)
+
+    def test_overview_can_skip_guidance_for_saved_chart(self):
+        rows = [{"status": "completed", "product": {
+            "product_id": f"31000000-0000-4000-8000-{index:012d}"},
+            "snapshot": {}} for index in range(8)]
+        with patch.object(self.repository, "overview", return_value={
+            "page": 1, "page_size": 25, "total_count": 8, "page_count": 1,
+            "items": rows,
+        }):
+            response = self.client.get("/v1/forecasting/snapshots/overview",
+                params={"include_guidance": "false"},
+                headers={"Authorization": f"Bearer {TOKEN}"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.repository.product_calls, [])
+        self.assertEqual(response.json()["guidance_coverage"]["limit"], 0)
 
     def test_scope_coverage_is_forwarded_without_model_execution(self):
         with patch.object(self.repository, "history_coverage", return_value={
