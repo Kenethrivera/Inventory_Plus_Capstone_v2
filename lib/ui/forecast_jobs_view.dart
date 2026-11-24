@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../services/forecasting_api_service.dart';
+import 'widgets/app_styled_dropdown.dart';
 
 const _ink = Color(0xFF1C1917);
 const _muted = Color(0xFF78716C);
@@ -32,7 +33,6 @@ class ForecastJobsViewState extends State<ForecastJobsView> {
   String? _error;
   String _model = 'all';
   String _status = 'all';
-  DateTimeRange? _range;
   bool _latestOnly = true;
   bool _loading = false;
   int _page = 1;
@@ -96,8 +96,6 @@ class ForecastJobsViewState extends State<ForecastJobsView> {
         latestOnly: _latestOnly, search: _searchController.text.trim(),
         model: _model == 'all' ? null : _model,
         status: _status == 'all' ? null : _status,
-        fromDate: _range == null ? null : _date(_range!.start),
-        toDate: _range == null ? null : _date(_range!.end),
       );
       if (!mounted || !widget.active || request != _generation) return;
       if (result.pageCount > 0 && _page > result.pageCount) {
@@ -138,22 +136,6 @@ class ForecastJobsViewState extends State<ForecastJobsView> {
       _polls++;
       _refresh();
     });
-  }
-
-  Future<void> _chooseRange() async {
-    final selected = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020), lastDate: DateTime(2100),
-      initialDateRange: _range,
-      helpText: 'Forecast business dates (Asia/Manila)',
-      builder: (context, child) {
-        final theme = Theme.of(context);
-        return Theme(data: theme.copyWith(colorScheme: theme.colorScheme.copyWith(
-          primary: _accent, surface: Colors.white,
-          surfaceTint: Colors.transparent)), child: child!);
-      },
-    );
-    if (selected != null && mounted) _changeFilter(() => _range = selected);
   }
 
   @override
@@ -259,15 +241,6 @@ class ForecastJobsViewState extends State<ForecastJobsView> {
         'running': 'Running', 'succeeded': 'Succeeded', 'failed': 'Failed',
         'cancelled': 'Cancelled', 'superseded': 'Superseded',
       }, (value) => _changeFilter(() => _status = value)),
-      OutlinedButton.icon(onPressed: _chooseRange, icon: const Icon(Icons.date_range, size: 18),
-        label: Text(_range == null ? 'Forecast date range' :
-          '${_date(_range!.start)} – ${_date(_range!.end)}'),
-        style: OutlinedButton.styleFrom(foregroundColor: _ink,
-          backgroundColor: _filterBackground, side: const BorderSide(color: _line),
-          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)))),
-      if (_range != null) IconButton(tooltip: 'Clear date range',
-        onPressed: () => _changeFilter(() => _range = null), icon: const Icon(Icons.close)),
       SegmentedButton<bool>(segments: const [
         ButtonSegment(value: true, label: Text('Latest Jobs')),
         ButtonSegment(value: false, label: Text('All History')),
@@ -290,7 +263,7 @@ class ForecastJobsViewState extends State<ForecastJobsView> {
 
   Widget _dropdown(String label, String value, Map<String, String> options,
       ValueChanged<String> onChanged) => SizedBox(width: 170,
-    child: DropdownButtonFormField<String>(value: value, isExpanded: true,
+    child: AppStyledDropdown<String>(value: value,
       style: const TextStyle(fontSize: 13, color: _ink),
       decoration: _filterDecoration(label),
       items: [for (final entry in options.entries) DropdownMenuItem(
@@ -309,11 +282,13 @@ class ForecastJobsViewState extends State<ForecastJobsView> {
       borderSide: const BorderSide(color: _accent)),
   );
 
-  Widget _table(List<ForecastJobItem> items) => Container(
+  Widget _table(List<ForecastJobItem> items) => LayoutBuilder(builder: (context, constraints) => Container(
     decoration: BoxDecoration(color: Colors.white, border: Border.all(color: _line),
       borderRadius: BorderRadius.circular(14)),
     clipBehavior: Clip.antiAlias,
-    child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(
+    child: SingleChildScrollView(scrollDirection: Axis.horizontal,
+      child: ConstrainedBox(constraints: BoxConstraints(minWidth: constraints.maxWidth),
+        child: DataTable(
       headingRowColor: const WidgetStatePropertyAll(_tableHeader),
       dataRowColor: const WidgetStatePropertyAll(Colors.white),
       border: const TableBorder(horizontalInside: BorderSide(color: _line)),
@@ -346,7 +321,7 @@ class ForecastJobsViewState extends State<ForecastJobsView> {
           style: TextButton.styleFrom(foregroundColor: _accent),
           child: const Text('View Details'))),
       ])],
-    )));
+    )))));
 
   Widget _mobileList(List<ForecastJobItem> items) => Column(children: [
     for (final job in items) Container(width: double.infinity,

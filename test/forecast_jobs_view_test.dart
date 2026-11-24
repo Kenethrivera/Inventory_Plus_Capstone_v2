@@ -31,12 +31,16 @@ class _JobsApi extends ForecastApiClient {
   final responses = <ForecastJobsPage>[_page('queued'), _page('running'), _page('succeeded')];
   int reads = 0;
   int preparations = 0;
+  String? lastModel;
+  String? lastStatus;
 
   @override
   Future<ForecastJobsPage> loadForecastJobs({required String sessionToken,
       required int page, required int pageSize, required bool latestOnly,
       String? search, String? model, String? status, String? fromDate,
       String? toDate}) async {
+    lastModel = model;
+    lastStatus = status;
     final result = responses[reads < responses.length ? reads : responses.length - 1];
     reads++;
     return result;
@@ -52,12 +56,18 @@ class _JobsApi extends ForecastApiClient {
 
 void main() {
   testWidgets('job monitor refreshes authoritative transitions without preparing', (tester) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final api = _JobsApi();
     final key = GlobalKey<ForecastJobsViewState>();
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: SingleChildScrollView(
       child: ForecastJobsView(key: key, api: api, sessionToken: 'session', active: true)))));
     await tester.pump();
     expect(find.text('Queued'), findsWidgets);
+    expect(find.text('Forecast date range'), findsNothing);
+    expect(tester.getSize(find.byType(DataTable)).width, greaterThan(1500));
     expect(find.byTooltip('Refresh job statuses'), findsNothing);
     key.currentState!.refresh();
     await tester.pump();
@@ -67,5 +77,30 @@ void main() {
     expect(find.text('Succeeded'), findsWidgets);
     expect(api.preparations, 0);
     expect(api.reads, 3);
+  });
+
+  testWidgets('job filters use the shared styled dropdown and update the query', (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _JobsApi();
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: SingleChildScrollView(
+      child: ForecastJobsView(api: api, sessionToken: 'session', active: true)))));
+    await tester.pump();
+
+    expect(find.byType(PopupMenuButton<int>), findsNWidgets(2));
+    await tester.tap(find.text('All models'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    await tester.tap(find.text('Blend').last);
+    await tester.pumpAndSettle();
+    expect(api.lastModel, 'blend');
+
+    await tester.tap(find.text('All statuses'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Failed').last);
+    await tester.pumpAndSettle();
+    expect(api.lastStatus, 'failed');
   });
 }

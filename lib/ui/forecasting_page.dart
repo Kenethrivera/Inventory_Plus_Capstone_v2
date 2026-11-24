@@ -1968,7 +1968,10 @@ class _ForecastingPageState extends State<ForecastingPage> {
               child: Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1280),
+                constraints: BoxConstraints(
+                  maxWidth: _selectedView == _ForecastingView.jobs
+                      ? double.infinity : 1280,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
