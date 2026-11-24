@@ -205,9 +205,17 @@ class ForecastJobsViewState extends State<ForecastJobsView> {
       ('Succeeded', counts['succeeded'] ?? 0, const Color(0xFF15803D)),
       ('Failed', counts['failed'] ?? 0, const Color(0xFFB91C1C)),
     ];
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Wrap(spacing: 8, runSpacing: 8, children: [for (final card in cards)
-        Container(width: 145, padding: const EdgeInsets.all(12),
+    return LayoutBuilder(builder: (context, constraints) {
+      const spacing = 8.0;
+      const minCardWidth = 145.0;
+      final columns = ((constraints.maxWidth + spacing) /
+              (minCardWidth + spacing))
+          .floor()
+          .clamp(1, cards.length);
+      final cardWidth =
+          (constraints.maxWidth - spacing * (columns - 1)) / columns;
+      return Wrap(spacing: spacing, runSpacing: spacing, children: [for (final card in cards)
+        Container(width: cardWidth, padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(color: Colors.white, border: Border.all(color: _line),
             borderRadius: BorderRadius.circular(9)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -216,13 +224,12 @@ class ForecastJobsViewState extends State<ForecastJobsView> {
             Text('${card.$2}', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600,
               color: card.$3)),
           ])),
-      ]),
-    ]);
+      ]);
+    });
   }
 
-  Widget _filters() => Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
-    children: [
-      SizedBox(width: 225, child: TextField(controller: _searchController,
+  Widget _filters() => LayoutBuilder(builder: (context, constraints) {
+    final search = TextField(controller: _searchController,
         style: const TextStyle(fontSize: 13, color: _ink),
         decoration: _filterDecoration('Product name or SKU',
           prefixIcon: const Icon(Icons.search, size: 18, color: _muted)),
@@ -231,35 +238,73 @@ class ForecastJobsViewState extends State<ForecastJobsView> {
           _searchTimer = Timer(const Duration(milliseconds: 400), () {
             if (mounted) _changeFilter(() {});
           });
-        })),
-      _dropdown('Forecast Model', _model, const {
+        });
+    final model = _dropdown('Forecast Model', _model, const {
         'all': 'All models', 'blend': 'Blend', 'lightgbm': 'LightGBM',
         'mean28': 'Mean28', 'seasonal_experimental': 'Seasonal',
-      }, (value) => _changeFilter(() => _model = value)),
-      _dropdown('Status', _status, const {
+      }, (value) => _changeFilter(() => _model = value));
+    final status = _dropdown('Status', _status, const {
         'all': 'All statuses', 'queued': 'Queued', 'retry_pending': 'Retry Pending',
         'running': 'Running', 'succeeded': 'Succeeded', 'failed': 'Failed',
         'cancelled': 'Cancelled', 'superseded': 'Superseded',
-      }, (value) => _changeFilter(() => _status = value)),
-      SegmentedButton<bool>(segments: const [
-        ButtonSegment(value: true, label: Text('Latest Jobs')),
-        ButtonSegment(value: false, label: Text('All History')),
-      ], showSelectedIcon: false,
-        style: ButtonStyle(
-          backgroundColor: WidgetStateProperty.resolveWith((states) =>
-            states.contains(WidgetState.selected) ? _ink : Colors.white),
-          foregroundColor: WidgetStateProperty.resolveWith((states) =>
-            states.contains(WidgetState.selected) ? Colors.white : _ink),
-          overlayColor: WidgetStateProperty.resolveWith((states) =>
-            states.contains(WidgetState.selected)
-              ? Colors.white.withValues(alpha: .12) : _tableHeader),
-          side: const WidgetStatePropertyAll(BorderSide(color: _line)),
-          textStyle: const WidgetStatePropertyAll(TextStyle(
-            fontSize: 12, fontWeight: FontWeight.w600)),
+      }, (value) => _changeFilter(() => _status = value));
+    final history = _historyToggle();
+    if (constraints.maxWidth >= 900) {
+      return Row(children: [
+        Expanded(flex: 3, child: search),
+        const SizedBox(width: 10),
+        Expanded(flex: 2, child: model),
+        const SizedBox(width: 10),
+        Expanded(flex: 2, child: status),
+        const SizedBox(width: 10),
+        history,
+      ]);
+    }
+    final narrow = constraints.maxWidth < 560;
+    return Wrap(spacing: 10, runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center, children: [
+        SizedBox(width: narrow ? constraints.maxWidth : 225, child: search),
+        SizedBox(width: narrow ? constraints.maxWidth : 170, child: model),
+        SizedBox(width: narrow ? constraints.maxWidth : 170, child: status),
+        history,
+      ]);
+  });
+
+  Widget _historyToggle() => Container(
+    padding: const EdgeInsets.all(2),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF7F7F6),
+      border: Border.all(color: const Color(0xFFE7E5E4)),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      for (final option in [(true, 'Latest Jobs'), (false, 'All History')])
+        InkWell(
+          key: Key(option.$1 ? 'forecast-jobs-latest' : 'forecast-jobs-history'),
+          onTap: () {
+            if (_latestOnly != option.$1) {
+              _changeFilter(() => _latestOnly = option.$1);
+            }
+          },
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: _latestOnly == option.$1 ? Colors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+              boxShadow: _latestOnly == option.$1
+                  ? const [BoxShadow(color: Color(0x0D1C1917),
+                      blurRadius: 3, offset: Offset(0, 1))]
+                  : null,
+            ),
+            child: Text(option.$2, style: TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w600,
+              color: _latestOnly == option.$1 ? _ink : _muted,
+            )),
+          ),
         ),
-        selected: {_latestOnly}, onSelectionChanged: (value) =>
-        _changeFilter(() => _latestOnly = value.first)),
-    ]);
+    ]),
+  );
 
   Widget _dropdown(String label, String value, Map<String, String> options,
       ValueChanged<String> onChanged) => SizedBox(width: 170,

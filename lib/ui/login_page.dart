@@ -13,6 +13,7 @@ import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 import 'widgets/app_toast.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.controller});
@@ -24,6 +25,10 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   static const _brand = Color(0xFFC83D08);
   static const _brandDark = Color(0xFF9D320F);
+  static const _supportEmail = 'inventoryplus2027@gmail.com';
+  static final _supportGmailUrl = Uri.parse(
+    'https://mail.google.com/mail/?view=cm&fs=1&to=inventoryplus2027@gmail.com&su=Inventory%20Plus%20Support',
+  );
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -262,6 +267,109 @@ class _LoginPageState extends State<LoginPage> {
       context: context,
       barrierDismissible: false,
       builder: (context) => const ForgotPasswordModal(),
+    );
+  }
+
+  void _showCustomerServiceDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Padding(
+            padding: const EdgeInsets.all(30),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Customer Service', style: TextStyle(
+                  fontSize: 22, fontWeight: FontWeight.w700,
+                  color: Color(0xFF171717), fontFamily: 'Outfit',
+                )),
+                const SizedBox(height: 4),
+                const Text("Send us an email and we'll get back to you.",
+                  style: TextStyle(fontSize: 14, color: Color(0xFF756F69),
+                    fontFamily: 'Outfit')),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE7E2DD)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(children: [
+                    const Expanded(child: Text(_supportEmail,
+                      maxLines: 2,
+                      style: TextStyle(fontSize: 13, color: Color(0xFF171717),
+                        fontFamily: 'Outfit'))),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () async {
+                        await Clipboard.setData(const ClipboardData(text: _supportEmail));
+                        if (dialogContext.mounted) {
+                          AppToast.success(dialogContext, 'Support email copied');
+                        }
+                      },
+                      style: TextButton.styleFrom(
+                        backgroundColor: const Color(0xFFF0EEEC),
+                        foregroundColor: const Color(0xFF171717),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: const Text('Copy', style: TextStyle(
+                        fontWeight: FontWeight.w700, fontFamily: 'Outfit')),
+                    ),
+                  ]),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(width: double.infinity, height: 52,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      try {
+                        final opened = await launchUrl(_supportGmailUrl,
+                          mode: LaunchMode.externalApplication,
+                          webOnlyWindowName: '_blank');
+                        if (!opened && dialogContext.mounted) {
+                          AppToast.error(dialogContext, 'Could not open Gmail. Copy the email instead.');
+                        }
+                      } catch (_) {
+                        if (dialogContext.mounted) {
+                          AppToast.error(dialogContext, 'Could not open Gmail. Copy the email instead.');
+                        }
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _brand,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Open in Gmail', style: TextStyle(
+                      fontWeight: FontWeight.w700, fontFamily: 'Outfit')),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(width: double.infinity, height: 52,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    style: TextButton.styleFrom(
+                      backgroundColor: const Color(0xFFF0EEEC),
+                      foregroundColor: const Color(0xFF171717),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Close', style: TextStyle(
+                      fontWeight: FontWeight.w700, fontFamily: 'Outfit')),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -533,6 +641,31 @@ class _LoginPageState extends State<LoginPage> {
             ),
 
             const SizedBox(height: 24),
+            Align(
+              alignment: Alignment.center,
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text('Need help?', style: TextStyle(
+                    color: Color(0xFF756F69), fontSize: 12,
+                    fontFamily: 'Outfit')),
+                  TextButton(
+                    onPressed: _showCustomerServiceDialog,
+                    style: TextButton.styleFrom(
+                      foregroundColor: _brand,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Contact customer service',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                        fontFamily: 'Outfit')),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             Align(
               alignment: Alignment.center,
               child: Wrap(

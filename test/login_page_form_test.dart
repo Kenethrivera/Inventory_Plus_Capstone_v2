@@ -99,4 +99,55 @@ void main() {
     expect(find.byType(AlertDialog), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('customer service shows and copies the support email', (tester) async {
+    await showLogin(tester, size: const Size(375, 800));
+    await tester.ensureVisible(find.text('Contact customer service'));
+    await tester.tap(find.text('Contact customer service'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Customer Service'), findsOneWidget);
+    expect(find.text('inventoryplus2027@gmail.com'), findsOneWidget);
+    expect(find.text('Open in Gmail'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    String? copied;
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied = (call.arguments as Map)['text'] as String;
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await tester.tap(find.text('Copy'));
+    await tester.pump();
+    expect(copied, 'inventoryplus2027@gmail.com');
+
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(find.text('Customer Service'), findsNothing);
+  });
+
+  testWidgets('customer service opens the addressed Gmail draft', (tester) async {
+    await showLogin(tester);
+    await tester.tap(find.text('Contact customer service'));
+    await tester.pumpAndSettle();
+
+    String? launchedUrl;
+    const launcherChannel = MethodChannel('plugins.flutter.io/url_launcher');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(launcherChannel, (call) async {
+      if (call.method == 'launch') {
+        launchedUrl = (call.arguments as Map)['url'] as String;
+      }
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(launcherChannel, null));
+
+    await tester.tap(find.text('Open in Gmail'));
+    await tester.pump();
+    expect(launchedUrl,
+      'https://mail.google.com/mail/?view=cm&fs=1&to=inventoryplus2027@gmail.com&su=Inventory%20Plus%20Support');
+  });
 }
