@@ -90,8 +90,8 @@ class _OperationsOverviewState extends State<OperationsOverview> {
   VoidCallback get onStaff => widget.onStaff;
   VoidCallback get onPayments => widget.onPayments;
   Stream<List<CustomerOrder>>? get orderUpdates => widget.orderUpdates;
-  Future<Map<String, dynamic>?> Function(String orderId)? get loadLoadingProof =>
-      widget.loadLoadingProof;
+  Future<Map<String, dynamic>?> Function(String orderId)?
+  get loadLoadingProof => widget.loadLoadingProof;
 
   @override
   Widget build(BuildContext context) {
@@ -986,52 +986,37 @@ class _InteractiveSalesChart extends StatefulWidget {
   State<_InteractiveSalesChart> createState() => _InteractiveSalesChartState();
 }
 
-class _InteractiveSalesChartState extends State<_InteractiveSalesChart>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _hoverPosition = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 160),
-  );
-  bool _showDetails = false;
+class _InteractiveSalesChartState extends State<_InteractiveSalesChart> {
+  int? _hoveredHourIndex;
 
-  void _moveDetails(double x, double width) {
-    if (width <= 0) return;
-    final position = x <= 4
-        ? 0.0
-        : x >= width - 4
-        ? 1.0
-        : (x / width).clamp(0.0, 1.0);
-    if (!_showDetails) {
-      _hoverPosition.value = position;
-      setState(() => _showDetails = true);
-    } else {
-      _hoverPosition.animateTo(
-        position,
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOutCubic,
-      );
+  void _moveDetails(double x, double width, int lastIndex) {
+    if (width <= 0 || lastIndex < 1) return;
+    final index = (x / width * lastIndex).round().clamp(0, lastIndex).toInt();
+    if (_hoveredHourIndex != index) {
+      setState(() => _hoveredHourIndex = index);
     }
-  }
-
-  @override
-  void dispose() {
-    _hoverPosition.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final endHour = (DateTime.now().hour + 1).clamp(1, 24);
-    final hourlySales = List<double>.filled(endHour, 0);
+    final currentHour = DateTime.now().hour;
+    final startHour = currentHour <= 7
+        ? (currentHour - 1).clamp(0, 23).toInt()
+        : 7;
+    final endHour = currentHour <= startHour ? startHour + 1 : currentHour;
+    final hourlySales = List<double>.filled(endHour + 1, 0);
     for (final order in widget.orders) {
-      if (order.createdAt.hour < endHour) {
+      if (order.createdAt.hour <= endHour) {
         hourlySales[order.createdAt.hour] += order.totalAmount;
       }
     }
-    final totals = List<double>.filled(endHour + 1, 0);
-    for (var hour = 0; hour < endHour; hour++) {
-      totals[hour + 1] = totals[hour] + hourlySales[hour];
+    final totals = <double>[];
+    var runningTotal = 0.0;
+    for (var hour = 0; hour <= endHour; hour++) {
+      runningTotal += hourlySales[hour];
+      if (hour >= startHour) totals.add(runningTotal);
     }
+    final lastIndex = totals.length - 1;
     return Column(
       children: [
         SizedBox(
@@ -1043,14 +1028,15 @@ class _InteractiveSalesChartState extends State<_InteractiveSalesChart>
               final tooltipWidth = (width - 16).clamp(0.0, 190.0);
               return MouseRegion(
                 key: const ValueKey('sales-chart-hover-region'),
-                onHover: (event) => _moveDetails(event.localPosition.dx, width),
-                onExit: (_) => setState(() => _showDetails = false),
+                onHover: (event) =>
+                    _moveDetails(event.localPosition.dx, width, lastIndex),
+                onExit: (_) => setState(() => _hoveredHourIndex = null),
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapDown: (details) =>
-                      _moveDetails(details.localPosition.dx, width),
+                      _moveDetails(details.localPosition.dx, width, lastIndex),
                   onHorizontalDragUpdate: (details) =>
-                      _moveDetails(details.localPosition.dx, width),
+                      _moveDetails(details.localPosition.dx, width, lastIndex),
                   child: Stack(
                     children: [
                       Positioned.fill(
@@ -1059,23 +1045,15 @@ class _InteractiveSalesChartState extends State<_InteractiveSalesChart>
                           painter: _SalesPainter(totals),
                         ),
                       ),
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: AnimatedOpacity(
-                            opacity: _showDetails ? 1 : 0,
-                            duration: const Duration(milliseconds: 170),
-                            curve: Curves.easeInOut,
-                            child: AnimatedBuilder(
-                              animation: _hoverPosition,
-                              builder: (context, _) {
-                                final hourPosition =
-                                    _hoverPosition.value * endHour;
-                                final hour = hourPosition.floor().clamp(
-                                  0,
-                                  endHour - 1,
-                                );
-                                final runningTotal = totals[hour + 1];
-                                final x = width * _hoverPosition.value;
+                      if (_hoveredHourIndex case final hoveredIndex?)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: Builder(
+                              builder: (context) {
+                                final index = hoveredIndex.clamp(0, lastIndex);
+                                final hour = startHour + index;
+                                final runningTotal = totals[index];
+                                final x = width * index / lastIndex;
                                 final y = _SalesPainter.yFor(
                                   runningTotal,
                                   totals.last,
@@ -1152,7 +1130,6 @@ class _InteractiveSalesChartState extends State<_InteractiveSalesChart>
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -1165,30 +1142,34 @@ class _InteractiveSalesChartState extends State<_InteractiveSalesChart>
           height: 18,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              const labelWidth = 48.0;
-              final step = (endHour * labelWidth / constraints.maxWidth)
+              const labelWidth = 42.0;
+              final step = (lastIndex * labelWidth / constraints.maxWidth)
                   .ceil()
-                  .clamp(1, endHour);
-              final hours = <int>[
+                  .clamp(1, lastIndex);
+              final indices = <int>[
                 0,
-                for (var hour = step; hour < endHour - step + 1; hour += step)
-                  hour,
-                endHour,
+                for (
+                  var index = step;
+                  index < lastIndex - step + 1;
+                  index += step
+                )
+                  index,
+                lastIndex,
               ];
               return Stack(
                 children: [
-                  for (final hour in hours)
+                  for (final index in indices)
                     Positioned(
                       left:
-                          (constraints.maxWidth * hour / endHour -
+                          (constraints.maxWidth * index / lastIndex -
                                   labelWidth / 2)
                               .clamp(0.0, constraints.maxWidth - labelWidth),
                       width: labelWidth,
                       child: Text(
-                        _hourLabel(hour),
-                        textAlign: hour == 0
+                        _hourLabel(startHour + index),
+                        textAlign: index == 0
                             ? TextAlign.left
-                            : hour == endHour
+                            : index == lastIndex
                             ? TextAlign.right
                             : TextAlign.center,
                         style: const TextStyle(
@@ -1218,12 +1199,10 @@ class _SalesPainter extends CustomPainter {
   final List<double> values;
 
   static double yFor(double value, double maximum, double height) =>
-      maximum == 0 ? height * 0.45 : height * (0.84 - 0.70 * value / maximum);
+      maximum == 0 ? height * 0.84 : height * (0.84 - 0.70 * value / maximum);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final background = Paint()..color = const Color(0xFFFBF1EC);
-    canvas.drawRect(Offset.zero & size, background);
     final maximum = values.last;
     final paint = Paint()
       ..color = OperationsOverview.orange
@@ -1234,20 +1213,18 @@ class _SalesPainter extends CustomPainter {
     final path = Path();
     final area = Path()..moveTo(0, size.height);
     final hours = values.length - 1;
-    final firstY = yFor(values[1], maximum, size.height);
+    final firstY = yFor(values.first, maximum, size.height);
     path.moveTo(0, firstY);
     area.lineTo(0, firstY);
-    for (var hour = 1; hour < hours; hour++) {
+    for (var hour = 1; hour <= hours; hour++) {
       final x = size.width * hour / hours;
-      final previousY = yFor(values[hour], maximum, size.height);
-      final nextY = yFor(values[hour + 1], maximum, size.height);
+      final previousY = yFor(values[hour - 1], maximum, size.height);
+      final nextY = yFor(values[hour], maximum, size.height);
       path.lineTo(x, previousY);
       path.lineTo(x, nextY);
       area.lineTo(x, previousY);
       area.lineTo(x, nextY);
     }
-    path.lineTo(size.width, yFor(maximum, maximum, size.height));
-    area.lineTo(size.width, yFor(maximum, maximum, size.height));
     area.lineTo(size.width, size.height);
     area.close();
     canvas.drawPath(area, fill);

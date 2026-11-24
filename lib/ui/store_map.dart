@@ -619,6 +619,20 @@ class StoreMapState extends State<StoreMap>
 
   void _updatePalettePreview(DragTargetDetails<ElementType> details) {
     _lockDragCanvas();
+    if (details.data == ElementType.door) {
+      if (_hoveredElementId != null ||
+          _dragPreviewPos != null ||
+          _dragPreviewSize != null ||
+          _dragPreviewType != null) {
+        setState(() {
+          _hoveredElementId = null;
+          _dragPreviewPos = null;
+          _dragPreviewSize = null;
+          _dragPreviewType = null;
+        });
+      }
+      return;
+    }
     final size = _getDefaultSize(details.data);
     final position = _paletteWorldPosition(details.offset, size);
     if (position == null) return;
@@ -628,19 +642,13 @@ class StoreMapState extends State<StoreMap>
       position: position,
       label: '',
     )..size = size;
-    final doorPlacement = details.data == ElementType.door
-        ? _doorPlacement(position, size)
-        : null;
-    final snapped = doorPlacement?.position ??
-        _snapObjectNearWall(element, position, size, 0.0);
-    final rotation = doorPlacement?.rotation ?? 0.0;
+    final snapped = _snapObjectNearWall(element, position, size, 0.0);
+    const rotation = 0.0;
     setState(() {
       _hoveredElementId = null;
       _dragPreviewPos = snapped;
       _dragPreviewSize = size;
-      _dragPreviewValid =
-          (details.data != ElementType.door || doorPlacement != null) &&
-          !_hasCollision(element, snapped, size, rotation);
+      _dragPreviewValid = !_hasCollision(element, snapped, size, rotation);
       _dragPreviewRotation = rotation;
       _dragPreviewType = details.data;
     });
@@ -2420,8 +2428,10 @@ class StoreMapState extends State<StoreMap>
                           ),
                           if (_dragPreviewPos != null &&
                               _dragPreviewSize != null &&
-                              _dragPreviewType != null)
+                              _dragPreviewType != null &&
+                              _dragPreviewType != ElementType.door)
                             Positioned(
+                              key: const ValueKey('store-map-placement-preview'),
                               left: _dragPreviewPos!.dx - minX,
                               top: _dragPreviewPos!.dy - minY,
                               width: _dragPreviewSize!.width,
@@ -3488,27 +3498,17 @@ class StoreMapState extends State<StoreMap>
 
                             _rawDragPosition =
                                 _rawDragPosition! + Offset(mapDx, mapDy);
-                            final doorPlacement =
-                                interactiveEl.type == ElementType.door
-                                ? _doorPlacement(
-                                    _rawDragPosition!,
-                                    interactiveEl.size,
-                                  )
-                                : null;
-                            final Offset snappedPos = doorPlacement?.position ??
-                                _snapObjectNearWall(
-                                  interactiveEl,
-                                  _rawDragPosition!,
-                                  interactiveEl.size,
-                                  interactiveEl.rotation,
-                                );
-                            final rotation = doorPlacement?.rotation ??
-                                interactiveEl.rotation;
-
-                            final bool isValid =
-                                (interactiveEl.type != ElementType.door ||
-                                    doorPlacement != null) &&
-                                !_hasCollision(
+                            if (interactiveEl.type == ElementType.door) {
+                              return;
+                            }
+                            final Offset snappedPos = _snapObjectNearWall(
+                              interactiveEl,
+                              _rawDragPosition!,
+                              interactiveEl.size,
+                              interactiveEl.rotation,
+                            );
+                            final rotation = interactiveEl.rotation;
+                            final bool isValid = !_hasCollision(
                               interactiveEl,
                               snappedPos,
                               interactiveEl.size,
@@ -3529,14 +3529,31 @@ class StoreMapState extends State<StoreMap>
                       : null,
                   onPanEnd: widget.mode == MapMode.manage
                       ? (details) {
+                          final isDoor = interactiveEl.type == ElementType.door;
+                          final doorPlacement = isDoor && _rawDragPosition != null
+                              ? _doorPlacement(_rawDragPosition!, interactiveEl.size)
+                              : null;
+                          final canMoveDoor = doorPlacement != null &&
+                              !_hasCollision(
+                                interactiveEl,
+                                doorPlacement.position,
+                                interactiveEl.size,
+                                doorPlacement.rotation,
+                              );
                           setState(() {
+                            if (canMoveDoor) {
+                              interactiveEl.position = doorPlacement.position;
+                              interactiveEl.rotation = doorPlacement.rotation;
+                            }
                             _dragCanvasBounds = null;
                             _rawDragPosition = null;
                             _dragPreviewPos = null;
                             _dragPreviewSize = null;
                             _dragPreviewType = null;
                           });
-                          widget.onLayoutEdited?.call();
+                          if (!isDoor || canMoveDoor) {
+                            widget.onLayoutEdited?.call();
+                          }
                         }
                       : null,
                   onPanCancel: widget.mode == MapMode.manage
