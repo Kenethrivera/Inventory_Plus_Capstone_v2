@@ -1,0 +1,5 @@
+# Forecast identities hash raw source bytes; keep the forecast implementation LF on every host.
+forecasting_backend/app/api/*.py text eol=lf
+forecasting_backend/app/data/*.py text eol=lf
+forecasting_backend/app/forecasting/*.py text eol=lf
+forecasting_backend/app/seasonality/*.py text eol=lf

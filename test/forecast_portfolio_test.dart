@@ -32,8 +32,14 @@ ForecastAnalysis analysis({
   required List<double> daily,
   bool coldStart = false,
   String status = 'recommend_order',
+  List<double>? actualDaily,
 }) {
   final json = forecastingAnalysisFixture(noHistory: coldStart, status: status);
+  if (actualDaily != null) {
+    json['actual_sales'] = List<Map<String, dynamic>>.generate(actualDaily.length,
+      (index) => {'date': DateTime.utc(2026, 11, 5).add(Duration(days: index))
+          .toIso8601String().split('T').first, 'quantity': actualDaily[index]});
+  }
   final productJson = json['product'] as Map<String, dynamic>;
   productJson
     ..['product_id'] = id
@@ -74,6 +80,26 @@ PortfolioForecastSnapshot snapshot({
 );
 
 void main() {
+  testWidgets('overview inspects date-aligned actual and predicted quantities', (tester) async {
+    final semantics = tester.ensureSemantics();
+    addTearDown(semantics.dispose);
+    await tester.binding.setSurfaceSize(const Size(1200, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final item = product(id: 'chart-product', name: 'Chart product', category: 'Tools', unit: 'pcs');
+    final result = analysis(id: item.id, name: item.name, unit: item.unit,
+      daily: List.filled(28, 4), actualDaily: List.filled(28, 6));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: SingleChildScrollView(
+      child: ForecastOverviewDashboard(snapshot: snapshot(products: [item], analyses: {item.id: result}),
+        products: [item], analyses: {item.id: result}, selectedWindow: ForecastWindow.next7Days,
+        onWindowChanged: (_) {}, onSelectProduct: (_) {}),
+    ))));
+    final chart = find.byKey(const Key('forecast-primary-demand-chart'));
+    expect(chart, findsOneWidget);
+    await tester.tapAt(tester.getTopLeft(chart) + const Offset(43, 90));
+    await tester.pump();
+    expect(find.bySemanticsLabel(RegExp('.*Absolute difference 2.*')), findsOneWidget);
+  });
+
   test('reactive preparation reuses snapshots and jobs, isolates scope and bounds models', () {
     ForecastSnapshotItem row(String id, String status, {String? job, String location = 'location-1'}) =>
       ForecastSnapshotItem(status: status, product: {'product_id': id, 'location_id': location,
@@ -86,9 +112,14 @@ void main() {
     expect(reactiveForecastCandidates(rows, model: 'lightgbm', locationId: 'location-1').length, 5);
     expect(reactiveForecastCandidates(rows, model: 'seasonal_experimental', locationId: 'location-1').length, 1);
     for (final status in ['queued', 'running']) {
-      expect(reactiveForecastCandidates([...rows, row('active', 'no_forecast', job: status)],
-        model: 'lightgbm', locationId: 'location-1'), isEmpty);
+      final candidates = reactiveForecastCandidates([...rows, row('active', 'no_forecast', job: status)],
+        model: 'lightgbm', locationId: 'location-1');
+      expect(candidates.length, 5);
+      expect(candidates.any((item) => item.productId == 'active'), isFalse);
     }
+    expect(reactiveForecastCandidates([row('failed', 'no_forecast', job: 'failed'),
+      row('missing', 'no_forecast')], model: 'lightgbm', locationId: 'location-1')
+      .single.productId, 'missing');
     expect(reactiveForecastCandidates([row('old', 'stale')],
       model: 'mean28', locationId: 'location-1').single.productId, 'old');
   });

@@ -52,23 +52,34 @@ def main() -> int:
     load_dotenv()
     parser = argparse.ArgumentParser(description="Server-only bounded forecast preparation (preview by default)")
     parser.add_argument("--enqueue", action="store_true")
-    parser.add_argument("--location-id", required=True)
+    parser.add_argument("--location-id")
+    parser.add_argument("--identity-only", action="store_true", help="Print source/runtime identity without credentials or database access")
     parser.add_argument("--max-products", type=int, default=10)
     parser.add_argument("--max-pages", type=int, default=1)
     parser.add_argument("--product-id")
     parser.add_argument("--daily-policy", action="store_true",
                         help="Stage 6B: 03:00 Manila daily sweep plus prompt initial-product lane")
+    parser.add_argument("--restock-lightgbm", action="store_true",
+                        help="Add the bounded daily LightGBM lane after its reviewed RPC is installed")
     parser.add_argument("--state-file", default=None)
     parser.add_argument("--interval-seconds", type=int, default=0, help="0 exits; otherwise repeat under a process supervisor")
     parser.add_argument("--report-json-stdout", action="store_true",
                         help="Emit each bounded report as one JSON line on stdout for automation")
     args = parser.parse_args()
+    if args.identity_only:
+        from app.api.implementation_manifest import implementation_manifest
+        print(json.dumps(implementation_manifest(), indent=2, sort_keys=True))
+        return 0
+    if not args.location_id:
+        parser.error("--location-id is required unless --identity-only is used")
     if not 1 <= args.max_products <= 25 or not 1 <= args.max_pages <= 100:
         parser.error("Use 1..25 products and 1..100 pages per cycle")
     if args.interval_seconds and args.interval_seconds < (30 if args.daily_policy else 60):
         parser.error("Maintenance interval must be at least 30s (daily policy) or 60s (legacy)")
     if args.daily_policy and args.product_id:
         parser.error("Use either daily policy or the explicit single-product path")
+    if args.restock_lightgbm and not args.daily_policy:
+        parser.error("--restock-lightgbm requires --daily-policy")
     location = str(UUID(args.location_id))
     product = str(UUID(args.product_id)) if args.product_id else None
     allowed = [x.strip() for x in os.getenv("FORECAST_MAINTENANCE_LOCATIONS", "").split(",") if x.strip()]
@@ -82,6 +93,8 @@ def main() -> int:
     inputs = MaintenanceInputs(**kwargs)
     service = ForecastAnalysisService(adapter=object())
     identity = forecast_model_identity(service)
+    lightgbm_identity = (forecast_model_identity(service, "lightgbm")
+                         if args.restock_lightgbm else None)
     stop = Event()
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -99,6 +112,7 @@ def main() -> int:
                     started = time.monotonic()
                     reports = run_policy_cycle(
                         repository=repository, inputs=inputs, service=service, identity=identity,
+                        lightgbm_identity=lightgbm_identity,
                         location_id=location, state=state,
                         checkpoint=lambda value: save_state(state_path, value),
                         enqueue=args.enqueue, limit=args.max_products, max_pages=args.max_pages,

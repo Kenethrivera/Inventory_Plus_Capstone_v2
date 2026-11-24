@@ -248,6 +248,39 @@ def post(api: TestClient, **changes):
 
 
 class ForecastApiTests(unittest.TestCase):
+    def test_historical_simulation_is_bounded_and_not_persisted(self) -> None:
+        api = client(SyntheticDevelopmentAdapter(settings()))
+        response = api.get(
+            f"/v1/forecasting/products/{SyntheticDevelopmentAdapter.PRODUCT_ID}/historical-simulation",
+            params={"cutoff": "2026-11-01", "actual_through": "2026-11-03", "model": "mean28"},
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertFalse(body["persisted"])
+        self.assertEqual(body["training_end"], "2026-10-31")
+        self.assertEqual(len(body["forecast"]), 28)
+        self.assertEqual(body["forecast"][0]["date"], "2026-11-01")
+        self.assertTrue(all("2026-11-01" <= row["date"] <= "2026-11-03" for row in body["actual_sales"]))
+
+    def test_historical_simulation_rejects_immature_actual_dates(self) -> None:
+        response = client().get(
+            f"/v1/forecasting/products/{SyntheticDevelopmentAdapter.PRODUCT_ID}/historical-simulation",
+            params={"cutoff": "2026-11-01", "actual_through": "2026-11-04"},
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_analysis_actual_sales_precede_forecast_and_include_zero_days(self) -> None:
+        response = post(client(), model="mean28")
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        actual = body["actual_sales"]
+        self.assertTrue(actual)
+        self.assertTrue(all(point["date"] < body["forecast"]["period_start"] for point in actual))
+        self.assertEqual([point["date"] for point in actual], sorted(point["date"] for point in actual))
+        self.assertTrue(all(point["quantity"] >= 0 for point in actual))
+
     def test_503_logs_safe_model_endpoint_stage_and_exception_type(self) -> None:
         adapter = TransformingAdapter(
             failure=DataUnavailableError(

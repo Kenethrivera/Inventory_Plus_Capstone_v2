@@ -1,0 +1,11 @@
+win32_setctime-1.2.1.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+win32_setctime-1.2.1.dist-info/METADATA,sha256=E34sbTfioDhGYRDYKCYP4p2ftos2PBU9e7EaBIoVji8,2708
+win32_setctime-1.2.1.dist-info/RECORD,,
+win32_setctime-1.2.1.dist-info/WHEEL,sha256=mOdXR9C3wMVov7cSY8PY-XCzo3SmmWCHvGQr5csJoao,91
+win32_setctime-1.2.1.dist-info/licenses/LICENSE,sha256=Ly12bEzvJ6QNSzwX0-AuW1ud3_uiVEqT-Z_6_gV3hRg,1063
+win32_setctime-1.2.1.dist-info/top_level.txt,sha256=JAa2y6T8woNK0AX-c4sHDXeZkn3NtEaMzTXMIc4Dsyg,15
+win32_setctime/__init__.py,sha256=z5ELtx5Ivdn4KP3LXNExZ9Pkme-aMyHFy-Y6vi-Mcbs,102
+win32_setctime/__pycache__/__init__.cpython-312.pyc,,
+win32_setctime/__pycache__/_setctime.cpython-312.pyc,,
+win32_setctime/_setctime.py,sha256=o_roTvOEYIT1QjoDHBDSVmh3lrRWkGnNDxAUGziWn4w,2436
+win32_setctime/py.typed,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0

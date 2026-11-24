@@ -28,7 +28,11 @@ class MaintenanceRepository(SupabaseForecastJobRepository):
         self.check_scope(location_id)
         if not 1 <= limit <= 25:
             raise ValueError("Maintenance pages must contain 1 to 25 products")
-        return self._rpc("forecast_maintenance_page_v1", {
+        if identity.model_key not in {"blend", "lightgbm"}:
+            raise ValueError("Daily maintenance supports only Blend and LightGBM")
+        function = ("forecast_maintenance_page_v1" if identity.model_key == "blend"
+                    else "forecast_maintenance_lightgbm_page_v1")
+        return self._rpc(function, {
             "p_location_id": location_id, "p_business_date": business_date.isoformat(),
             "p_config_digest": identity.config_digest,
             "p_implementation_digest": identity.implementation_digest,
@@ -128,7 +132,8 @@ def prepare_page(*, repository, inputs, service, identity, location_id, now: dat
     for row in candidates:
         try:
             result = materializer.bootstrap(profile=profile, session_token="", now=now,
-                                            product_id=str(row["id"]))
+                                            product_id=str(row["id"]),
+                                            model_key=identity.model_key)
             if result.skipped:
                 LOG.warning("maintenance_product_skipped product_id=%s", row["id"])
             for field in ("queued", "duplicate", "stale", "skipped"):

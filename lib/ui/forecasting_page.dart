@@ -14,7 +14,11 @@ import '../logic/inventory_controller.dart';
 import '../services/app_logger.dart';
 import '../services/forecasting_api_service.dart';
 import '../services/forecasting_performance_diagnostics.dart';
+import 'forecast_jobs_view.dart';
 import 'widgets/app_toast.dart';
+
+part 'forecast_overview_modals.dart';
+part 'restock_decision_support.dart';
 
 const _forecastInk = Color(0xFF1C1917);
 const _forecastBody = Color(0xFF44403C);
@@ -52,7 +56,7 @@ const bool _forecastAccuracyDemoEnabled = bool.fromEnvironment(
 
 // FORECAST_OVERVIEW_DEMO_START
 // TEMPORARY UI PROTOTYPE FOR CHAPTER 4 SCREENSHOT ONLY.
-// Data for Restock Priorities and Sales History Coverage is HARD-CODED.
+// Sales History Coverage is HARD-CODED when this flag is enabled.
 // Enable ONLY with --dart-define=FORECAST_OVERVIEW_DEMO=true.
 // This MUST NOT be treated as live forecasting/recommendation output.
 // TODO(FORECAST_OVERVIEW_DEMO): Remove demo flag, cards, and wiring after the
@@ -69,14 +73,13 @@ List<ForecastSnapshotItem> reactiveForecastCandidates(
     List<ForecastSnapshotItem> rows, {required String model, required String? locationId}) {
   if (!const {'mean28', 'lightgbm', 'seasonal_experimental'}.contains(model)) return const [];
   final scoped = rows.where((item) => item.locationId == locationId).toList(growable: false);
-  if (scoped.any((item) => const {'queued', 'running'}.contains(item.job['status']))) return const [];
   return scoped.where((item) =>
       (item.status == 'stale' || item.status == 'no_forecast') &&
-      !const {'failed', 'cancelled'}.contains(item.job['status']))
+      !const {'queued', 'running', 'failed', 'cancelled', 'superseded'}.contains(item.job['status']))
       .take(model == 'seasonal_experimental' ? 1 : 5).toList(growable: false);
 }
 
-enum _ForecastingView { overview, product, tracking }
+enum _ForecastingView { overview, product, tracking, jobs }
 
 enum _TrackingSection { records, accuracy }
 
@@ -110,6 +113,7 @@ extension on _ForecastingView {
     _ForecastingView.overview => 'Overview',
     _ForecastingView.product => 'Product Forecast',
     _ForecastingView.tracking => 'Tracking & Accuracy',
+    _ForecastingView.jobs => 'Forecast Jobs',
   };
 
   String get description => switch (this) {
@@ -119,6 +123,7 @@ extension on _ForecastingView {
       'Future demand and owner-facing restocking guidance for one product.',
     _ForecastingView.tracking =>
       'Saved restock records and completed forecast performance.',
+    _ForecastingView.jobs => 'Monitor current and historical forecast jobs.',
   };
 }
 
@@ -144,6 +149,7 @@ class ForecastingPage extends StatefulWidget {
 }
 
 class _ForecastingPageState extends State<ForecastingPage> {
+  static final Set<String> _restockGuideSeenSessions = <String>{};
   // Page loading always reads saved forecasts. The synchronous API remains
   // available to explicit compatibility clients, never to widget lifecycle.
   bool get _useSavedForecasts => true;
@@ -160,8 +166,20 @@ class _ForecastingPageState extends State<ForecastingPage> {
   ForecastingApiService? _environmentApi;
   List<InventoryItem> _items = const <InventoryItem>[];
   _ForecastingView _selectedView = _ForecastingView.overview;
+  final GlobalKey<ForecastJobsViewState> _forecastJobsKey =
+      GlobalKey<ForecastJobsViewState>();
   _TrackingSection _selectedTrackingSection = _TrackingSection.records;
   String? _selectedProductId;
+  Map<String, dynamic>? _productMonitoringCycle;
+  Map<String, Map<String, dynamic>> _overviewMonitoringCycles = const {};
+  String? _productMonitoringError;
+  String? _overviewMonitoringError;
+  bool _productMonitoringLoading = false;
+  bool _overviewMonitoringLoading = false;
+  int _productMonitoringGeneration = 0;
+  int _overviewMonitoringGeneration = 0;
+  String? _productMonitoringKey;
+  String? _overviewMonitoringKey;
   String _selectedModel = 'calibrated_blend';
   ForecastWindow _selectedWindow = ForecastWindow.next28Days;
   String? _selectedOverviewScopeKey;
@@ -170,6 +188,18 @@ class _ForecastingPageState extends State<ForecastingPage> {
   List<String> _overviewWarnings = const [];
   String? _overviewError;
   ForecastSnapshotPage? _snapshotOverview;
+  StoreRestockPage? _storeRestockPage;
+  String? _storeRestockError;
+  String? _storeRestockRequestKey;
+  bool _storeRestockLoading = false;
+  int _storeRestockGeneration = 0;
+  bool _storeRestockNeedsRefresh = false;
+  bool _overviewModalOpen = false;
+  String? _decisionSupportAutoOpenProductId;
+  Timer? _restockCoverageTimer;
+  int _restockCoveragePolls = 0;
+  int _restockCoverageGeneration = 0;
+  bool _restockCoverageLoading = false;
   ForecastSnapshotItem? _snapshotProduct;
   String? _snapshotError;
   int _snapshotPageNumber = 1;
@@ -188,13 +218,18 @@ class _ForecastingPageState extends State<ForecastingPage> {
   bool _preparingForecast = false;
   Timer? _forecastStatusTimer;
   int _forecastStatusPolls = 0;
+  String? _pendingForecastJobId;
   DateTime? _snapshotOverviewLoadedAt;
   DateTime? _snapshotProductLoadedAt;
 
   void _scheduleForecastStatus(ForecastSnapshotItem item) {
     _forecastStatusTimer?.cancel();
     final status = item.job['status'];
-    if (_forecastStatusPolls <= 0 || (status != 'queued' && status != 'running')) {
+    final awaitingSubmittedJob = _pendingForecastJobId != null &&
+        item.job['job_id']?.toString() != _pendingForecastJobId;
+    if (_forecastStatusPolls <= 0 || (!awaitingSubmittedJob &&
+        (item.status == 'completed' || (status != 'queued' && status != 'running')))) {
+      _pendingForecastJobId = null;
       return;
     }
     final product = _selectedProductId;
@@ -205,12 +240,13 @@ class _ForecastingPageState extends State<ForecastingPage> {
         return;
       }
       _forecastStatusPolls--;
-      unawaited(_loadAnalysis(forceRefresh: true));
+      unawaited(_loadAnalysis(forceRefresh: true, statusPoll: true));
     });
   }
 
   Timer? _overviewStatusTimer;
   int _overviewStatusPolls = 0;
+  bool _preparingVisible = false;
   final Set<String> _reactiveRequests = {};
   String? _reactiveMessage;
 
@@ -238,13 +274,26 @@ class _ForecastingPageState extends State<ForecastingPage> {
         final report = await _api().prepareForecast(productId: item.productId,
           sessionToken: widget.controller.currentSessionToken, model: model);
         if (!stillSelected()) return;
-        final accepted = (report['queued'] as num? ?? 0) + (report['duplicate'] as num? ?? 0);
-        prepared = prepared || accepted > 0;
-        if (accepted == 0) setState(() => _reactiveMessage =
-            'Forecast preparation did not queue this product. Review its available inputs and preparation diagnostics.');
+        final jobs = (report['jobs'] as List?)?.whereType<Map>() ?? const <Map>[];
+        final terminal = jobs.any((job) =>
+            const {'failed', 'cancelled', 'superseded'}.contains(job['status']));
+        final queued = (report['queued'] as num? ?? 0) > 0 ||
+            jobs.any((job) => const {'queued', 'running'}.contains(job['status']));
+        final available = jobs.any((job) => job['status'] == 'succeeded');
+        prepared = prepared || queued || available;
+        if (terminal) {
+          setState(() => _reactiveMessage =
+              'This forecast job ended without a result. Refresh checks status; an authorized operator must review recovery.');
+        } else if (!queued && (report['duplicate'] as num? ?? 0) == 0) {
+          _reactiveRequests.remove(key);
+          setState(() => _reactiveMessage =
+              'Forecast preparation did not queue this product. Review its inputs and preparation diagnostics.');
+        }
       } on ForecastApiException catch (error) {
+        _reactiveRequests.remove(key);
         if (stillSelected()) setState(() => _reactiveMessage = error.message);
       } catch (_) {
+        _reactiveRequests.remove(key);
         if (stillSelected()) setState(() => _reactiveMessage =
             'Forecast preparation is unavailable. Refresh to check saved results.');
       }
@@ -257,13 +306,14 @@ class _ForecastingPageState extends State<ForecastingPage> {
       _forecastStatusPolls = model == 'seasonal_experimental' ? 120 : 60;
       _forecastStatusTimer?.cancel();
       _forecastStatusTimer = Timer(const Duration(seconds: 5), () {
-        if (stillSelected()) unawaited(_loadAnalysis(forceRefresh: true));
+        if (stillSelected()) unawaited(_loadAnalysis(forceRefresh: true, statusPoll: true));
       });
     }
   }
 
   void _scheduleOverviewStatus({bool force = false}) {
     _overviewStatusTimer?.cancel();
+    if (_selectedView == _ForecastingView.jobs) return;
     final rows = _snapshotOverview?.items ?? const <ForecastSnapshotItem>[];
     if (!force && !rows.any((row) => const {'queued', 'running'}.contains(row.job['status']))) return;
     if (_overviewStatusPolls <= 0) return;
@@ -272,7 +322,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
       if (!mounted || !widget.isActive || _selectedView != _ForecastingView.overview ||
           key != _snapshotOverviewRequestKey) return;
       _overviewStatusPolls--;
-      unawaited(_loadSnapshotOverview(forceRefresh: true));
+      unawaited(_loadSnapshotOverview(forceRefresh: true, statusPoll: true));
     });
   }
 
@@ -333,8 +383,13 @@ class _ForecastingPageState extends State<ForecastingPage> {
           'active=true source=navigation',
         );
       }
+      if (_selectedView == _ForecastingView.overview) {
+        _storeRestockNeedsRefresh = true;
+        _restockCoveragePolls = 20;
+      }
       _loadActiveViewData();
     } else if (oldWidget.isActive && !widget.isActive) {
+      _ForecastDefinition.dismissOpen();
       if (ForecastingPerformanceDiagnostics.enabled) {
         _activationTimer?.stop();
         _activationTimer = null;
@@ -351,20 +406,28 @@ class _ForecastingPageState extends State<ForecastingPage> {
   /// Invalidates in-flight work while retaining successfully loaded values.
   /// A later activation or explicit refresh can then own fresh loading state.
   void _invalidatePendingRequests() {
+    _productMonitoringGeneration++;
+    _overviewMonitoringGeneration++;
+    _productMonitoringLoading = false;
+    _overviewMonitoringLoading = false;
     _forecastStatusTimer?.cancel();
     _overviewStatusTimer?.cancel();
+    _stopRestockCoveragePolling();
     _overviewStatusPolls = 0;
     _reactiveMessage = null;
     _forecastStatusPolls = 0;
+    _pendingForecastJobId = null;
     if (_overviewLoading) _snapshotOverviewRequestKey = null;
     if (_loading) _snapshotProductRequestKey = null;
     if (_recommendationTrackingLoading) _trackingLoadedKey = null;
     if (_forecastPerformanceLoading) _performanceLoadedKey = null;
     _overviewGeneration++;
+    _storeRestockGeneration++;
     _detailGeneration++;
     _trackingGeneration++;
     _performanceGeneration++;
     _overviewLoading = false;
+    _storeRestockLoading = false;
     _loading = false;
     _recommendationTrackingLoading = false;
     _forecastPerformanceLoading = false;
@@ -375,10 +438,20 @@ class _ForecastingPageState extends State<ForecastingPage> {
     switch (_selectedView) {
       case _ForecastingView.overview:
         unawaited(_loadOverview());
+        if (_snapshotOverview != null) {
+          unawaited(_loadOverviewMonitoring(
+            _snapshotOverview!.items.map((item) => item.productId).toList(growable: false),
+            refreshActualSales: _overviewMonitoringCycles.isNotEmpty));
+        }
+        if (_snapshotOverview != null && _storeRestockNeedsRefresh) {
+          unawaited(_loadStoreRestockPriorities(forceRefresh: true));
+        }
         break;
       case _ForecastingView.product:
         if (_selectedProductId != null) {
           unawaited(_loadAnalysis());
+          unawaited(_loadProductMonitoring(
+            refreshActualSales: _productMonitoringCycle != null));
         }
         break;
       case _ForecastingView.tracking:
@@ -387,6 +460,8 @@ class _ForecastingPageState extends State<ForecastingPage> {
         } else {
           unawaited(_loadForecastPerformance());
         }
+        break;
+      case _ForecastingView.jobs:
         break;
     }
   }
@@ -428,11 +503,15 @@ class _ForecastingPageState extends State<ForecastingPage> {
     final forecastInputsChanged =
         nextInventorySignature != _inventoryInputSignature;
     if (forecastInputsChanged) {
+      _stopRestockCoveragePolling();
+      _restockCoveragePolls = 20;
       _analysisDataGeneration++;
       _analysisResults.clear();
       _overviewGeneration++;
       _detailGeneration++;
       _snapshotOverviewRequestKey = null;
+      _storeRestockRequestKey = null;
+      _storeRestockNeedsRefresh = true;
       _snapshotProductRequestKey = null;
       _trackingLoadedKey = null;
       _performanceLoadedKey = null;
@@ -626,12 +705,33 @@ class _ForecastingPageState extends State<ForecastingPage> {
     }
   }
 
+  String? _restockGuideSessionKey() {
+    try {
+      final token = widget.controller.currentSessionToken;
+      final parts = token.split('.');
+      if (parts.length == 3) {
+        final payload = parts[1].padRight((parts[1].length + 3) ~/ 4 * 4, '=');
+        final claims = jsonDecode(utf8.decode(base64Url.decode(payload)));
+        if (claims is Map && claims['session_id'] is String &&
+            (claims['session_id'] as String).isNotEmpty) {
+          return sha256.convert(utf8.encode(claims['session_id'] as String)).toString();
+        }
+      }
+      return _currentSessionDigest();
+    } catch (_) {
+      return _currentSessionDigest();
+    }
+  }
+
   void _invalidateForecastResults({required bool reload}) {
     _analysisDataGeneration++;
     _analysisResults.clear();
     _overviewGeneration++;
     _detailGeneration++;
     _snapshotOverviewRequestKey = null;
+    _storeRestockRequestKey = null;
+    _storeRestockNeedsRefresh = true;
+    _storeRestockGeneration++;
     _snapshotProductRequestKey = null;
     _trackingLoadedKey = null;
     _performanceLoadedKey = null;
@@ -894,6 +994,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
   Future<void> _loadAnalysis({
     ColdStartManualEstimateInput? manualEstimate,
     bool forceRefresh = false,
+    bool statusPoll = false,
   }) async {
     if (!mounted || !widget.isActive || _loading) return;
     final productId = _selectedProductId;
@@ -936,6 +1037,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
           locationId: locationId,
           sessionToken: token,
           model: requestedModel,
+          refreshActualSales: forceRefresh,
         );
         if (!mounted ||
             generation != _detailGeneration ||
@@ -955,10 +1057,10 @@ class _ForecastingPageState extends State<ForecastingPage> {
           _stale = result.status == 'stale';
         });
         if (result.status == 'completed') _snapshotOverviewRequestKey = null;
-        if (_forecastStatusPolls == 0 && !forceRefresh &&
+        if (_forecastStatusPolls == 0 && !statusPoll &&
             const {'queued', 'running'}.contains(result.job['status'])) _forecastStatusPolls = 60;
         _scheduleForecastStatus(result);
-        unawaited(_reactivelyPrepare([result], overview: false));
+        if (!forceRefresh) unawaited(_reactivelyPrepare([result], overview: false));
         return;
       }
       final result = await _requestAnalysis(
@@ -1010,7 +1112,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
     return page.items.where((item) => scope == null || scope.productIds.contains(item.productId)).toList(growable: false);
   }
 
-  Future<void> _loadSnapshotOverview({bool forceRefresh = false}) async {
+  Future<void> _loadSnapshotOverview({bool forceRefresh = false, bool statusPoll = false}) async {
     if (!mounted || !widget.isActive) return;
     final locationId = widget.controller.activeLocationId;
     if (locationId == null || locationId.isEmpty) {
@@ -1020,6 +1122,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
     final requestKey =
         '$locationId|${_currentSessionDigest()}|$_selectedModel|'
         '$_snapshotPageNumber|$_snapshotUnit|$_snapshotSearch|$_selectedOverviewScopeKey';
+    if (_overviewLoading && _snapshotOverviewRequestKey == requestKey) return;
     if (!forceRefresh &&
         _snapshotOverviewRequestKey == requestKey &&
         (_overviewLoading ||
@@ -1070,12 +1173,21 @@ class _ForecastingPageState extends State<ForecastingPage> {
             .length;
         _overviewTotalCount = page.totalCount;
       });
-      if (_overviewStatusPolls == 0 && !forceRefresh && page.items.any(
+      if (page.items.isEmpty) {
+        setState(() { _overviewMonitoringCycles = const {}; _overviewMonitoringKey = null; });
+      } else {
+        unawaited(_loadOverviewMonitoring(
+          page.items.map((item) => item.productId).toList(growable: false),
+          refreshActualSales: forceRefresh));
+      }
+      if (!forceRefresh) unawaited(_loadStoreRestockPriorities());
+      if (_overviewStatusPolls == 0 && !statusPoll && page.items.any(
           (item) => const {'queued', 'running'}.contains(item.job['status']))) {
         _overviewStatusPolls = 20;
       }
       _scheduleOverviewStatus();
-      unawaited(_reactivelyPrepare(_selectedOverviewPageItems(page), overview: true));
+      // Model selection and Overview reads are read-only. The visible Prepare
+      // action is the only Overview path that requests missing forecasts.
     } on ForecastApiException catch (error) {
       if (!mounted || generation != _overviewGeneration) return;
       setState(() {
@@ -1107,6 +1219,211 @@ class _ForecastingPageState extends State<ForecastingPage> {
       if (mounted && generation == _overviewGeneration) {
         setState(() => _overviewLoading = false);
       }
+    }
+  }
+
+  Future<void> _loadStoreRestockPriorities({bool forceRefresh = false}) async {
+    if (!mounted || !widget.isActive || _selectedView != _ForecastingView.overview) return;
+    final location = widget.controller.activeLocationId;
+    final snapshotPage = _snapshotOverview;
+    if (location == null || snapshotPage == null) return;
+    final scopes = _savedScopes(snapshotPage, _items);
+    final scope = scopes.where((value) => value.key == _selectedOverviewScopeKey)
+        .firstOrNull;
+    final key = '$location|${_currentSessionDigest()}|${scope?.key}|'
+        '$_snapshotSearch';
+    if (_storeRestockLoading && _storeRestockRequestKey == key) return;
+    final refresh = forceRefresh || _storeRestockNeedsRefresh;
+    // A chart model switch never re-evaluates the store. Explicit Refresh and
+    // local sales, stock, or configuration invalidation request fresh inputs.
+    if (!refresh && _storeRestockRequestKey == key && _storeRestockPage != null) return;
+    final generation = ++_storeRestockGeneration;
+    setState(() {
+      _storeRestockPage = null;
+      _storeRestockRequestKey = key;
+      _storeRestockLoading = true;
+      _storeRestockError = null;
+    });
+    try {
+      final response = await _api().loadRestockPriorities(
+        sessionToken: widget.controller.currentSessionToken,
+        page: 1,
+        unit: scope?.unit,
+        scopeCategory: scope?.kind == _OverviewScopeKind.category ? scope!.label : null,
+        scopeProductId: scope?.kind == _OverviewScopeKind.product ? scope!.productIds.first : null,
+        search: _snapshotSearch,
+        refresh: refresh,
+      );
+      if (!mounted || generation != _storeRestockGeneration ||
+          location != widget.controller.activeLocationId) return;
+      final result = StoreRestockPage.fromJson(response);
+      setState(() {
+        _storeRestockPage = result;
+        _storeRestockNeedsRefresh = false;
+      });
+      _scheduleRestockCoveragePoll();
+    } on ForecastApiException catch (error) {
+      if (mounted && generation == _storeRestockGeneration) {
+        setState(() => _storeRestockError = error.message);
+      }
+    } catch (error, stackTrace) {
+      AppLogger.error('Store restock priorities failed', error: error,
+          stackTrace: stackTrace);
+      if (mounted && generation == _storeRestockGeneration) {
+        setState(() => _storeRestockError = 'Store restock priorities are unavailable.');
+      }
+    } finally {
+      if (mounted && generation == _storeRestockGeneration) {
+        setState(() => _storeRestockLoading = false);
+      }
+    }
+  }
+
+  Future<void> _refreshOverviewReads() async {
+    _stopRestockCoveragePolling();
+    _restockCoveragePolls = 20;
+    await _loadSnapshotOverview(forceRefresh: true);
+    await _loadStoreRestockPriorities(forceRefresh: true);
+  }
+
+  _OverviewScope? _currentOverviewScope() {
+    final page = _snapshotOverview;
+    if (page == null) return null;
+    return _savedScopes(page, _items)
+        .where((scope) => scope.key == _selectedOverviewScopeKey).firstOrNull;
+  }
+
+  Future<void> _showRestockPrioritiesModal({bool showGuide = false}) async {
+    final page = _storeRestockPage;
+    if (_overviewModalOpen || page == null || !widget.isActive) return;
+    final scope = _currentOverviewScope();
+    final previousFocus = FocusManager.instance.primaryFocus;
+    _ForecastDefinition.dismissOpen();
+    _overviewModalOpen = true;
+    String? selectedProductId;
+    try {
+      final sessionKey = _restockGuideSessionKey();
+      if (showGuide || sessionKey == null ||
+          !_restockGuideSeenSessions.contains(sessionKey)) {
+        final proceed = await showDialog<bool>(context: context,
+          barrierColor: Colors.black26,
+          builder: (_) => const _RestockingGuideDialog());
+        if (!mounted || proceed != true) return;
+        if (sessionKey != null) {
+          if (_restockGuideSeenSessions.length >= 16) {
+            _restockGuideSeenSessions.remove(_restockGuideSeenSessions.first);
+          }
+          _restockGuideSeenSessions.add(sessionKey);
+        }
+      }
+      selectedProductId = await showDialog<String>(context: context,
+        barrierColor: Colors.black26,
+        builder: (_) => _RestockPrioritiesDialog(api: _api(),
+          sessionToken: widget.controller.currentSessionToken,
+          scopeLabel: scope?.label ?? 'Entire store',
+          unit: scope?.unit,
+          category: scope?.kind == _OverviewScopeKind.category ? scope!.label : null,
+          productId: scope?.kind == _OverviewScopeKind.product ? scope!.productIds.first : null,
+          scopeSearch: _snapshotSearch,
+          initial: page));
+    } finally {
+      _overviewModalOpen = false;
+      if (previousFocus?.canRequestFocus ?? false) previousFocus!.requestFocus();
+    }
+    if (mounted && widget.isActive && selectedProductId != null) {
+      _openRestockProductForecast(selectedProductId);
+    }
+  }
+
+  Future<void> _showSalesHistoryModal() async {
+    final page = _snapshotOverview;
+    final coverage = page?.salesHistoryCoverage;
+    if (_overviewModalOpen || _overviewLoading || !widget.isActive || coverage == null ||
+        coverage['available'] != true) return;
+    final scope = _currentOverviewScope();
+    final previousFocus = FocusManager.instance.primaryFocus;
+    _ForecastDefinition.dismissOpen();
+    _overviewModalOpen = true;
+    try {
+      await showDialog<void>(context: context, barrierColor: Colors.black26,
+        builder: (_) => _SalesHistoryCoverageDialog(api: _api(),
+          sessionToken: widget.controller.currentSessionToken,
+          model: _selectedModel, scopeLabel: scope?.label ?? 'Entire store',
+          unit: scope?.unit,
+          category: scope?.kind == _OverviewScopeKind.category ? scope!.label : null,
+          productId: scope?.kind == _OverviewScopeKind.product ? scope!.productIds.first : null,
+          scopeSearch: _snapshotSearch,
+          coverage: coverage));
+    } finally {
+      _overviewModalOpen = false;
+      if (previousFocus?.canRequestFocus ?? false) previousFocus!.requestFocus();
+    }
+  }
+
+  void _stopRestockCoveragePolling() {
+    _restockCoverageTimer?.cancel();
+    _restockCoverageTimer = null;
+    _restockCoverageGeneration++;
+    _restockCoverageLoading = false;
+  }
+
+  void _scheduleRestockCoveragePoll() {
+    _restockCoverageTimer?.cancel();
+    final page = _storeRestockPage;
+    if (!mounted || !widget.isActive || _selectedView != _ForecastingView.overview ||
+        page == null || _restockCoveragePolls <= 0 ||
+        (page.activeCount == 0 && page.currentCount == page.totalProducts)) return;
+    final key = _storeRestockRequestKey;
+    final generation = _restockCoverageGeneration;
+    _restockCoverageTimer = Timer(const Duration(seconds: 45), () {
+      if (!mounted || !widget.isActive || _selectedView != _ForecastingView.overview ||
+          generation != _restockCoverageGeneration || key != _storeRestockRequestKey) return;
+      unawaited(_pollRestockCoverage(key!, generation));
+    });
+  }
+
+  Future<void> _pollRestockCoverage(String key, int generation) async {
+    if (_restockCoverageLoading || _restockCoveragePolls <= 0) return;
+    final snapshotPage = _snapshotOverview;
+    final current = _storeRestockPage;
+    if (snapshotPage == null || current == null) return;
+    final scope = _savedScopes(snapshotPage, _items)
+        .where((value) => value.key == _selectedOverviewScopeKey).firstOrNull;
+    _restockCoverageLoading = true;
+    _restockCoveragePolls--;
+    try {
+      final coverage = await _api().loadRestockPriorityCoverage(
+        sessionToken: widget.controller.currentSessionToken,
+        unit: scope?.unit,
+        scopeCategory: scope?.kind == _OverviewScopeKind.category ? scope!.label : null,
+        scopeProductId: scope?.kind == _OverviewScopeKind.product ? scope!.productIds.first : null,
+        search: _snapshotSearch,
+      );
+      if (!mounted || !widget.isActive || _selectedView != _ForecastingView.overview ||
+          generation != _restockCoverageGeneration || key != _storeRestockRequestKey) return;
+      final changed = coverage['total_products'] != current.totalProducts ||
+          coverage['active_count'] != current.activeCount ||
+          coverage['current_count'] != current.currentCount ||
+          coverage['stale_count'] != current.staleCount;
+      if (changed) {
+        await _loadStoreRestockPriorities(forceRefresh: true);
+      } else {
+        _scheduleRestockCoveragePoll();
+      }
+    } on ForecastApiException catch (error) {
+      if (mounted && generation == _restockCoverageGeneration) {
+        setState(() => _storeRestockError = error.message);
+        _scheduleRestockCoveragePoll();
+      }
+    } catch (error, stackTrace) {
+      AppLogger.error('Store restock coverage poll failed', error: error,
+          stackTrace: stackTrace);
+      if (mounted && generation == _restockCoverageGeneration) {
+        setState(() => _storeRestockError = 'Store restock status is unavailable. Refresh to retry.');
+        _scheduleRestockCoveragePoll();
+      }
+    } finally {
+      if (generation == _restockCoverageGeneration) _restockCoverageLoading = false;
     }
   }
 
@@ -1341,7 +1658,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
         locationId: locationId,
         sessionToken: widget.controller.currentSessionToken,
         requestId: requestId,
-        confirmNoReceipts: recommendation.receiptCount == 0,
+        confirmNoReceipts: (recommendation.allocatedReceiptCount ?? 0) == 0,
         confirmationNote: note.trim().isEmpty ? null : note.trim(),
       );
       if (!mounted) return;
@@ -1356,7 +1673,20 @@ class _ForecastingPageState extends State<ForecastingPage> {
         forceRefresh: true,
       );
     } on ForecastApiException catch (error) {
-      if (mounted) AppToast.error(context, error.message);
+      if (mounted) {
+        await _loadRecommendationTracking(
+          productId: recommendation.productId,
+          forceRefresh: true,
+        );
+        if (!mounted) return;
+        final current = _recommendations.where((item) =>
+            item.recommendationId == recommendation.recommendationId).firstOrNull;
+        if (current?.isReconciled == true) {
+          AppToast.success(context, 'Recommendation comparison is finalized.');
+        } else {
+          AppToast.error(context, error.message);
+        }
+      }
     } finally {
       if (mounted) setState(() => _mutatingRecommendationId = null);
     }
@@ -1372,22 +1702,83 @@ class _ForecastingPageState extends State<ForecastingPage> {
   Future<void> _prepareForecast() async {
     final productId = _selectedProductId;
     if (productId == null || _preparingForecast) return;
+    // Snapshot status is the latest historical job, not necessarily today's
+    // logical identity. The authorized bootstrap decides whether to queue or
+    // return that identity's existing job without retrying a terminal failure.
     setState(() => _preparingForecast = true);
     try {
       final requestedModel = _selectedModel;
       final report = await _api().prepareForecast(productId: productId,
         sessionToken: widget.controller.currentSessionToken, model: requestedModel);
       if (!mounted || productId != _selectedProductId || requestedModel != _selectedModel) return;
-      final queued = (report['queued'] as num? ?? 0) + (report['duplicate'] as num? ?? 0);
       final jobs = (report['jobs'] as List?)?.whereType<Map>().toList() ?? const <Map>[];
-      final failed = jobs.any((job) => job['status'] == 'failed' || job['status'] == 'superseded');
-      if (queued > 0 && !failed) {
-        final complete = jobs.any((job) => job['status'] == 'succeeded');
-        AppToast.success(context, complete ? 'A saved forecast is available.' : 'Forecast request recorded. A configured worker must process it; status will refresh for one minute.');
-        _forecastStatusPolls = complete ? 0 : 12;
+      String? jobId;
+      for (final job in jobs) {
+        final value = job['job_id']?.toString();
+        if (value != null && value.isNotEmpty) { jobId = value; break; }
+      }
+      final queued = (report['queued'] as num? ?? 0) > 0 ||
+          jobs.any((job) => job['outcome'] == 'queued');
+      final available = report['result_id'] != null ||
+          jobs.any((job) => job['outcome'] == 'available' || job['status'] == 'succeeded');
+      final duplicate = (report['duplicate'] as num? ?? 0) > 0 ||
+          jobs.any((job) => job['outcome'] == 'duplicate');
+      if (queued) {
+        _pendingForecastJobId = jobId;
+        _forecastStatusPolls = 12;
         await _loadAnalysis(forceRefresh: true);
+        if (mounted && productId == _selectedProductId && requestedModel == _selectedModel) {
+          final shown = _snapshotProduct;
+          if (_pendingForecastJobId != null && shown != null &&
+              _forecastStatusTimer?.isActive != true) _scheduleForecastStatus(shown);
+          final sameJob = jobId != null && shown?.job['job_id']?.toString() == jobId;
+          if (sameJob && const {'failed', 'cancelled', 'superseded'}.contains(shown?.job['status'])) {
+            _pendingForecastJobId = null;
+            _forecastStatusPolls = 0;
+            AppToast.error(context, 'The new forecast job ended without a result. Review its worker diagnostics.');
+          } else if (sameJob && shown?.status == 'completed') {
+            AppToast.success(context, 'A saved forecast is available.');
+          } else {
+            AppToast.success(context, _forecastStatusTimer?.isActive == true
+                ? 'A new forecast request was queued. Status will refresh while the worker processes it.'
+                : 'A new forecast request was queued. Refresh status to check its progress.');
+          }
+        }
+      } else if (available) {
+        _pendingForecastJobId = null;
+        _forecastStatusPolls = 0;
+        await _loadAnalysis(forceRefresh: true);
+        if (mounted && productId == _selectedProductId && requestedModel == _selectedModel) {
+          AppToast.success(context, 'A saved forecast is available.');
+        }
+      } else if (duplicate) {
+        // Bootstrap deduplicates the full current identity. Match its job ID
+        // to the refreshed snapshot before treating a historical failure as current.
+        await _loadAnalysis(forceRefresh: true);
+        if (!mounted || productId != _selectedProductId || requestedModel != _selectedModel) return;
+        final shown = _snapshotProduct;
+        final sameJob = jobId != null && shown?.job['job_id']?.toString() == jobId;
+        final status = sameJob ? shown?.job['status'] : null;
+        if (const {'failed', 'cancelled', 'superseded'}.contains(status)) {
+          _pendingForecastJobId = null;
+          _forecastStatusPolls = 0;
+          AppToast.error(context, 'This current terminal job requires authorized operator review. No retry was queued.');
+        } else if (sameJob && shown?.status == 'completed') {
+          _pendingForecastJobId = null;
+          _forecastStatusPolls = 0;
+          AppToast.success(context, 'A saved forecast is available.');
+        } else if (jobId == null) {
+          AppToast.error(context, 'The existing request has no usable job reference. Refresh status before taking further action.');
+        } else {
+          _pendingForecastJobId = jobId;
+          _forecastStatusPolls = 12;
+          if (shown != null) _scheduleForecastStatus(shown);
+          AppToast.success(context, _forecastStatusTimer?.isActive == true
+              ? 'An existing forecast request was found. No duplicate job was created; status will refresh.'
+              : 'An existing forecast request was found. No duplicate job was created; refresh status to check it.');
+        }
       } else {
-        AppToast.error(context, failed ? 'The existing forecast job failed or was superseded. Check its worker diagnostics before retrying.' : 'Forecast preparation did not queue a job. Check the preparation diagnostics.');
+        AppToast.error(context, 'Forecast preparation did not queue a job. Check the preparation diagnostics.');
       }
     } on ForecastApiException catch (error) {
       if (mounted) AppToast.error(context, error.message);
@@ -1505,6 +1896,8 @@ class _ForecastingPageState extends State<ForecastingPage> {
         );
       }
       saved = true;
+      _storeRestockNeedsRefresh = true;
+      _storeRestockRequestKey = null;
       _analysisDataGeneration++;
       _analysisResults.clear();
       _overviewGeneration++;
@@ -1544,6 +1937,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
   @override
   void dispose() {
     _overviewStatusTimer?.cancel();
+    _stopRestockCoveragePolling();
     _forecastStatusTimer?.cancel();
     _overviewGeneration++;
     _detailGeneration++;
@@ -1561,32 +1955,46 @@ class _ForecastingPageState extends State<ForecastingPage> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 760;
-          return SingleChildScrollView(
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? 16 : 40,
-              vertical: compact ? 24 : 32,
-            ),
-            child: Align(
+          return NotificationListener<ScrollNotification>(
+            onNotification: (_) {
+              _ForecastDefinition.dismissOpen();
+              return false;
+            },
+            child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 16 : 40,
+                vertical: compact ? 24 : 32,
+              ),
+              child: Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1280),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Forecasting & Restocking',
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w600,
-                        color: _forecastInk,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Expanded(child: Text(
+                          'Forecasting & Restocking',
+                          style: TextStyle(fontSize: 26,
+                            fontWeight: FontWeight.w600, color: _forecastInk),
+                        )),
+                        _buildHeaderRefreshControl(),
+                        if (_selectedView == _ForecastingView.overview) ...[
+                          _ForecastDefinition(
+                            label: 'Forecast coverage information',
+                            definition: _overviewCoverageInformation(),
+                            iconOnly: true,
+                            headerControl: true,
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      _overview == null
-                          ? 'Demand planning and inventory guidance'
-                          : 'Updated ${_timestamp(_overview!.generatedAt)}',
-                      style: const TextStyle(
+                    const Text(
+                      'Demand planning and inventory guidance',
+                      style: TextStyle(
                         fontSize: 14,
                         color: _forecastMuted,
                       ),
@@ -1596,6 +2004,18 @@ class _ForecastingPageState extends State<ForecastingPage> {
                       selected: _selectedView,
                       onSelected: (value) {
                         if (value == _selectedView) return;
+                        _ForecastDefinition.dismissOpen();
+                        if (value != _ForecastingView.overview) {
+                          _stopRestockCoveragePolling();
+                        } else {
+                          _storeRestockNeedsRefresh = true;
+                          _restockCoveragePolls = 20;
+                        }
+                        if (value != _ForecastingView.product) {
+                          _forecastStatusTimer?.cancel();
+                          _forecastStatusPolls = 0;
+                          _pendingForecastJobId = null;
+                        }
                         setState(() => _selectedView = value);
                         _loadActiveViewData();
                       },
@@ -1604,6 +2024,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
                     _buildSelectedView(),
                   ],
                 ),
+              ),
               ),
             ),
           );
@@ -1616,18 +2037,107 @@ class _ForecastingPageState extends State<ForecastingPage> {
     _ForecastingView.overview => _buildOverviewView(),
     _ForecastingView.product => _buildProductForecastView(),
     _ForecastingView.tracking => _buildTrackingView(),
+    _ForecastingView.jobs => ForecastJobsView(
+      key: _forecastJobsKey,
+      api: _api(),
+      sessionToken: widget.controller.currentSessionToken,
+      active: widget.isActive,
+    ),
   };
+
+  Widget _buildHeaderRefreshControl() {
+    final VoidCallback? refresh = switch (_selectedView) {
+      _ForecastingView.overview => _overviewLoading ? null :
+        () => unawaited(_refreshOverviewReads()),
+      _ForecastingView.product => _loading || _selectedProductId == null ? null :
+        () { unawaited(_loadAnalysis(forceRefresh: true));
+          unawaited(_loadProductMonitoring(refreshActualSales: true)); },
+      _ForecastingView.tracking => _selectedProductId == null ||
+          _recommendationTrackingLoading || _forecastPerformanceLoading ? null :
+        () {
+          if (_selectedTrackingSection == _TrackingSection.records) {
+            unawaited(_loadRecommendationTracking(forceRefresh: true));
+          } else {
+            unawaited(_loadForecastPerformance(forceRefresh: true));
+          }
+        },
+      _ForecastingView.jobs => () {
+        _forecastJobsKey.currentState?.refresh();
+      },
+    };
+    final tooltip = switch (_selectedView) {
+      _ForecastingView.overview => 'Refresh saved forecast status',
+      _ForecastingView.product => 'Refresh product forecast status',
+      _ForecastingView.tracking => 'Refresh tracking data',
+      _ForecastingView.jobs => 'Refresh job statuses',
+    };
+    return IconButton(tooltip: tooltip, onPressed: refresh,
+      icon: const Icon(LucideIcons.refreshCw, size: 18,
+        color: _forecastAccent));
+  }
+
+  String _overviewCoverageInformation() {
+    final page = _snapshotOverview;
+    if (page == null) {
+      return 'Forecast coverage information appears when saved results load. Totals cover only the selected products on this page, not the entire store. Charts retain original saved forecast dates.';
+    }
+    return '${page.items.any((item) => item.status == 'stale') ? 'Some saved forecasts are stale.' : page.items.every((item) => item.status == 'completed') && page.items.isNotEmpty ? 'All displayed forecasts are current.' : 'Some forecasts are missing, unavailable, or pending.'} Totals cover only the selected products on this page, not the entire store. Charts retain original saved forecast dates.';
+  }
+
+  Future<void> _showHistoricalSimulation() async {
+    final api = _api();
+    if (api is! HistoricalForecastService) {
+      AppToast.error(context, 'Historical Simulation is unavailable for this API client.');
+      return;
+    }
+    final historicalApi = api as HistoricalForecastService;
+    final products = _items.where((item) => item.locationId == null ||
+        item.locationId == widget.controller.activeLocationId).toList();
+    if (products.isEmpty) return;
+    await showDialog<void>(context: context, builder: (_) => _HistoricalSimulationDialog(
+      products: products, api: historicalApi, sessionToken: widget.controller.currentSessionToken));
+  }
+
+  Future<void> _prepareVisibleForecasts() async {
+    final page = _snapshotOverview;
+    if (page == null || _preparingVisible) return;
+    setState(() => _preparingVisible = true);
+    try {
+      await _reactivelyPrepare(_selectedOverviewPageItems(page), overview: true);
+    } finally {
+      if (mounted) setState(() => _preparingVisible = false);
+    }
+  }
 
   Widget _buildOverviewView() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       if (_useSavedForecasts) ...[
+        if (_snapshotOverview != null && reactiveForecastCandidates(
+            _selectedOverviewPageItems(_snapshotOverview!), model: _selectedModel,
+            locationId: widget.controller.activeLocationId).isNotEmpty)
+          Align(alignment: Alignment.centerRight, child: TextButton(
+            onPressed: _preparingVisible || _overviewLoading ? null : _prepareVisibleForecasts,
+            child: Text(_preparingVisible ? 'Preparing…' : 'Prepare missing forecasts (bounded batch)'))),
+        Align(alignment: Alignment.centerRight, child: TextButton(
+          onPressed: _items.isEmpty ? null : _showHistoricalSimulation,
+          child: const Text('Historical Simulation'))),
         if (_reactiveMessage != null) Padding(
           padding: const EdgeInsets.only(bottom: 8), child: Text(_reactiveMessage!,
             style: const TextStyle(fontSize: 12, color: _forecastMuted))),
         ForecastOverviewDashboard(
           snapshot: _snapshotOverview == null ? null : _savedPortfolio(_snapshotOverview!),
+          restockPage: _storeRestockPage,
+          restockLoading: _storeRestockLoading,
+          restockError: _storeRestockError,
+          onShowRestockPriorities: () => _showRestockPrioritiesModal(),
+          onShowRestockGuide: () => _showRestockPrioritiesModal(showGuide: true),
+          onSelectRestockProduct: _openRestockProductForecast,
+          onShowSalesHistory: _showSalesHistoryModal,
           savedPage: _snapshotOverview,
+          monitoringCycles: _overviewMonitoringCycles,
+          monitoringLoading: _overviewMonitoringLoading,
+          monitoringError: _overviewMonitoringError,
           analyses: {for (final item in _snapshotOverview?.items ?? const <ForecastSnapshotItem>[])
             if (item.analysis != null) item.productId: item.analysis!},
           selectedModel: _selectedModel,
@@ -1635,6 +2145,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
               item.locationId == widget.controller.activeLocationId).toList(growable: false),
           selectedScopeKey: _selectedOverviewScopeKey,
           onScopeChanged: (value) {
+            _ForecastDefinition.dismissOpen();
             _OverviewScope? chosen;
             if (_snapshotOverview case final page?) {
               for (final scope in _savedScopes(page, _items.where((item) =>
@@ -1643,7 +2154,12 @@ class _ForecastingPageState extends State<ForecastingPage> {
                 if (scope.key == value) { chosen = scope; break; }
               }
             }
-            setState(() => _selectedOverviewScopeKey = value);
+            setState(() {
+              _selectedOverviewScopeKey = value;
+              _storeRestockGeneration++;
+              _storeRestockPage = null;
+              _storeRestockRequestKey = null;
+            });
             if (chosen != null) {
               var search = '';
               if (chosen.kind == _OverviewScopeKind.product) {
@@ -1667,7 +2183,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
           onWindowChanged: (value) => setState(() => _selectedWindow = value),
           loading: _overviewLoading,
           error: _snapshotError,
-          onRetry: () => _loadSnapshotOverview(forceRefresh: true),
+          onRetry: _refreshOverviewReads,
           onSelectProduct: _openProductForecast,
           onViewForecastAccuracy: _showForecastAccuracy,
         ),
@@ -1725,6 +2241,143 @@ class _ForecastingPageState extends State<ForecastingPage> {
     ],
   );
 
+  Future<void> _loadProductMonitoring({bool refreshActualSales = false}) async {
+    final productId = _selectedProductId;
+    final locationId = widget.controller.activeLocationId;
+    if (!mounted || !widget.isActive || productId == null || locationId == null) return;
+    final key = '$locationId|$productId|$_selectedModel|${_manilaToday().toIso8601String()}|${_currentSessionDigest()}';
+    if ((_productMonitoringLoading && !refreshActualSales) || (!refreshActualSales &&
+        _productMonitoringKey == key && _productMonitoringCycle != null)) return;
+    final generation = ++_productMonitoringGeneration;
+    final model = _selectedModel;
+    setState(() { _productMonitoringLoading = true;
+      if (_productMonitoringKey != key) _productMonitoringCycle = null;
+      _productMonitoringError = null; });
+    try {
+      final response = await _api().loadMonitoringCycles(
+        productIds: [productId], locationId: locationId,
+        sessionToken: widget.controller.currentSessionToken, model: model,
+        refreshActualSales: refreshActualSales);
+      if (!mounted || generation != _productMonitoringGeneration ||
+          productId != _selectedProductId || model != _selectedModel) return;
+      final items = (response['items'] as List? ?? const []).whereType<Map>().toList();
+      setState(() {
+        _productMonitoringCycle = items.isEmpty ? null : (Map<String, dynamic>.from(items.first)
+          ..['as_of_business_date'] = response['as_of_business_date']);
+        _productMonitoringKey = key;
+      });
+    } on ForecastApiException catch (error) {
+      if (mounted && generation == _productMonitoringGeneration) {
+        setState(() => _productMonitoringError = error.message);
+      }
+    } catch (_) {
+      if (mounted && generation == _productMonitoringGeneration) {
+        setState(() => _productMonitoringError = 'Monitoring forecast is unavailable.');
+      }
+    } finally {
+      if (mounted && generation == _productMonitoringGeneration) {
+        setState(() => _productMonitoringLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadOverviewMonitoring(List<String> productIds,
+      {bool refreshActualSales = false}) async {
+    final locationId = widget.controller.activeLocationId;
+    if (!mounted || !widget.isActive || _selectedView != _ForecastingView.overview ||
+        locationId == null || productIds.isEmpty) return;
+    final ids = productIds.toSet().take(50).toList()..sort();
+    final model = _selectedModel;
+    final key = '$locationId|$model|${ids.join(',')}|${_manilaToday().toIso8601String()}|${_currentSessionDigest()}';
+    if (_overviewMonitoringLoading && _overviewMonitoringKey == key && !refreshActualSales) return;
+    if (!refreshActualSales && _overviewMonitoringKey == key &&
+        _overviewMonitoringCycles.isNotEmpty) return;
+    final generation = ++_overviewMonitoringGeneration;
+    setState(() { _overviewMonitoringLoading = true;
+      if (_overviewMonitoringKey != key) _overviewMonitoringCycles = const {};
+      _overviewMonitoringKey = key; _overviewMonitoringError = null; });
+    try {
+      final response = await _api().loadMonitoringCycles(
+        productIds: ids, locationId: locationId,
+        sessionToken: widget.controller.currentSessionToken, model: model,
+        refreshActualSales: refreshActualSales);
+      if (!mounted || generation != _overviewMonitoringGeneration ||
+          model != _selectedModel || locationId != widget.controller.activeLocationId) return;
+      final items = (response['items'] as List? ?? const []).whereType<Map>();
+      setState(() {
+        _overviewMonitoringCycles = {
+          for (final item in items)
+            if (item['product_id'] != null)
+              item['product_id'].toString(): (Map<String, dynamic>.from(item)
+                ..['as_of_business_date'] = response['as_of_business_date']),
+        };
+        _overviewMonitoringKey = key;
+      });
+    } on ForecastApiException catch (error) {
+      if (mounted && generation == _overviewMonitoringGeneration) {
+        setState(() { _overviewMonitoringError = error.message; _overviewMonitoringKey = null; });
+      }
+    } catch (_) {
+      if (mounted && generation == _overviewMonitoringGeneration) {
+        setState(() { _overviewMonitoringError = 'Monitoring forecasts are unavailable.';
+          _overviewMonitoringKey = null; });
+      }
+    } finally {
+      if (mounted && generation == _overviewMonitoringGeneration) {
+        setState(() => _overviewMonitoringLoading = false);
+      }
+    }
+  }
+  Widget _buildProductMonitoringChart() {
+    final run = _productMonitoringCycle;
+    if (run == null) {
+      if (_productMonitoringLoading) {
+        return const SizedBox(height: 260,
+          child: Center(child: CircularProgressIndicator()));
+      }
+      return _MessageCard(
+        icon: LucideIcons.chartNoAxesCombined,
+        title: 'Monitoring forecast unavailable',
+        message: _productMonitoringError ??
+          'No eligible saved 28-day monitoring forecast exists for this product and model.',
+      );
+    }
+    final forecast = _monitoringDailyPoints(run, 'points');
+    final actual = _monitoringDailyPoints(run, 'actual_sales');
+    final status = run['cycle_status'] == 'completed'
+        ? 'Completed · Awaiting New Forecast' : 'In Progress';
+    final item = _selectedItem;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(color: Colors.white,
+        border: Border.all(color: _forecastLine),
+        borderRadius: BorderRadius.circular(12)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('Forecast monitoring · ${item?.name ?? 'Product'}',
+          style: const TextStyle(fontWeight: FontWeight.w600, color: _forecastInk)),
+        const SizedBox(height: 5),
+        Text('${_snapshotModelLabel(run['model_key']?.toString() ?? '')} v${run['model_version']} · '
+          '${run['forecast_start_date']}–${run['forecast_end_date']} · '
+          'Day ${run['day_of_cycle']} of 28 · ${run['days_remaining']} days remaining · $status',
+          style: const TextStyle(fontSize: 12, color: _forecastMuted)),
+        if ((run['data_quality_warnings'] as List?)?.isNotEmpty == true)
+          Text('Saved result warning: ${(run['data_quality_warnings'] as List).join(', ')}',
+            style: const TextStyle(fontSize: 12, color: Colors.orange)),
+        const SizedBox(height: 12),
+        _OverviewForecastChart(forecastPoints: forecast, actualPoints: actual,
+          unit: run['inventory_unit']?.toString(),
+          showMonitoringMetrics: true,
+          includesSimulation: item?.sku?.startsWith('SIM-') ?? false,
+          emptyMessage: 'The monitoring result has no usable daily points.',
+          onViewForecastAccuracy: _showForecastAccuracy,
+          today: DateTime.tryParse(run['as_of_business_date']?.toString() ?? '')),
+        if (run['actual_sales_error'] != null) Text(run['actual_sales_error'].toString(),
+          style: const TextStyle(fontSize: 12, color: Colors.red)),
+        const Text('Daily differences are informational, not completed 28-day accuracy.',
+          style: TextStyle(fontSize: 11, color: _forecastMuted)),
+      ]),
+    );
+  }
   Widget _buildProductForecastView() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -1733,18 +2386,19 @@ class _ForecastingPageState extends State<ForecastingPage> {
         const SizedBox(height: 12),
         Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            if (_analysis == null) _buildCompactModelSelector(),
+            _buildCompactModelSelector(),
             Text(_snapshotProduct == null ? 'Select a product' : _snapshotStatusLabel(_snapshotProduct!.status)),
             OutlinedButton.icon(
               onPressed: _loading || _preparingForecast || _selectedProductId == null ? null : _prepareForecast,
               icon: const Icon(LucideIcons.refreshCw, size: 16),
-              label: Text(_preparingForecast ? 'Preparing request?' : 'Generate / Refresh forecast'),
+              label: Text(_preparingForecast ? 'Preparing request?' : 'Prepare forecast'),
             ),
           ]),
       ],
       const SizedBox(height: 24),
         ForecastAnalysisPanel(
           analysis: _analysis,
+          monitoringChart: _selectedProductId == null ? null : _buildProductMonitoringChart(),
           emptyTitle: _selectedProductId == null ? 'Select a product' : _snapshotStatusLabel(_snapshotProduct?.status ?? 'missing'),
           emptyMessage: _selectedProductId == null
               ? 'Choose a product and model to view its saved forecast.'
@@ -1761,7 +2415,43 @@ class _ForecastingPageState extends State<ForecastingPage> {
               ? _enterManualEstimate
               : null,
           onViewForecastAccuracy: _showForecastAccuracy,
+          restockDecisionSupport: _analysis != null &&
+              _selectedProductId != null && widget.controller.activeLocationId != null
+            ? _RestockDecisionSupport(
+                key: ValueKey('restock-decision-${_selectedProductId!}'),
+                api: _api(),
+                sessionToken: widget.controller.currentSessionToken,
+                locationId: widget.controller.activeLocationId!,
+                productId: _selectedProductId!,
+                productName: _analysis!.product.name,
+                inventoryUnit: _analysis!.product.unit,
+                selectedModel: _selectedModel,
+                initialSnapshot: _snapshotProduct,
+                autoOpen: _decisionSupportAutoOpenProductId == _selectedProductId,
+                onOpened: () => _decisionSupportAutoOpenProductId = null,
+              )
+            : null,
         ),
+      if (!_loading && _analysis == null && _selectedProductId != null &&
+          widget.controller.activeLocationId != null &&
+          _items.any((item) => item.id == _selectedProductId)) ...[
+        const SizedBox(height: 12),
+        _RestockDecisionSupport(
+          key: ValueKey('restock-decision-${_selectedProductId!}'),
+          api: _api(),
+          sessionToken: widget.controller.currentSessionToken,
+          locationId: widget.controller.activeLocationId!,
+          productId: _selectedProductId!,
+          productName: _items.firstWhere(
+            (item) => item.id == _selectedProductId).name,
+          inventoryUnit: _items.firstWhere(
+            (item) => item.id == _selectedProductId).unit,
+          selectedModel: _selectedModel,
+          initialSnapshot: _snapshotProduct,
+          autoOpen: _decisionSupportAutoOpenProductId == _selectedProductId,
+          onOpened: () => _decisionSupportAutoOpenProductId = null,
+        ),
+      ],
     ],
   );
 
@@ -1785,13 +2475,14 @@ class _ForecastingPageState extends State<ForecastingPage> {
               key: ValueKey('tracking-records-$_selectedProductId'),
               hasProductSelection: _selectedProductId != null,
               productScope: _buildTrackingProductScope(),
-              refreshControl: _buildTrackingRefreshControl(),
               items: _recommendations,
               loading: _recommendationTrackingLoading,
               error: _recommendationTrackingError,
               onRetry: _recommendationTrackingLoading
                   ? null
                   : () => _loadRecommendationTracking(forceRefresh: true),
+              onReconcile: _reconcile,
+              mutatingRecommendationId: _mutatingRecommendationId,
             ),
             const SizedBox(height: 12),
             const _TrackingRestockTransparency(),
@@ -1859,7 +2550,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
     triggerFontSize: 14,
     alignMenuEnd: true,
     footerText:
-        'The preliminary restock estimate uses LightGBM. Verified guidance uses its saved recommendation forecast.',
+        'The selected model drives the exploratory estimate. Store Restock Priorities continue to use LightGBM.',
     onSelected: (value) {
       if (value == _selectedModel) return;
       _changeModel(value);
@@ -1929,15 +2620,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
                 onSelected: (value) {
                   if (value == 'inputs') {
                     unawaited(_configureReplenishment());
-                  } else if (value == 'refresh') {
-                    unawaited(_loadAnalysis(forceRefresh: true));
                   }
                 },
                 itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: 'refresh',
-                    child: Text('Refresh forecast'),
-                  ),
                   PopupMenuItem(
                     value: 'inputs',
                     child: Text('Restocking inputs'),
@@ -1998,35 +2683,6 @@ class _ForecastingPageState extends State<ForecastingPage> {
     },
   );
 
-  Widget _buildTrackingRefreshControl() => SizedBox(
-    width: 38,
-    height: 36,
-    child: Tooltip(
-      message: 'Refresh tracking data',
-      child: OutlinedButton(
-        onPressed:
-            _selectedProductId == null ||
-                _recommendationTrackingLoading ||
-                _forecastPerformanceLoading
-            ? null
-            : () {
-                if (_selectedTrackingSection == _TrackingSection.records) {
-                  unawaited(_loadRecommendationTracking(forceRefresh: true));
-                } else {
-                  unawaited(_loadForecastPerformance(forceRefresh: true));
-                }
-              },
-        style: OutlinedButton.styleFrom(
-          foregroundColor: _trackingBody,
-          side: const BorderSide(color: _trackingLineStrong),
-          padding: const EdgeInsets.symmetric(horizontal: 13),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-        child: const Icon(LucideIcons.refreshCw, size: 15),
-      ),
-    ),
-  );
-
   Widget _buildTrackingAccuracyControls() => Container(
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
@@ -2037,23 +2693,12 @@ class _ForecastingPageState extends State<ForecastingPage> {
     child: LayoutBuilder(
       builder: (context, constraints) {
         final selector = _buildTrackingProductScope();
-        final refresh = _buildTrackingRefreshControl();
         if (constraints.maxWidth < 620) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(height: 36, child: selector),
-              const SizedBox(height: 10),
-              refresh,
-            ],
-          );
+          return SizedBox(height: 36, child: selector);
         }
         return Row(
           children: [
             SizedBox(width: 280, height: 36, child: selector),
-            const SizedBox(width: 12),
-            const Spacer(),
-            refresh,
           ],
         );
       },
@@ -2061,11 +2706,16 @@ class _ForecastingPageState extends State<ForecastingPage> {
   );
 
   void _changeModel(String value) {
+    _productMonitoringGeneration++;
+    _overviewMonitoringGeneration++;
+    _productMonitoringLoading = false;
+    _overviewMonitoringLoading = false;
     _forecastStatusTimer?.cancel();
     _overviewStatusTimer?.cancel();
     _overviewStatusPolls = 0;
     _reactiveMessage = null;
     _forecastStatusPolls = 0;
+    _pendingForecastJobId = null;
     _overviewGeneration++;
     _detailGeneration++;
     setState(() {
@@ -2077,6 +2727,10 @@ class _ForecastingPageState extends State<ForecastingPage> {
       _analysis = null;
       _snapshotProduct = null;
       _snapshotOverview = null;
+      _productMonitoringCycle = null;
+      _overviewMonitoringCycles = const {};
+      _productMonitoringKey = null;
+      _overviewMonitoringKey = null;
       _snapshotProductRequestKey = null;
       _snapshotOverviewRequestKey = null;
       _overviewError = null;
@@ -2091,6 +2745,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
     _overviewStatusPolls = 0;
     _reactiveMessage = null;
     _forecastStatusPolls = 0;
+    _pendingForecastJobId = null;
     if (productId == _selectedProductId) {
       if (loadForecast &&
           (_useSavedForecasts
@@ -2098,6 +2753,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
               : _analysis == null)) {
         unawaited(_loadAnalysis());
       }
+      if (loadForecast) unawaited(_loadProductMonitoring());
       return;
     }
     final localResultAvailable = _analysisResults.keys.any(
@@ -2115,6 +2771,8 @@ class _ForecastingPageState extends State<ForecastingPage> {
       );
     }
     _detailGeneration++;
+    _productMonitoringGeneration++;
+    _productMonitoringLoading = false;
     _trackingGeneration++;
     _performanceGeneration++;
     _snapshotProductRequestKey = null;
@@ -2122,6 +2780,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
     _performanceLoadedKey = null;
     setState(() {
       _selectedProductId = productId;
+      _productMonitoringCycle = null;
+      _productMonitoringKey = null;
+      _productMonitoringError = null;
       _loading = false;
       _recommendationTrackingLoading = false;
       _forecastPerformanceLoading = false;
@@ -2138,9 +2799,13 @@ class _ForecastingPageState extends State<ForecastingPage> {
       _loadActiveViewData();
     }
     if (loadForecast) unawaited(_loadAnalysis());
+    if (loadForecast) unawaited(_loadProductMonitoring());
   }
 
   void _showForecastAccuracy() {
+    _forecastStatusTimer?.cancel();
+    _forecastStatusPolls = 0;
+    _pendingForecastJobId = null;
     setState(() {
       _selectedView = _ForecastingView.tracking;
       _selectedTrackingSection = _TrackingSection.accuracy;
@@ -2150,14 +2815,17 @@ class _ForecastingPageState extends State<ForecastingPage> {
 
   void _openProductForecast(String productId) {
     if (!_items.any((item) => item.id == productId)) return;
-    if (_useSavedForecasts &&
-        !(_snapshotOverview?.items.any((item) =>
-            item.productId == productId &&
-            item.locationId == widget.controller.activeLocationId) ?? false)) {
-      return;
-    }
+    _decisionSupportAutoOpenProductId = null;
     _selectProduct(productId, loadForecast: true);
     setState(() => _selectedView = _ForecastingView.product);
+  }
+
+  void _openRestockProductForecast(String productId) {
+    if (!_items.any((item) => item.id == productId)) return;
+    _selectProduct(productId, loadForecast: false);
+    _decisionSupportAutoOpenProductId = productId;
+    setState(() => _selectedView = _ForecastingView.product);
+    unawaited(_loadAnalysis(forceRefresh: true));
   }
 
   Future<void> _showProductPicker() async {
@@ -3456,6 +4124,102 @@ List<_OverviewScope> _savedScopes(
   return scopes;
 }
 
+class StoreRestockPage {
+  const StoreRestockPage({required this.view, required this.page, required this.pageCount,
+    required this.totalProducts, required this.totalCount,
+    required this.currentCount, required this.activeCount,
+    required this.missingCount, required this.staleCount,
+    required this.unavailableCount, required this.items,
+    required this.unavailableItems});
+
+  final String view;
+  final int page;
+  final int pageCount;
+  final int totalProducts;
+  final int totalCount;
+  final int currentCount;
+  final int activeCount;
+  final int missingCount;
+  final int staleCount;
+  final int unavailableCount;
+  final List<ReplenishmentPriority> items;
+  final List<UnavailableRestockItem> unavailableItems;
+
+  factory StoreRestockPage.fromJson(Map<String, dynamic> json) {
+    if (json['source_model'] != 'lightgbm' || json['scope'] != 'authorized_store' ||
+        !const {'actionable', 'unavailable'}.contains(json['view']) ||
+        json['items'] is! List) {
+      throw const FormatException('Invalid authoritative restock priority response.');
+    }
+    int count(String key) {
+      final value = json[key];
+      if (value is! int || value < 0) throw const FormatException('Invalid priority count.');
+      return value;
+    }
+    final items = <ReplenishmentPriority>[];
+    for (final value in json['items'] as List) {
+      if (value is! Map) throw const FormatException('Invalid priority row.');
+      final row = Map<String, dynamic>.from(value);
+      final status = row['status']?.toString();
+      if (status != 'recommend_order' && status != 'needs_review') {
+        throw const FormatException('Invalid actionable priority status.');
+      }
+      final quantity = row['suggested_quantity'];
+      items.add(ReplenishmentPriority(
+        productId: row['product_id']?.toString() ?? '',
+        productName: row['product_name']?.toString() ?? '',
+        sku: row['sku']?.toString() ?? '',
+        category: row['category']?.toString() ?? 'Uncategorized',
+        status: status!,
+        inventoryUnit: row['inventory_unit']?.toString() ?? '',
+        suggestedQuantity: quantity == null ? null : double.tryParse('$quantity'),
+      ));
+    }
+    final unavailableRows = json['unavailable_items'];
+    if (unavailableRows is! List) {
+      throw const FormatException('Invalid unavailable priority details.');
+    }
+    final unavailableItems = <UnavailableRestockItem>[];
+    for (final value in unavailableRows) {
+      if (value is! Map) throw const FormatException('Invalid unavailable priority row.');
+      final row = Map<String, dynamic>.from(value);
+      final productId = row['product_id']?.toString() ?? '';
+      final productName = row['product_name']?.toString() ?? '';
+      final reason = row['reason']?.toString() ?? '';
+      final reasonCode = row['reason_code']?.toString() ?? '';
+      if (productId.isEmpty || productName.isEmpty || reason.isEmpty || reasonCode.isEmpty) {
+        throw const FormatException('Incomplete unavailable priority detail.');
+      }
+      unavailableItems.add(UnavailableRestockItem(productId: productId,
+        productName: productName, sku: row['sku']?.toString() ?? '',
+        reasonCode: reasonCode, reason: reason));
+    }
+    if ((json['view'] == 'actionable' && unavailableItems.isNotEmpty) ||
+        (json['view'] == 'unavailable' && items.isNotEmpty)) {
+      throw const FormatException('Restock priority views are mixed.');
+    }
+    return StoreRestockPage(view: json['view'] as String,
+      page: count('page'), pageCount: count('page_count'),
+      totalProducts: count('total_products'), totalCount: count('total_count'),
+      currentCount: count('current_count'), activeCount: count('active_count'),
+      missingCount: count('missing_count'), staleCount: count('stale_count'),
+      unavailableCount: count('unavailable_count'), items: items,
+      unavailableItems: unavailableItems);
+  }
+}
+
+class UnavailableRestockItem {
+  const UnavailableRestockItem({required this.productId,
+    required this.productName, required this.sku,
+    required this.reasonCode, required this.reason});
+
+  final String productId;
+  final String productName;
+  final String sku;
+  final String reasonCode;
+  final String reason;
+}
+
 PortfolioForecastSnapshot _savedPortfolio(ForecastSnapshotPage page) {
   final current = page.items.where((item) => item.snapshot != null && (item.status == 'completed' || item.status == 'stale')).toList();
   final categories = current.map((item) => item.product['category']?.toString() ?? 'Uncategorized').toSet();
@@ -3479,17 +4243,7 @@ PortfolioForecastSnapshot _savedPortfolio(ForecastSnapshotPage page) {
         byUnit: byUnit(current.where((item) => (item.product['category']?.toString() ?? 'Uncategorized') == category).toList()),
         productCount: current.where((item) => (item.product['category']?.toString() ?? 'Uncategorized') == category).length,
         coldStartProducts: 0)],
-    priorities: ([for (final item in page.items)
-      if (item.status == 'completed' && item.analysis != null &&
-          item.analysis!.recommendation.status != 'sufficient_inventory')
-        ReplenishmentPriority(productId: item.productId, productName: item.productName,
-          category: item.product['category']?.toString() ?? 'Uncategorized',
-          status: item.analysis!.recommendation.status, inventoryUnit: item.unit,
-          suggestedQuantity: item.analysis!.recommendation.suggestedInventoryQuantity)]
-      ..sort((a, b) {
-        final rank = (a.status == 'recommend_order' ? 0 : 1).compareTo(b.status == 'recommend_order' ? 0 : 1);
-        return rank == 0 ? a.productName.compareTo(b.productName) : rank;
-      })), totalProducts: page.totalCount,
+    priorities: const <ReplenishmentPriority>[], totalProducts: page.totalCount,
     forecastedProducts: current.length, coldStartProducts: 0,
     models: const {}, provenance: const {}, reliabilityWarnings: const [],
     generatedAt: dates.isEmpty ? DateTime.now() : dates.last,
@@ -3549,6 +4303,17 @@ class _SnapshotOverviewDashboard extends StatelessWidget {
           )
         : null;
     final daily = _snapshotDailyPageSeries(compatible, selectedWindow.days);
+    final actualTotals = <DateTime, double>{};
+    final actualCoverage = <DateTime, int>{};
+    for (final item in compatible) {
+      for (final point in page.actualSalesByProduct[item.productId] ?? const <ForecastDailyPoint>[]) {
+        actualTotals.update(point.date, (value) => value + point.quantity,
+            ifAbsent: () => point.quantity);
+      }
+    }
+    final actualDates = actualTotals.keys.toList()..sort();
+    final actualDaily = [for (final date in actualDates)
+      ForecastDailyPoint(date: date, quantity: actualTotals[date]!)];
     final categories = <String, double>{};
     for (final item in compatible) {
       final demand = item.forecastSummary?['next_28_day_demand'];
@@ -3642,7 +4407,7 @@ class _SnapshotOverviewDashboard extends StatelessWidget {
           const SizedBox(height: 20),
           _OverviewForecastChart(
             forecastPoints: daily,
-            actualPoints: const <ForecastDailyPoint>[],
+            actualPoints: actualDaily,
             unit: unit,
             includesSimulation: false,
             emptyMessage: compatible.isEmpty
@@ -3686,7 +4451,9 @@ class _SnapshotOverviewDashboard extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              subtitle: Text(_snapshotStatusLabel(item.status)),
+              subtitle: Text(item.status == 'failed'
+                  ? 'Previous attempt failed${item.job['safe_error_code'] == null ? '' : ' · ${item.job['safe_error_code']}'} · open product to check current identity'
+                  : _snapshotStatusLabel(item.status)),
               trailing: const Icon(LucideIcons.chevronRight, size: 16),
               onTap: () => onSelectProduct(item.productId),
             ),
@@ -4118,7 +4885,7 @@ class _SnapshotProductPanel extends StatelessWidget {
               'queued' => 'This forecast is queued for background preparation.',
               'running' => 'A background worker is preparing this forecast.',
               'failed' =>
-                'The latest forecast preparation failed. No forecast values are shown.',
+                'A previous forecast preparation failed${value.job['safe_error_code'] == null ? '' : ' (${value.job['safe_error_code']})'}. No forecast values are shown. Prepare forecast asks the server to check the current business date and model identity. The same terminal identity requires authorized operator recovery.',
               'stale' =>
                 'A saved forecast exists, but its source inputs are no longer current.',
               _ =>
@@ -4464,14 +5231,88 @@ class _SnapshotRoleCard extends StatelessWidget {
   }
 }
 
+class _HistoricalSimulationDialog extends StatefulWidget {
+  const _HistoricalSimulationDialog({required this.products, required this.api, required this.sessionToken});
+  final List<InventoryItem> products;
+  final HistoricalForecastService api;
+  final String sessionToken;
+  @override
+  State<_HistoricalSimulationDialog> createState() => _HistoricalSimulationDialogState();
+}
+
+class _HistoricalSimulationDialogState extends State<_HistoricalSimulationDialog> {
+  late String _productId = widget.products.first.id;
+  String _model = 'lightgbm';
+  final _cutoff = TextEditingController(text: '2026-11-01');
+  final _through = TextEditingController(text: '2026-11-20');
+  bool _busy = false;
+  String? _error;
+  Map<String, dynamic>? _result;
+  Future<void> _run() async {
+    if (_busy) return;
+    setState(() { _busy = true; _error = null; _result = null; });
+    try {
+      final result = await widget.api.loadHistoricalSimulation(productId: _productId,
+        sessionToken: widget.sessionToken, model: _model, cutoff: _cutoff.text.trim(),
+        actualThrough: _through.text.trim());
+      if (mounted) setState(() => _result = result);
+    } catch (error) {
+      if (mounted) setState(() => _error = error is ForecastApiException ? error.message : 'Historical simulation unavailable.');
+    } finally { if (mounted) setState(() => _busy = false); }
+  }
+  @override
+  void dispose() { _cutoff.dispose(); _through.dispose(); super.dispose(); }
+  List<ForecastDailyPoint> _points(String key) => ((_result?[key] as List?) ?? [])
+      .whereType<Map>().map((row) => ForecastDailyPoint.fromJson(Map<String, dynamic>.from(row))).toList();
+  @override
+  Widget build(BuildContext context) => Dialog(child: ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 850),
+    child: SingleChildScrollView(padding: const EdgeInsets.all(20), child: Column(
+      mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [const Expanded(child: Text('Historical Simulation', style: TextStyle(fontSize: 20))),
+          IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close))]),
+        const Text('Read-only replay using Mean28 or LightGBM. Training ends the day before the cutoff. Results are not operational forecasts.'),
+        DropdownButton<String>(value: _productId, isExpanded: true,
+          items: widget.products.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name, overflow: TextOverflow.ellipsis))).toList(),
+          onChanged: _busy ? null : (value) => setState(() { _productId = value!; _result = null; })),
+        DropdownButton<String>(value: _model, items: const [DropdownMenuItem(value: 'lightgbm', child: Text('LightGBM')),
+          DropdownMenuItem(value: 'mean28', child: Text('Mean28'))],
+          onChanged: _busy ? null : (value) => setState(() { _model = value!; _result = null; })),
+        TextField(controller: _cutoff, enabled: !_busy, onChanged: (_) => setState(() => _result = null),
+          decoration: const InputDecoration(labelText: 'Forecast cutoff (YYYY-MM-DD)')),
+        TextField(controller: _through, enabled: !_busy, onChanged: (_) => setState(() => _result = null),
+          decoration: const InputDecoration(labelText: 'Compare actual sales through (YYYY-MM-DD)')),
+        TextButton(onPressed: _busy ? null : _run, child: Text(_busy ? 'Calculating…' : 'Run Historical Simulation')),
+        if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+        if (_result != null) ...[
+          Text('Training ends ${_result!['training_end']} · actual model ${_result!['model']}'),
+          _OverviewForecastChart(actualPoints: _points('actual_sales'), forecastPoints: _points('forecast'),
+            unit: _result!['unit']?.toString(), includesSimulation: true,
+            emptyMessage: 'No usable historical comparison is available.'),
+          Text(_result!['limitation']?.toString() ?? ''),
+        ],
+      ])),
+  ));
+}
+
 class ForecastOverviewDashboard extends StatelessWidget {
   const ForecastOverviewDashboard({
     super.key,
     required this.snapshot,
     required this.selectedWindow,
     required this.onWindowChanged,
+    this.restockPage,
+    this.restockLoading = false,
+    this.restockError,
+    this.onShowRestockPriorities,
+    this.onShowRestockGuide,
+    this.onSelectRestockProduct,
+    this.onShowSalesHistory,
     this.controls,
     this.savedPage,
+    this.monitoringCycles = const {},
+    this.monitoringLoading = false,
+    this.monitoringError,
     this.selectedModel,
     this.analyses = const <String, ForecastAnalysis>{},
     this.products = const <InventoryItem>[],
@@ -4487,12 +5328,22 @@ class ForecastOverviewDashboard extends StatelessWidget {
   });
 
   final PortfolioForecastSnapshot? snapshot;
+  final StoreRestockPage? restockPage;
+  final bool restockLoading;
+  final String? restockError;
+  final VoidCallback? onShowRestockPriorities;
+  final VoidCallback? onShowRestockGuide;
+  final ValueChanged<String>? onSelectRestockProduct;
+  final VoidCallback? onShowSalesHistory;
   final Map<String, ForecastAnalysis> analyses;
   final List<InventoryItem> products;
   final String? selectedScopeKey;
   final ValueChanged<String>? onScopeChanged;
   final Widget? controls;
   final ForecastSnapshotPage? savedPage;
+  final Map<String, Map<String, dynamic>> monitoringCycles;
+  final bool monitoringLoading;
+  final String? monitoringError;
   final String? selectedModel;
   final ForecastWindow selectedWindow;
   final ValueChanged<ForecastWindow> onWindowChanged;
@@ -4535,31 +5386,6 @@ class ForecastOverviewDashboard extends StatelessWidget {
       key: const Key('forecast-overview-dashboard'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (savedPage != null)
-          Padding(padding: const EdgeInsets.only(bottom: 12), child: Wrap(
-            spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                '${_snapshotModelLabel(selectedModel ?? 'blend')} · '
-                '${savedPage!.items.where((item) => item.status == "completed").length} current · '
-                '${savedPage!.items.where((item) => item.status == "stale").length} stale · '
-                '${savedPage!.items.where((item) => item.job['status'] == 'queued').length} queued · '
-                '${savedPage!.items.where((item) => item.job['status'] == 'running').length} processing · '
-                '${savedPage!.items.where((item) => item.job['status'] == 'failed').length} failed · '
-                '${savedPage!.items.where((item) => item.status == 'no_forecast').length} missing · '
-                '${savedPage!.items.where((item) => const {'cancelled', 'superseded'}.contains(item.status)).length} cancelled/superseded · '
-                '${savedPage!.items.length} on this page · ${savedPage!.totalCount} products matching the current filter. Demand totals cover this page only.',
-                style: const TextStyle(fontSize: 12, color: _forecastMuted),
-              ),
-              _ForecastDefinition(
-                label: 'Forecast coverage information',
-                definition: '${savedPage!.items.any((item) => item.status == 'stale') ? 'Some saved forecasts are stale.' : savedPage!.items.every((item) => item.status == 'completed') && savedPage!.items.isNotEmpty ? 'All displayed forecasts are current.' : 'Some forecasts are missing, unavailable, or pending.'} Totals cover only the selected products on this page, not the entire store. Charts retain original saved forecast dates.',
-                iconOnly: true,
-              ),
-              IconButton(tooltip: 'Refresh saved forecasts', onPressed: loading ? null : onRetry,
-                icon: const Icon(LucideIcons.refreshCw, size: 18)),
-            ],
-          )),
         if (stale)
           const Align(
             alignment: Alignment.centerLeft,
@@ -4585,6 +5411,9 @@ class ForecastOverviewDashboard extends StatelessWidget {
         _StoreOutlookCard(
           analyses: analyses,
           savedPage: savedPage,
+          monitoringCycles: monitoringCycles,
+          monitoringLoading: monitoringLoading,
+          monitoringError: monitoringError,
           selectedModel: selectedModel,
           products: products,
           selectedScopeKey: selectedScopeKey,
@@ -4602,18 +5431,22 @@ class ForecastOverviewDashboard extends StatelessWidget {
                 : _savedScopes(savedPage!, products);
             final selectedScope = availableScopes.where((scope) =>
                 scope.key == selectedScopeKey).firstOrNull ?? availableScopes.firstOrNull;
-            // FORECAST_OVERVIEW_DEMO: demo-only placeholder; live card is kept.
-            final priorities = _forecastOverviewDemoEnabled
-                ? const _DemoRestockPrioritiesCard()
-                : _PlanningPriorityCard(
-                    pageScoped: savedPage != null,
-                    unavailable: savedPage != null || products.where((item) =>
-                        selectedScope == null || selectedScope.productIds.contains(item.id))
-                        .any((item) => !analyses.containsKey(item.id)),
-                    priorities: value.priorities.where((item) =>
-                        selectedScope == null || selectedScope.productIds.contains(item.productId)).toList(growable: false),
-                    onSelectProduct: onSelectProduct,
-                  );
+            final priorities = _PlanningPriorityCard(
+                    restockPage: savedPage == null ? null : restockPage,
+                    loading: savedPage != null && restockLoading,
+                    error: savedPage == null ? null : restockError,
+                    onShowAll: onShowRestockPriorities,
+                    onShowGuide: onShowRestockGuide,
+                    scopeLabel: selectedScopeKey == null ? 'Entire store'
+                        : selectedScope?.label ?? 'Selected scope',
+                    unavailable: savedPage != null && restockPage == null,
+                    priorities: savedPage == null
+                        ? value.priorities.where((item) => selectedScope == null ||
+                            selectedScope.productIds.contains(item.productId))
+                            .toList(growable: false)
+                        : restockPage?.items ?? const <ReplenishmentPriority>[],
+                    onSelectProduct: onSelectRestockProduct ?? onSelectProduct,
+                   );
             final supporting = Column(
               children: [
                 _CategoryOutlookCard(snapshot: value, window: selectedWindow),
@@ -4622,11 +5455,9 @@ class ForecastOverviewDashboard extends StatelessWidget {
                 if (_forecastOverviewDemoEnabled)
                   const _DemoSalesHistoryCoverageCard()
                 else
-                  _SalesEvidenceCard(
+                  _CompactSalesEvidenceCard(
                     savedCoverage: loading ? null : savedPage?.salesHistoryCoverage,
-                    evidenceAvailable: savedPage == null,
-                    analyses: analyses.values.toList(growable: false),
-                    products: products.where((item) => selectedScope == null || selectedScope.productIds.contains(item.id)).toList(growable: false),
+                    onViewBreakdown: onShowSalesHistory,
                   ),
               ],
             );
@@ -4660,6 +5491,9 @@ class _StoreOutlookCard extends StatelessWidget {
     this.onScopeChanged,
     this.controls,
     this.savedPage,
+    this.monitoringCycles = const {},
+    this.monitoringLoading = false,
+    this.monitoringError,
     this.selectedModel,
     this.onViewForecastAccuracy,
   });
@@ -4672,6 +5506,9 @@ class _StoreOutlookCard extends StatelessWidget {
   final ValueChanged<String>? onScopeChanged;
   final Widget? controls;
   final ForecastSnapshotPage? savedPage;
+  final Map<String, Map<String, dynamic>> monitoringCycles;
+  final bool monitoringLoading;
+  final String? monitoringError;
   final String? selectedModel;
   final VoidCallback? onViewForecastAccuracy;
 
@@ -4696,11 +5533,25 @@ class _StoreOutlookCard extends StatelessWidget {
         ? const <ForecastSnapshotItem>[]
         : savedPage!.items.where((item) => selected.productIds.contains(item.productId)).toList(growable: false);
     final usableRows = _overviewUsableSavedItems(scopeRows);
+    final compatibleRows = savedPage == null || selected?.unit == null
+        ? usableRows
+        : usableRows.where((row) =>
+            row.product['unit']?.toString().trim().toLowerCase() ==
+            selected!.unit.trim().toLowerCase()).toList(growable: false);
+    String? firstSavedDate(ForecastSnapshotItem row) {
+      final daily = row.forecastSummary?['daily'];
+      return daily is List && daily.isNotEmpty && daily.first is Map
+          ? (daily.first as Map)['date']?.toString() : null;
+    }
+    final cohortDates = compatibleRows.map(firstSavedDate).whereType<String>().toList()..sort();
+    final cohortStart = cohortDates.isEmpty ? null : cohortDates.last;
+    final cohortRows = cohortStart == null ? const <ForecastSnapshotItem>[]
+        : compatibleRows.where((row) => firstSavedDate(row) == cohortStart).toList(growable: false);
     final points = selected == null
         ? const <ForecastDailyPoint>[]
         : savedPage == null
         ? _overviewSeries(selected, analyses, selectedWindow.days)
-        : _snapshotDailyPageSeries(usableRows, selectedWindow.days);
+        : _snapshotDailyPageSeries(cohortRows, selectedWindow.days);
     final total = points.fold<double>(0, (sum, point) => sum + point.quantity);
     if (_forecastOverviewTrace && ForecastingPerformanceDiagnostics.enabled && savedPage != null) {
       final itemDetails = scopeRows.map((item) {
@@ -4734,11 +5585,53 @@ class _StoreOutlookCard extends StatelessWidget {
               .map((id) => analyses[id])
               .whereType<ForecastAnalysis>()
               .toList(growable: false);
-    final includesSimulation = selectedAnalyses.any(
-      (analysis) =>
-          analysis.synthetic ||
-          (analysis.product.sku?.startsWith('SIM-') ?? false),
-    );
+    final monitoringGroups = <String, List<Map<String, dynamic>>>{};
+    if (selected != null) {
+      for (final productId in selected.productIds.toSet()) {
+        final cycle = monitoringCycles[productId];
+        if (cycle == null ||
+            cycle['inventory_unit']?.toString().trim().toLowerCase() !=
+                selected.unit.trim().toLowerCase()) continue;
+        final key = '${cycle['forecast_start_date']}|${cycle['forecast_end_date']}|${cycle['model_version']}';
+        monitoringGroups.putIfAbsent(key, () => []).add(cycle);
+      }
+    }
+    final monitoringCohorts = monitoringGroups.entries.toList()
+      ..sort((a, b) {
+        final count = b.value.length.compareTo(a.value.length);
+        return count != 0 ? count : a.key.compareTo(b.key);
+      });
+    final monitored = monitoringCohorts.isEmpty
+        ? const <Map<String, dynamic>>[] : monitoringCohorts.first.value;
+    final monitoredForecastTotals = <DateTime, double>{};
+    final monitoredActualTotals = <DateTime, double>{};
+    final monitoredActualCounts = <DateTime, int>{};
+    for (final cycle in monitored) {
+      for (final point in _monitoringDailyPoints(cycle, 'points')) {
+        monitoredForecastTotals.update(point.date, (sum) => sum + point.quantity,
+          ifAbsent: () => point.quantity);
+      }
+      if (cycle['actual_sales_error'] != null) continue;
+      for (final point in _monitoringDailyPoints(cycle, 'actual_sales')) {
+        monitoredActualTotals.update(point.date, (sum) => sum + point.quantity,
+          ifAbsent: () => point.quantity);
+        monitoredActualCounts.update(point.date, (count) => count + 1,
+          ifAbsent: () => 1);
+      }
+    }
+    final monitoredForecastDates = monitoredForecastTotals.keys.toList()..sort();
+    final monitoredActualDates = monitoredActualTotals.keys.where((date) =>
+        monitoredActualCounts[date] == monitored.length).toList()..sort();
+    final monitoredForecastPoints = [for (final date in monitoredForecastDates)
+      ForecastDailyPoint(date: date, quantity: monitoredForecastTotals[date]!)];
+    final monitoredActualPoints = [for (final date in monitoredActualDates)
+      ForecastDailyPoint(date: date, quantity: monitoredActualTotals[date]!)];
+    final includesSimulation = savedPage != null
+        ? scopeRows.any((row) =>
+            row.product['sku']?.toString().startsWith('SIM-') ?? false)
+        : selectedAnalyses.any((analysis) =>
+            analysis.synthetic ||
+            (analysis.product.sku?.startsWith('SIM-') ?? false));
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -4785,7 +5678,7 @@ class _StoreOutlookCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Expected demand${savedPage == null ? '' : ' on this page'} · ${selectedWindow == ForecastWindow.next7Days ? 'Short-term (7 days)' : 'Planning (28 days)'}',
+                    'Operational expected demand${savedPage == null ? '' : ' on this page'} · ${selectedWindow == ForecastWindow.next7Days ? 'Short-term (7 days)' : 'Planning (28 days)'}',
                     style: const TextStyle(fontSize: 13, color: _forecastMuted),
                   ),
                   const SizedBox(height: 4),
@@ -4838,16 +5731,37 @@ class _StoreOutlookCard extends StatelessWidget {
             },
           ),
           const SizedBox(height: 20),
+          if (monitored.isNotEmpty) ...[
+            Text('Fixed monitoring period ${monitored.first['forecast_start_date']}–${monitored.first['forecast_end_date']} · '
+              '${_snapshotModelLabel(monitored.first['model_key']?.toString() ?? '')} '
+              'v${monitored.first['model_version']} · Day ${monitored.first['day_of_cycle']} of 28 · '
+              '${monitored.first['days_remaining']} days remaining · '
+              '${monitored.first['cycle_status'] == 'completed' ? 'Completed · Awaiting New Forecast' : 'In Progress'} · '
+              '${monitored.length} of ${selected?.productIds.toSet().length ?? 0} '
+              'scoped products. Only matching dates, model version, and ${selected?.unit ?? 'compatible'} units are combined.',
+              style: const TextStyle(fontSize: 11, color: _forecastMuted)),
+            const SizedBox(height: 8),
+          ],
+          if (monitoringError != null) Text(monitoringError!,
+            style: const TextStyle(fontSize: 12, color: Colors.red)),
+          if (monitored.any((cycle) => cycle['actual_sales_error'] != null))
+            const Text('Actual sales are unavailable for part of this cohort; no incomplete aggregate is plotted.',
+              style: TextStyle(fontSize: 12, color: Colors.orange)),
+          if (monitoringLoading && monitored.isEmpty)
+            const Center(child: CircularProgressIndicator()),
           _OverviewForecastChart(
             key: const Key('forecast-primary-demand-chart'),
-            forecastPoints: points,
-            actualPoints: const <ForecastDailyPoint>[],
+            forecastPoints: monitoredForecastPoints,
+            actualPoints: monitoredActualPoints,
+            showMonitoringMetrics: true,
             unit: selected?.unit,
             includesSimulation: includesSimulation,
             onViewForecastAccuracy: onViewForecastAccuracy,
+            today: monitored.isEmpty ? null : DateTime.tryParse(
+              monitored.first['as_of_business_date']?.toString() ?? ''),
             emptyMessage: selected == null
-                ? 'No compatible forecast scope is available.'
-                : 'No reliable forecast is available for this scope.',
+                ? 'No compatible monitoring scope is available.'
+                : 'No matching saved 28-day monitoring cycle is available for this scope.',
           ),
         ],
       ),
@@ -5503,13 +6417,13 @@ const _forecastMethodOptions = <_ForecastMethodOption>[
     name: 'Calibrated Blend',
     tag: 'Default',
     description:
-        'Primary calibrated demand estimate. Combines several methods and corrects for past over- or under-estimates.',
+        'Combines several methods and adjusts for past over- or under-estimates.',
   ),
   _ForecastMethodOption(
     id: 'lightgbm',
     name: 'LightGBM',
     description:
-        'Machine-learning baseline that learns from past sales patterns. Used for preliminary restock suggestions.',
+        'Machine-learning model that learns from past sales patterns. Currently used for provisional Store Restock Priorities.',
   ),
   _ForecastMethodOption(
     id: 'mean28',
@@ -5536,7 +6450,7 @@ class _ForecastMethodMenu extends StatelessWidget {
     this.triggerFontSize = 12,
     this.alignMenuEnd = false,
     this.footerText =
-        'Changes this chart only. Restock suggestions always use LightGBM.',
+        'Overview chart selection does not change provisional LightGBM Store Restock Priorities.',
   });
 
   final String selectedModel;
@@ -5758,7 +6672,7 @@ class _ForecastMethodMenu extends StatelessWidget {
   }
 }
 
-class _OverviewForecastChart extends StatelessWidget {
+class _OverviewForecastChart extends StatefulWidget {
   const _OverviewForecastChart({
     super.key,
     required this.forecastPoints,
@@ -5767,6 +6681,8 @@ class _OverviewForecastChart extends StatelessWidget {
     required this.includesSimulation,
     required this.emptyMessage,
     this.onViewForecastAccuracy,
+    this.today,
+    this.showMonitoringMetrics = false,
   });
 
   final List<ForecastDailyPoint> forecastPoints;
@@ -5775,9 +6691,51 @@ class _OverviewForecastChart extends StatelessWidget {
   final bool includesSimulation;
   final String emptyMessage;
   final VoidCallback? onViewForecastAccuracy;
+  final DateTime? today;
+  final bool showMonitoringMetrics;
+
+  @override
+  State<_OverviewForecastChart> createState() => _OverviewForecastChartState();
+}
+
+DateTime _businessDate(DateTime value) => DateTime.utc(value.year, value.month, value.day);
+List<ForecastDailyPoint> _monitoringDailyPoints(Map<String, dynamic> item, String field) {
+  final raw = item[field];
+  if (raw is! List) return const [];
+  final points = <ForecastDailyPoint>[];
+  for (final row in raw) {
+    if (row is! Map) continue;
+    final date = DateTime.tryParse(row['date']?.toString() ?? '');
+    final quantity = double.tryParse(row['quantity']?.toString() ?? '');
+    if (date == null || quantity == null || !quantity.isFinite || quantity < 0) continue;
+    points.add(ForecastDailyPoint(date: _businessDate(date), quantity: quantity));
+  }
+  return points;
+}
+DateTime _manilaToday() {
+  final manila = DateTime.now().toUtc().add(const Duration(hours: 8));
+  return DateTime.utc(manila.year, manila.month, manila.day);
+}
+
+class _OverviewForecastChartState extends State<_OverviewForecastChart> {
+  DateTime? _inspectedDate;
+
+  void _inspect(double dx, double width, DateTime first, DateTime last) {
+    final span = last.difference(first).inDays;
+    if (span < 0 || width <= 54) return;
+    final fraction = ((dx - 42) / (width - 54)).clamp(0.0, 1.0);
+    final date = first.add(Duration(days: (fraction * span).round()));
+    if (date != _inspectedDate) setState(() => _inspectedDate = date);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final actualPoints = widget.actualPoints;
+    final forecastPoints = widget.forecastPoints;
+    final unit = widget.unit;
+    final includesSimulation = widget.includesSimulation;
+    final onViewForecastAccuracy = widget.onViewForecastAccuracy;
+    final emptyMessage = widget.emptyMessage;
     if (forecastPoints.isEmpty && actualPoints.isEmpty) {
       return Container(
         height: 230,
@@ -5793,19 +6751,87 @@ class _OverviewForecastChart extends StatelessWidget {
         ),
       );
     }
+    final actualByDate = {for (final point in actualPoints) _businessDate(point.date): point.quantity};
+    final forecastByDate = {for (final point in forecastPoints) _businessDate(point.date): point.quantity};
+    final today = _businessDate(widget.today ?? _manilaToday());
+    var observedDays = 0;
+    var observedActual = 0.0;
+    var absoluteError = 0.0;
+    var signedForecastError = 0.0;
+    for (final entry in actualByDate.entries) {
+      final predictedDay = forecastByDate[entry.key];
+      if (predictedDay == null || !entry.key.isBefore(today)) continue;
+      observedDays++;
+      observedActual += entry.value;
+      absoluteError += (predictedDay - entry.value).abs();
+      signedForecastError += predictedDay - entry.value;
+    }
+    final cumulativeWape = observedDays == 0 || observedActual <= 0
+        ? null : absoluteError / observedActual * 100;
+    final cumulativeBias = observedDays == 0 || observedActual <= 0
+        ? null : signedForecastError / observedActual * 100;
+    final dates = {...actualByDate.keys, ...forecastByDate.keys}.toList()..sort();
+    final inspected = _inspectedDate;
+    final actual = inspected == null ? null : actualByDate[inspected];
+    final predicted = inspected == null ? null : forecastByDate[inspected];
+    final difference = actual == null || predicted == null ? null : actual - predicted;
+    final percent = difference == null || actual == null || actual == 0 ? null : difference.abs() / actual * 100;
+    final actualEnd = actualByDate.isEmpty ? null :
+        actualByDate.keys.reduce((a, b) => a.isAfter(b) ? a : b);
+    final forecastStart = forecastByDate.isEmpty ? null :
+        forecastByDate.keys.reduce((a, b) => a.isBefore(b) ? a : b);
+    final boundary = actualEnd != null && forecastStart != null && forecastStart.isAfter(actualEnd);
+    final hasTransition = actualEnd != null && forecastStart != null &&
+        forecastStart.difference(actualEnd).inDays == 1;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          height: 252,
-          child: CustomPaint(
-            painter: _OverviewDemandChartPainter(
-              actualPoints: actualPoints,
-              forecastPoints: forecastPoints,
+        SizedBox(height: 252, child: LayoutBuilder(builder: (context, box) =>
+          MouseRegion(
+            onHover: (event) => _inspect(event.localPosition.dx, box.maxWidth, dates.first, dates.last),
+            onExit: (_) => setState(() => _inspectedDate = null),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (event) => _inspect(event.localPosition.dx, box.maxWidth, dates.first, dates.last),
+              onHorizontalDragUpdate: (event) => _inspect(event.localPosition.dx, box.maxWidth, dates.first, dates.last),
+              child: CustomPaint(
+                painter: _OverviewDemandChartPainter(actualPoints: actualPoints,
+                    forecastPoints: forecastPoints, inspectedDate: inspected,
+                    unit: unit, today: widget.today ?? _manilaToday()),
+                size: const Size(double.infinity, 252),
+              ),
             ),
-            size: const Size(double.infinity, 252),
           ),
-        ),
+        )),
+        if (inspected != null)
+          Semantics(liveRegion: true, label:
+            '${_shortForecastDate(inspected)}. Observation ${actual == null ? 'unavailable' : inspected == today ? 'partial day' : 'completed day'}. Actual sales ${actual == null ? 'unavailable' : '$actual ${unit ?? ''}'}. Forecasted ${predicted == null ? 'unavailable' : '$predicted ${unit ?? ''}'}. Actual minus predicted ${difference == null ? 'unavailable' : '$difference ${unit ?? ''}'}. Daily percent error ${percent == null ? 'unavailable' : '$percent percent'}.',
+            child: const SizedBox.shrink()),
+        if (boundary)
+          Padding(padding: const EdgeInsets.only(top: 6), child: Text(
+            'Recorded sales end before the saved future outlook begins. '
+            '${hasTransition ? 'The thin gray connector marks the transition only; it adds no sales or forecast values. ' : ''}'
+            'No date-aligned accuracy comparison is available yet.',
+            style: const TextStyle(fontSize: 11, color: _forecastMuted),
+          )),
+        if (!boundary && actualPoints.isNotEmpty && forecastPoints.isNotEmpty)
+          const Padding(padding: EdgeInsets.only(top: 6), child: Text(
+            'Recorded daily sales are observations, not a completed forecast accuracy evaluation.',
+            style: TextStyle(fontSize: 11, color: _forecastMuted),
+          )),
+        if (widget.showMonitoringMetrics) ...[
+          const SizedBox(height: 12),
+          Wrap(spacing: 10, runSpacing: 8, children: [
+            _MonitoringMetric(label: 'Observed days so far', value: '$observedDays'),
+            _MonitoringMetric(label: 'Cumulative WAPE so far',
+              value: cumulativeWape == null ? 'Unavailable' : '${cumulativeWape.toStringAsFixed(1)}%'),
+            _MonitoringMetric(label: 'Cumulative Bias so far',
+              value: cumulativeBias == null ? 'Unavailable' : '${_signedQuantity(cumulativeBias)}%'),
+          ]),
+          const SizedBox(height: 5),
+          const Text('Completed observed days only. Bias uses Forecasted − Actual; both percentages need a positive completed-sales total. These provisional metrics do not replace the completed 28-day accuracy evaluation.',
+            style: TextStyle(fontSize: 11, color: _forecastMuted)),
+        ],
         const SizedBox(height: 10),
         Wrap(
           spacing: 18,
@@ -5813,7 +6839,7 @@ class _OverviewForecastChart extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _ChartLegendItem(
-              color: const Color(0xFF57534E),
+              color: Colors.black,
               label: actualPoints.isEmpty
                   ? 'Actual sales unavailable'
                   : 'Actual sales',
@@ -5860,6 +6886,30 @@ class _OverviewForecastChart extends StatelessWidget {
       ],
     );
   }
+}
+
+class _MonitoringMetric extends StatelessWidget {
+  const _MonitoringMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: _forecastLine),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min, children: [
+        Text(label, style: const TextStyle(fontSize: 11, color: _forecastMuted)),
+        const SizedBox(height: 3),
+        Text(value, style: const TextStyle(fontSize: 15,
+          fontWeight: FontWeight.w700, color: _forecastInk)),
+      ]),
+  );
 }
 
 class _ChartLegendItem extends StatelessWidget {
@@ -5936,10 +6986,16 @@ class _OverviewDemandChartPainter extends CustomPainter {
   const _OverviewDemandChartPainter({
     required this.actualPoints,
     required this.forecastPoints,
+    this.inspectedDate,
+    this.unit,
+    this.today,
   });
 
   final List<ForecastDailyPoint> actualPoints;
   final List<ForecastDailyPoint> forecastPoints;
+  final DateTime? inspectedDate;
+  final String? unit;
+  final DateTime? today;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -5949,8 +7005,16 @@ class _OverviewDemandChartPainter extends CustomPainter {
     const bottom = 30.0;
     final chartHeight = size.height - top - bottom;
     final chartRight = size.width - right;
-    final hasActual = actualPoints.isNotEmpty;
-    final todayX = hasActual ? left + (chartRight - left) * .46 : left + 2;
+    final allDates = <DateTime>[
+      ...actualPoints.map((point) => _businessDate(point.date)),
+      ...forecastPoints.map((point) => _businessDate(point.date)),
+    ]..sort();
+    if (allDates.isEmpty) return;
+    final firstDate = allDates.first;
+    final lastDate = allDates.last;
+    final span = max(1, lastDate.difference(firstDate).inDays);
+    double x(DateTime date) => left + (chartRight - left) *
+        _businessDate(date).difference(firstDate).inDays / span;
     final quantities = <double>[
       ...actualPoints.map((point) => point.quantity),
       ...forecastPoints.map((point) => point.quantity),
@@ -5979,47 +7043,88 @@ class _OverviewDemandChartPainter extends CustomPainter {
       );
     }
 
-    final divider = Paint()
-      ..color = _forecastFaint
-      ..strokeWidth = 1;
-    for (var offset = top; offset < top + chartHeight; offset += 6) {
-      canvas.drawLine(
-        Offset(todayX, offset),
-        Offset(todayX, min(offset + 3, top + chartHeight)),
-        divider,
-      );
+    final actualEnd = actualPoints.isEmpty ? null :
+        actualPoints.map((point) => _businessDate(point.date)).reduce((a, b) => a.isAfter(b) ? a : b);
+    final forecastStart = forecastPoints.isEmpty ? null :
+        forecastPoints.map((point) => _businessDate(point.date)).reduce((a, b) => a.isBefore(b) ? a : b);
+    if (actualEnd != null && forecastStart != null && forecastStart.isAfter(actualEnd)) {
+      final divider = Paint()..color = _forecastFaint..strokeWidth = 1;
+      final boundaryX = x(forecastStart);
+      canvas.drawRect(Rect.fromLTRB(boundaryX, top, chartRight, top + chartHeight),
+          Paint()..color = _forecastAccent.withValues(alpha: .045));
+      for (var offset = top; offset < top + chartHeight; offset += 6) {
+        canvas.drawLine(Offset(boundaryX, offset),
+            Offset(boundaryX, min(offset + 3, top + chartHeight)), divider);
+      }
+    }
+    if (today != null && !today!.isBefore(firstDate) && !today!.isAfter(lastDate)) {
+      final todayX = x(today!);
+      canvas.drawLine(Offset(todayX, top), Offset(todayX, top + chartHeight),
+        Paint()..color = _forecastMuted.withValues(alpha: .4)..strokeWidth = 1);
+      final label = TextPainter(
+        text: const TextSpan(text: 'Today',
+          style: TextStyle(fontSize: 10, color: _forecastMuted)),
+        textDirection: TextDirection.ltr)..layout();
+      label.paint(canvas, Offset((todayX + 3).clamp(0.0,
+        max(0.0, size.width - label.width)).toDouble(), top));
+    }
+    if (inspectedDate != null && !inspectedDate!.isBefore(firstDate) && !inspectedDate!.isAfter(lastDate)) {
+      final markerX = x(inspectedDate!);
+      canvas.drawLine(Offset(markerX, top), Offset(markerX, top + chartHeight),
+          Paint()..color = _forecastMuted.withValues(alpha: .55)..strokeWidth = 1);
     }
 
-    Path linePath(List<ForecastDailyPoint> points, double startX, double endX) {
+    Path linePath(List<ForecastDailyPoint> points) {
       final path = Path();
-      for (var index = 0; index < points.length; index++) {
-        final x = points.length == 1
-            ? startX
-            : startX + (endX - startX) * index / (points.length - 1);
-        final pointY = y(points[index].quantity);
+      final ordered = [...points]..sort((a, b) => a.date.compareTo(b.date));
+      for (var index = 0; index < ordered.length; index++) {
+        final pointX = x(ordered[index].date);
+        final pointY = y(ordered[index].quantity);
         if (index == 0) {
-          path.moveTo(x, pointY);
+          path.moveTo(pointX, pointY);
+        } else if (_businessDate(ordered[index].date).difference(_businessDate(ordered[index - 1].date)).inDays > 1) {
+          path.moveTo(pointX, pointY);
         } else {
-          path.lineTo(x, pointY);
+          path.lineTo(pointX, pointY);
         }
       }
       return path;
     }
 
-    if (hasActual) {
-      canvas.drawPath(
-        linePath(actualPoints, left, todayX),
+    // Connect only consecutive business dates. This decoration never enters
+    // either series or the tooltip lookup, and never bridges missing days.
+    if (actualEnd != null && forecastStart != null &&
+        forecastStart.difference(actualEnd).inDays == 1) {
+      final lastActual = actualPoints.firstWhere((point) => _businessDate(point.date) == actualEnd);
+      final firstForecast = forecastPoints.firstWhere((point) => _businessDate(point.date) == forecastStart);
+      canvas.drawLine(
+        Offset(x(actualEnd), y(lastActual.quantity)),
+        Offset(x(forecastStart), y(firstForecast.quantity)),
         Paint()
-          ..color = const Color(0xFF57534E)
+          ..color = _forecastFaint
+          ..strokeWidth = 1
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    if (actualPoints.isNotEmpty) {
+      canvas.drawPath(
+        linePath(actualPoints),
+        Paint()
+          ..color = Colors.black
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.8
           ..strokeJoin = StrokeJoin.round
           ..strokeCap = StrokeCap.round,
       );
+      for (final point in actualPoints) {
+        canvas.drawCircle(Offset(x(point.date), y(point.quantity)), 3,
+          Paint()..color = Colors.black);
+      }
     }
 
     if (forecastPoints.isNotEmpty) {
-      final forecastPath = linePath(forecastPoints, todayX, chartRight);
+      final forecastPath = linePath(forecastPoints);
       final paint = Paint()
         ..color = _forecastAccent
         ..style = PaintingStyle.stroke
@@ -6050,30 +7155,103 @@ class _OverviewDemandChartPainter extends CustomPainter {
         TextAlign.right => x - painter.width,
         _ => x - painter.width / 2,
       };
-      painter.paint(canvas, Offset(dx, size.height - painter.height));
+      painter.paint(canvas, Offset(
+        dx.clamp(0.0, max(0.0, size.width - painter.width)).toDouble(),
+        size.height - painter.height,
+      ));
     }
 
-    if (hasActual) {
-      drawDate(
-        _shortForecastDate(actualPoints.first.date),
-        left,
-        TextAlign.left,
-      );
+    drawDate(_shortForecastDate(firstDate), left, TextAlign.left);
+    if (forecastStart != null && actualEnd != null && forecastStart.isAfter(actualEnd)) {
+      drawDate('Forecast starts ${_shortForecastDate(forecastStart)}', x(forecastStart), TextAlign.center);
     }
-    drawDate('Today', todayX, hasActual ? TextAlign.center : TextAlign.left);
-    if (forecastPoints.isNotEmpty) {
-      drawDate(
-        _shortForecastDate(forecastPoints.last.date),
-        chartRight,
-        TextAlign.right,
-      );
+    drawDate(_shortForecastDate(lastDate), chartRight, TextAlign.right);
+    if (inspectedDate != null && !inspectedDate!.isBefore(firstDate) && !inspectedDate!.isAfter(lastDate)) {
+      final actual = actualPoints.where((p) => _businessDate(p.date) == inspectedDate).firstOrNull;
+      final predicted = forecastPoints.where((p) => _businessDate(p.date) == inspectedDate).firstOrNull;
+      for (final entry in [(actual, Colors.black), (predicted, _forecastAccent)]) {
+        if (entry.$1 != null) {
+          canvas.drawCircle(Offset(x(inspectedDate!), y(entry.$1!.quantity)), 4,
+              Paint()..color = entry.$2);
+        }
+      }
+      final delta = actual == null || predicted == null ? null : actual.quantity - predicted.quantity;
+      final percent = delta == null || actual == null || actual.quantity == 0 ? null : delta.abs() / actual.quantity * 100;
+      String value(ForecastDailyPoint? p) => p == null
+          ? 'Unavailable' : '${_quantity(p.quantity)} ${unit ?? ''}'.trim();
+      final status = actual == null ? 'Unavailable' :
+          _businessDate(inspectedDate!) == _businessDate(today ?? _manilaToday())
+              ? 'Partial Day' : 'Completed Day';
+      final width = min(292.0, max(1.0, size.width - 20));
+      const padding = 12.0;
+      final contentWidth = max(1.0, width - padding * 2);
+      final title = TextPainter(
+        text: TextSpan(text: '${_shortForecastDate(inspectedDate!)} ${inspectedDate!.year}',
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
+            color: _forecastInk)), textDirection: TextDirection.ltr,
+      )..layout(maxWidth: contentWidth);
+      final statusText = TextPainter(
+        text: TextSpan(text: status, style: TextStyle(fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: status == 'Partial Day' ? _forecastAccent : _forecastMuted)),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: contentWidth);
+      final rows = <(String, String, bool)>[
+        ('Actual sales', value(actual), false),
+        ('Forecasted', value(predicted), false),
+        ('Difference', delta == null ? 'Unavailable' :
+          '${delta > 0 ? '+' : ''}${_quantity(delta)} ${unit ?? ''}'.trim(), true),
+        ('Percent error', percent == null ? 'Unavailable' : '${_quantity(percent)}%', false),
+      ];
+      final labelWidth = max(1.0, contentWidth * .47);
+      final valueWidth = max(1.0, contentWidth - labelWidth);
+      final rowPainters = <(TextPainter, TextPainter)>[];
+      var rowsHeight = 0.0;
+      for (final row in rows) {
+        final name = TextPainter(text: TextSpan(text: row.$1,
+          style: TextStyle(fontSize: 11.5, color: row.$3 ? _forecastInk : _forecastMuted,
+            fontWeight: row.$3 ? FontWeight.w700 : FontWeight.w500)),
+          textDirection: TextDirection.ltr)..layout(maxWidth: labelWidth);
+        final amount = TextPainter(text: TextSpan(text: row.$2,
+          style: TextStyle(fontSize: row.$3 ? 13 : 12, color: _forecastInk,
+            fontWeight: row.$3 ? FontWeight.w700 : FontWeight.w600)),
+          textDirection: TextDirection.ltr, textAlign: TextAlign.right)
+          ..layout(maxWidth: valueWidth);
+        rowPainters.add((name, amount));
+        rowsHeight += max(name.height, amount.height) + 7;
+      }
+      final height = padding * 2 + title.height + 3 + statusText.height + 12 + rowsHeight;
+      final markerX = x(inspectedDate!);
+      final dx = (markerX + 12 + width <= size.width ? markerX + 12 : markerX - width - 12)
+          .clamp(0.0, max(0.0, size.width - width)).toDouble();
+      final dy = (y(predicted?.quantity ?? actual?.quantity ?? 0) - height - 8)
+          .clamp(0.0, max(0.0, size.height - height)).toDouble();
+      final rect = RRect.fromRectAndRadius(Rect.fromLTWH(dx, dy, width, height), const Radius.circular(8));
+      canvas.drawShadow(Path()..addRRect(rect), Colors.black.withValues(alpha: .15), 6, false);
+      canvas.drawRRect(rect, Paint()..color = Colors.white);
+      canvas.drawRRect(rect, Paint()..color = _forecastLine..style = PaintingStyle.stroke);
+      var rowY = dy + padding;
+      title.paint(canvas, Offset(dx + padding, rowY));
+      rowY += title.height + 3;
+      statusText.paint(canvas, Offset(dx + padding, rowY));
+      rowY += statusText.height + 7;
+      canvas.drawLine(Offset(dx + padding, rowY), Offset(dx + width - padding, rowY),
+        Paint()..color = _forecastLine..strokeWidth = 1);
+      rowY += 5;
+      for (final pair in rowPainters) {
+        pair.$1.paint(canvas, Offset(dx + padding, rowY));
+        pair.$2.paint(canvas, Offset(dx + width - padding - pair.$2.width, rowY));
+        rowY += max(pair.$1.height, pair.$2.height) + 7;
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant _OverviewDemandChartPainter oldDelegate) =>
       oldDelegate.actualPoints != actualPoints ||
-      oldDelegate.forecastPoints != forecastPoints;
+      oldDelegate.forecastPoints != forecastPoints ||
+      oldDelegate.inspectedDate != inspectedDate ||
+      oldDelegate.today != today;
 }
 
 String _shortForecastDate(DateTime date) {
@@ -6166,6 +7344,8 @@ class _ProductForecastChart extends StatefulWidget {
   const _ProductForecastChart({
     super.key,
     required this.points,
+    required this.actualPoints,
+    this.actualSalesError,
     required this.unit,
     required this.synthetic,
     required this.emptyMessage,
@@ -6173,6 +7353,8 @@ class _ProductForecastChart extends StatefulWidget {
   });
 
   final List<ForecastDailyPoint> points;
+  final List<ForecastDailyPoint> actualPoints;
+  final String? actualSalesError;
   final String unit;
   final bool synthetic;
   final String emptyMessage;
@@ -6200,6 +7382,9 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
 
   @override
   Widget build(BuildContext context) {
+    final actualByDate = {
+      for (final point in widget.actualPoints) _businessDate(point.date): point.quantity,
+    };
     if (widget.points.isEmpty) {
       return Container(
         constraints: const BoxConstraints(minHeight: 230),
@@ -6234,7 +7419,7 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
                   : widget.points.length == 1
                   ? _left + plotWidth / 2
                   : _left + hover / (widget.points.length - 1) * plotWidth;
-              final tooltipWidth = min(184.0, width);
+              final tooltipWidth = min(220.0, width);
               final preferredLeft = pointX > width * .6
                   ? pointX - tooltipWidth - 12
                   : pointX + 12;
@@ -6257,6 +7442,7 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
                       child: CustomPaint(
                         painter: _ProductForecastChartPainter(
                           points: widget.points,
+                          actualPoints: widget.actualPoints,
                           hoverIndex: hover,
                         ),
                       ),
@@ -6318,6 +7504,13 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
                                   ),
                                   style: const TextStyle(fontSize: 12),
                                 ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  actualByDate[_businessDate(widget.points[hover].date)] == null
+                                      ? 'Actual sales: unavailable'
+                                      : 'Actual sales${_businessDate(widget.points[hover].date) == _manilaToday() ? ' (today, partial)' : ' (completed day)'}: ${_quantity(actualByDate[_businessDate(widget.points[hover].date)])} ${widget.unit}',
+                                  style: const TextStyle(fontSize: 12, color: Colors.black),
+                                ),
                               ],
                             ),
                           ),
@@ -6336,19 +7529,22 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
           spacing: 24,
           runSpacing: 10,
           children: [
-            const Wrap(
+            Wrap(
               spacing: 20,
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                _ForecastLegendItem(
+                const _ForecastLegendItem(
                   color: _forecastAccent,
                   label: 'Predicted demand',
                   dashed: true,
                 ),
                 _ForecastLegendItem(
-                  color: _forecastFaint,
-                  label: 'Actual sales unavailable',
+                  color: Colors.black,
+                  label: widget.actualPoints.isEmpty
+                      ? (widget.actualSalesError == null
+                          ? 'No actual observations yet' : 'Actual sales unavailable')
+                      : 'Recorded actual sales',
                 ),
               ],
             ),
@@ -6391,9 +7587,10 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
           ],
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Historical daily sales and confidence ranges are not exposed by this response. Only supported future predicted demand is shown.',
-          style: TextStyle(fontSize: 11, color: _forecastFaint, height: 1.35),
+        Text(
+          widget.actualSalesError ??
+              'Actual markers show recorded sales only. Today is partial; missing dates are unavailable, not zero. Daily observations do not establish 28-day forecast accuracy.',
+          style: const TextStyle(fontSize: 11, color: _forecastFaint, height: 1.35),
         ),
       ],
     );
@@ -6467,10 +7664,12 @@ class _ForecastLegendPainter extends CustomPainter {
 class _ProductForecastChartPainter extends CustomPainter {
   const _ProductForecastChartPainter({
     required this.points,
+    required this.actualPoints,
     required this.hoverIndex,
   });
 
   final List<ForecastDailyPoint> points;
+  final List<ForecastDailyPoint> actualPoints;
   final int? hoverIndex;
 
   static const _top = 16.0;
@@ -6485,8 +7684,10 @@ class _ProductForecastChartPainter extends CustomPainter {
       1,
       (value, point) => max(value, point.quantity),
     );
-    final step = _forecastNiceStep(maximum / 4);
-    final yMaximum = max(step, (maximum / step).ceil() * step);
+    final actualMaximum = actualPoints.fold<double>(
+      maximum, (value, point) => max(value, point.quantity));
+    final step = _forecastNiceStep(actualMaximum / 4);
+    final yMaximum = max(step, (actualMaximum / step).ceil() * step);
     final innerWidth = max(1.0, size.width - _left - _right);
     final innerHeight = max(1.0, size.height - _top - _bottom);
     double xFor(int index) => points.length == 1
@@ -6538,7 +7739,7 @@ class _ProductForecastChartPainter extends CustomPainter {
       );
     }
 
-    final today = DateTime.now();
+    final today = _manilaToday();
     final todayIndex = points.indexWhere(
       (point) =>
           point.date.year == today.year &&
@@ -6601,6 +7802,27 @@ class _ProductForecastChartPainter extends CustomPainter {
       );
     }
 
+    final actualByDate = {
+      for (final point in actualPoints) _businessDate(point.date): point.quantity,
+    };
+    final actualPaint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    for (var index = 0; index < points.length; index++) {
+      final actual = actualByDate[_businessDate(points[index].date)];
+      if (actual == null) continue;
+      final center = Offset(xFor(index), yFor(actual));
+      if (index > 0) {
+        final previous = actualByDate[_businessDate(points[index - 1].date)];
+        if (previous != null) {
+          canvas.drawLine(Offset(xFor(index - 1), yFor(previous)), center, actualPaint);
+        }
+      }
+      canvas.drawCircle(center, 3.5, Paint()..color = Colors.white);
+      canvas.drawCircle(center, 3.5, Paint()..color = Colors.black);
+    }
+
     final hover = hoverIndex;
     if (hover != null && hover >= 0 && hover < points.length) {
       final hoverPaint = Paint()
@@ -6629,7 +7851,8 @@ class _ProductForecastChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ProductForecastChartPainter oldDelegate) =>
-      oldDelegate.points != points || oldDelegate.hoverIndex != hoverIndex;
+      oldDelegate.points != points || oldDelegate.actualPoints != actualPoints ||
+      oldDelegate.hoverIndex != hoverIndex;
 }
 
 void _drawDashedLine(
@@ -7275,22 +8498,35 @@ class _PlanningPriorityCard extends StatelessWidget {
     this.unavailable = false,
     this.priorities = const <ReplenishmentPriority>[],
     this.onSelectProduct,
-    this.pageScoped = false,
+    this.restockPage,
+    this.loading = false,
+    this.error,
+    this.onShowAll,
+    this.onShowGuide,
+    this.scopeLabel = 'Entire store',
   });
 
   final bool unavailable;
-  final bool pageScoped;
+  final StoreRestockPage? restockPage;
+  final bool loading;
+  final String? error;
+  final VoidCallback? onShowAll;
+  final VoidCallback? onShowGuide;
+  final String scopeLabel;
   final List<ReplenishmentPriority> priorities;
   final ValueChanged<String>? onSelectProduct;
 
   @override
   Widget build(BuildContext context) {
-    // PortfolioForecastAggregator already orders supported recommendation
-    // states by priority. The compact snapshot page has no live guidance.
+    // The API returns one globally ranked page from the authorized store.
     final actionable = priorities.where((priority) =>
         priority.status == 'recommend_order' ||
-        priority.status == 'needs_review').take(5).toList(growable: false);
-    return Container(
+        priority.status == 'needs_review').toList(growable: false);
+    final visible = actionable.take(5).toList(growable: false);
+    final actionCount = restockPage?.totalCount ?? actionable.length;
+    return LayoutBuilder(builder: (context, constraints) {
+      final compact = constraints.maxWidth < 440;
+      return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: _forecastLine),
@@ -7301,26 +8537,36 @@ class _PlanningPriorityCard extends StatelessWidget {
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(24, 18, 18, 13),
-            child: Text('Restock priorities',
+            child: Text('Store Restock Priorities',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600,
                   color: _forecastInk)),
           ),
-          if (pageScoped)
+          if (loading && restockPage == null)
             const Padding(padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
-              child: Text('Current-stock guidance for up to five current forecasts on this page. Other products have not been evaluated here.',
+              child: Text('Loading store-wide recommendations…',
                 style: TextStyle(fontSize: 11, color: _forecastMuted))),
+          if (restockPage case final page?)
+            Padding(padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Text('Provisional LightGBM Restock Guidance · $scopeLabel · ${page.totalProducts} products evaluated · ${page.totalCount} need action'
+                  '${page.missingCount > 0 ? ' · ${page.missingCount} missing' : ''}'
+                  '${page.staleCount > 0 ? ' · ${page.staleCount} stale' : ''}'
+                  '${page.unavailableCount > 0 ? ' · ${page.unavailableCount} unavailable' : ''}',
+                style: const TextStyle(fontSize: 11, color: _forecastMuted))),
+          if (error != null)
+            Padding(padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Text(error!, style: const TextStyle(fontSize: 11, color: Colors.red))),
           if (actionable.isEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
               child: Text(
                 unavailable
-                    ? 'Current restock priorities are unavailable in the summary response. Open a product for current-stock guidance.'
-                    : 'No actionable restock recommendations are available.',
+                    ? 'Store-wide recommendations are unavailable. Refresh to check again.'
+                    : 'No actionable recommendations among current available forecasts.',
                 style: const TextStyle(color: _forecastMuted),
               ),
             )
           else ...[
-            const ColoredBox(
+            if (!compact) const ColoredBox(
               color: _forecastBackground,
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 9),
@@ -7335,7 +8581,7 @@ class _PlanningPriorityCard extends StatelessWidget {
                 ]),
               ),
             ),
-            for (final priority in actionable)
+            for (final priority in visible)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _RestockPriorityRow(
@@ -7345,57 +8591,112 @@ class _PlanningPriorityCard extends StatelessWidget {
                 ),
               ),
           ],
+          if (restockPage != null)
+            Padding(padding: const EdgeInsets.fromLTRB(18, 5, 18, 10),
+              child: Align(alignment: Alignment.centerLeft,
+                child: Wrap(spacing: 8, runSpacing: 2, children: [TextButton(
+                  key: const Key('forecast-restock-show-all'),
+                  onPressed: loading ? null : onShowAll,
+                  style: TextButton.styleFrom(
+                    foregroundColor: _forecastAccentDark,
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5)),
+                  child: Text('Show all ($actionCount)',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                ), TextButton(onPressed: loading ? null : onShowGuide,
+                  style: TextButton.styleFrom(foregroundColor: _forecastAccentDark,
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5)),
+                  child: const Text('Restocking Guide', style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w600)))]))),
         ],
       ),
-    );
+      );
+    });
   }
 }
 
+class _UnavailableRestockRow extends StatelessWidget {
+  const _UnavailableRestockRow({required this.item, this.onOpen});
+
+  final UnavailableRestockItem item;
+  final VoidCallback? onOpen;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(item.sku.isEmpty ? item.productName
+          : '${item.productName} - ${item.sku}',
+        style: const TextStyle(fontSize: 12,
+          fontWeight: FontWeight.w600, color: _forecastInk)),
+      const SizedBox(height: 3),
+      Text(item.reason, style: const TextStyle(fontSize: 11,
+        color: _forecastMuted)),
+      if (onOpen != null) Align(alignment: Alignment.centerRight,
+        child: TextButton(onPressed: onOpen, child: const Text('View details'))),
+    ]),
+  );
+}
+
 class _RestockPriorityRow extends StatelessWidget {
-  const _RestockPriorityRow({required this.priority, required this.onOpen});
+  const _RestockPriorityRow({required this.priority, required this.onOpen,
+    this.showSku = false});
 
   final ReplenishmentPriority priority;
   final VoidCallback? onOpen;
+  final bool showSku;
 
   @override
   Widget build(BuildContext context) {
     final statusLabel = priority.status == 'recommend_order'
         ? 'Restock Suggested' : 'Review Replenishment';
     final definition = _restockStatusDefinitions[statusLabel]!;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 58),
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: _forecastHairline)),
-      ),
-      child: Row(children: [
-        Expanded(flex: 3, child: Text(priority.productName,
-          maxLines: 2, overflow: TextOverflow.ellipsis,
+    final product = Column(crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(priority.productName, maxLines: 2, overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-              color: _forecastInk))),
-        const SizedBox(width: 8),
-        Expanded(flex: 4, child: Align(
-          alignment: Alignment.centerLeft,
-          child: _ForecastDefinition(label: statusLabel,
-              definition: definition),
-        )),
-        const SizedBox(width: 4),
-        SizedBox(width: 94, child: Align(
-          alignment: Alignment.centerRight,
-          child: TextButton(
-            onPressed: onOpen,
-            style: TextButton.styleFrom(
-              foregroundColor: _forecastAccentDark,
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              minimumSize: const Size(0, 34),
-            ),
-            child: const Text('View details', maxLines: 2,
-              textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 11)),
-          ),
-        )),
-      ]),
+            color: _forecastInk)),
+        if (showSku && priority.sku.isNotEmpty)
+          Text(priority.sku, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: _forecastMuted)),
+      ]);
+    final status = _ForecastDefinition(label: statusLabel,
+      definition: definition);
+    final action = TextButton(
+      onPressed: onOpen,
+      style: TextButton.styleFrom(
+        foregroundColor: _forecastAccentDark,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        minimumSize: const Size(0, 34),
+      ),
+      child: const Text('View details', maxLines: 2,
+        textAlign: TextAlign.right, style: TextStyle(fontSize: 11)),
     );
+    return LayoutBuilder(builder: (context, constraints) {
+      final compact = constraints.maxWidth < 410;
+      return Container(
+        constraints: const BoxConstraints(minHeight: 58),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: _forecastHairline)),
+        ),
+        child: compact
+          ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              product,
+              const SizedBox(height: 5),
+              status,
+              Align(alignment: Alignment.centerRight, child: action),
+            ])
+          : Row(children: [
+              Expanded(flex: 3, child: product),
+              const SizedBox(width: 8),
+              Expanded(flex: 4, child: Align(alignment: Alignment.centerLeft,
+                child: status)),
+              const SizedBox(width: 4),
+              SizedBox(width: 94, child: Align(alignment: Alignment.centerRight,
+                child: action)),
+            ]),
+      );
+    });
   }
 }
 
@@ -7408,19 +8709,62 @@ const _restockStatusDefinitions = <String, String>{
   'Recommendation Unavailable': 'A reliable recommendation is currently unavailable. Open Product Forecast to review the available information and limitations.',
 };
 
-class _ForecastDefinition extends StatelessWidget {
+class _ForecastDefinition extends StatefulWidget {
   const _ForecastDefinition({
     required this.label,
     required this.definition,
     this.iconOnly = false,
+    this.headerControl = false,
   });
 
   final String label;
   final String definition;
   final bool iconOnly;
+  final bool headerControl;
+
+  static void dismissOpen() => _ForecastDefinitionState.dismissOpen();
+
+  @override
+  State<_ForecastDefinition> createState() => _ForecastDefinitionState();
+}
+
+class _ForecastDefinitionState extends State<_ForecastDefinition> {
+  static _ForecastDefinitionState? _active;
+  final MenuController _controller = MenuController();
+
+  static void dismissOpen() => _active?._dismiss();
+
+  void _show() {
+    if (!mounted) return;
+    if (_active != this) _active?._dismiss();
+    _active = this;
+    if (!_controller.isOpen) _controller.open();
+  }
+
+  void _dismiss() {
+    if (_active == this) _active = null;
+    if (_controller.isOpen) _controller.close();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ForecastDefinition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_controller.isOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _dismiss();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _dismiss();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => MenuAnchor(
+    controller: _controller,
     alignmentOffset: const Offset(0, 6),
     style: const MenuStyle(
       backgroundColor: WidgetStatePropertyAll(Colors.white),
@@ -7439,7 +8783,7 @@ class _ForecastDefinition extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.all(14),
-          child: Text(definition, softWrap: true,
+          child: Text(widget.definition, softWrap: true,
             style: const TextStyle(fontSize: 12, height: 1.4,
                 color: _forecastBody)),
         ),
@@ -7447,22 +8791,28 @@ class _ForecastDefinition extends StatelessWidget {
     ],
     builder: (context, controller, child) => Semantics(
       button: true,
-      label: iconOnly ? label : '$label. Show definition',
-      hint: definition,
+      label: widget.iconOnly ? widget.label : '${widget.label}. Show definition',
+      hint: widget.definition,
       child: MouseRegion(
-        onEnter: (_) { if (!controller.isOpen) controller.open(); },
+        onEnter: (_) => _show(),
+        onExit: (_) => _dismiss(),
         child: InkWell(
-          onTap: () => controller.open(),
+          onTap: () => _controller.isOpen ? _dismiss() : _show(),
+          onFocusChange: (hasFocus) { if (!hasFocus) _dismiss(); },
           borderRadius: BorderRadius.circular(4),
-          child: iconOnly
-              ? const Padding(
+          child: widget.iconOnly
+              ? widget.headerControl
+                  ? const SizedBox(width: 48, height: 48,
+                      child: Center(child: Icon(LucideIcons.info, size: 18,
+                        color: _forecastAccent)))
+                  : const Padding(
                   padding: EdgeInsets.all(3),
                   child: Icon(LucideIcons.info, size: 17,
                     color: _forecastAccent),
                 )
               : Padding(
                   padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Text(label, maxLines: 3, overflow: TextOverflow.ellipsis,
+                  child: Text(widget.label, maxLines: 3, overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 12, color: _forecastBody,
                       decoration: TextDecoration.underline,
                       decorationStyle: TextDecorationStyle.dotted)),
@@ -7511,6 +8861,7 @@ class ForecastAnalysisPanel extends StatelessWidget {
   const ForecastAnalysisPanel({
     super.key,
     required this.analysis,
+    this.monitoringChart,
     this.loading = false,
     this.error,
     this.stale = false,
@@ -7522,9 +8873,11 @@ class ForecastAnalysisPanel extends StatelessWidget {
     this.selectedWindow = ForecastWindow.next28Days,
     this.onWindowChanged,
     this.onViewForecastAccuracy,
+    this.restockDecisionSupport,
   });
 
   final ForecastAnalysis? analysis;
+  final Widget? monitoringChart;
   final bool loading;
   final String? error;
   final bool stale;
@@ -7536,16 +8889,17 @@ class ForecastAnalysisPanel extends StatelessWidget {
   final ForecastWindow selectedWindow;
   final ValueChanged<ForecastWindow>? onWindowChanged;
   final VoidCallback? onViewForecastAccuracy;
+  final Widget? restockDecisionSupport;
 
   @override
   Widget build(BuildContext context) {
-    if (loading && analysis == null) {
+    if (loading && analysis == null && monitoringChart == null) {
       return const SizedBox(
         height: 360,
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    if (error != null && analysis == null) {
+    if (error != null && analysis == null && monitoringChart == null) {
       return _MessageCard(
         icon: LucideIcons.triangleAlert,
         title: 'Forecast unavailable',
@@ -7556,6 +8910,7 @@ class ForecastAnalysisPanel extends StatelessWidget {
     }
     final value = analysis;
     if (value == null) {
+      if (monitoringChart != null) return monitoringChart!;
       return _MessageCard(
         icon: LucideIcons.chartNoAxesCombined,
         title: emptyTitle,
@@ -7602,14 +8957,17 @@ class ForecastAnalysisPanel extends StatelessWidget {
           ),
         LayoutBuilder(
           builder: (context, constraints) {
-            final forecast = _ForecastCard(
+            final forecast = monitoringChart ?? _ForecastCard(
               analysis: value,
               controls: forecastControls,
               selectedWindow: selectedWindow,
               onWindowChanged: onWindowChanged,
               onViewForecastAccuracy: onViewForecastAccuracy,
             );
-            final recommendation = _RecommendationCard(analysis: value);
+            final recommendation = _RecommendationCard(
+              analysis: value,
+              comparisonAction: restockDecisionSupport,
+            );
             if (MediaQuery.sizeOf(context).width < 1024) {
               return Column(
                 children: [
@@ -7730,13 +9088,17 @@ class _ForecastCard extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 20),
-                _ProductForecastChart(
+                _OverviewForecastChart(
                   key: const Key('product-demand-trend'),
-                  points: forecast.daily
+                  forecastPoints: forecast.daily
                       .take(chartDays)
                       .toList(growable: false),
+                  actualPoints: analysis.actualSales.where((actual) =>
+                      forecast.daily.take(chartDays).any((predicted) =>
+                          _businessDate(predicted.date) == _businessDate(actual.date)))
+                      .toList(growable: false),
                   unit: forecast.unit,
-                  synthetic:
+                  includesSimulation:
                       analysis.synthetic ||
                       (analysis.product.sku?.startsWith('SIM-') ?? false),
                   onViewForecastAccuracy: onViewForecastAccuracy,
@@ -7744,6 +9106,8 @@ class _ForecastCard extends StatelessWidget {
                       ? 'No reliable daily forecast is available for this product.'
                       : 'No forecast points were returned.',
                 ),
+                if (analysis.actualSalesError != null) Text(analysis.actualSalesError!,
+                  style: const TextStyle(fontSize: 12, color: Colors.red)),
               ],
             ),
           ),
@@ -7770,7 +9134,7 @@ class _ProductPeriodStrip extends StatelessWidget {
       final compact = MediaQuery.sizeOf(context).width < 640;
       final width = compact ? constraints.maxWidth : constraints.maxWidth / 3;
       final firstPoint = forecast.daily.isEmpty ? null : forecast.daily.first;
-      final now = DateTime.now();
+      final now = _manilaToday();
       final firstPointIsToday =
           firstPoint != null &&
           firstPoint.date.year == now.year &&
@@ -7995,18 +9359,53 @@ class _ForecastTechnicalDetails extends StatelessWidget {
 }
 
 class _RecommendationCard extends StatelessWidget {
-  const _RecommendationCard({required this.analysis});
+  const _RecommendationCard({required this.analysis, this.comparisonAction});
 
   final ForecastAnalysis analysis;
+  final Widget? comparisonAction;
 
   @override
   Widget build(BuildContext context) {
-    final preliminary = analysis.preliminaryRestockingInsight;
-    final provisional = preliminary.reliability == PreliminaryReliability.provisional;
-    final unavailable = preliminary.reliability == PreliminaryReliability.unavailable;
+    final reference = analysis.preliminaryRestockingInsight;
+    final selected = analysis.selectedModelPreliminaryInsight;
+    final selectedModel = analysis.forecast.requestedModel;
+    final modelLabel = switch (selectedModel) {
+      'mean28' => 'Mean28',
+      'lightgbm' => 'LightGBM',
+      'blend' || 'calibrated_blend' => 'Calibrated Blend',
+      'seasonal_experimental' => 'Seasonal Experimental',
+      _ => selectedModel,
+    };
+    final selectedEvidenceMissing = selected == null && selectedModel != 'lightgbm';
+    final preliminary = selected ?? reference;
+    final producerLabel = selectedEvidenceMissing
+        ? 'unavailable'
+        : '${preliminary.forecastModel} v${preliminary.forecastVersion}';
+    final provisional = !selectedEvidenceMissing &&
+        preliminary.reliability == PreliminaryReliability.provisional;
+    final unavailable = selectedEvidenceMissing ||
+        preliminary.reliability == PreliminaryReliability.unavailable;
     final suggestion = unavailable ? null : preliminary.suggestedRestockQuantity;
-    final predicted = preliminary.predictedDemand;
+    final predicted = selectedEvidenceMissing ? null : preliminary.predictedDemand;
     final saleable = preliminary.availableInventory;
+    final referenceUsable = reference.reliability != PreliminaryReliability.unavailable;
+    final selectedDemand = selected?.predictedDemand;
+    final referenceDemand = reference.predictedDemand;
+    final comparable = selectedModel != 'lightgbm' &&
+        analysis.preliminaryComparisonEligible && selected != null &&
+        selected.reliability == PreliminaryReliability.normal &&
+        reference.reliability == PreliminaryReliability.normal &&
+        selected.planningHorizonDays == 28 &&
+        reference.planningHorizonDays == 28 &&
+        selected.inventoryUnit.toLowerCase() == reference.inventoryUnit.toLowerCase() &&
+        selectedDemand != null && selectedDemand.isFinite && selectedDemand >= 0 &&
+        referenceDemand != null && referenceDemand.isFinite && referenceDemand >= 0;
+    final demandDifference = comparable
+        ? (selectedDemand! - referenceDemand!).abs() : 0.0;
+    final largerDemand = comparable ? max(selectedDemand!, referenceDemand!) : 0.0;
+    final disagreement = largerDemand > 0 ? demandDifference / largerDemand : 0.0;
+    final strongDisagreement = comparable && demandDifference >= 5 && disagreement >= .50;
+    final standardDisagreement = comparable && demandDifference >= 2 && disagreement >= .30;
     final daily = predicted == null || predicted <= 0
         ? null
         : predicted / preliminary.planningHorizonDays;
@@ -8049,6 +9448,9 @@ class _RecommendationCard extends StatelessWidget {
                     color: _forecastBody,
                   ),
                 ),
+                const SizedBox(height: 3),
+                Text('Selected model: $modelLabel',
+                  style: const TextStyle(fontSize: 12, color: _forecastMuted)),
                 const SizedBox(height: 6),
                 if (suggestion == null)
                   const Text(
@@ -8099,7 +9501,10 @@ class _RecommendationCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 Text(
                   suggestion == null
-                      ? (preliminary.limitations.isNotEmpty ? preliminary.limitations.join(' ') : 'A valid supporting forecast and saleable inventory are required.')
+                      ? (selectedEvidenceMissing
+                          ? 'A matching selected-model preliminary estimate is unavailable. Refresh after the forecasting API is updated.'
+                          : preliminary.limitations.isNotEmpty ? preliminary.limitations.join(' ')
+                          : 'A valid supporting forecast and saleable inventory are required.')
                       : suggestion! > 0
                       ? 'About ${_withUnit(predicted, preliminary.inventoryUnit)} are expected over ${preliminary.planningHorizonDays} days. Current saleable stock is ${_withUnit(saleable, preliminary.inventoryUnit)}.'
                       : 'Current saleable stock should cover the expected ${preliminary.planningHorizonDays}-day demand.',
@@ -8112,6 +9517,10 @@ class _RecommendationCard extends StatelessWidget {
               ],
             ),
           ),
+          if (comparisonAction != null) ...[
+            const SizedBox(height: 12),
+            comparisonAction!,
+          ],
           if (provisional) ...[
             const SizedBox(height: 10),
             Text(
@@ -8120,6 +9529,19 @@ class _RecommendationCard extends StatelessWidget {
               '${analysis.forecast.isColdStart ? ' This is a separate supporting estimate; the selected forecast remains unavailable or limited.' : ''}',
               style: const TextStyle(fontSize: 13, height: 1.45, color: _forecastBody),
             ),
+          ],
+          if (strongDisagreement || standardDisagreement) ...[
+            const SizedBox(height: 10),
+            _Notice(color: Colors.orange, icon: LucideIcons.triangleAlert,
+              text: strongDisagreement
+                ? 'Large model disagreement. These models predict significantly different demand. Review both estimates before restocking.'
+                : 'The selected model and LightGBM predict different demand. Review both estimates before restocking.'),
+          ],
+          if (selectedModel != 'lightgbm' && selected != null &&
+              !analysis.preliminaryComparisonEligible) ...[
+            const SizedBox(height: 10),
+            const Text('The saved forecasts could not be aligned by date and unit, so a model difference is unavailable.',
+              style: TextStyle(fontSize: 12, color: _forecastMuted)),
           ],
           const SizedBox(height: 16),
           _RecommendationMetric(
@@ -8132,18 +9554,35 @@ class _RecommendationCard extends StatelessWidget {
           ),
           _RecommendationMetric(
             'Expected demand, ${preliminary.planningHorizonDays} days',
-            _withUnit(preliminary.predictedDemand, preliminary.inventoryUnit),
+            _withUnit(predicted, preliminary.inventoryUnit),
             key: const Key('preliminary-predicted-demand'),
           ),
           _RecommendationMetric(
             'Current stock lasts',
             coverDays == null ? 'Unavailable' : 'About $coverDays days',
           ),
+          const SizedBox(height: 14),
+          Text('LightGBM preliminary comparison',
+            style: const TextStyle(fontSize: 13,
+              fontWeight: FontWeight.w600, color: _forecastInk)),
+          const SizedBox(height: 5),
+          _RecommendationMetric('LightGBM expected demand, 28 days',
+            referenceUsable
+              ? _withUnit(reference.predictedDemand, reference.inventoryUnit)
+              : 'Unavailable'),
+          _RecommendationMetric('LightGBM preliminary shortfall',
+            referenceUsable
+              ? _withUnit(reference.suggestedRestockQuantity, reference.inventoryUnit)
+              : 'Unavailable'),
+          if (reference.reliability != PreliminaryReliability.normal &&
+              reference.limitations.isNotEmpty)
+            Text(reference.limitations.join(' '),
+              style: const TextStyle(fontSize: 12, color: _forecastMuted)),
           const SizedBox(height: 10),
           Text(
-            'Supporting model: ${preliminary.forecastModel} v${preliminary.forecastVersion}. '
+            'Selected forecast producer: $producerLabel. '
             'Uses the saved 28-day forecast and current saleable stock. Guidance only - nothing is ordered. '
-            '${preliminary.limitations.join(' ')}',
+            '${selectedEvidenceMissing ? 'Selected-model guidance is unavailable.' : preliminary.limitations.join(' ')}',
             style: const TextStyle(fontSize: 12, height: 1.45, color: _forecastMuted),
           ),
         ],
@@ -8991,12 +10430,14 @@ class _TrackingAccuracyMainCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasItems = report.items.isNotEmpty;
     final dataUnavailable = !report.dataSourceAvailable;
+    final awaitingCompletion = monitored.any(
+        (item) => item.evaluationStatus == 'awaiting_completion');
     final title = !hasItems
         ? 'No saved forecasts yet'
         : dataUnavailable
         ? 'Forecast accuracy unavailable'
         : evaluated.isEmpty
-        ? 'Awaiting completed forecasts'
+        ? awaitingCompletion ? 'Awaiting completed forecasts' : 'No eligible evaluations yet'
         : 'Forecast performance available';
     final message = !hasItems
         ? 'Accuracy monitoring begins after an immutable 28-day forecast has been saved.'
@@ -9004,7 +10445,9 @@ class _TrackingAccuracyMainCard extends StatelessWidget {
         ? (report.dataSourceWarning ??
               'Recorded sales are currently unavailable for evaluation.')
         : evaluated.isEmpty
-        ? 'Forecast accuracy will appear after saved forecast periods end and sufficient sales data becomes available for comparison.'
+        ? awaitingCompletion
+            ? 'Accuracy becomes eligible the day after each full forecast period ends in Asia/Manila, once completed sales are available.'
+            : 'Saved windows are not yet eligible. Review each window below for its specific data limitation.'
         : 'Completed eligible forecasts are compared with recorded customer sales for the same forecast periods.';
     final status = !hasItems
         ? 'No saved forecasts'
@@ -9014,39 +10457,7 @@ class _TrackingAccuracyMainCard extends StatelessWidget {
         ? 'Results available'
         : _trackingEvaluationStatus(monitored);
 
-    final statusColumn = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _TrackingStatusIcon(icon: LucideIcons.hourglass),
-        const SizedBox(height: 12),
-        Text(
-          title,
-          key: !hasItems ? const Key('forecast-performance-empty') : null,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: _trackingInk,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          message,
-          style: const TextStyle(
-            fontSize: 13,
-            height: 1.5,
-            color: _trackingBody,
-          ),
-        ),
-        const SizedBox(height: 20),
-        _TrackingAccuracySummary(
-          monitored: report.items.length,
-          evaluated: evaluated.length,
-          status: status,
-        ),
-      ],
-    );
-    final monitoredColumn = _TrackingMonitoredForecasts(items: monitored);
-
+    // PHASE_3C_LIVE_ACCURACY_DEMO_LAYOUT_V1
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -9054,32 +10465,61 @@ class _TrackingAccuracyMainCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: LayoutBuilder(
-        builder: (context, constraints) {
-          if (constraints.maxWidth < 900) {
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        builder: (context, constraints) => Padding(
+          padding: EdgeInsets.all(constraints.maxWidth < 600 ? 16 : 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  statusColumn,
-                  const SizedBox(height: 24),
-                  monitoredColumn,
+                  Icon(
+                    LucideIcons.chartNoAxesCombined,
+                    color: _trackingAccent,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      key: !hasItems ? const Key('forecast-performance-empty') : null,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: _trackingInk,
+                      ),
+                    ),
+                  ),
                 ],
               ),
-            );
-          }
-          return Padding(
-            padding: const EdgeInsets.all(24),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 10, child: statusColumn),
-                const SizedBox(width: 40),
-                Expanded(flex: 11, child: monitoredColumn),
-              ],
-            ),
-          );
-        },
+              const SizedBox(height: 8),
+              Text(
+                message,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: _trackingBody,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Operational accuracy: LightGBM only. Comparing all four models requires a separate, fair evaluation.',
+                style: TextStyle(fontSize: 12, height: 1.4, color: _trackingMuted),
+              ),
+              const SizedBox(height: 20),
+              _TrackingAccuracySummary(
+                saved: report.savedRecommendationCount ?? report.items.length,
+                monitored: report.uniqueForecastWindowCount ?? report.items.length,
+                evaluated: evaluated.length,
+                status: status,
+              ),
+              const SizedBox(height: 18),
+              const Divider(height: 1, color: _trackingLine),
+              const SizedBox(height: 16),
+              _TrackingMonitoredForecasts(items: monitored),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -9087,11 +10527,13 @@ class _TrackingAccuracyMainCard extends StatelessWidget {
 
 class _TrackingAccuracySummary extends StatelessWidget {
   const _TrackingAccuracySummary({
+    required this.saved,
     required this.monitored,
     required this.evaluated,
     required this.status,
   });
 
+  final int saved;
   final int monitored;
   final int evaluated;
   final String status;
@@ -9099,9 +10541,14 @@ class _TrackingAccuracySummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
+      // Use the actual API values; no demo values or new calculations.
       final cells = [
         _TrackingAccuracySummaryCell(
-          label: 'Saved forecasts monitored',
+          label: 'Saved recommendation records',
+          value: '$saved',
+        ),
+        _TrackingAccuracySummaryCell(
+          label: 'Unique forecast windows',
           value: '$monitored',
         ),
         _TrackingAccuracySummaryCell(
@@ -9114,39 +10561,32 @@ class _TrackingAccuracySummary extends StatelessWidget {
           compact: true,
         ),
       ];
-      if (constraints.maxWidth < 360) {
-        return Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: _trackingLine),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            children: [
-              cells[0],
-              const Divider(height: 1, color: _trackingLine),
-              cells[1],
-              const Divider(height: 1, color: _trackingLine),
-              cells[2],
+      if (constraints.maxWidth < 420) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var index = 0; index < cells.length; index++) ...[
+              cells[index],
+              if (index != cells.length - 1)
+                const Divider(height: 1, color: _trackingLine),
             ],
-          ),
+          ],
         );
       }
-      return Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: _trackingLine),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: IntrinsicHeight(
-          child: Row(
-            children: [
-              Expanded(child: cells[0]),
-              const VerticalDivider(width: 1, color: _trackingLine),
-              Expanded(child: cells[1]),
-              const VerticalDivider(width: 1, color: _trackingLine),
-              Expanded(child: cells[2]),
-            ],
-          ),
-        ),
+      if (constraints.maxWidth < 820) {
+        final cellWidth = (constraints.maxWidth - 18) / 2;
+        return Wrap(
+          spacing: 18,
+          runSpacing: 12,
+          children: [
+            for (final cell in cells)
+              SizedBox(width: cellWidth, child: cell),
+          ],
+        );
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [for (final cell in cells) Expanded(child: cell)],
       );
     },
   );
@@ -9165,7 +10605,7 @@ class _TrackingAccuracySummaryCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -9205,7 +10645,7 @@ class _TrackingMonitoredForecasts extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       const Text(
-        'Monitored 28-day forecasts',
+        'Monitored unique 28-day forecast windows',
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w500,
@@ -9285,6 +10725,21 @@ class _TrackingMonitoredForecastRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
+                  'First eligible: ${_trackingFirstEligibleDate(item)}',
+                  style: const TextStyle(fontSize: 11, color: _trackingMuted),
+                ),
+                if (item.sourceRecommendationCount > 1) ...[
+                  const SizedBox(height: 2),
+                  Text('${item.sourceRecommendationCount} saved recommendations, one forecast window',
+                    style: const TextStyle(fontSize: 11, color: _trackingMuted)),
+                ],
+                if (item.predictionConflict) ...[
+                  const SizedBox(height: 2),
+                  const Text('Saved predictions differ; earliest prediction selected.',
+                    style: TextStyle(fontSize: 11, color: _trackingAccentStrong)),
+                ],
+                const SizedBox(height: 2),
+                Text(
                   'Eligibility: ${_trackingTitleCase(_readable(item.evaluationStatus))}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -9293,6 +10748,11 @@ class _TrackingMonitoredForecastRow extends StatelessWidget {
                     color: _trackingAccentStrong,
                   ),
                 ),
+                const SizedBox(height: 2),
+                Text(item.statusExplanation,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: _trackingMuted)),
               ],
             ),
           ),
@@ -9349,23 +10809,21 @@ class _TrackingCompletedAccuracy extends StatelessWidget {
       ),
       const SizedBox(height: 4),
       const Text(
-        'Review completed forecasts and compare predicted demand against actual recorded sales.',
+        'Actual completed-sales evaluations by inventory unit — not restock variance.',
         style: TextStyle(fontSize: 13, color: _trackingMuted),
       ),
       const SizedBox(height: 12),
-      _TrackingAccuracyTableCard(
-        child: items.isEmpty
-            ? const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 22),
-                child: Text(
-                  'No completed forecast evaluations available yet.',
-                  style: TextStyle(fontSize: 13, color: _trackingMuted),
-                ),
-              )
-            : _TrackingCompletedAccuracyTable(items: items),
-      ),
-      if (summaries.isNotEmpty) ...[
-        const SizedBox(height: 14),
+      if (summaries.isEmpty && items.isEmpty)
+        _TrackingAccuracyTableCard(
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 22),
+            child: Text(
+              'No completed forecast evaluations available yet.',
+              style: TextStyle(fontSize: 13, color: _trackingMuted),
+            ),
+          ),
+        )
+      else ...[
         const Text(
           'WAPE and Bias Summary',
           style: TextStyle(
@@ -9376,7 +10834,32 @@ class _TrackingCompletedAccuracy extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _TrackingAccuracyTableCard(
-          child: _TrackingAccuracySummaryTable(summaries: summaries),
+          child: summaries.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                  child: Text('No accuracy summary is available.',
+                    style: TextStyle(fontSize: 12, color: _trackingMuted)),
+                )
+              : _TrackingAccuracySummaryTable(summaries: summaries),
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          'Completed forecast evaluations',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: _trackingInk,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _TrackingAccuracyTableCard(
+          child: items.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                  child: Text('No completed evaluations are available.',
+                    style: TextStyle(fontSize: 12, color: _trackingMuted)),
+                )
+              : _TrackingCompletedAccuracyTable(items: items),
         ),
       ],
     ],
@@ -9531,7 +11014,7 @@ class _TrackingAccuracyTableRow extends StatelessWidget {
         Expanded(
           flex: 24,
           child: header
-              ? const _TrackingHeaderText('Date / Product')
+              ? const _TrackingHeaderText('Saved / Product')
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -9562,6 +11045,12 @@ class _TrackingAccuracyTableRow extends StatelessWidget {
                         color: _trackingInk,
                       ),
                     ),
+                    if (value.sourceRecommendationCount > 1)
+                      Text('${value.sourceRecommendationCount} saved recommendations; one evaluation',
+                        style: const TextStyle(fontSize: 11, color: _trackingMuted)),
+                    if (value.predictionConflict)
+                      const Text('Different predictions; earliest saved selected',
+                        style: TextStyle(fontSize: 11, color: _trackingAccentStrong)),
                   ],
                 ),
         ),
@@ -9898,7 +11387,8 @@ class _TrackingAccuracyTransparency extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = report?.items ?? const <ForecastPerformanceItem>[];
+    final currentReport = report;
+    final items = currentReport?.items ?? const <ForecastPerformanceItem>[];
     final models = items
         .map(
           (item) =>
@@ -9949,8 +11439,14 @@ class _TrackingAccuracyTransparency extends StatelessWidget {
           _TrackingTransparencyFact(
             label: 'Model basis',
             value: models.isEmpty
-                ? 'Available after a saved forecast is loaded.'
+                ? 'Operational accuracy monitors LightGBM only.'
                 : models.join(' · '),
+          ),
+          _TrackingTransparencyFact(
+            label: 'Observation policy',
+            value: currentReport == null
+                ? 'Unique forecast windows are shown after data loads.'
+                : '${currentReport.savedRecommendationCount ?? items.length} saved recommendation records represent ${currentReport.uniqueForecastWindowCount ?? items.length} unique forecast windows. ${currentReport.representativePolicy}',
           ),
           _TrackingTransparencyFact(
             label: 'Sales source',
@@ -9963,13 +11459,13 @@ class _TrackingAccuracyTransparency extends StatelessWidget {
             label: 'Actual sales',
             value: items.isEmpty
                 ? 'Availability is shown after saved forecasts load.'
-                : '$actualSalesCount of ${items.length} saved forecasts currently include completed actual-sales data.',
+                : '$actualSalesCount of ${items.length} unique forecast windows currently include completed actual-sales data.',
           ),
           _TrackingTransparencyFact(
             label: 'Eligibility',
             value: items.isEmpty
                 ? 'A full 28-day period must end and recorded sales must be available.'
-                : '$eligibleCount of ${items.length} saved forecasts are currently eligible. Period end alone does not guarantee eligibility.',
+                : '$eligibleCount of ${items.length} unique forecast windows are currently eligible. Period end alone does not guarantee eligibility.',
           ),
           _TrackingTransparencyFact(label: 'Caveats', value: caveats),
         ],
@@ -10187,8 +11683,8 @@ _TrackingForecastProgress _trackingForecastProgress(
       fraction: 0,
     );
   }
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
+  final manilaNow = DateTime.now().toUtc().add(const Duration(hours: 8));
+  final today = DateTime.utc(manilaNow.year, manilaNow.month, manilaNow.day);
   final totalDays = end.difference(start).inDays + 1;
   if (today.isBefore(start)) {
     final startsIn = start.difference(today).inDays;
@@ -10226,7 +11722,7 @@ String _trackingTitleCase(String value) => value
 DateTime? _trackingDateOnly(String value) {
   final parsed = DateTime.tryParse(value);
   if (parsed == null) return null;
-  return DateTime(parsed.year, parsed.month, parsed.day);
+  return DateTime.utc(parsed.year, parsed.month, parsed.day);
 }
 
 String _trackingPeriod(String? startValue, String? endValue) {
@@ -10491,20 +11987,22 @@ class _TrackingRestockRecords extends StatefulWidget {
     super.key,
     required this.hasProductSelection,
     required this.productScope,
-    required this.refreshControl,
     required this.items,
     required this.loading,
     this.error,
     this.onRetry,
+    required this.onReconcile,
+    required this.mutatingRecommendationId,
   });
 
   final bool hasProductSelection;
   final Widget productScope;
-  final Widget refreshControl;
   final List<RecommendationTrackingItem> items;
   final bool loading;
   final String? error;
   final VoidCallback? onRetry;
+  final ValueChanged<RecommendationTrackingItem> onReconcile;
+  final int? mutatingRecommendationId;
 
   @override
   State<_TrackingRestockRecords> createState() =>
@@ -10562,7 +12060,6 @@ class _TrackingRestockRecordsState extends State<_TrackingRestockRecords> {
             filter: _filter,
             recordCount: filtered.length,
             productScope: widget.productScope,
-            refreshControl: widget.refreshControl,
             onSearchChanged: (_) => setState(() {
               _showAll = false;
               _expandedId = null;
@@ -10648,11 +12145,15 @@ class _TrackingRestockRecordsState extends State<_TrackingRestockRecords> {
                       items: visible,
                       expandedId: _expandedId,
                       onToggle: _toggleRecord,
+                      onReconcile: widget.onReconcile,
+                      mutatingRecommendationId: widget.mutatingRecommendationId,
                     )
                   : _TrackingRecordsMobile(
                       items: visible,
                       expandedId: _expandedId,
                       onToggle: _toggleRecord,
+                      onReconcile: widget.onReconcile,
+                      mutatingRecommendationId: widget.mutatingRecommendationId,
                     ),
             ),
           _TrackingRecordsFooter(
@@ -10679,7 +12180,6 @@ class _TrackingRecordsToolbar extends StatelessWidget {
     required this.filter,
     required this.recordCount,
     required this.productScope,
-    required this.refreshControl,
     required this.onSearchChanged,
     required this.onClearSearch,
     required this.onFilterChanged,
@@ -10689,7 +12189,6 @@ class _TrackingRecordsToolbar extends StatelessWidget {
   final _TrackingMatchFilter filter;
   final int recordCount;
   final Widget productScope;
-  final Widget refreshControl;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onClearSearch;
   final ValueChanged<_TrackingMatchFilter> onFilterChanged;
@@ -10808,7 +12307,7 @@ class _TrackingRecordsToolbar extends StatelessWidget {
                   ],
                 ),
               const SizedBox(height: 9),
-              Row(children: [count, const Spacer(), refreshControl]),
+              count,
             ],
           );
         }
@@ -10824,8 +12323,6 @@ class _TrackingRecordsToolbar extends StatelessWidget {
             SizedBox(width: 170, child: filterControl),
             const SizedBox(width: 10),
             count,
-            const SizedBox(width: 12),
-            refreshControl,
           ],
         );
       },
@@ -10838,11 +12335,15 @@ class _TrackingRecordsDesktop extends StatelessWidget {
     required this.items,
     required this.expandedId,
     required this.onToggle,
+    required this.onReconcile,
+    required this.mutatingRecommendationId,
   });
 
   final List<RecommendationTrackingItem> items;
   final String? expandedId;
   final ValueChanged<String> onToggle;
+  final ValueChanged<RecommendationTrackingItem> onReconcile;
+  final int? mutatingRecommendationId;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -10859,7 +12360,9 @@ class _TrackingRecordsDesktop extends StatelessWidget {
           curve: const Cubic(.23, 1, .32, 1),
           alignment: Alignment.topCenter,
           child: expandedId == item.recordKey
-              ? _TrackingRecordDetails(item: item)
+              ? _TrackingRecordDetails(item: item,
+                  onReconcile: () => onReconcile(item),
+                  reconciling: mutatingRecommendationId == item.recommendationId)
               : const SizedBox.shrink(),
         ),
       ],
@@ -10987,11 +12490,15 @@ class _TrackingRecordsMobile extends StatelessWidget {
     required this.items,
     required this.expandedId,
     required this.onToggle,
+    required this.onReconcile,
+    required this.mutatingRecommendationId,
   });
 
   final List<RecommendationTrackingItem> items;
   final String? expandedId;
   final ValueChanged<String> onToggle;
+  final ValueChanged<RecommendationTrackingItem> onReconcile;
+  final int? mutatingRecommendationId;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -11102,7 +12609,9 @@ class _TrackingRecordsMobile extends StatelessWidget {
           curve: const Cubic(.23, 1, .32, 1),
           alignment: Alignment.topCenter,
           child: expandedId == item.recordKey
-              ? _TrackingRecordDetails(item: item)
+              ? _TrackingRecordDetails(item: item,
+                  onReconcile: () => onReconcile(item),
+                  reconciling: mutatingRecommendationId == item.recommendationId)
               : const SizedBox.shrink(),
         ),
       ],
@@ -11194,9 +12703,12 @@ class _TrackingRestockDifference extends StatelessWidget {
 }
 
 class _TrackingRecordDetails extends StatelessWidget {
-  const _TrackingRecordDetails({required this.item});
+  const _TrackingRecordDetails({required this.item,
+    required this.onReconcile, required this.reconciling});
 
   final RecommendationTrackingItem item;
+  final VoidCallback onReconcile;
+  final bool reconciling;
 
   @override
   Widget build(BuildContext context) {
@@ -11270,6 +12782,12 @@ class _TrackingRecordDetails extends StatelessWidget {
             'No stock-entry evidence has been detected for this recommendation. Actual restock remains unavailable and is not treated as zero.',
             style: TextStyle(fontSize: 12.5, height: 1.4, color: _trackingBody),
           ),
+        if (item.recommendationId != null && item.reconciliationStateVerified) ...[
+          const SizedBox(height: 8),
+          const Text('Reconciliation records restock variance. It does not update inventory or measure forecast accuracy.',
+            style: TextStyle(fontSize: 12, color: _trackingMuted)),
+          _reconciliationAction(),
+        ],
       ],
     );
     return Container(
@@ -11307,6 +12825,18 @@ class _TrackingRecordDetails extends StatelessWidget {
       ),
     );
   }
+
+  Widget _reconciliationAction() => item.recommendationId == null || !item.reconciliationStateVerified
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: TextButton(
+            onPressed: item.isReconciled || reconciling ? null : onReconcile,
+            child: Text(item.isReconciled
+                ? 'Reconciled' : reconciling
+                    ? 'Reviewing...' : 'Review reconciliation'),
+          ),
+        );
 }
 
 class _TrackingDetailField extends StatelessWidget {
@@ -11437,6 +12967,14 @@ class _TrackingRestockTransparency extends StatelessWidget {
 String _trackingRecordDate(DateTime value) {
   final local = value.toLocal();
   return '${_trackingMonth(local.month)} ${local.day}, ${local.year}';
+}
+
+String _trackingFirstEligibleDate(ForecastPerformanceItem item) {
+  final supplied = DateTime.tryParse(item.firstEligibleEvaluationDate);
+  final periodEnd = DateTime.tryParse(item.forecastPeriodEnd);
+  final date = supplied ?? periodEnd?.add(const Duration(days: 1));
+  if (date == null) return 'Unavailable';
+  return '${_trackingMonth(date.month)} ${date.day}, ${date.year}';
 }
 
 class RecommendationTrackingPanel extends StatelessWidget {
@@ -11803,20 +13341,27 @@ class _ReconcileRecommendationDialogState
 
   @override
   Widget build(BuildContext context) {
-    final noReceipts = widget.recommendation.receiptCount == 0;
+    final noReceipts = (widget.recommendation.allocatedReceiptCount ?? 0) == 0;
     return AlertDialog(
       title: const Text('Finalize recommendation comparison?'),
-      content: SizedBox(
-        width: 480,
-        child: Column(
+      content: SingleChildScrollView(
+        child: SizedBox(
+          width: 480,
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text('Saved recommendation: ${_quantity(widget.recommendation.suggestedQuantity)} ${widget.recommendation.inventoryUnit}'),
+            const SizedBox(height: 8),
             Text(
               noReceipts
                   ? 'No receipt is matched. Confirming finalizes the record without interpreting missing receipts as zero received.'
-                  : '${widget.recommendation.receiptCount} receipt(s), totaling ${_quantity(widget.recommendation.matchedReceivedQuantity!)} ${widget.recommendation.inventoryUnit}, are matched.',
+                  : '${widget.recommendation.allocatedReceiptCount} receipt(s), totaling ${_quantity(widget.recommendation.allocatedReceivedQuantity)} ${widget.recommendation.inventoryUnit}, are matched.',
             ),
+            if (!noReceipts) ...[
+              const SizedBox(height: 8),
+              Text('Variance (received minus suggested): ${widget.recommendation.allocatedReceivedQuantity == null || widget.recommendation.suggestedQuantity == null ? 'Unavailable' : '${_signedQuantity(widget.recommendation.allocatedReceivedQuantity! - widget.recommendation.suggestedQuantity!)} ${widget.recommendation.inventoryUnit}'}'),
+            ],
             const SizedBox(height: 12),
             const Text(
               'This finalizes restock variance only. It does not measure forecast accuracy and does not change inventory.',
@@ -11832,6 +13377,7 @@ class _ReconcileRecommendationDialogState
               ),
             ),
           ],
+          ),
         ),
       ),
       actions: [

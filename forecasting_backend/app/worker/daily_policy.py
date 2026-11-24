@@ -18,7 +18,8 @@ def daily_due(now: datetime) -> bool:
 
 def run_policy_cycle(*, repository, inputs, service, identity, location_id,
                      state, checkpoint, enqueue=False, limit=10, max_pages=1,
-                     clock=lambda: datetime.now(timezone.utc)):
+                      clock=lambda: datetime.now(timezone.utc),
+                      lightgbm_identity=None):
     """Poll indexed new-product signals, then advance today's daily sweep.
 
     Checkpoints follow each committed preparation page. A crash before saving
@@ -26,6 +27,8 @@ def run_policy_cycle(*, repository, inputs, service, identity, location_id,
     """
     if not 1 <= limit <= 25 or not 1 <= max_pages <= 100:
         raise ValueError("Invalid bounded scheduler page settings")
+    if lightgbm_identity is not None and lightgbm_identity.model_key != "lightgbm":
+        raise ValueError("The restock maintenance identity must be LightGBM")
     working = state if enqueue else deepcopy(state)
     scopes = working.setdefault("daily_policy_v1", {})
     scope = scopes.setdefault(location_id, {})
@@ -77,4 +80,48 @@ def run_policy_cycle(*, repository, inputs, service, identity, location_id,
         save()
         if not enqueue:
             break
+
+    # This lane has its own durable cursor and retry delay. The existing Blend
+    # sweep and prompt new-product lane above remain unchanged.
+    if lightgbm_identity is not None:
+        for _ in range(max_pages):
+            now = clock()
+            if not daily_due(now):
+                break
+            day = now.astimezone(MANILA).date().isoformat()
+            if scope.get("lightgbm_completed_date") == day:
+                break
+            if scope.get("lightgbm_sweep_date") != day:
+                scope.update(lightgbm_sweep_date=day, lightgbm_cursor=None,
+                             lightgbm_errors=0, lightgbm_retry_after=0)
+            if now.timestamp() < scope.get("lightgbm_retry_after", 0):
+                break
+            result = prepare_page(
+                repository=repository, inputs=inputs, service=service,
+                identity=lightgbm_identity, location_id=location_id, now=now,
+                after=scope.get("lightgbm_cursor"), limit=limit,
+                enqueue=enqueue,
+            )
+            result["lane"] = "lightgbm"
+            result["business_date"] = day
+            result["terminal_failures"] = result["coverage"]["failed"]
+            reports.append(result)
+            scope["lightgbm_errors"] += (
+                result["preparation_errors"] + result["skipped"] + result["stale"]
+            )
+            if result["visited"] < limit:
+                scope["lightgbm_cursor"] = None
+                if not scope["lightgbm_errors"]:
+                    # Completion means the catalogue was scanned, not that the
+                    # worker has published every result or recovered failures.
+                    scope["lightgbm_completed_date"] = day
+                else:
+                    scope.update(lightgbm_retry_after=now.timestamp() + 300,
+                                 lightgbm_errors=0)
+                save()
+                break
+            scope["lightgbm_cursor"] = result["next_cursor"]
+            save()
+            if not enqueue:
+                break
     return reports

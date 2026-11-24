@@ -110,6 +110,15 @@ class SnapshotGuidanceTests(unittest.TestCase):
         self.assertEqual(
             result["preliminary_restocking_insight"]["available_inventory"], 10.0
         )
+        self.assertEqual(
+            result["selected_model_preliminary_insight"]["predicted_demand"],
+            float(sum((point.quantity for point in execution.requested_forecasts), Decimal("0"))),
+        )
+        self.assertEqual(
+            result["preliminary_restocking_insight"]["predicted_demand"],
+            float(sum((point.quantity for point in execution.preliminary_forecasts), Decimal("0"))),
+        )
+        self.assertTrue(result["preliminary_comparison_eligible"])
         self.assertEqual(result["forecast"]["requested_model"], "blend")
 
     def test_saved_roles_are_decoded_without_model_execution(self):

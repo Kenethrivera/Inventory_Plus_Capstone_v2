@@ -42,10 +42,12 @@ class IsolatedStore(FakeRepository):
 
     def _page(self, *, business_date, after, limit, initial=False, **kwargs):
         if not initial: self.page_calls += 1
+        model_key = kwargs['identity'].model_key
         rows = []
         for product in sorted(self.pending if initial else self.products):
             matches = [j for j in self.jobs.values() if j['product_id']==product
-                       and j['as_of_business_date']==business_date.isoformat()]
+                       and j['as_of_business_date']==business_date.isoformat()
+                       and j['requested_model_key']==model_key]
             state = ('current' if matches[-1]['status']=='succeeded' else matches[-1]['status']) if matches else 'missing'
             rows.append(dict(self.products[product], state=state))
         selected = [r for r in rows if after is None or r['id']>after][:limit]
@@ -178,6 +180,28 @@ class DailyPolicyTests(unittest.TestCase):
         self.state={} # crash before checkpoint: SQL identities still deduplicate
         self.cycle(DAY.replace(hour=12,minute=1))
         self.assertEqual(len(self.db.jobs),1)
+
+    def test_lightgbm_daily_lane_is_separate_and_preserves_terminal_identity(self):
+        lightgbm = forecast_model_identity(self.service, 'lightgbm')
+        before = self.cycle(DAY.replace(hour=2, minute=59), lightgbm_identity=lightgbm)
+        self.assertEqual(len(self.db.jobs), 0)
+        self.assertFalse(any(row['lane']=='lightgbm' for row in before))
+        reports = self.cycle(DAY.replace(hour=3), lightgbm_identity=lightgbm)
+        self.assertEqual({row['lane'] for row in reports}, {'initial', 'daily', 'lightgbm'})
+        self.assertEqual({job['requested_model_key'] for job in self.db.jobs.values()},
+                         {'blend', 'lightgbm'})
+        self.assertEqual(len(self.db.jobs), 2)
+        failed = next(job for job in self.db.jobs.values()
+                      if job['requested_model_key']=='lightgbm')
+        failed['status'] = 'failed'
+        self.state = {}  # Even a lost checkpoint cannot replace a terminal SQL identity.
+        self.cycle(DAY.replace(hour=3, minute=1), lightgbm_identity=lightgbm)
+        self.assertEqual(len(self.db.jobs), 2)
+        tomorrow = DAY + timedelta(days=1)
+        self.cycle(tomorrow.replace(hour=3), lightgbm_identity=lightgbm)
+        self.assertEqual(len(self.db.jobs), 4)
+        self.assertEqual(len([job for job in self.db.jobs.values()
+                              if job['requested_model_key']=='lightgbm']), 2)
 
     def test_new_product_queues_on_next_tick_independent_of_daily_cursor(self):
         self.cycle(DAY.replace(hour=3))

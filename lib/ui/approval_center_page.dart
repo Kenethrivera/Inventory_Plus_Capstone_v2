@@ -12,6 +12,7 @@ import 'widgets/history_pagination_footer.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
 import '../services/restock_recommendation_tracking_service.dart';
+import '../services/forecasting_api_service.dart';
 
 class ApprovalCenterPage extends StatefulWidget {
   const ApprovalCenterPage({
@@ -39,6 +40,8 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   final Set<String> _reviewing = <String>{};
   final Set<String> _viewedRequests = <String>{};
   final Map<String, Future<String?>> _proofUrls = <String, Future<String?>>{};
+  final Map<String, Future<({double onHand, double after, double change})?>>
+      _approvedStockReads = {};
   Map<InventoryApprovalStatus, int> _summary = <InventoryApprovalStatus, int>{};
   int _page = 1;
   bool _loading = true;
@@ -52,6 +55,22 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
   DateTime? _requestedFrom;
   DateTime? _requestedBefore;
   final TextEditingController _inlineNote = TextEditingController();
+  ForecastApiClient? _trackingApi;
+  final Map<String, Future<ApprovalRecommendationTracking>> _approvalTrackingReads = {};
+  RestockRecommendationTrackingCoordinator get _trackingCoordinator =>
+      widget.restockTrackingCoordinator ??
+      RestockRecommendationTrackingCoordinator(
+        api: _trackingApi ??= ForecastApiClient.fromEnvironment());
+  ({int recommendationId, String transactionId, String locationId,
+    double quantity})? _pendingReceiptMatch;
+  String? _trackingNotice;
+  bool _matchingReceipt = false;
+  AppToastLoadingHandle? _approvalLoadingToast;
+
+  void _dismissApprovalLoadingToast() {
+    _approvalLoadingToast?.dismiss();
+    _approvalLoadingToast = null;
+  }
 
   @override
   void initState() {
@@ -79,9 +98,157 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
 
   @override
   void dispose() {
+    _dismissApprovalLoadingToast();
     unawaited(_subscription?.cancel());
     _inlineNote.dispose();
+    _approvedStockReads.clear();
+    _trackingApi?.close();
     super.dispose();
+  }
+
+  Future<void> _retryReceiptMatch() async {
+    final pending = _pendingReceiptMatch;
+    if (pending == null || _matchingReceipt ||
+        pending.locationId != widget.controller.activeLocationId) return;
+    setState(() => _matchingReceipt = true);
+    final matchingTimer = Stopwatch()..start();
+    try {
+      await _trackingCoordinator.api.matchRecommendationReceipt(
+        recommendationId: pending.recommendationId,
+        locationId: pending.locationId,
+        sessionToken: widget.controller.currentSessionToken,
+        transactionHistoryId: pending.transactionId,
+        allocatedInventoryQuantity: pending.quantity,
+      );
+      if (mounted) setState(() {
+        _pendingReceiptMatch = null;
+        _trackingNotice = null;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _trackingNotice =
+          'Approved — receipt matching remains pending. Retry tracking only.');
+    } finally {
+      AppLogger.debug('[ApprovalTiming] receipt_matching=${matchingTimer.elapsedMilliseconds}ms');
+      if (mounted) setState(() {
+        _approvalTrackingReads.clear();
+        _matchingReceipt = false;
+      });
+    }
+  }
+
+  Future<ApprovalRecommendationTracking> _loadApprovalTracking(
+      InventoryApprovalRequest request) {
+    final key = '${request.locationId}|${request.id}';
+    return _approvalTrackingReads.putIfAbsent(key, () => Future.sync(() =>
+        _trackingCoordinator.api.loadApprovalRecommendationTracking(
+          requestId: request.id,
+          locationId: request.locationId,
+          sessionToken: widget.controller.currentSessionToken,
+        )));
+  }
+
+  Future<void> _recoverReceiptMatch(InventoryApprovalRequest request) async {
+    if (_matchingReceipt || _reviewing.isNotEmpty) return;
+    setState(() => _matchingReceipt = true);
+    try {
+      final verified = request;
+      if (verified.type != InventoryApprovalType.restock ||
+          verified.status != InventoryApprovalStatus.approved ||
+          verified.locationId != widget.controller.activeLocationId ||
+          verified.transactionId == null) {
+        throw StateError('Approval outcome is not confirmed. No receipt was matched.');
+      }
+      _approvalTrackingReads.remove('${request.locationId}|${request.id}');
+      final tracking = await _loadApprovalTracking(verified);
+      if (!tracking.approvalConfirmed || tracking.transactionId == null ||
+          tracking.approvedQuantity == null) {
+        throw StateError('Approval outcome is uncertain. No receipt was matched.');
+      }
+      if (!tracking.snapshotExists || tracking.recommendationId == null) {
+        throw StateError('Forecast tracking unavailable: no pre-approval snapshot exists.');
+      }
+      if (tracking.reconciledAt != null) {
+        throw StateError('This recommendation is already reconciled. Receipt matching is closed.');
+      }
+      final result = await _trackingCoordinator.api.matchRecommendationReceipt(
+        recommendationId: tracking.recommendationId!,
+        locationId: verified.locationId,
+        sessionToken: widget.controller.currentSessionToken,
+        transactionHistoryId: tracking.transactionId!,
+        allocatedInventoryQuantity: tracking.approvedQuantity!,
+      );
+      if (mounted) AppToast.success(context, result.reused
+          ? 'This stock-in receipt was already matched.'
+          : 'Stock-in receipt matched to saved recommendation.');
+    } catch (error) {
+      if (mounted) AppToast.error(context,
+          error is StateError ? error.message.toString() :
+          'Receipt matching is pending. Refresh tracking before retrying.');
+    } finally {
+      _approvalTrackingReads.remove('${request.locationId}|${request.id}');
+      if (mounted) setState(() => _matchingReceipt = false);
+    }
+  }
+
+  Widget _approvalTrackingStatus(InventoryApprovalRequest request) {
+    if (request.type != InventoryApprovalType.restock ||
+        request.status != InventoryApprovalStatus.approved) {
+      return const SizedBox.shrink();
+    }
+    return StatefulBuilder(builder: (context, refreshLocal) =>
+      FutureBuilder<ApprovalRecommendationTracking>(
+      future: _loadApprovalTracking(request),
+      builder: (context, snapshot) {
+        final tracking = snapshot.data;
+        final message = snapshot.hasError
+            ? 'Forecast tracking status unavailable. Refresh to check again.'
+            : tracking == null
+                ? 'Checking forecast tracking...'
+                : !tracking.approvalConfirmed
+                    ? 'Approval outcome is not confirmed. No receipt can be matched.'
+                : !tracking.snapshotExists
+                    ? 'Forecast tracking unavailable: no pre-approval snapshot exists.'
+                    : tracking.reconciledAt != null
+                            ? 'Recommendation was reconciled without this receipt. Receipt matching is closed.'
+                        : tracking.receiptCount > 0
+                            ? 'Recommendation has matched receipt evidence. Verify this approval receipt if tracking is pending.'
+                            : 'Approved restock has a saved recommendation. Receipt matching is pending or not yet verified.';
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              Text(message, style: const TextStyle(fontSize: 12,
+                  color: Color(0xFF766C66))),
+              if (tracking?.snapshotExists == true &&
+                  tracking!.approvalConfirmed &&
+                  tracking.reconciledAt == null &&
+                  tracking.transactionId != null &&
+                  tracking.approvedQuantity != null)
+                TextButton(
+                  onPressed: _matchingReceipt ? null :
+                      () async {
+                        await _recoverReceiptMatch(request);
+                        if (context.mounted) refreshLocal(() {});
+                      },
+                  child: Text(_matchingReceipt ? 'Matching...' :
+                      'Verify / match original receipt'),
+                ),
+              if (snapshot.hasError)
+                TextButton(
+                  onPressed: () {
+                    _approvalTrackingReads.remove('${request.locationId}|${request.id}');
+                    refreshLocal(() {});
+                  },
+                  child: const Text('Refresh tracking'),
+                ),
+            ],
+          ),
+        );
+      },
+    ));
   }
 
   void _acceptSnapshot(InventoryApprovalPage value) {
@@ -547,6 +714,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     String? inlineNote,
     VoidCallback? onSuccess,
   }) async {
+    if (_reviewing.isNotEmpty) return;
     if (!_viewedRequests.contains(request.id)) {
       await _details(request);
       return;
@@ -621,21 +789,105 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     );
     final reviewNote = note.text.trim();
     note.dispose();
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted || _reviewing.isNotEmpty) return;
 
-    setState(() => _reviewing.add(request.id));
+    final reviewTimer = Stopwatch()..start();
+    var completedRestockApproval = false;
+    setState(() {
+      _reviewing.add(request.id);
+      _trackingNotice = null;
+    });
+    _approvalLoadingToast = AppToast.loading(context,
+      approve && request.type == InventoryApprovalType.restock
+        ? 'Preparing forecast evidence...' : 'Processing request...');
     try {
+      await WidgetsBinding.instance.endOfFrame;
       if (approve) {
-        await widget.controller.approveInventoryApprovalRequest(
-          request.id,
-          reviewNote: reviewNote,
-        );
-        if (mounted) AppToast.success(context, 'Request approved.');
+        if (request.type == InventoryApprovalType.restock &&
+            request.status == InventoryApprovalStatus.pending) {
+          final activeLocationId = widget.controller.activeLocationId;
+          if (activeLocationId == null) {
+            throw StateError('An active store is required for restock approval.');
+          }
+          if (request.locationId != activeLocationId) {
+            throw StateError('The request belongs to another store.');
+          }
+          RestockRecommendationTrackingCoordinator? coordinator;
+          try {
+            coordinator = _trackingCoordinator;
+          } catch (_) {
+            // A missing forecast API configuration must not block approval.
+          }
+          final AutomaticRestockTrackingResult result;
+          if (coordinator == null) {
+            _approvalLoadingToast?.update('Approving restock...');
+            final approved = await widget.controller.approveInventoryApprovalRequest(
+              request.id, reviewNote: reviewNote);
+            result = AutomaticRestockTrackingResult(
+              approvedRequest: approved,
+              snapshotReused: false,
+              receiptMatched: false,
+              allocationReused: false,
+              trackingUnavailableReason: 'Forecast API is not configured.',
+            );
+          } else {
+            result = await coordinator.approveAndTrack(
+              request: request,
+              locationId: activeLocationId,
+              sessionToken: widget.controller.currentSessionToken,
+              approveRestock: () => widget.controller.approveInventoryApprovalRequest(
+                request.id, reviewNote: reviewNote),
+              onStage: (stage) {
+                if (mounted) _approvalLoadingToast?.update('$stage...');
+              },
+              onStageDuration: (stage, milliseconds) => AppLogger.debug(
+                '[ApprovalTiming] $stage=${milliseconds}ms'),
+              deferReceiptMatch: true,
+            );
+          }
+          if (result.approvedRequest.status != InventoryApprovalStatus.approved) {
+            throw StateError('Approval not completed.');
+          }
+          completedRestockApproval = true;
+          if (mounted) {
+            setState(() {
+              if (result.recommendationId != null &&
+                  result.approvedRequest.transactionId != null) {
+                _pendingReceiptMatch = (
+                  recommendationId: result.recommendationId!,
+                  transactionId: result.approvedRequest.transactionId!,
+                  locationId: request.locationId,
+                  quantity: request.quantity,
+                );
+              } else {
+                _pendingReceiptMatch = null;
+              }
+            });
+            if (_pendingReceiptMatch != null) {
+              _approvalLoadingToast?.update('Matching stock-in receipt...');
+              await _retryReceiptMatch().timeout(const Duration(milliseconds: 400),
+                onTimeout: () {});
+            }
+            _dismissApprovalLoadingToast();
+            if (mounted) AppToast.success(context,
+              _pendingReceiptMatch == null && result.recommendationId != null
+                  ? 'Approved and tracked.'
+                  : result.recommendationId == null
+                    ? 'Approved — forecast tracking unavailable.'
+                    : 'Approved — receipt matching pending.');
+          }
+        } else {
+          await widget.controller.approveInventoryApprovalRequest(
+            request.id, reviewNote: reviewNote);
+          _dismissApprovalLoadingToast();
+          if (mounted) AppToast.success(context, 'Request approved.');
+        }
       } else {
         await widget.controller.rejectInventoryApprovalRequest(
           request.id,
           reviewNote: reviewNote,
         );
+        _dismissApprovalLoadingToast();
         if (mounted) AppToast.success(context, 'Request rejected.');
       }
       if (mounted) onSuccess?.call();
@@ -645,16 +897,38 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         error: error,
         stackTrace: stackTrace,
       );
-      if (mounted) {
-        AppToast.error(
-          context,
-          AppErrorMapper.message(error, fallback: AppErrorCategory.dataSave),
-        );
+      if (mounted && approve && request.type == InventoryApprovalType.restock) {
+        _approvalLoadingToast?.update('Verifying approval status...');
+        InventoryApprovalRequest? verified;
+        try {
+          verified = await widget.controller.verifyInventoryApprovalOutcome(request.id);
+        } catch (_) {}
+        if (!mounted) return;
+        _dismissApprovalLoadingToast();
+        final message = verified?.status == InventoryApprovalStatus.approved &&
+                verified?.transactionId != null
+            ? 'Approved — forecast tracking unavailable. Verify the receipt; do not approve again.'
+            : verified?.status == InventoryApprovalStatus.pending
+              ? 'Approval not completed. Review the request before trying again.'
+              : 'Approval outcome uncertain — verify status before any retry.';
+        if (verified?.status == InventoryApprovalStatus.approved) {
+          AppToast.success(context, message);
+        } else {
+          AppToast.error(context, message);
+        }
+      } else if (mounted) {
+        _dismissApprovalLoadingToast();
+        AppToast.error(context,
+          AppErrorMapper.message(error, fallback: AppErrorCategory.dataSave));
       }
     } finally {
+      _dismissApprovalLoadingToast();
+      AppLogger.debug('[ApprovalTiming] total_review=${reviewTimer.elapsedMilliseconds}ms');
       if (mounted) {
-        setState(() => _reviewing.remove(request.id));
-        await _load(force: true);
+        setState(() {
+          _reviewing.remove(request.id);
+        });
+        if (!completedRestockApproval) await _load(force: true);
       }
     }
   }
@@ -997,6 +1271,26 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
                       fontFamily: _font,
                     ),
                   ),
+                  if (_trackingNotice != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7ED),
+                        border: Border.all(color: const Color(0xFFFED7AA)),
+                        borderRadius: BorderRadius.circular(10)),
+                      child: Wrap(spacing: 10, runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(_trackingNotice!, style: const TextStyle(
+                            fontSize: 13, color: Color(0xFF7C2D12), fontFamily: _font)),
+                          if (_pendingReceiptMatch != null)
+                            TextButton(onPressed: _matchingReceipt ? null : _retryReceiptMatch,
+                              child: Text(_matchingReceipt
+                                ? 'Matching receipt…' : 'Retry receipt matching')),
+                        ])),
+                  ],
                   const SizedBox(height: 28),
                   if (mobile)
                     _approvalList(records, snapshot, mobile: true)
@@ -1601,19 +1895,17 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
           ),
           child: Row(
             children: [
-              Expanded(child: _metric('On hand', _qty(request.currentStock))),
+              Expanded(child: _approvalStockMetric(request, after: false)),
               Expanded(
                 child: _metric(
-                  request.type == InventoryApprovalType.restock
-                      ? 'Add'
-                      : 'Remove',
+                  _approvalChangeLabel(request),
                   '${request.type == InventoryApprovalType.restock ? '+' : '−'}${_qty(request.quantity)}',
                   valueColor: request.type == InventoryApprovalType.restock
                       ? const Color(0xFF078443)
                       : const Color(0xFFD11A1A),
                 ),
               ),
-              Expanded(child: _metric('After', _stockAfterLabel(request))),
+              Expanded(child: _approvalStockMetric(request, after: true)),
             ],
           ),
         ),
@@ -1636,6 +1928,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
         if (request.status != InventoryApprovalStatus.pending) ...[
           const SizedBox(height: 12),
           _decisionBanner(request),
+          _approvalTrackingStatus(request),
         ],
       ],
     ),
@@ -1735,6 +2028,12 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
               ? _discountApprovalBody(request)
               : _inventoryApprovalBody(request),
         ),
+        if (request.type == InventoryApprovalType.restock &&
+            request.status == InventoryApprovalStatus.approved)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+            child: _approvalTrackingStatus(request),
+          ),
         if (request.status == InventoryApprovalStatus.pending) ...[
           const Divider(height: 1, color: Color(0xFFE8E2DC)),
           Padding(
@@ -1781,7 +2080,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     );
     final buttons = [
       OutlinedButton(
-        onPressed: _reviewing.contains(request.id)
+        onPressed: _reviewing.isNotEmpty
             ? null
             : () {
                 if (_inlineNote.text.trim().isEmpty) {
@@ -1803,7 +2102,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
       ),
       FilledButton(
         style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC83D08)),
-        onPressed: _reviewing.contains(request.id) || request.hasStockConflict
+        onPressed: _reviewing.isNotEmpty || request.hasStockConflict
             ? null
             : () => unawaited(
                 _review(
@@ -2032,13 +2331,11 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: _metric('On hand', _qty(request.currentStock)),
+                      child: _approvalStockMetric(request, after: false),
                     ),
                     Expanded(
                       child: _metric(
-                        request.type == InventoryApprovalType.restock
-                            ? 'Add'
-                            : 'Remove',
+                        _approvalChangeLabel(request),
                         '${request.type == InventoryApprovalType.restock ? '+' : '−'}${_qty(request.quantity)}',
                         valueColor:
                             request.type == InventoryApprovalType.restock
@@ -2047,7 +2344,7 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
                       ),
                     ),
                     Expanded(
-                      child: _metric('After', _stockAfterLabel(request)),
+                      child: _approvalStockMetric(request, after: true),
                     ),
                   ],
                 ),
@@ -2093,8 +2390,44 @@ class _ApprovalCenterPageState extends State<ApprovalCenterPage> {
     ],
   );
 
-  String _stockAfterLabel(InventoryApprovalRequest request) =>
-      _qty(request.resultingStock);
+  String _approvalChangeLabel(InventoryApprovalRequest request) {
+    if (request.status != InventoryApprovalStatus.pending) return 'Requested';
+    return request.type == InventoryApprovalType.restock ? 'Add' : 'Remove';
+  }
+
+  Widget _approvalStockMetric(InventoryApprovalRequest request,
+      {required bool after}) {
+    if (request.status == InventoryApprovalStatus.pending) {
+      return _metric(after ? 'If approved' : 'On hand',
+          _qty(after ? request.resultingStock : request.currentStock));
+    }
+    if (request.status == InventoryApprovalStatus.rejected) {
+      return _metric(after ? 'After' : 'At request',
+          after ? 'Not applied' : _qty(request.stockAtRequest));
+    }
+    final transactionId = request.transactionId;
+    if (transactionId == null || transactionId.isEmpty) {
+      return _metric(after ? 'After' : 'On hand', 'Unavailable');
+    }
+    final key = '${request.locationId}|${request.id}|$transactionId';
+    final future = _approvedStockReads.putIfAbsent(key,
+        () => widget.controller.loadApprovedInventoryStock(request));
+    if (_approvedStockReads.length > 64) {
+      _approvedStockReads.remove(_approvedStockReads.keys.first);
+    }
+    return FutureBuilder<({double onHand, double after, double change})?>(
+      future: future,
+      builder: (context, snapshot) {
+        final balance = snapshot.data;
+        return _metric(after ? 'After' : 'On hand',
+            snapshot.connectionState == ConnectionState.waiting
+                ? 'Loading...'
+                : balance == null
+                    ? 'Unavailable'
+                    : _qty(after ? balance.after : balance.onHand));
+      },
+    );
+  }
 
   Widget _supportingImage(InventoryApprovalRequest request) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,

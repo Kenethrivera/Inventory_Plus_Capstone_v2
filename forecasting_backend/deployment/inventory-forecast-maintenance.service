@@ -11,7 +11,7 @@ WorkingDirectory=/opt/inventory-plus/forecasting_backend
 EnvironmentFile=/etc/inventory-plus/forecast.env
 Environment=PYTHONUNBUFFERED=1
 StateDirectory=inventory-plus
-ExecStart=/opt/inventory-plus/forecasting_backend/.venv/bin/python run_forecast_maintenance.py --daily-policy --location-id 11111111-1111-1111-1111-111111111111 --max-products 5 --max-pages 1 --interval-seconds 30 --state-file /var/lib/inventory-plus/forecast-daily-policy.json --enqueue
+ExecStart=/opt/inventory-plus/forecasting_backend/.venv/bin/python run_forecast_maintenance.py --daily-policy --restock-lightgbm --location-id 11111111-1111-1111-1111-111111111111 --max-products 5 --max-pages 1 --interval-seconds 30 --state-file /var/lib/inventory-plus/forecast-daily-policy.json --enqueue
 Restart=on-failure
 RestartSec=60
 TimeoutStopSec=120

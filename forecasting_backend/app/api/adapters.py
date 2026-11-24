@@ -646,6 +646,24 @@ class SupabaseForecastAdapter:
             raise DataUnavailableError("Demand history is outside the session location")
         return rows
 
+    def load_daily_demand_fresh(
+        self, *, profile: SessionProfile, session_token: str,
+        period_start: datetime, period_end: datetime,
+        business_timezone: str = "Asia/Manila",
+    ) -> tuple[DailyDemand, ...]:
+        """Read the same authenticated demand RPC without the short overview cache."""
+        if period_start.tzinfo is None or period_end.tzinfo is None:
+            raise ValueError("period bounds must include timezones")
+        if period_end <= period_start:
+            raise ValueError("demand-history period is invalid")
+        rows = tuple(SalesRepository(self._client, session_token).daily_demand(
+            period_start=period_start, period_end=period_end,
+            business_timezone=business_timezone,
+        ))
+        if any(row.location_id != profile.location_id for row in rows):
+            raise DataUnavailableError("Demand history is outside the session location")
+        return rows
+
     def _load_location_demand(
         self,
         *,

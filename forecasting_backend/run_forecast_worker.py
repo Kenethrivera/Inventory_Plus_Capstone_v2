@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import json
 import os
 import signal
 from threading import Event
@@ -22,12 +23,21 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--lease-seconds", type=int, default=300)
     parser.add_argument("--poll-seconds", type=float, default=2.0)
     parser.add_argument("--once", action="store_true", help="Claim at most one job and exit")
+    parser.add_argument("--identity-only", action="store_true", help="Print source/runtime identity without credentials or database access")
     return parser
 
 
 def main() -> int:
     load_dotenv()
     args = _parser().parse_args()
+    if args.identity_only:
+        from app.api.implementation_manifest import implementation_manifest
+        print(json.dumps(implementation_manifest(), indent=2, sort_keys=True))
+        return 0
+    logging.basicConfig(
+        level=os.getenv("FORECAST_WORKER_LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
     if args.job_id:
         try:
             args.job_id = str(UUID(args.job_id))
@@ -62,10 +72,6 @@ def main() -> int:
     except (ValueError, RuntimeError) as error:
         raise SystemExit(str(error)) from error
 
-    logging.basicConfig(
-        level=os.getenv("FORECAST_WORKER_LOG_LEVEL", "INFO").upper(),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
     shutdown = Event()
     signal.signal(signal.SIGINT, lambda *_: shutdown.set())
     signal.signal(signal.SIGTERM, lambda *_: shutdown.set())

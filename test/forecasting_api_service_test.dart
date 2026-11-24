@@ -34,6 +34,30 @@ Map<String, dynamic> replenishmentConfigurationFixture() => <String, dynamic>{
 };
 
 void main() {
+  test('parses actual sales for analysis and saved overview', () {
+    final analysisPayload = forecastingAnalysisFixture();
+    analysisPayload['actual_sales'] = [
+      {'date': '2026-11-01', 'quantity': '3'},
+      {'date': '2026-11-02', 'quantity': '0'},
+    ];
+    final analysis = ForecastAnalysis.fromJson(analysisPayload);
+    expect(analysis.actualSales.map((point) => point.quantity), [3, 0]);
+
+    final page = ForecastSnapshotPage.fromJson({
+      'page': 1,
+      'page_size': 25,
+      'total_count': 0,
+      'page_count': 0,
+      'items': <Map<String, dynamic>>[],
+      'actual_sales_by_product': {
+        'product-1': [
+          {'date': '2026-11-01', 'quantity': '3'},
+        ],
+      },
+    });
+    expect(page.actualSalesByProduct['product-1']!.single.quantity, 3);
+  });
+
   test(
     'dart-define URL overrides dotenv and requires an absolute HTTP URL',
     () {
@@ -802,6 +826,46 @@ void main() {
     expect(calls.single.url.queryParameters['product_id'], 'product-1');
     expect(calls.single.headers['Authorization'], 'Bearer test-session');
     expect(result['queued'], 1);
+  });
+
+  test('job monitor reads filtered history without creating jobs', () async {
+    late http.Request captured;
+    final service = ForecastApiClient(
+      baseUri: Uri.parse('https://forecast.example.test'),
+      client: MockClient((request) async {
+        captured = request;
+        return http.Response(jsonEncode({
+          'page': 2, 'page_size': 25, 'total_count': 26, 'page_count': 2,
+          'latest_only': false, 'generated_at': '2026-11-22T01:00:00Z',
+          'counts': {'total_jobs': 26, 'queued': 0, 'retry_pending': 0,
+            'running': 0, 'succeeded': 25, 'failed': 1,
+            'cancelled': 0, 'superseded': 0},
+          'items': [{
+            'job_id': 'job-1', 'product_id': 'product-1',
+            'product_name': 'Test Paint', 'sku': 'SIM-001',
+            'model_key': 'lightgbm', 'model_version': '1',
+            'as_of_business_date': '2026-11-21', 'horizon_days': 28,
+            'status': 'failed', 'display_status': 'failed',
+            'created_at': '2026-11-21T01:00:00Z',
+            'attempt_count': 1, 'max_attempts': 3,
+            'safe_error_code': 'forecast_input_unavailable',
+          }],
+        }), 200);
+      }),
+    );
+    final page = await service.loadForecastJobs(sessionToken: 'opaque-session',
+      page: 2, pageSize: 25, latestOnly: false, search: 'SIM-001',
+      model: 'lightgbm', status: 'failed',
+      fromDate: '2026-11-01', toDate: '2026-11-22');
+    expect(captured.method, 'GET');
+    expect(captured.url.path, '/v1/forecasting/jobs');
+    expect(captured.url.queryParameters['latest_only'], 'false');
+    expect(captured.url.queryParameters['search'], 'SIM-001');
+    expect(captured.url.queryParameters['model'], 'lightgbm');
+    expect(captured.url.queryParameters['status'], 'failed');
+    expect(captured.headers['Authorization'], 'Bearer opaque-session');
+    expect(page.items.single.safeErrorCode, 'forecast_input_unavailable');
+    expect(page.items.single.resultId, isNull);
   });
 
 }

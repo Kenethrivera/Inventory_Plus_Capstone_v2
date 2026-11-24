@@ -25,6 +25,8 @@ import '../services/export_reminder_service.dart';
 import '../services/report_export_controller.dart';
 import '../services/app_error_mapper.dart';
 import '../services/app_logger.dart';
+import '../services/forecasting_api_service.dart';
+import '../services/restock_recommendation_tracking_service.dart';
 import '../login/session_storage.dart';
 import 'dashboard_page.dart';
 import 'approval_center_page.dart';
@@ -79,6 +81,23 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   final AIInsightsService _aiInsightsService = AIInsightsService();
+  ForecastApiClient? _forecastApiClient;
+  RestockRecommendationTrackingCoordinator? _restockTrackingCoordinator;
+
+  ForecastingApiService? get _configuredForecastApi {
+    try {
+      return _forecastApiClient ??= ForecastApiClient.fromEnvironment();
+    } on ForecastApiException {
+      return null;
+    }
+  }
+
+  RestockRecommendationTrackingCoordinator? get _configuredRestockTracking {
+    final api = _configuredForecastApi;
+    if (api == null) return null;
+    return _restockTrackingCoordinator ??=
+        RestockRecommendationTrackingCoordinator(api: api);
+  }
   int? _currentIndex;
   String _txTargetTab = 'Sales History';
   String _ordersActivityTab = 'Orders';
@@ -319,6 +338,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _notificationController?.dispose();
     _orderAutoAssignmentService?.dispose();
     _staffPresenceService?.dispose();
+    _forecastApiClient?.close();
     widget.controller.onRestockRecorded = null;
     widget.controller.onApprovalRequestChanged = null;
     super.dispose();
@@ -2463,6 +2483,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             ForecastingPage(
               controller: widget.controller,
               aiService: _aiInsightsService,
+              forecastApi: _configuredForecastApi,
               isActive: _currentIndex == forecastingIndex,
             ),
           );
@@ -2533,6 +2554,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           pages.add(
             ApprovalCenterPage(
               controller: widget.controller,
+              restockTrackingCoordinator: _configuredRestockTracking,
               onPendingCountChanged: (count) {
                 if (mounted && count != _pendingApprovalCount) {
                   setState(() => _pendingApprovalCount = count);

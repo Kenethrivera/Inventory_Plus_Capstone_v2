@@ -72,6 +72,7 @@ class ForecastJobWorker:
         self.concurrency = concurrency
         self.service = service or ForecastAnalysisService(adapter=object())  # type: ignore[arg-type]
         self._implementation_digest = _implementation_digest()
+        _LOGGER.info("forecast_worker_identity implementation_digest=%s", self._implementation_digest)
         self._model_identity = forecast_model_identity(self.service)
 
     def process_claim(self, job: Mapping[str, Any], shutdown: Event | None = None) -> str:
@@ -358,6 +359,12 @@ class ForecastJobWorker:
             str(job["requested_implementation_digest"]) == self._implementation_digest,
         )
         if not all(checks):
+            _LOGGER.error(
+                "forecast_job_identity_mismatch job_ref=%s model=%s requested_implementation=%s worker_implementation=%s version_matches=%s config_matches=%s",
+                _safe_ref(str(job.get("id", ""))), model_key,
+                job["requested_implementation_digest"], self._implementation_digest,
+                checks[0], checks[1],
+            )
             raise DataUnavailableError("Queued forecast model configuration is not supported by this worker")
 
     def _model_config_digest(self, model_key: str, horizon: int, history_days: int) -> str:

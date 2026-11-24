@@ -81,6 +81,32 @@ class ForecastSnapshotReadRepository:
         except (httpx.HTTPError, ValueError) as error:
             raise DataUnavailableError("Sales history coverage is unavailable") from error
 
+    def history_breakdown(self, *, location_id: str, model_key: str,
+                          state: str, page: int, page_size: int,
+                          unit: str | None = None, search: str | None = None,
+                          scope_search: str | None = None,
+                          category: str | None = None,
+                          product_id: str | None = None) -> dict[str, Any]:
+        """Read one classified product page; the database owns classification."""
+        try:
+            response = self._client.post(
+                f"{self._url}/rest/v1/rpc/forecast_history_breakdown_page_v1",
+                headers=self._headers,
+                json={"p_location_id": location_id, "p_model_key": model_key,
+                      "p_unit": unit, "p_search": search,
+                      "p_category": category, "p_product_id": product_id,
+                      "p_state": state, "p_page": page,
+                      "p_page_size": page_size,
+                      "p_scope_search": scope_search},
+            )
+            response.raise_for_status()
+            value = response.json()
+            if not isinstance(value, dict) or not isinstance(value.get("items"), list):
+                raise ValueError("invalid history breakdown")
+            return value
+        except (httpx.HTTPError, ValueError) as error:
+            raise DataUnavailableError("Sales history breakdown is unavailable") from error
+
     def product(
         self, *, location_id: str, product_id: str, model_key: str
     ) -> dict[str, Any]:
@@ -94,6 +120,60 @@ class ForecastSnapshotReadRepository:
             "p_search": None,
             "p_include_bundle": True,
         })
+
+    def monitoring_cycles(self, *, location_id: str, product_ids: list[str],
+                          model_key: str) -> dict[str, Any]:
+        if not 1 <= len(product_ids) <= 50 or len(set(product_ids)) != len(product_ids):
+            raise DataUnavailableError("Monitoring scope is invalid")
+        try:
+            response = self._client.post(
+                f"{self._url}/rest/v1/rpc/forecast_monitoring_cycle_page_v1",
+                headers=self._headers,
+                json={"p_location_id": location_id, "p_product_ids": product_ids,
+                      "p_model_key": model_key},
+            )
+            response.raise_for_status()
+            value = response.json()
+        except (httpx.HTTPError, ValueError) as error:
+            raise DataUnavailableError("Monitoring cycles are unavailable") from error
+        if not isinstance(value, dict) or not isinstance(value.get("items"), list):
+            raise DataUnavailableError("Monitoring cycle response is invalid")
+        requested = set(product_ids)
+        seen: set[str] = set()
+        for item in value["items"]:
+            if (not isinstance(item, dict) or item.get("product_id") not in requested
+                or item["product_id"] in seen or item.get("model_key") != model_key
+                or not isinstance(item.get("points"), list)
+                or len(item["points"]) != 28):
+                raise DataUnavailableError("Monitoring cycle response is invalid")
+            seen.add(item["product_id"])
+        return value
+
+    def saved_runs(self, *, location_id: str, product_id: str,
+                   model_key: str | None, page: int, page_size: int,
+                   result_id: str | None = None) -> dict[str, Any]:
+        try:
+            response = self._client.post(
+                f"{self._url}/rest/v1/rpc/forecast_saved_result_page_v1",
+                headers=self._headers,
+                json={"p_location_id": location_id, "p_product_id": product_id,
+                      "p_model_key": model_key, "p_page": page,
+                      "p_page_size": page_size, "p_result_id": result_id},
+            )
+            response.raise_for_status()
+            value = response.json()
+        except (httpx.HTTPError, ValueError) as error:
+            raise DataUnavailableError("Saved forecast history is unavailable") from error
+        if not isinstance(value, dict) or not isinstance(value.get("items"), list):
+            raise DataUnavailableError("Saved forecast history is invalid")
+        for item in value["items"]:
+            if (not isinstance(item, dict) or
+                item.get("location_id") != location_id or
+                item.get("product_id") != product_id or
+                not isinstance(item.get("points"), list) or
+                len(item["points"]) != 28):
+                raise DataUnavailableError("Saved forecast history is invalid")
+        return value
 
     def _rpc(self, payload: dict[str, Any], *, function: str = "forecast_snapshot_page_v1") -> dict[str, Any]:
         try:

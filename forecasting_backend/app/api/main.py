@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, ROUND_CEILING
 from threading import Lock
 from typing import Callable, Literal, Mapping
@@ -22,6 +22,7 @@ from app.classification import (
     HardwareProductClassifier,
 )
 from app.data.validation import DemandDataError
+from app.forecasting.backtesting import RollingOriginBacktester
 from app.performance_diagnostics import (
     configure_performance_logging,
     diagnostics_enabled,
@@ -53,12 +54,14 @@ from .job_materialization import (
     SupabaseForecastJobRepository,
     forecast_model_identity,
 )
+from .job_monitoring import ForecastJobReadRepository
 from .recommendation_persistence import (
     SupabaseRecommendationPersistenceAdapter,
     SupabaseRecommendationTrackingReader,
 )
 from .snapshot_reads import ForecastSnapshotReadRepository
 from .snapshot_guidance import current_stock_analysis
+from .restock_priorities import StoreRestockPriorityReader
 from .service import ForecastAnalysisService
 from .research_reports import SeasonalLearningReportService
 from .settings import ApiSettings
@@ -81,6 +84,13 @@ class AnalysisRequest(BaseModel):
     manual_unit: str | None = None
     manual_rationale: str | None = None
     manual_confirmed: bool = False
+
+
+class MonitoringCycleRequest(BaseModel):
+    product_ids: list[UUID] = Field(min_length=1, max_length=50)
+    location_id: str | None = None
+    model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"]
+    refresh_actual_sales: bool = False
 
 
 class SnapshotManualGuidanceRequest(BaseModel):
@@ -201,6 +211,7 @@ def create_app(
             service=service,
         )
     snapshot_repository = None
+    job_reader = None
     if configured.forecast_snapshot_reads_enabled:
         if (
             configured.mode != "supabase"
@@ -211,6 +222,11 @@ def create_app(
                 "Forecast snapshot reads require Supabase mode and a server-only secret"
             )
         snapshot_repository = ForecastSnapshotReadRepository(
+            url=configured.supabase_url,
+            secret_key=configured.supabase_secret_key,
+            timeout_seconds=configured.request_timeout_seconds,
+        )
+        job_reader = ForecastJobReadRepository(
             url=configured.supabase_url,
             secret_key=configured.supabase_secret_key,
             timeout_seconds=configured.request_timeout_seconds,
@@ -261,7 +277,11 @@ def create_app(
         return selected_gemini_classifier
 
     now = clock or (lambda: datetime.now(timezone.utc))
-
+    restock_priority_reader = (
+        StoreRestockPriorityReader(
+            snapshots=snapshot_repository, adapter=selected_adapter, service=service,
+        ) if snapshot_repository is not None else None
+    )
     app = FastAPI(
         title="Inventory Plus Forecasting API",
         version="stage5f-v1",
@@ -271,6 +291,98 @@ def create_app(
             "server-only recommendation-tracking boundary."
         ),
     )
+    historical_simulation_lock = Lock()
+
+    @app.get("/v1/forecasting/implementation-manifest")
+    def read_implementation_manifest(authorization: str | None = Header(default=None)) -> dict[str, object]:
+        try:
+            service.authorize_admin(session_token=_bearer_token(authorization), requested_location_id=None)
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        from .implementation_manifest import implementation_manifest
+        return implementation_manifest()
+
+    @app.get("/v1/forecasting/model-identities")
+    def model_identities(authorization: str | None = Header(default=None)) -> dict[str, object]:
+        try:
+            service.authorize_admin(session_token=_bearer_token(authorization), requested_location_id=None)
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        return {key: {"version": identity.model_version, "config_digest": identity.config_digest,
+                      "implementation_digest": identity.implementation_digest}
+                for key in ("blend", "mean28", "lightgbm", "seasonal_experimental")
+                for identity in (forecast_model_identity(service, key),)}
+
+    @app.get("/v1/forecasting/products/{product_id}/historical-simulation")
+    def historical_simulation(
+        product_id: UUID,
+        cutoff: date,
+        actual_through: date,
+        model: Literal["mean28", "lightgbm"] = "lightgbm",
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        """Read-only replay. Never enqueue, publish, or save recommendations."""
+        token = _bearer_token(authorization)
+        manila = ZoneInfo("Asia/Manila")
+        try:
+            profile = service.authorize_admin(session_token=token, requested_location_id=None)
+            yesterday = now().astimezone(manila).date() - timedelta(days=1)
+            if not cutoff <= actual_through <= min(yesterday, cutoff + timedelta(days=27)):
+                raise ValueError("Comparison must cover completed business dates within the 28-day horizon")
+            if not historical_simulation_lock.acquire(blocking=False):
+                raise HTTPException(status_code=429, detail="A historical simulation is already running; try again shortly")
+            try:
+                origin = datetime.combine(cutoff, time.min, manila)
+                context = selected_adapter.load_analysis_context(
+                    profile=profile, session_token=token, product_id=str(product_id),
+                    now=origin, history_days=365,
+                )
+                if (context.history.product.product_id != str(product_id)
+                    or context.history.product.location_id != profile.location_id):
+                    raise DataUnavailableError("Historical input scope mismatch")
+                training = RollingOriginBacktester._history_through(context.history, cutoff - timedelta(days=1))
+                if not training.observations:
+                    raise ValueError("No recorded training sales are available before this cutoff")
+                backtester = RollingOriginBacktester()
+                forecaster = backtester.lightgbm if model == "lightgbm" else backtester.mean28
+                predictions = tuple(forecaster.forecast(training, horizon_days=28))
+                actual_rows = selected_adapter.load_daily_demand(
+                    profile=profile, session_token=token, period_start=origin,
+                    period_end=datetime.combine(actual_through + timedelta(days=1), time.min, manila),
+                    business_timezone="Asia/Manila",
+                )
+                actuals = {row.business_date: row.quantity for row in actual_rows
+                           if row.product_id == str(product_id) and row.location_id == profile.location_id
+                           and row.unit == training.product.unit and cutoff <= row.business_date <= actual_through}
+                # Do not infer sales after the last recorded product sale.
+                last_actual = max(actuals) if actuals else None
+                return {
+                    "label": "Historical Simulation", "persisted": False,
+                    "product_id": str(product_id), "unit": training.product.unit,
+                    "training_end": (cutoff - timedelta(days=1)).isoformat(),
+                    "model": predictions[0].metadata.model_name,
+                    "forecast": [{"date": p.forecast_date.isoformat(), "quantity": str(p.quantity)} for p in predictions],
+                    "actual_sales": [{"date": (cutoff + timedelta(days=i)).isoformat(),
+                                      "quantity": str(actuals.get(cutoff + timedelta(days=i), Decimal(0)))}
+                                     for i in range((last_actual - cutoff).days + 1)] if last_actual else [],
+                    "limitation": "Historical replay of currently retained sales; later corrections cannot be reconstructed. Missing dates between recorded sales are treated as zero; dates after the last recorded sale remain unavailable. Current inventory and restock guidance are excluded.",
+                }
+            finally:
+                historical_simulation_lock.release()
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except ProductNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except (ValueError, DemandDataError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except (DataUnavailableError, httpx.HTTPError) as error:
+            raise HTTPException(status_code=503, detail="Historical inputs are unavailable") from error
 
     @app.post("/v1/forecasting/jobs/bootstrap")
     def bootstrap_forecast_jobs(
@@ -363,6 +475,41 @@ def create_app(
             except (PermissionError, ValueError) as error:
                 raise HTTPException(status_code=422, detail=str(error)) from error
 
+    @app.get("/v1/forecasting/jobs")
+    def read_forecast_jobs(
+        response: Response,
+        page: int = Query(default=1, ge=1, le=10000),
+        page_size: int = Query(default=25, ge=1, le=50),
+        latest_only: bool = True,
+        search: str | None = Query(default=None, max_length=120),
+        model: Literal["blend", "lightgbm", "mean28", "seasonal_experimental"] | None = None,
+        status: Literal["queued", "retry_pending", "running", "succeeded", "failed", "cancelled", "superseded"] | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        """Read safe, paginated job history in the Admin's authenticated location."""
+        response.headers["Cache-Control"] = "no-store"
+        if job_reader is None:
+            raise HTTPException(status_code=503, detail="Forecast job monitoring is not enabled")
+        if from_date is not None and to_date is not None and from_date > to_date:
+            raise HTTPException(status_code=422, detail="Date range is invalid")
+        try:
+            profile = service.authorize_admin(
+                session_token=_bearer_token(authorization), requested_location_id=None,
+            )
+            return job_reader.page(
+                location_id=profile.location_id, page=page, page_size=page_size,
+                latest_only=latest_only, search=search, model_key=model,
+                status=status, from_date=from_date, to_date=to_date,
+            )
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (DataUnavailableError, httpx.HTTPError) as error:
+            raise HTTPException(status_code=503, detail="Forecast jobs are unavailable") from error
+
     @app.get("/v1/forecasting/snapshots/overview")
     def forecast_snapshot_overview(
         response: Response,
@@ -374,6 +521,7 @@ def create_app(
         scope_product_id: UUID | None = None,
         page: int = Query(default=1, ge=1, le=10000),
         page_size: int = Query(default=25, ge=1, le=50),
+        include_guidance: bool = True,
         authorization: str | None = Header(default=None),
     ) -> dict[str, object]:
         response.headers["Cache-Control"] = "no-store"
@@ -402,8 +550,9 @@ def create_app(
                 # Bound guidance work independently of the page size. Reuse the
                 # product read path, which only decodes saved demand and applies
                 # the existing calculators to live stock (never fits models).
+                guidance_started = start_timer(enabled=performance_diagnostics_enabled)
                 guidance_rows = []
-                if isinstance(rows, list):
+                if include_guidance and isinstance(rows, list):
                     for row in rows:
                         if row.get("status") != "completed":
                             continue
@@ -426,8 +575,13 @@ def create_app(
                         guidance_rows.append(product_id)
                 result["guidance_coverage"] = {
                     "evaluated_product_ids": guidance_rows,
-                    "scope": "current_page", "limit": 5,
+                    "scope": "current_page" if include_guidance else "not_requested",
+                    "limit": 5 if include_guidance else 0,
                 }
+                log_duration("snapshot.overview.guidance", guidance_started,
+                             enabled=performance_diagnostics_enabled,
+                             result_count=len(guidance_rows))
+                coverage_started = start_timer(enabled=performance_diagnostics_enabled)
                 try:
                     result["sales_history_coverage"] = snapshot_repository.history_coverage(
                         location_id=profile.location_id, model_key=normalized_model,
@@ -437,6 +591,61 @@ def create_app(
                 except (DataUnavailableError, httpx.HTTPError) as error:
                     logger.warning("snapshot_history_coverage_unavailable category=%s", type(error).__name__)
                     result["sales_history_coverage"] = {"available": False}
+                log_duration("snapshot.overview.history_coverage", coverage_started,
+                             enabled=performance_diagnostics_enabled)
+                actual_started = start_timer(enabled=performance_diagnostics_enabled)
+                try:
+                    manila = ZoneInfo("Asia/Manila")
+                    today = now().astimezone(manila).date()
+                    period_end = datetime.combine(today, time.min, manila)
+                    period_start = period_end - timedelta(days=28)
+                    page_ids = {
+                        str(row["product"]["product_id"])
+                        for row in rows or []
+                    }
+                    actual_rows = (
+                        selected_adapter.load_daily_demand(
+                            profile=profile,
+                            session_token=token,
+                            period_start=period_start,
+                            period_end=period_end,
+                            business_timezone="Asia/Manila",
+                        )
+                        if page_ids else ()
+                    )
+                    if any(row.location_id != profile.location_id for row in actual_rows):
+                        raise DataUnavailableError("Actual sales are outside the authorized location")
+                    actual_by_product = {product_id: [] for product_id in page_ids}
+                    for actual in actual_rows:
+                        if actual.product_id in actual_by_product:
+                            actual_by_product[actual.product_id].append({
+                                "date": actual.business_date.isoformat(),
+                                "quantity": str(actual.quantity),
+                            })
+                    for product_id, observed in actual_by_product.items():
+                        if not observed:
+                            continue
+                        by_date = {item["date"]: item["quantity"] for item in observed}
+                        first_observed = min(by_date)
+                        complete_series = []
+                        for offset in range(28):
+                            business_date = period_start.date() + timedelta(days=offset)
+                            date_text = business_date.isoformat()
+                            if date_text >= first_observed:
+                                complete_series.append({
+                                    "date": date_text,
+                                    "quantity": by_date.get(date_text, "0"),
+                                })
+                        actual_by_product[product_id] = complete_series
+                    result["actual_sales_by_product"] = actual_by_product
+                    result["actual_sales_period_start"] = period_start.date().isoformat()
+                    result["actual_sales_period_end"] = (today - timedelta(days=1)).isoformat()
+                except (DataUnavailableError, DemandDataError, httpx.HTTPError) as error:
+                    logger.warning("snapshot_actual_sales_unavailable category=%s", type(error).__name__)
+                    result["actual_sales_by_product"] = {}
+                    result["actual_sales_error"] = "Recorded sales are unavailable."
+                log_duration("snapshot.overview.actual_sales", actual_started,
+                             enabled=performance_diagnostics_enabled)
                 log_duration(
                     "snapshot.overview.read",
                     started,
@@ -453,12 +662,274 @@ def create_app(
         except (httpx.TimeoutException, DataUnavailableError) as error:
             raise HTTPException(status_code=503, detail="Forecast snapshot service is unavailable") from error
 
+    @app.get("/v1/forecasting/history-coverage/products")
+    def history_coverage_products(
+        response: Response,
+        model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"] = "blend",
+        state: Literal["no_sales", "limited", "sufficient", "not_evaluated"] = "no_sales",
+        unit: str | None = Query(default=None, max_length=50),
+        scope_category: str | None = Query(default=None, max_length=120),
+        scope_product_id: UUID | None = None,
+        search: str | None = Query(default=None, max_length=120),
+        scope_search: str | None = Query(default=None, max_length=120),
+        page: int = Query(default=1, ge=1, le=10000),
+        page_size: int = Query(default=25, ge=1, le=50),
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        response.headers["Cache-Control"] = "no-store"
+        if snapshot_repository is None:
+            raise HTTPException(status_code=503, detail="Sales history reads are unavailable")
+        try:
+            profile = service.authorize_admin(
+                session_token=_bearer_token(authorization), requested_location_id=None,
+            )
+            return snapshot_repository.history_breakdown(
+                location_id=profile.location_id,
+                model_key="blend" if model == "calibrated_blend" else model,
+                state=state, page=page, page_size=page_size,
+                unit=unit, category=scope_category,
+                product_id=str(scope_product_id) if scope_product_id else None,
+                search=search,
+                scope_search=scope_search,
+            )
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (DataUnavailableError, httpx.HTTPError) as error:
+            raise HTTPException(status_code=503, detail="Sales history breakdown is unavailable") from error
+
+    @app.get("/v1/forecasting/restock-priorities/coverage")
+    def store_restock_priority_coverage(
+        response: Response,
+        unit: str | None = Query(default=None, max_length=50),
+        scope_category: str | None = Query(default=None, max_length=120),
+        scope_product_id: UUID | None = None,
+        search: str | None = Query(default=None, max_length=120),
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, int]:
+        response.headers["Cache-Control"] = "no-store"
+        if restock_priority_reader is None:
+            raise HTTPException(status_code=503, detail="Restock priority reads are unavailable")
+        token = _bearer_token(authorization)
+        try:
+            profile = service.authorize_admin(
+                session_token=token, requested_location_id=None,
+            )
+            return restock_priority_reader.coverage(
+                profile=profile, unit=unit, category=scope_category,
+                product_id=str(scope_product_id) if scope_product_id else None,
+                search=search,
+            )
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (DataUnavailableError, httpx.HTTPError) as error:
+            raise HTTPException(status_code=503, detail="Restock priority coverage is unavailable") from error
+
+    @app.get("/v1/forecasting/restock-priorities")
+    def store_restock_priorities(
+        response: Response,
+        location_id: str | None = None,
+        view: Literal["actionable", "unavailable"] = "actionable",
+        unit: str | None = Query(default=None, max_length=50),
+        scope_category: str | None = Query(default=None, max_length=120),
+        scope_product_id: UUID | None = None,
+        search: str | None = Query(default=None, max_length=120),
+        scope_search: str | None = Query(default=None, max_length=120),
+        page: int = Query(default=1, ge=1, le=10000),
+        page_size: int = Query(default=5, ge=1, le=50),
+        refresh: bool = False,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        response.headers["Cache-Control"] = "no-store"
+        if restock_priority_reader is None:
+            raise HTTPException(status_code=503, detail="Restock priority reads are unavailable")
+        token = _bearer_token(authorization)
+        try:
+            profile = service.authorize_admin(
+                session_token=token, requested_location_id=location_id,
+            )
+            return restock_priority_reader.page(
+                profile=profile, session_token=token, now=now(), page=page,
+                page_size=page_size, unit=unit, category=scope_category,
+                product_id=str(scope_product_id) if scope_product_id else None,
+                search=search, scope_search=scope_search,
+                refresh=refresh, view=view,
+            )
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (DataUnavailableError, httpx.HTTPError) as error:
+            raise HTTPException(status_code=503, detail="Restock priorities are temporarily unavailable") from error
+
+    @app.post("/v1/forecasting/monitoring-cycles")
+    def forecast_monitoring_cycles(
+        request: MonitoringCycleRequest,
+        response: Response,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        response.headers["Cache-Control"] = "no-store"
+        if snapshot_repository is None:
+            raise HTTPException(status_code=503, detail="Monitoring reads are unavailable")
+        token = _bearer_token(authorization)
+        try:
+            profile = service.authorize_admin(
+                session_token=token, requested_location_id=request.location_id,
+            )
+            product_ids = [str(value) for value in request.product_ids]
+            if len(set(product_ids)) != len(product_ids):
+                raise HTTPException(status_code=422, detail="Duplicate product IDs are not allowed")
+            authorized_products = set(selected_adapter.list_active_products(
+                profile=profile, session_token=token,
+            ))
+            if not set(product_ids).issubset(authorized_products):
+                raise HTTPException(status_code=403, detail="Monitoring scope includes an unauthorized product")
+            model_key = "blend" if request.model == "calibrated_blend" else request.model
+            result = snapshot_repository.monitoring_cycles(
+                location_id=profile.location_id, product_ids=product_ids,
+                model_key=model_key,
+            )
+            today = date.fromisoformat(str(result["as_of_business_date"]))
+            manila = ZoneInfo("Asia/Manila")
+            groups: dict[tuple[date, date], list[dict[str, object]]] = {}
+            for item in result["items"]:
+                start = date.fromisoformat(str(item["forecast_start_date"]))
+                end = date.fromisoformat(str(item["forecast_end_date"]))
+                if (end - start).days != 27 or start > today or any(
+                    date.fromisoformat(str(point["date"])) != start + timedelta(days=index)
+                    or Decimal(str(point["quantity"])) < 0
+                    or str(point["unit"]).strip().casefold() != str(item["inventory_unit"]).strip().casefold()
+                    for index, point in enumerate(item["points"])
+                ):
+                    raise DataUnavailableError("Monitoring forecast points are invalid")
+                item["actual_sales"] = []
+                groups.setdefault((start, min(end, today)), []).append(item)
+            for (start, through), items in groups.items():
+                try:
+                    reader = (getattr(selected_adapter, "load_daily_demand_fresh", None)
+                              if request.refresh_actual_sales else None) or selected_adapter.load_daily_demand
+                    rows = reader(
+                        profile=profile, session_token=token,
+                        period_start=datetime.combine(start, time.min, manila),
+                        period_end=datetime.combine(through + timedelta(days=1), time.min, manila),
+                        business_timezone="Asia/Manila",
+                    )
+                    if any(row.location_id != profile.location_id for row in rows):
+                        raise DataUnavailableError("Actual sales location is invalid")
+                    for item in items:
+                        matching = [row for row in rows if row.product_id == item["product_id"]
+                                    and start <= row.business_date <= through]
+                        if any(row.unit.strip().casefold() != str(item["inventory_unit"]).strip().casefold()
+                               for row in matching):
+                            item["actual_sales_error"] = "Completed sales use an incompatible inventory unit."
+                            continue
+                        quantities: dict[date, Decimal] = {}
+                        for row in matching:
+                            quantities[row.business_date] = quantities.get(row.business_date, Decimal(0)) + row.quantity
+                        item["actual_sales"] = [
+                            {"date": day.isoformat(), "quantity": str(quantity), "partial": day == today}
+                            for day, quantity in sorted(quantities.items())
+                        ]
+                except (DataUnavailableError, DemandDataError, httpx.HTTPError, ValueError):
+                    for item in items:
+                        item["actual_sales_error"] = "Completed sales are temporarily unavailable."
+            return result
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (DataUnavailableError, httpx.HTTPError, ValueError, KeyError, TypeError,
+                ArithmeticError) as error:
+            raise HTTPException(status_code=503, detail="Monitoring cycles are temporarily unavailable") from error
+
+    @app.get("/v1/forecasting/products/{product_id}/saved-runs")
+    def forecast_saved_runs(
+        response: Response,
+        product_id: str,
+        location_id: str | None = None,
+        model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"] | None = None,
+        result_id: str | None = None,
+        page: int = Query(default=1, ge=1),
+        page_size: int = Query(default=20, ge=1, le=20),
+        refresh_actual_sales: bool = False,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        response.headers["Cache-Control"] = "no-store"
+        if snapshot_repository is None:
+            raise HTTPException(status_code=503, detail="Saved forecast reads are unavailable")
+        token = _bearer_token(authorization)
+        try:
+            parsed_product = UUID(product_id)
+            parsed_result = UUID(result_id) if result_id else None
+            profile = service.authorize_admin(
+                session_token=token, requested_location_id=location_id,
+            )
+            result = snapshot_repository.saved_runs(
+                location_id=profile.location_id, product_id=str(parsed_product),
+                model_key=None if parsed_result else ("blend" if model == "calibrated_blend" else model),
+                page=page, page_size=page_size,
+                result_id=str(parsed_result) if parsed_result else None,
+            )
+            manila = ZoneInfo("Asia/Manila")
+            today = now().astimezone(manila).date()
+            for item in result["items"]:
+                start = date.fromisoformat(item["forecast_start_date"])
+                end = date.fromisoformat(item["forecast_end_date"])
+                points = item["points"]
+                if (end < start or len(points) != (end - start).days + 1 or
+                    any(date.fromisoformat(str(point["date"])) != start + timedelta(days=index)
+                        or Decimal(str(point["quantity"])) < 0
+                        or str(point["unit"]).strip().casefold() != str(item["inventory_unit"]).strip().casefold()
+                        for index, point in enumerate(points))):
+                    raise DataUnavailableError("Saved forecast dates are invalid")
+                item["actual_sales"] = []
+                # A page of run choices must not issue a demand read per row.
+                # Only the explicitly selected immutable result gets live actuals.
+                if parsed_result is None or start > today:
+                    continue
+                try:
+                    reader = (getattr(selected_adapter, "load_daily_demand_fresh", None)
+                              if refresh_actual_sales else None) or selected_adapter.load_daily_demand
+                    rows = reader(
+                        profile=profile, session_token=token,
+                        period_start=datetime.combine(start, time.min, manila),
+                        period_end=datetime.combine(min(end, today) + timedelta(days=1), time.min, manila),
+                        business_timezone="Asia/Manila",
+                    )
+                    if any(row.location_id != profile.location_id for row in rows):
+                        raise DataUnavailableError("Actual sales location is invalid")
+                    scoped = [row for row in rows if row.product_id == str(parsed_product)
+                              and start <= row.business_date <= min(end, today)]
+                    if any(row.unit.strip().casefold() != str(item["inventory_unit"]).strip().casefold()
+                           for row in scoped):
+                        raise DemandDataError("Actual sales unit is incompatible")
+                    item["actual_sales"] = [
+                        {"date": row.business_date.isoformat(), "quantity": str(row.quantity),
+                         "partial": row.business_date == today}
+                        for row in sorted(scoped, key=lambda row: row.business_date)
+                    ]
+                except (DataUnavailableError, DemandDataError, httpx.HTTPError, ValueError):
+                    item["actual_sales_error"] = "Completed sales are unavailable or use an incompatible unit."
+            return result
+        except (ValueError, TypeError, KeyError, ArithmeticError) as error:
+            raise HTTPException(status_code=422, detail="Invalid saved forecast request or result") from error
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (DataUnavailableError, httpx.HTTPError) as error:
+            raise HTTPException(status_code=503, detail="Saved forecasts are temporarily unavailable") from error
+
     @app.get("/v1/forecasting/products/{product_id}/snapshot")
     def forecast_product_snapshot(
         response: Response,
         product_id: str,
         location_id: str | None = None,
         model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"] = "blend",
+        refresh_actual_sales: bool = False,
         authorization: str | None = Header(default=None),
     ) -> dict[str, object]:
         response.headers["Cache-Control"] = "no-store"
@@ -511,6 +982,43 @@ def create_app(
                             },
                             now=now(),
                         )
+                        forecast = item["analysis"]["forecast"]
+                        manila = ZoneInfo("Asia/Manila")
+                        today = now().astimezone(manila).date()
+                        start_date = date.fromisoformat(str(forecast["period_start"]))
+                        end_date = date.fromisoformat(str(forecast["period_end"]))
+                        if start_date <= today:
+                            try:
+                                demand_reader = (
+                                    getattr(selected_adapter, "load_daily_demand_fresh", None)
+                                    if refresh_actual_sales else None
+                                ) or selected_adapter.load_daily_demand
+                                actual_rows = demand_reader(
+                                    profile=profile,
+                                    session_token=token,
+                                    period_start=datetime.combine(start_date, time.min, manila),
+                                    period_end=datetime.combine(
+                                        min(end_date, today) + timedelta(days=1), time.min, manila,
+                                    ),
+                                    business_timezone="Asia/Manila",
+                                )
+                                scoped = [row for row in actual_rows
+                                          if row.product_id == str(parsed_product)
+                                          and start_date <= row.business_date <= min(end_date, today)]
+                                if any(row.location_id != profile.location_id for row in actual_rows):
+                                    raise DataUnavailableError("Actual sales are outside the authorized location")
+                                if any(row.unit.strip().casefold() != str(forecast["unit"]).strip().casefold()
+                                       for row in scoped):
+                                    raise DemandDataError("Actual sales inventory unit is incompatible")
+                                item["analysis"]["actual_sales"] = [
+                                    {"date": row.business_date.isoformat(), "quantity": str(row.quantity)}
+                                    for row in sorted(scoped, key=lambda row: row.business_date)
+                                ]
+                            except (DataUnavailableError, DemandDataError, httpx.HTTPError, ValueError):
+                                item["analysis"]["actual_sales"] = []
+                                item["analysis"]["actual_sales_error"] = (
+                                    "Completed sales are unavailable or use an incompatible unit."
+                                )
                         if item.get("status") == "stale":
                             # Keep the saved chart visible, but do not present
                             # guidance based on obsolete demand as actionable.
@@ -520,6 +1028,15 @@ def create_app(
                             preliminary["reliability"] = "unavailable"
                             preliminary["suggested_restock_quantity"] = None
                             preliminary["limitations"].append("Saved demand is stale; prepare a current forecast before restocking.")
+                            selected_preliminary = analysis.get("selected_model_preliminary_insight")
+                            if isinstance(selected_preliminary, dict):
+                                selected_preliminary["status"] = "limited"
+                                selected_preliminary["reliability"] = "unavailable"
+                                selected_preliminary["suggested_restock_quantity"] = None
+                                selected_preliminary["limitations"].append(
+                                    "Saved demand is stale; prepare a current forecast before restocking."
+                                )
+                            analysis["preliminary_comparison_eligible"] = False
                             recommendation = analysis["recommendation"]
                             recommendation["status"] = "needs_review"
                             recommendation["suggested_quantity"]["inventory_units"] = None
@@ -1078,14 +1595,88 @@ def create_app(
             rows = loader(session_token=token, product_id=product_id)
             from .restock_records import validate_restock_rows
             rows = validate_restock_rows(rows)
+            try:
+                tracking_rows = recommendation_tracking_source().tracking(
+                    session_token=token, product_id=UUID(product_id),
+                )
+            except (RecommendationPersistenceUnavailableError, httpx.HTTPError,
+                    DataUnavailableError):
+                tracking_rows = []
+            tracking_by_id = {
+                int(row["recommendation_id"]): row for row in tracking_rows
+                if row.get("recommendation_id") is not None
+            }
+            for row in rows:
+                recommendation_id = row.get("recommendation_id")
+                tracked = tracking_by_id.get(int(recommendation_id)) if recommendation_id is not None else None
+                if tracked is not None:
+                    row["reconciliation_state_verified"] = True
+                    for field in ("evaluation_status", "reconciled_at"):
+                        row[field] = tracked.get(field)
+                    row["allocated_receipt_count"] = tracked.get("receipt_count")
+                    row["allocated_received_quantity"] = tracked.get("matched_received_quantity")
             # Evidence is captured independently by the background capture process.
             return {"read_only": True, "inventory_read_only": True, "items": rows}
         except AuthenticationError as error:
             raise HTTPException(status_code=401, detail=str(error)) from error
         except AuthorizationError as error:
             raise HTTPException(status_code=403, detail=str(error)) from error
-        except (httpx.HTTPError, DataUnavailableError) as error:
+        except (httpx.HTTPError, DataUnavailableError,
+                RecommendationPersistenceUnavailableError) as error:
             raise HTTPException(status_code=503, detail="Applied restock records unavailable") from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.get("/v1/forecasting/recommendations/by-approval/{request_id}")
+    def recommendation_by_approval(
+        request_id: str, location_id: str | None = None,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        token = _bearer_token(authorization)
+        try:
+            profile = service.authorize_admin(session_token=token, requested_location_id=location_id)
+            persistence = recommendation_persistence()
+            approval = persistence.approved_restock_by_request(
+                request_id=UUID(request_id), location_id=profile.location_id,
+            )
+            if approval is None or approval.get("request_type") != "restock" or approval.get("status") != "approved":
+                return {"read_only": True, "approval_confirmed": False,
+                        "snapshot_exists": False}
+            transaction_id = approval.get("transaction_id")
+            if not transaction_id:
+                raise DataUnavailableError("Approved restock has no transaction")
+            snapshot = persistence.snapshot_by_request(
+                session_token=token, request_id=UUID(request_id),
+            )
+            if snapshot is None:
+                return {"read_only": True, "approval_confirmed": True,
+                        "snapshot_exists": False}
+            if (str(snapshot["product_id_snapshot"]) != str(approval["product_id"])
+                    or str(snapshot["location_id_snapshot"]) != str(profile.location_id)):
+                raise DataUnavailableError("Recommendation and approval scope differ")
+            recommendation_id = int(snapshot["recommendation_id"])
+            rows = recommendation_tracking_source().tracking(
+                session_token=token, product_id=UUID(str(snapshot["product_id_snapshot"])),
+            )
+            row = next((item for item in rows
+                        if int(item["recommendation_id"]) == recommendation_id), None)
+            if row is None:
+                raise DataUnavailableError("Recommendation tracking record is unavailable")
+            return {
+                "read_only": True, "approval_confirmed": True,
+                "snapshot_exists": True,
+                "recommendation_id": recommendation_id,
+                "receipt_count": int(row["receipt_count"]),
+                "transaction_id": str(transaction_id),
+                "approved_quantity": approval.get("requested_quantity"),
+                "reconciled_at": row.get("reconciled_at"),
+            }
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (httpx.HTTPError, DataUnavailableError, RecommendationPersistenceUnavailableError) as error:
+            raise HTTPException(status_code=503, detail="Recommendation tracking unavailable") from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 

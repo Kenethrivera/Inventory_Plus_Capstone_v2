@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -143,6 +144,21 @@ def analysis_response(
             "name": context.history.product.product_name,
             "unit": context.history.product.unit,
         },
+        "actual_sales": [
+            {
+                "date": (context.history.history_end - timedelta(days=offset)).isoformat(),
+                "quantity": _number(
+                    sum(
+                        (row.quantity for row in context.history.observations
+                         if row.business_date == context.history.history_end - timedelta(days=offset)),
+                        Decimal("0"),
+                    )
+                ),
+            }
+            for offset in range(27, -1, -1)
+            if context.history.history_start is not None
+            and context.history.history_end - timedelta(days=offset) >= context.history.history_start
+        ],
         "replenishment_configuration": (
             replenishment_configuration_response(
                 context.replenishment_configuration
