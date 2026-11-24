@@ -86,6 +86,13 @@ class AnalysisRequest(BaseModel):
     manual_confirmed: bool = False
 
 
+class MonitoringCycleRequest(BaseModel):
+    product_ids: list[UUID] = Field(min_length=1, max_length=50)
+    location_id: str | None = None
+    model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"]
+    refresh_actual_sales: bool = False
+
+
 class SnapshotManualGuidanceRequest(BaseModel):
     location_id: str | None = None
     model: Literal[
@@ -758,12 +765,171 @@ def create_app(
         except (DataUnavailableError, httpx.HTTPError) as error:
             raise HTTPException(status_code=503, detail="Restock priorities are temporarily unavailable") from error
 
+    @app.post("/v1/forecasting/monitoring-cycles")
+    def forecast_monitoring_cycles(
+        request: MonitoringCycleRequest,
+        response: Response,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        response.headers["Cache-Control"] = "no-store"
+        if snapshot_repository is None:
+            raise HTTPException(status_code=503, detail="Monitoring reads are unavailable")
+        token = _bearer_token(authorization)
+        try:
+            profile = service.authorize_admin(
+                session_token=token, requested_location_id=request.location_id,
+            )
+            product_ids = [str(value) for value in request.product_ids]
+            if len(set(product_ids)) != len(product_ids):
+                raise HTTPException(status_code=422, detail="Duplicate product IDs are not allowed")
+            authorized_products = set(selected_adapter.list_active_products(
+                profile=profile, session_token=token,
+            ))
+            if not set(product_ids).issubset(authorized_products):
+                raise HTTPException(status_code=403, detail="Monitoring scope includes an unauthorized product")
+            model_key = "blend" if request.model == "calibrated_blend" else request.model
+            result = snapshot_repository.monitoring_cycles(
+                location_id=profile.location_id, product_ids=product_ids,
+                model_key=model_key,
+            )
+            today = date.fromisoformat(str(result["as_of_business_date"]))
+            manila = ZoneInfo("Asia/Manila")
+            groups: dict[tuple[date, date], list[dict[str, object]]] = {}
+            for item in result["items"]:
+                start = date.fromisoformat(str(item["forecast_start_date"]))
+                end = date.fromisoformat(str(item["forecast_end_date"]))
+                if (end - start).days != 27 or start > today or any(
+                    date.fromisoformat(str(point["date"])) != start + timedelta(days=index)
+                    or Decimal(str(point["quantity"])) < 0
+                    or str(point["unit"]).strip().casefold() != str(item["inventory_unit"]).strip().casefold()
+                    for index, point in enumerate(item["points"])
+                ):
+                    raise DataUnavailableError("Monitoring forecast points are invalid")
+                item["actual_sales"] = []
+                groups.setdefault((start, min(end, today)), []).append(item)
+            for (start, through), items in groups.items():
+                try:
+                    reader = (getattr(selected_adapter, "load_daily_demand_fresh", None)
+                              if request.refresh_actual_sales else None) or selected_adapter.load_daily_demand
+                    rows = reader(
+                        profile=profile, session_token=token,
+                        period_start=datetime.combine(start, time.min, manila),
+                        period_end=datetime.combine(through + timedelta(days=1), time.min, manila),
+                        business_timezone="Asia/Manila",
+                    )
+                    if any(row.location_id != profile.location_id for row in rows):
+                        raise DataUnavailableError("Actual sales location is invalid")
+                    for item in items:
+                        matching = [row for row in rows if row.product_id == item["product_id"]
+                                    and start <= row.business_date <= through]
+                        if any(row.unit.strip().casefold() != str(item["inventory_unit"]).strip().casefold()
+                               for row in matching):
+                            item["actual_sales_error"] = "Completed sales use an incompatible inventory unit."
+                            continue
+                        quantities: dict[date, Decimal] = {}
+                        for row in matching:
+                            quantities[row.business_date] = quantities.get(row.business_date, Decimal(0)) + row.quantity
+                        item["actual_sales"] = [
+                            {"date": day.isoformat(), "quantity": str(quantity), "partial": day == today}
+                            for day, quantity in sorted(quantities.items())
+                        ]
+                except (DataUnavailableError, DemandDataError, httpx.HTTPError, ValueError):
+                    for item in items:
+                        item["actual_sales_error"] = "Completed sales are temporarily unavailable."
+            return result
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (DataUnavailableError, httpx.HTTPError, ValueError, KeyError, TypeError,
+                ArithmeticError) as error:
+            raise HTTPException(status_code=503, detail="Monitoring cycles are temporarily unavailable") from error
+
+    @app.get("/v1/forecasting/products/{product_id}/saved-runs")
+    def forecast_saved_runs(
+        response: Response,
+        product_id: str,
+        location_id: str | None = None,
+        model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"] | None = None,
+        result_id: str | None = None,
+        page: int = Query(default=1, ge=1),
+        page_size: int = Query(default=20, ge=1, le=20),
+        refresh_actual_sales: bool = False,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        response.headers["Cache-Control"] = "no-store"
+        if snapshot_repository is None:
+            raise HTTPException(status_code=503, detail="Saved forecast reads are unavailable")
+        token = _bearer_token(authorization)
+        try:
+            parsed_product = UUID(product_id)
+            parsed_result = UUID(result_id) if result_id else None
+            profile = service.authorize_admin(
+                session_token=token, requested_location_id=location_id,
+            )
+            result = snapshot_repository.saved_runs(
+                location_id=profile.location_id, product_id=str(parsed_product),
+                model_key=None if parsed_result else ("blend" if model == "calibrated_blend" else model),
+                page=page, page_size=page_size,
+                result_id=str(parsed_result) if parsed_result else None,
+            )
+            manila = ZoneInfo("Asia/Manila")
+            today = now().astimezone(manila).date()
+            for item in result["items"]:
+                start = date.fromisoformat(item["forecast_start_date"])
+                end = date.fromisoformat(item["forecast_end_date"])
+                points = item["points"]
+                if (end < start or len(points) != (end - start).days + 1 or
+                    any(date.fromisoformat(str(point["date"])) != start + timedelta(days=index)
+                        or Decimal(str(point["quantity"])) < 0
+                        or str(point["unit"]).strip().casefold() != str(item["inventory_unit"]).strip().casefold()
+                        for index, point in enumerate(points))):
+                    raise DataUnavailableError("Saved forecast dates are invalid")
+                item["actual_sales"] = []
+                # A page of run choices must not issue a demand read per row.
+                # Only the explicitly selected immutable result gets live actuals.
+                if parsed_result is None or start > today:
+                    continue
+                try:
+                    reader = (getattr(selected_adapter, "load_daily_demand_fresh", None)
+                              if refresh_actual_sales else None) or selected_adapter.load_daily_demand
+                    rows = reader(
+                        profile=profile, session_token=token,
+                        period_start=datetime.combine(start, time.min, manila),
+                        period_end=datetime.combine(min(end, today) + timedelta(days=1), time.min, manila),
+                        business_timezone="Asia/Manila",
+                    )
+                    if any(row.location_id != profile.location_id for row in rows):
+                        raise DataUnavailableError("Actual sales location is invalid")
+                    scoped = [row for row in rows if row.product_id == str(parsed_product)
+                              and start <= row.business_date <= min(end, today)]
+                    if any(row.unit.strip().casefold() != str(item["inventory_unit"]).strip().casefold()
+                           for row in scoped):
+                        raise DemandDataError("Actual sales unit is incompatible")
+                    item["actual_sales"] = [
+                        {"date": row.business_date.isoformat(), "quantity": str(row.quantity),
+                         "partial": row.business_date == today}
+                        for row in sorted(scoped, key=lambda row: row.business_date)
+                    ]
+                except (DataUnavailableError, DemandDataError, httpx.HTTPError, ValueError):
+                    item["actual_sales_error"] = "Completed sales are unavailable or use an incompatible unit."
+            return result
+        except (ValueError, TypeError, KeyError, ArithmeticError) as error:
+            raise HTTPException(status_code=422, detail="Invalid saved forecast request or result") from error
+        except AuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        except AuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except (DataUnavailableError, httpx.HTTPError) as error:
+            raise HTTPException(status_code=503, detail="Saved forecasts are temporarily unavailable") from error
+
     @app.get("/v1/forecasting/products/{product_id}/snapshot")
     def forecast_product_snapshot(
         response: Response,
         product_id: str,
         location_id: str | None = None,
         model: Literal["mean28", "lightgbm", "blend", "calibrated_blend", "seasonal_experimental"] = "blend",
+        refresh_actual_sales: bool = False,
         authorization: str | None = Header(default=None),
     ) -> dict[str, object]:
         response.headers["Cache-Control"] = "no-store"
@@ -816,6 +982,43 @@ def create_app(
                             },
                             now=now(),
                         )
+                        forecast = item["analysis"]["forecast"]
+                        manila = ZoneInfo("Asia/Manila")
+                        today = now().astimezone(manila).date()
+                        start_date = date.fromisoformat(str(forecast["period_start"]))
+                        end_date = date.fromisoformat(str(forecast["period_end"]))
+                        if start_date <= today:
+                            try:
+                                demand_reader = (
+                                    getattr(selected_adapter, "load_daily_demand_fresh", None)
+                                    if refresh_actual_sales else None
+                                ) or selected_adapter.load_daily_demand
+                                actual_rows = demand_reader(
+                                    profile=profile,
+                                    session_token=token,
+                                    period_start=datetime.combine(start_date, time.min, manila),
+                                    period_end=datetime.combine(
+                                        min(end_date, today) + timedelta(days=1), time.min, manila,
+                                    ),
+                                    business_timezone="Asia/Manila",
+                                )
+                                scoped = [row for row in actual_rows
+                                          if row.product_id == str(parsed_product)
+                                          and start_date <= row.business_date <= min(end_date, today)]
+                                if any(row.location_id != profile.location_id for row in actual_rows):
+                                    raise DataUnavailableError("Actual sales are outside the authorized location")
+                                if any(row.unit.strip().casefold() != str(forecast["unit"]).strip().casefold()
+                                       for row in scoped):
+                                    raise DemandDataError("Actual sales inventory unit is incompatible")
+                                item["analysis"]["actual_sales"] = [
+                                    {"date": row.business_date.isoformat(), "quantity": str(row.quantity)}
+                                    for row in sorted(scoped, key=lambda row: row.business_date)
+                                ]
+                            except (DataUnavailableError, DemandDataError, httpx.HTTPError, ValueError):
+                                item["analysis"]["actual_sales"] = []
+                                item["analysis"]["actual_sales_error"] = (
+                                    "Completed sales are unavailable or use an incompatible unit."
+                                )
                         if item.get("status") == "stale":
                             # Keep the saved chart visible, but do not present
                             # guidance based on obsolete demand as actionable.

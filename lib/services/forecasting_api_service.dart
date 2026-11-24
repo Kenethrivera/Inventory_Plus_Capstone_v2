@@ -29,6 +29,22 @@ class ForecastApiException implements Exception {
 }
 
 abstract interface class ForecastingApiService {
+  Future<Map<String, dynamic>> loadMonitoringCycles({
+    required List<String> productIds,
+    required String locationId,
+    required String sessionToken,
+    required String model,
+    bool refreshActualSales = false,
+  });
+  Future<Map<String, dynamic>> loadSavedForecastRuns({
+    required String productId,
+    required String locationId,
+    required String sessionToken,
+    String? model,
+    String? resultId,
+    int page = 1,
+    bool refreshActualSales = false,
+  });
   Future<Map<String, dynamic>> prepareForecast({required String productId, required String sessionToken, String model = "blend"});
   Future<ForecastJobsPage> loadForecastJobs({
     required String sessionToken,
@@ -89,6 +105,7 @@ abstract interface class ForecastingApiService {
     required String locationId,
     required String sessionToken,
     required String model,
+    bool refreshActualSales = false,
   });
 
   Future<ForecastAnalysis> previewSavedForecastGuidance({
@@ -183,6 +200,47 @@ abstract interface class HistoricalForecastService {
 }
 
 class ForecastApiClient implements ForecastingApiService, HistoricalForecastService {
+  @override
+  Future<Map<String, dynamic>> loadMonitoringCycles({
+    required List<String> productIds,
+    required String locationId,
+    required String sessionToken,
+    required String model,
+    bool refreshActualSales = false,
+  }) {
+    if (productIds.isEmpty || productIds.length > 50) {
+      throw const ForecastApiException('Monitoring scope must contain 1 to 50 products.');
+    }
+    final uri = _baseUri.resolve('/v1/forecasting/monitoring-cycles');
+    return _send(() => _client.post(uri, headers: _headers(sessionToken),
+      body: jsonEncode({
+        'location_id': locationId,
+        'product_ids': productIds,
+        'model': _snapshotModelKey(model),
+        'refresh_actual_sales': refreshActualSales,
+      })), requestTimeout: const Duration(seconds: 60));
+  }
+  @override
+  Future<Map<String, dynamic>> loadSavedForecastRuns({
+    required String productId,
+    required String locationId,
+    required String sessionToken,
+    String? model,
+    String? resultId,
+    int page = 1,
+    bool refreshActualSales = false,
+  }) {
+    final uri = _baseUri.resolve('/v1/forecasting/products/${Uri.encodeComponent(productId)}/saved-runs')
+        .replace(queryParameters: {
+          'location_id': locationId,
+          'page': '$page',
+          'page_size': '20',
+          if (model != null) 'model': _snapshotModelKey(model),
+          if (resultId != null) 'result_id': resultId,
+          if (refreshActualSales) 'refresh_actual_sales': 'true',
+        });
+    return _send(() => _client.get(uri, headers: _headers(sessionToken)));
+  }
   @override
   Future<ForecastJobsPage> loadForecastJobs({
     required String sessionToken,
@@ -388,6 +446,7 @@ class ForecastApiClient implements ForecastingApiService, HistoricalForecastServ
     required String locationId,
     required String sessionToken,
     required String model,
+    bool refreshActualSales = false,
   }) async {
     final uri = _baseUri
         .resolve(
@@ -397,6 +456,7 @@ class ForecastApiClient implements ForecastingApiService, HistoricalForecastServ
           queryParameters: <String, String>{
             'location_id': locationId,
             'model': _snapshotModelKey(model),
+            if (refreshActualSales) 'refresh_actual_sales': 'true',
           },
         );
     final response = await _send(
@@ -1191,6 +1251,7 @@ class ForecastAnalysis {
     this.selectedModelPreliminaryInsight,
     this.preliminaryComparisonEligible = false,
     this.actualSales = const [],
+    this.actualSalesError,
   });
 
   final String schemaVersion;
@@ -1204,10 +1265,12 @@ class ForecastAnalysis {
   final bool preliminaryComparisonEligible;
   final RecommendationSummary recommendation;
   final List<ForecastDailyPoint> actualSales;
+  final String? actualSalesError;
 
   factory ForecastAnalysis.fromJson(Map<String, dynamic> json) {
     final scope = _map(json['authorized_scope'], 'authorized_scope');
     return ForecastAnalysis(
+      actualSalesError: json['actual_sales_error']?.toString(),
       actualSales: json['actual_sales'] is List
           ? (json['actual_sales'] as List)
               .whereType<Map>()

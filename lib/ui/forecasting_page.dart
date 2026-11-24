@@ -170,6 +170,16 @@ class _ForecastingPageState extends State<ForecastingPage> {
       GlobalKey<ForecastJobsViewState>();
   _TrackingSection _selectedTrackingSection = _TrackingSection.records;
   String? _selectedProductId;
+  Map<String, dynamic>? _productMonitoringCycle;
+  Map<String, Map<String, dynamic>> _overviewMonitoringCycles = const {};
+  String? _productMonitoringError;
+  String? _overviewMonitoringError;
+  bool _productMonitoringLoading = false;
+  bool _overviewMonitoringLoading = false;
+  int _productMonitoringGeneration = 0;
+  int _overviewMonitoringGeneration = 0;
+  String? _productMonitoringKey;
+  String? _overviewMonitoringKey;
   String _selectedModel = 'calibrated_blend';
   ForecastWindow _selectedWindow = ForecastWindow.next28Days;
   String? _selectedOverviewScopeKey;
@@ -396,6 +406,10 @@ class _ForecastingPageState extends State<ForecastingPage> {
   /// Invalidates in-flight work while retaining successfully loaded values.
   /// A later activation or explicit refresh can then own fresh loading state.
   void _invalidatePendingRequests() {
+    _productMonitoringGeneration++;
+    _overviewMonitoringGeneration++;
+    _productMonitoringLoading = false;
+    _overviewMonitoringLoading = false;
     _forecastStatusTimer?.cancel();
     _overviewStatusTimer?.cancel();
     _stopRestockCoveragePolling();
@@ -424,6 +438,11 @@ class _ForecastingPageState extends State<ForecastingPage> {
     switch (_selectedView) {
       case _ForecastingView.overview:
         unawaited(_loadOverview());
+        if (_snapshotOverview != null) {
+          unawaited(_loadOverviewMonitoring(
+            _snapshotOverview!.items.map((item) => item.productId).toList(growable: false),
+            refreshActualSales: _overviewMonitoringCycles.isNotEmpty));
+        }
         if (_snapshotOverview != null && _storeRestockNeedsRefresh) {
           unawaited(_loadStoreRestockPriorities(forceRefresh: true));
         }
@@ -431,6 +450,8 @@ class _ForecastingPageState extends State<ForecastingPage> {
       case _ForecastingView.product:
         if (_selectedProductId != null) {
           unawaited(_loadAnalysis());
+          unawaited(_loadProductMonitoring(
+            refreshActualSales: _productMonitoringCycle != null));
         }
         break;
       case _ForecastingView.tracking:
@@ -1016,6 +1037,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
           locationId: locationId,
           sessionToken: token,
           model: requestedModel,
+          refreshActualSales: forceRefresh,
         );
         if (!mounted ||
             generation != _detailGeneration ||
@@ -1151,6 +1173,13 @@ class _ForecastingPageState extends State<ForecastingPage> {
             .length;
         _overviewTotalCount = page.totalCount;
       });
+      if (page.items.isEmpty) {
+        setState(() { _overviewMonitoringCycles = const {}; _overviewMonitoringKey = null; });
+      } else {
+        unawaited(_loadOverviewMonitoring(
+          page.items.map((item) => item.productId).toList(growable: false),
+          refreshActualSales: forceRefresh));
+      }
       if (!forceRefresh) unawaited(_loadStoreRestockPriorities());
       if (_overviewStatusPolls == 0 && !statusPoll && page.items.any(
           (item) => const {'queued', 'running'}.contains(item.job['status']))) {
@@ -2021,7 +2050,8 @@ class _ForecastingPageState extends State<ForecastingPage> {
       _ForecastingView.overview => _overviewLoading ? null :
         () => unawaited(_refreshOverviewReads()),
       _ForecastingView.product => _loading || _selectedProductId == null ? null :
-        () => unawaited(_loadAnalysis(forceRefresh: true)),
+        () { unawaited(_loadAnalysis(forceRefresh: true));
+          unawaited(_loadProductMonitoring(refreshActualSales: true)); },
       _ForecastingView.tracking => _selectedProductId == null ||
           _recommendationTrackingLoading || _forecastPerformanceLoading ? null :
         () {
@@ -2105,6 +2135,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
           onSelectRestockProduct: _openRestockProductForecast,
           onShowSalesHistory: _showSalesHistoryModal,
           savedPage: _snapshotOverview,
+          monitoringCycles: _overviewMonitoringCycles,
+          monitoringLoading: _overviewMonitoringLoading,
+          monitoringError: _overviewMonitoringError,
           analyses: {for (final item in _snapshotOverview?.items ?? const <ForecastSnapshotItem>[])
             if (item.analysis != null) item.productId: item.analysis!},
           selectedModel: _selectedModel,
@@ -2208,6 +2241,143 @@ class _ForecastingPageState extends State<ForecastingPage> {
     ],
   );
 
+  Future<void> _loadProductMonitoring({bool refreshActualSales = false}) async {
+    final productId = _selectedProductId;
+    final locationId = widget.controller.activeLocationId;
+    if (!mounted || !widget.isActive || productId == null || locationId == null) return;
+    final key = '$locationId|$productId|$_selectedModel|${_manilaToday().toIso8601String()}|${_currentSessionDigest()}';
+    if ((_productMonitoringLoading && !refreshActualSales) || (!refreshActualSales &&
+        _productMonitoringKey == key && _productMonitoringCycle != null)) return;
+    final generation = ++_productMonitoringGeneration;
+    final model = _selectedModel;
+    setState(() { _productMonitoringLoading = true;
+      if (_productMonitoringKey != key) _productMonitoringCycle = null;
+      _productMonitoringError = null; });
+    try {
+      final response = await _api().loadMonitoringCycles(
+        productIds: [productId], locationId: locationId,
+        sessionToken: widget.controller.currentSessionToken, model: model,
+        refreshActualSales: refreshActualSales);
+      if (!mounted || generation != _productMonitoringGeneration ||
+          productId != _selectedProductId || model != _selectedModel) return;
+      final items = (response['items'] as List? ?? const []).whereType<Map>().toList();
+      setState(() {
+        _productMonitoringCycle = items.isEmpty ? null : (Map<String, dynamic>.from(items.first)
+          ..['as_of_business_date'] = response['as_of_business_date']);
+        _productMonitoringKey = key;
+      });
+    } on ForecastApiException catch (error) {
+      if (mounted && generation == _productMonitoringGeneration) {
+        setState(() => _productMonitoringError = error.message);
+      }
+    } catch (_) {
+      if (mounted && generation == _productMonitoringGeneration) {
+        setState(() => _productMonitoringError = 'Monitoring forecast is unavailable.');
+      }
+    } finally {
+      if (mounted && generation == _productMonitoringGeneration) {
+        setState(() => _productMonitoringLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadOverviewMonitoring(List<String> productIds,
+      {bool refreshActualSales = false}) async {
+    final locationId = widget.controller.activeLocationId;
+    if (!mounted || !widget.isActive || _selectedView != _ForecastingView.overview ||
+        locationId == null || productIds.isEmpty) return;
+    final ids = productIds.toSet().take(50).toList()..sort();
+    final model = _selectedModel;
+    final key = '$locationId|$model|${ids.join(',')}|${_manilaToday().toIso8601String()}|${_currentSessionDigest()}';
+    if (_overviewMonitoringLoading && _overviewMonitoringKey == key && !refreshActualSales) return;
+    if (!refreshActualSales && _overviewMonitoringKey == key &&
+        _overviewMonitoringCycles.isNotEmpty) return;
+    final generation = ++_overviewMonitoringGeneration;
+    setState(() { _overviewMonitoringLoading = true;
+      if (_overviewMonitoringKey != key) _overviewMonitoringCycles = const {};
+      _overviewMonitoringKey = key; _overviewMonitoringError = null; });
+    try {
+      final response = await _api().loadMonitoringCycles(
+        productIds: ids, locationId: locationId,
+        sessionToken: widget.controller.currentSessionToken, model: model,
+        refreshActualSales: refreshActualSales);
+      if (!mounted || generation != _overviewMonitoringGeneration ||
+          model != _selectedModel || locationId != widget.controller.activeLocationId) return;
+      final items = (response['items'] as List? ?? const []).whereType<Map>();
+      setState(() {
+        _overviewMonitoringCycles = {
+          for (final item in items)
+            if (item['product_id'] != null)
+              item['product_id'].toString(): (Map<String, dynamic>.from(item)
+                ..['as_of_business_date'] = response['as_of_business_date']),
+        };
+        _overviewMonitoringKey = key;
+      });
+    } on ForecastApiException catch (error) {
+      if (mounted && generation == _overviewMonitoringGeneration) {
+        setState(() { _overviewMonitoringError = error.message; _overviewMonitoringKey = null; });
+      }
+    } catch (_) {
+      if (mounted && generation == _overviewMonitoringGeneration) {
+        setState(() { _overviewMonitoringError = 'Monitoring forecasts are unavailable.';
+          _overviewMonitoringKey = null; });
+      }
+    } finally {
+      if (mounted && generation == _overviewMonitoringGeneration) {
+        setState(() => _overviewMonitoringLoading = false);
+      }
+    }
+  }
+  Widget _buildProductMonitoringChart() {
+    final run = _productMonitoringCycle;
+    if (run == null) {
+      if (_productMonitoringLoading) {
+        return const SizedBox(height: 260,
+          child: Center(child: CircularProgressIndicator()));
+      }
+      return _MessageCard(
+        icon: LucideIcons.chartNoAxesCombined,
+        title: 'Monitoring forecast unavailable',
+        message: _productMonitoringError ??
+          'No eligible saved 28-day monitoring forecast exists for this product and model.',
+      );
+    }
+    final forecast = _monitoringDailyPoints(run, 'points');
+    final actual = _monitoringDailyPoints(run, 'actual_sales');
+    final status = run['cycle_status'] == 'completed'
+        ? 'Completed · Awaiting New Forecast' : 'In Progress';
+    final item = _selectedItem;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(color: Colors.white,
+        border: Border.all(color: _forecastLine),
+        borderRadius: BorderRadius.circular(12)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('Forecast monitoring · ${item?.name ?? 'Product'}',
+          style: const TextStyle(fontWeight: FontWeight.w600, color: _forecastInk)),
+        const SizedBox(height: 5),
+        Text('${_snapshotModelLabel(run['model_key']?.toString() ?? '')} v${run['model_version']} · '
+          '${run['forecast_start_date']}–${run['forecast_end_date']} · '
+          'Day ${run['day_of_cycle']} of 28 · ${run['days_remaining']} days remaining · $status',
+          style: const TextStyle(fontSize: 12, color: _forecastMuted)),
+        if ((run['data_quality_warnings'] as List?)?.isNotEmpty == true)
+          Text('Saved result warning: ${(run['data_quality_warnings'] as List).join(', ')}',
+            style: const TextStyle(fontSize: 12, color: Colors.orange)),
+        const SizedBox(height: 12),
+        _OverviewForecastChart(forecastPoints: forecast, actualPoints: actual,
+          unit: run['inventory_unit']?.toString(),
+          showMonitoringMetrics: true,
+          includesSimulation: item?.sku?.startsWith('SIM-') ?? false,
+          emptyMessage: 'The monitoring result has no usable daily points.',
+          onViewForecastAccuracy: _showForecastAccuracy,
+          today: DateTime.tryParse(run['as_of_business_date']?.toString() ?? '')),
+        if (run['actual_sales_error'] != null) Text(run['actual_sales_error'].toString(),
+          style: const TextStyle(fontSize: 12, color: Colors.red)),
+        const Text('Daily differences are informational, not completed 28-day accuracy.',
+          style: TextStyle(fontSize: 11, color: _forecastMuted)),
+      ]),
+    );
+  }
   Widget _buildProductForecastView() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -2216,7 +2386,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
         const SizedBox(height: 12),
         Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            if (_analysis == null) _buildCompactModelSelector(),
+            _buildCompactModelSelector(),
             Text(_snapshotProduct == null ? 'Select a product' : _snapshotStatusLabel(_snapshotProduct!.status)),
             OutlinedButton.icon(
               onPressed: _loading || _preparingForecast || _selectedProductId == null ? null : _prepareForecast,
@@ -2228,6 +2398,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
       const SizedBox(height: 24),
         ForecastAnalysisPanel(
           analysis: _analysis,
+          monitoringChart: _selectedProductId == null ? null : _buildProductMonitoringChart(),
           emptyTitle: _selectedProductId == null ? 'Select a product' : _snapshotStatusLabel(_snapshotProduct?.status ?? 'missing'),
           emptyMessage: _selectedProductId == null
               ? 'Choose a product and model to view its saved forecast.'
@@ -2535,6 +2706,10 @@ class _ForecastingPageState extends State<ForecastingPage> {
   );
 
   void _changeModel(String value) {
+    _productMonitoringGeneration++;
+    _overviewMonitoringGeneration++;
+    _productMonitoringLoading = false;
+    _overviewMonitoringLoading = false;
     _forecastStatusTimer?.cancel();
     _overviewStatusTimer?.cancel();
     _overviewStatusPolls = 0;
@@ -2552,6 +2727,10 @@ class _ForecastingPageState extends State<ForecastingPage> {
       _analysis = null;
       _snapshotProduct = null;
       _snapshotOverview = null;
+      _productMonitoringCycle = null;
+      _overviewMonitoringCycles = const {};
+      _productMonitoringKey = null;
+      _overviewMonitoringKey = null;
       _snapshotProductRequestKey = null;
       _snapshotOverviewRequestKey = null;
       _overviewError = null;
@@ -2574,6 +2753,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
               : _analysis == null)) {
         unawaited(_loadAnalysis());
       }
+      if (loadForecast) unawaited(_loadProductMonitoring());
       return;
     }
     final localResultAvailable = _analysisResults.keys.any(
@@ -2591,6 +2771,8 @@ class _ForecastingPageState extends State<ForecastingPage> {
       );
     }
     _detailGeneration++;
+    _productMonitoringGeneration++;
+    _productMonitoringLoading = false;
     _trackingGeneration++;
     _performanceGeneration++;
     _snapshotProductRequestKey = null;
@@ -2598,6 +2780,9 @@ class _ForecastingPageState extends State<ForecastingPage> {
     _performanceLoadedKey = null;
     setState(() {
       _selectedProductId = productId;
+      _productMonitoringCycle = null;
+      _productMonitoringKey = null;
+      _productMonitoringError = null;
       _loading = false;
       _recommendationTrackingLoading = false;
       _forecastPerformanceLoading = false;
@@ -2614,6 +2799,7 @@ class _ForecastingPageState extends State<ForecastingPage> {
       _loadActiveViewData();
     }
     if (loadForecast) unawaited(_loadAnalysis());
+    if (loadForecast) unawaited(_loadProductMonitoring());
   }
 
   void _showForecastAccuracy() {
@@ -4118,6 +4304,7 @@ class _SnapshotOverviewDashboard extends StatelessWidget {
         : null;
     final daily = _snapshotDailyPageSeries(compatible, selectedWindow.days);
     final actualTotals = <DateTime, double>{};
+    final actualCoverage = <DateTime, int>{};
     for (final item in compatible) {
       for (final point in page.actualSalesByProduct[item.productId] ?? const <ForecastDailyPoint>[]) {
         actualTotals.update(point.date, (value) => value + point.quantity,
@@ -5123,6 +5310,9 @@ class ForecastOverviewDashboard extends StatelessWidget {
     this.onShowSalesHistory,
     this.controls,
     this.savedPage,
+    this.monitoringCycles = const {},
+    this.monitoringLoading = false,
+    this.monitoringError,
     this.selectedModel,
     this.analyses = const <String, ForecastAnalysis>{},
     this.products = const <InventoryItem>[],
@@ -5151,6 +5341,9 @@ class ForecastOverviewDashboard extends StatelessWidget {
   final ValueChanged<String>? onScopeChanged;
   final Widget? controls;
   final ForecastSnapshotPage? savedPage;
+  final Map<String, Map<String, dynamic>> monitoringCycles;
+  final bool monitoringLoading;
+  final String? monitoringError;
   final String? selectedModel;
   final ForecastWindow selectedWindow;
   final ValueChanged<ForecastWindow> onWindowChanged;
@@ -5218,6 +5411,9 @@ class ForecastOverviewDashboard extends StatelessWidget {
         _StoreOutlookCard(
           analyses: analyses,
           savedPage: savedPage,
+          monitoringCycles: monitoringCycles,
+          monitoringLoading: monitoringLoading,
+          monitoringError: monitoringError,
           selectedModel: selectedModel,
           products: products,
           selectedScopeKey: selectedScopeKey,
@@ -5295,6 +5491,9 @@ class _StoreOutlookCard extends StatelessWidget {
     this.onScopeChanged,
     this.controls,
     this.savedPage,
+    this.monitoringCycles = const {},
+    this.monitoringLoading = false,
+    this.monitoringError,
     this.selectedModel,
     this.onViewForecastAccuracy,
   });
@@ -5307,6 +5506,9 @@ class _StoreOutlookCard extends StatelessWidget {
   final ValueChanged<String>? onScopeChanged;
   final Widget? controls;
   final ForecastSnapshotPage? savedPage;
+  final Map<String, Map<String, dynamic>> monitoringCycles;
+  final bool monitoringLoading;
+  final String? monitoringError;
   final String? selectedModel;
   final VoidCallback? onViewForecastAccuracy;
 
@@ -5331,11 +5533,25 @@ class _StoreOutlookCard extends StatelessWidget {
         ? const <ForecastSnapshotItem>[]
         : savedPage!.items.where((item) => selected.productIds.contains(item.productId)).toList(growable: false);
     final usableRows = _overviewUsableSavedItems(scopeRows);
+    final compatibleRows = savedPage == null || selected?.unit == null
+        ? usableRows
+        : usableRows.where((row) =>
+            row.product['unit']?.toString().trim().toLowerCase() ==
+            selected!.unit.trim().toLowerCase()).toList(growable: false);
+    String? firstSavedDate(ForecastSnapshotItem row) {
+      final daily = row.forecastSummary?['daily'];
+      return daily is List && daily.isNotEmpty && daily.first is Map
+          ? (daily.first as Map)['date']?.toString() : null;
+    }
+    final cohortDates = compatibleRows.map(firstSavedDate).whereType<String>().toList()..sort();
+    final cohortStart = cohortDates.isEmpty ? null : cohortDates.last;
+    final cohortRows = cohortStart == null ? const <ForecastSnapshotItem>[]
+        : compatibleRows.where((row) => firstSavedDate(row) == cohortStart).toList(growable: false);
     final points = selected == null
         ? const <ForecastDailyPoint>[]
         : savedPage == null
         ? _overviewSeries(selected, analyses, selectedWindow.days)
-        : _snapshotDailyPageSeries(usableRows, selectedWindow.days);
+        : _snapshotDailyPageSeries(cohortRows, selectedWindow.days);
     final total = points.fold<double>(0, (sum, point) => sum + point.quantity);
     if (_forecastOverviewTrace && ForecastingPerformanceDiagnostics.enabled && savedPage != null) {
       final itemDetails = scopeRows.map((item) {
@@ -5369,27 +5585,47 @@ class _StoreOutlookCard extends StatelessWidget {
               .map((id) => analyses[id])
               .whereType<ForecastAnalysis>()
               .toList(growable: false);
-    final actualByProduct = savedPage?.actualSalesByProduct ?? {
-      for (final entry in analyses.entries) entry.key: entry.value.actualSales,
-    };
-    final actualTotals = <DateTime, double>{};
-    final actualProductIds = savedPage != null && usableRows.isNotEmpty
-        ? usableRows.map((item) => item.productId)
-        : selected?.productIds ?? const <String>[];
-    for (final productId in actualProductIds) {
-      for (final point in actualByProduct[productId] ?? const <ForecastDailyPoint>[]) {
-        actualTotals.update(
-          point.date,
-          (quantity) => quantity + point.quantity,
-          ifAbsent: () => point.quantity,
-        );
+    final monitoringGroups = <String, List<Map<String, dynamic>>>{};
+    if (selected != null) {
+      for (final productId in selected.productIds.toSet()) {
+        final cycle = monitoringCycles[productId];
+        if (cycle == null ||
+            cycle['inventory_unit']?.toString().trim().toLowerCase() !=
+                selected.unit.trim().toLowerCase()) continue;
+        final key = '${cycle['forecast_start_date']}|${cycle['forecast_end_date']}|${cycle['model_version']}';
+        monitoringGroups.putIfAbsent(key, () => []).add(cycle);
       }
     }
-    final actualDates = actualTotals.keys.toList()..sort();
-    final actualPoints = [
-      for (final date in actualDates)
-        ForecastDailyPoint(date: date, quantity: actualTotals[date]!),
-    ];
+    final monitoringCohorts = monitoringGroups.entries.toList()
+      ..sort((a, b) {
+        final count = b.value.length.compareTo(a.value.length);
+        return count != 0 ? count : a.key.compareTo(b.key);
+      });
+    final monitored = monitoringCohorts.isEmpty
+        ? const <Map<String, dynamic>>[] : monitoringCohorts.first.value;
+    final monitoredForecastTotals = <DateTime, double>{};
+    final monitoredActualTotals = <DateTime, double>{};
+    final monitoredActualCounts = <DateTime, int>{};
+    for (final cycle in monitored) {
+      for (final point in _monitoringDailyPoints(cycle, 'points')) {
+        monitoredForecastTotals.update(point.date, (sum) => sum + point.quantity,
+          ifAbsent: () => point.quantity);
+      }
+      if (cycle['actual_sales_error'] != null) continue;
+      for (final point in _monitoringDailyPoints(cycle, 'actual_sales')) {
+        monitoredActualTotals.update(point.date, (sum) => sum + point.quantity,
+          ifAbsent: () => point.quantity);
+        monitoredActualCounts.update(point.date, (count) => count + 1,
+          ifAbsent: () => 1);
+      }
+    }
+    final monitoredForecastDates = monitoredForecastTotals.keys.toList()..sort();
+    final monitoredActualDates = monitoredActualTotals.keys.where((date) =>
+        monitoredActualCounts[date] == monitored.length).toList()..sort();
+    final monitoredForecastPoints = [for (final date in monitoredForecastDates)
+      ForecastDailyPoint(date: date, quantity: monitoredForecastTotals[date]!)];
+    final monitoredActualPoints = [for (final date in monitoredActualDates)
+      ForecastDailyPoint(date: date, quantity: monitoredActualTotals[date]!)];
     final includesSimulation = savedPage != null
         ? scopeRows.any((row) =>
             row.product['sku']?.toString().startsWith('SIM-') ?? false)
@@ -5442,7 +5678,7 @@ class _StoreOutlookCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Expected demand${savedPage == null ? '' : ' on this page'} · ${selectedWindow == ForecastWindow.next7Days ? 'Short-term (7 days)' : 'Planning (28 days)'}',
+                    'Operational expected demand${savedPage == null ? '' : ' on this page'} · ${selectedWindow == ForecastWindow.next7Days ? 'Short-term (7 days)' : 'Planning (28 days)'}',
                     style: const TextStyle(fontSize: 13, color: _forecastMuted),
                   ),
                   const SizedBox(height: 4),
@@ -5495,16 +5731,37 @@ class _StoreOutlookCard extends StatelessWidget {
             },
           ),
           const SizedBox(height: 20),
+          if (monitored.isNotEmpty) ...[
+            Text('Fixed monitoring period ${monitored.first['forecast_start_date']}–${monitored.first['forecast_end_date']} · '
+              '${_snapshotModelLabel(monitored.first['model_key']?.toString() ?? '')} '
+              'v${monitored.first['model_version']} · Day ${monitored.first['day_of_cycle']} of 28 · '
+              '${monitored.first['days_remaining']} days remaining · '
+              '${monitored.first['cycle_status'] == 'completed' ? 'Completed · Awaiting New Forecast' : 'In Progress'} · '
+              '${monitored.length} of ${selected?.productIds.toSet().length ?? 0} '
+              'scoped products. Only matching dates, model version, and ${selected?.unit ?? 'compatible'} units are combined.',
+              style: const TextStyle(fontSize: 11, color: _forecastMuted)),
+            const SizedBox(height: 8),
+          ],
+          if (monitoringError != null) Text(monitoringError!,
+            style: const TextStyle(fontSize: 12, color: Colors.red)),
+          if (monitored.any((cycle) => cycle['actual_sales_error'] != null))
+            const Text('Actual sales are unavailable for part of this cohort; no incomplete aggregate is plotted.',
+              style: TextStyle(fontSize: 12, color: Colors.orange)),
+          if (monitoringLoading && monitored.isEmpty)
+            const Center(child: CircularProgressIndicator()),
           _OverviewForecastChart(
             key: const Key('forecast-primary-demand-chart'),
-            forecastPoints: points,
-            actualPoints: actualPoints,
+            forecastPoints: monitoredForecastPoints,
+            actualPoints: monitoredActualPoints,
+            showMonitoringMetrics: true,
             unit: selected?.unit,
             includesSimulation: includesSimulation,
             onViewForecastAccuracy: onViewForecastAccuracy,
+            today: monitored.isEmpty ? null : DateTime.tryParse(
+              monitored.first['as_of_business_date']?.toString() ?? ''),
             emptyMessage: selected == null
-                ? 'No compatible forecast scope is available.'
-                : 'No reliable forecast is available for this scope.',
+                ? 'No compatible monitoring scope is available.'
+                : 'No matching saved 28-day monitoring cycle is available for this scope.',
           ),
         ],
       ),
@@ -6424,6 +6681,8 @@ class _OverviewForecastChart extends StatefulWidget {
     required this.includesSimulation,
     required this.emptyMessage,
     this.onViewForecastAccuracy,
+    this.today,
+    this.showMonitoringMetrics = false,
   });
 
   final List<ForecastDailyPoint> forecastPoints;
@@ -6432,12 +6691,31 @@ class _OverviewForecastChart extends StatefulWidget {
   final bool includesSimulation;
   final String emptyMessage;
   final VoidCallback? onViewForecastAccuracy;
+  final DateTime? today;
+  final bool showMonitoringMetrics;
 
   @override
   State<_OverviewForecastChart> createState() => _OverviewForecastChartState();
 }
 
 DateTime _businessDate(DateTime value) => DateTime.utc(value.year, value.month, value.day);
+List<ForecastDailyPoint> _monitoringDailyPoints(Map<String, dynamic> item, String field) {
+  final raw = item[field];
+  if (raw is! List) return const [];
+  final points = <ForecastDailyPoint>[];
+  for (final row in raw) {
+    if (row is! Map) continue;
+    final date = DateTime.tryParse(row['date']?.toString() ?? '');
+    final quantity = double.tryParse(row['quantity']?.toString() ?? '');
+    if (date == null || quantity == null || !quantity.isFinite || quantity < 0) continue;
+    points.add(ForecastDailyPoint(date: _businessDate(date), quantity: quantity));
+  }
+  return points;
+}
+DateTime _manilaToday() {
+  final manila = DateTime.now().toUtc().add(const Duration(hours: 8));
+  return DateTime.utc(manila.year, manila.month, manila.day);
+}
 
 class _OverviewForecastChartState extends State<_OverviewForecastChart> {
   DateTime? _inspectedDate;
@@ -6475,12 +6753,29 @@ class _OverviewForecastChartState extends State<_OverviewForecastChart> {
     }
     final actualByDate = {for (final point in actualPoints) _businessDate(point.date): point.quantity};
     final forecastByDate = {for (final point in forecastPoints) _businessDate(point.date): point.quantity};
+    final today = _businessDate(widget.today ?? _manilaToday());
+    var observedDays = 0;
+    var observedActual = 0.0;
+    var absoluteError = 0.0;
+    var signedForecastError = 0.0;
+    for (final entry in actualByDate.entries) {
+      final predictedDay = forecastByDate[entry.key];
+      if (predictedDay == null || !entry.key.isBefore(today)) continue;
+      observedDays++;
+      observedActual += entry.value;
+      absoluteError += (predictedDay - entry.value).abs();
+      signedForecastError += predictedDay - entry.value;
+    }
+    final cumulativeWape = observedDays == 0 || observedActual <= 0
+        ? null : absoluteError / observedActual * 100;
+    final cumulativeBias = observedDays == 0 || observedActual <= 0
+        ? null : signedForecastError / observedActual * 100;
     final dates = {...actualByDate.keys, ...forecastByDate.keys}.toList()..sort();
     final inspected = _inspectedDate;
     final actual = inspected == null ? null : actualByDate[inspected];
     final predicted = inspected == null ? null : forecastByDate[inspected];
-    final difference = actual == null || predicted == null ? null : (actual - predicted).abs();
-    final percent = difference == null || actual == null || actual == 0 ? null : difference / actual * 100;
+    final difference = actual == null || predicted == null ? null : actual - predicted;
+    final percent = difference == null || actual == null || actual == 0 ? null : difference.abs() / actual * 100;
     final actualEnd = actualByDate.isEmpty ? null :
         actualByDate.keys.reduce((a, b) => a.isAfter(b) ? a : b);
     final forecastStart = forecastByDate.isEmpty ? null :
@@ -6501,7 +6796,8 @@ class _OverviewForecastChartState extends State<_OverviewForecastChart> {
               onHorizontalDragUpdate: (event) => _inspect(event.localPosition.dx, box.maxWidth, dates.first, dates.last),
               child: CustomPaint(
                 painter: _OverviewDemandChartPainter(actualPoints: actualPoints,
-                    forecastPoints: forecastPoints, inspectedDate: inspected, unit: unit),
+                    forecastPoints: forecastPoints, inspectedDate: inspected,
+                    unit: unit, today: widget.today ?? _manilaToday()),
                 size: const Size(double.infinity, 252),
               ),
             ),
@@ -6509,7 +6805,7 @@ class _OverviewForecastChartState extends State<_OverviewForecastChart> {
         )),
         if (inspected != null)
           Semantics(liveRegion: true, label:
-            '${_shortForecastDate(inspected)}. Actual ${actual ?? 'unavailable'}. Predicted ${predicted ?? 'unavailable'}. Absolute difference ${difference ?? 'unavailable'}. Percentage ${percent ?? 'unavailable'}.',
+            '${_shortForecastDate(inspected)}. Observation ${actual == null ? 'unavailable' : inspected == today ? 'partial day' : 'completed day'}. Actual sales ${actual == null ? 'unavailable' : '$actual ${unit ?? ''}'}. Forecasted ${predicted == null ? 'unavailable' : '$predicted ${unit ?? ''}'}. Actual minus predicted ${difference == null ? 'unavailable' : '$difference ${unit ?? ''}'}. Daily percent error ${percent == null ? 'unavailable' : '$percent percent'}.',
             child: const SizedBox.shrink()),
         if (boundary)
           Padding(padding: const EdgeInsets.only(top: 6), child: Text(
@@ -6518,6 +6814,24 @@ class _OverviewForecastChartState extends State<_OverviewForecastChart> {
             'No date-aligned accuracy comparison is available yet.',
             style: const TextStyle(fontSize: 11, color: _forecastMuted),
           )),
+        if (!boundary && actualPoints.isNotEmpty && forecastPoints.isNotEmpty)
+          const Padding(padding: EdgeInsets.only(top: 6), child: Text(
+            'Recorded daily sales are observations, not a completed forecast accuracy evaluation.',
+            style: TextStyle(fontSize: 11, color: _forecastMuted),
+          )),
+        if (widget.showMonitoringMetrics) ...[
+          const SizedBox(height: 12),
+          Wrap(spacing: 10, runSpacing: 8, children: [
+            _MonitoringMetric(label: 'Observed days so far', value: '$observedDays'),
+            _MonitoringMetric(label: 'Cumulative WAPE so far',
+              value: cumulativeWape == null ? 'Unavailable' : '${cumulativeWape.toStringAsFixed(1)}%'),
+            _MonitoringMetric(label: 'Cumulative Bias so far',
+              value: cumulativeBias == null ? 'Unavailable' : '${_signedQuantity(cumulativeBias)}%'),
+          ]),
+          const SizedBox(height: 5),
+          const Text('Completed observed days only. Bias uses Forecasted − Actual; both percentages need a positive completed-sales total. These provisional metrics do not replace the completed 28-day accuracy evaluation.',
+            style: TextStyle(fontSize: 11, color: _forecastMuted)),
+        ],
         const SizedBox(height: 10),
         Wrap(
           spacing: 18,
@@ -6572,6 +6886,30 @@ class _OverviewForecastChartState extends State<_OverviewForecastChart> {
       ],
     );
   }
+}
+
+class _MonitoringMetric extends StatelessWidget {
+  const _MonitoringMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: _forecastLine),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min, children: [
+        Text(label, style: const TextStyle(fontSize: 11, color: _forecastMuted)),
+        const SizedBox(height: 3),
+        Text(value, style: const TextStyle(fontSize: 15,
+          fontWeight: FontWeight.w700, color: _forecastInk)),
+      ]),
+  );
 }
 
 class _ChartLegendItem extends StatelessWidget {
@@ -6650,12 +6988,14 @@ class _OverviewDemandChartPainter extends CustomPainter {
     required this.forecastPoints,
     this.inspectedDate,
     this.unit,
+    this.today,
   });
 
   final List<ForecastDailyPoint> actualPoints;
   final List<ForecastDailyPoint> forecastPoints;
   final DateTime? inspectedDate;
   final String? unit;
+  final DateTime? today;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -6717,6 +7057,17 @@ class _OverviewDemandChartPainter extends CustomPainter {
             Offset(boundaryX, min(offset + 3, top + chartHeight)), divider);
       }
     }
+    if (today != null && !today!.isBefore(firstDate) && !today!.isAfter(lastDate)) {
+      final todayX = x(today!);
+      canvas.drawLine(Offset(todayX, top), Offset(todayX, top + chartHeight),
+        Paint()..color = _forecastMuted.withValues(alpha: .4)..strokeWidth = 1);
+      final label = TextPainter(
+        text: const TextSpan(text: 'Today',
+          style: TextStyle(fontSize: 10, color: _forecastMuted)),
+        textDirection: TextDirection.ltr)..layout();
+      label.paint(canvas, Offset((todayX + 3).clamp(0.0,
+        max(0.0, size.width - label.width)).toDouble(), top));
+    }
     if (inspectedDate != null && !inspectedDate!.isBefore(firstDate) && !inspectedDate!.isAfter(lastDate)) {
       final markerX = x(inspectedDate!);
       canvas.drawLine(Offset(markerX, top), Offset(markerX, top + chartHeight),
@@ -6766,6 +7117,10 @@ class _OverviewDemandChartPainter extends CustomPainter {
           ..strokeJoin = StrokeJoin.round
           ..strokeCap = StrokeCap.round,
       );
+      for (final point in actualPoints) {
+        canvas.drawCircle(Offset(x(point.date), y(point.quantity)), 3,
+          Paint()..color = Colors.black);
+      }
     }
 
     if (forecastPoints.isNotEmpty) {
@@ -6820,24 +7175,74 @@ class _OverviewDemandChartPainter extends CustomPainter {
               Paint()..color = entry.$2);
         }
       }
-      final delta = actual == null || predicted == null ? null : (actual.quantity - predicted.quantity).abs();
-      final percent = delta == null || actual == null || actual.quantity == 0 ? null : delta / actual.quantity * 100;
-      String value(ForecastDailyPoint? p) => p == null ? 'Unavailable' : '${_quantity(p.quantity)} ${unit ?? ''}';
-      final label = TextPainter(text: TextSpan(
-        text: '${_shortForecastDate(inspectedDate!)} ${inspectedDate!.year}\nActual: ${value(actual)}\nPredicted: ${value(predicted)}\nAbsolute difference: ${delta == null ? 'Unavailable' : _quantity(delta)}\nPercentage: ${percent == null ? 'Unavailable' : '${_quantity(percent)}%'}',
-        style: const TextStyle(fontSize: 11, color: _forecastInk, height: 1.4)),
-        textDirection: TextDirection.ltr)..layout(maxWidth: max(1, size.width - 32));
-      final width = label.width + 16;
-      final height = label.height + 16;
+      final delta = actual == null || predicted == null ? null : actual.quantity - predicted.quantity;
+      final percent = delta == null || actual == null || actual.quantity == 0 ? null : delta.abs() / actual.quantity * 100;
+      String value(ForecastDailyPoint? p) => p == null
+          ? 'Unavailable' : '${_quantity(p.quantity)} ${unit ?? ''}'.trim();
+      final status = actual == null ? 'Unavailable' :
+          _businessDate(inspectedDate!) == _businessDate(today ?? _manilaToday())
+              ? 'Partial Day' : 'Completed Day';
+      final width = min(292.0, max(1.0, size.width - 20));
+      const padding = 12.0;
+      final contentWidth = max(1.0, width - padding * 2);
+      final title = TextPainter(
+        text: TextSpan(text: '${_shortForecastDate(inspectedDate!)} ${inspectedDate!.year}',
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
+            color: _forecastInk)), textDirection: TextDirection.ltr,
+      )..layout(maxWidth: contentWidth);
+      final statusText = TextPainter(
+        text: TextSpan(text: status, style: TextStyle(fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: status == 'Partial Day' ? _forecastAccent : _forecastMuted)),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: contentWidth);
+      final rows = <(String, String, bool)>[
+        ('Actual sales', value(actual), false),
+        ('Forecasted', value(predicted), false),
+        ('Difference', delta == null ? 'Unavailable' :
+          '${delta > 0 ? '+' : ''}${_quantity(delta)} ${unit ?? ''}'.trim(), true),
+        ('Percent error', percent == null ? 'Unavailable' : '${_quantity(percent)}%', false),
+      ];
+      final labelWidth = max(1.0, contentWidth * .47);
+      final valueWidth = max(1.0, contentWidth - labelWidth);
+      final rowPainters = <(TextPainter, TextPainter)>[];
+      var rowsHeight = 0.0;
+      for (final row in rows) {
+        final name = TextPainter(text: TextSpan(text: row.$1,
+          style: TextStyle(fontSize: 11.5, color: row.$3 ? _forecastInk : _forecastMuted,
+            fontWeight: row.$3 ? FontWeight.w700 : FontWeight.w500)),
+          textDirection: TextDirection.ltr)..layout(maxWidth: labelWidth);
+        final amount = TextPainter(text: TextSpan(text: row.$2,
+          style: TextStyle(fontSize: row.$3 ? 13 : 12, color: _forecastInk,
+            fontWeight: row.$3 ? FontWeight.w700 : FontWeight.w600)),
+          textDirection: TextDirection.ltr, textAlign: TextAlign.right)
+          ..layout(maxWidth: valueWidth);
+        rowPainters.add((name, amount));
+        rowsHeight += max(name.height, amount.height) + 7;
+      }
+      final height = padding * 2 + title.height + 3 + statusText.height + 12 + rowsHeight;
       final markerX = x(inspectedDate!);
       final dx = (markerX + 12 + width <= size.width ? markerX + 12 : markerX - width - 12)
           .clamp(0.0, max(0.0, size.width - width)).toDouble();
       final dy = (y(predicted?.quantity ?? actual?.quantity ?? 0) - height - 8)
           .clamp(0.0, max(0.0, size.height - height)).toDouble();
-      final rect = RRect.fromRectAndRadius(Rect.fromLTWH(dx, dy, width, height), const Radius.circular(6));
+      final rect = RRect.fromRectAndRadius(Rect.fromLTWH(dx, dy, width, height), const Radius.circular(8));
+      canvas.drawShadow(Path()..addRRect(rect), Colors.black.withValues(alpha: .15), 6, false);
       canvas.drawRRect(rect, Paint()..color = Colors.white);
       canvas.drawRRect(rect, Paint()..color = _forecastLine..style = PaintingStyle.stroke);
-      label.paint(canvas, Offset(dx + 8, dy + 8));
+      var rowY = dy + padding;
+      title.paint(canvas, Offset(dx + padding, rowY));
+      rowY += title.height + 3;
+      statusText.paint(canvas, Offset(dx + padding, rowY));
+      rowY += statusText.height + 7;
+      canvas.drawLine(Offset(dx + padding, rowY), Offset(dx + width - padding, rowY),
+        Paint()..color = _forecastLine..strokeWidth = 1);
+      rowY += 5;
+      for (final pair in rowPainters) {
+        pair.$1.paint(canvas, Offset(dx + padding, rowY));
+        pair.$2.paint(canvas, Offset(dx + width - padding - pair.$2.width, rowY));
+        rowY += max(pair.$1.height, pair.$2.height) + 7;
+      }
     }
   }
 
@@ -6845,7 +7250,8 @@ class _OverviewDemandChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _OverviewDemandChartPainter oldDelegate) =>
       oldDelegate.actualPoints != actualPoints ||
       oldDelegate.forecastPoints != forecastPoints ||
-      oldDelegate.inspectedDate != inspectedDate;
+      oldDelegate.inspectedDate != inspectedDate ||
+      oldDelegate.today != today;
 }
 
 String _shortForecastDate(DateTime date) {
@@ -6938,6 +7344,8 @@ class _ProductForecastChart extends StatefulWidget {
   const _ProductForecastChart({
     super.key,
     required this.points,
+    required this.actualPoints,
+    this.actualSalesError,
     required this.unit,
     required this.synthetic,
     required this.emptyMessage,
@@ -6945,6 +7353,8 @@ class _ProductForecastChart extends StatefulWidget {
   });
 
   final List<ForecastDailyPoint> points;
+  final List<ForecastDailyPoint> actualPoints;
+  final String? actualSalesError;
   final String unit;
   final bool synthetic;
   final String emptyMessage;
@@ -6972,6 +7382,9 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
 
   @override
   Widget build(BuildContext context) {
+    final actualByDate = {
+      for (final point in widget.actualPoints) _businessDate(point.date): point.quantity,
+    };
     if (widget.points.isEmpty) {
       return Container(
         constraints: const BoxConstraints(minHeight: 230),
@@ -7006,7 +7419,7 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
                   : widget.points.length == 1
                   ? _left + plotWidth / 2
                   : _left + hover / (widget.points.length - 1) * plotWidth;
-              final tooltipWidth = min(184.0, width);
+              final tooltipWidth = min(220.0, width);
               final preferredLeft = pointX > width * .6
                   ? pointX - tooltipWidth - 12
                   : pointX + 12;
@@ -7029,6 +7442,7 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
                       child: CustomPaint(
                         painter: _ProductForecastChartPainter(
                           points: widget.points,
+                          actualPoints: widget.actualPoints,
                           hoverIndex: hover,
                         ),
                       ),
@@ -7090,6 +7504,13 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
                                   ),
                                   style: const TextStyle(fontSize: 12),
                                 ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  actualByDate[_businessDate(widget.points[hover].date)] == null
+                                      ? 'Actual sales: unavailable'
+                                      : 'Actual sales${_businessDate(widget.points[hover].date) == _manilaToday() ? ' (today, partial)' : ' (completed day)'}: ${_quantity(actualByDate[_businessDate(widget.points[hover].date)])} ${widget.unit}',
+                                  style: const TextStyle(fontSize: 12, color: Colors.black),
+                                ),
                               ],
                             ),
                           ),
@@ -7108,19 +7529,22 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
           spacing: 24,
           runSpacing: 10,
           children: [
-            const Wrap(
+            Wrap(
               spacing: 20,
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                _ForecastLegendItem(
+                const _ForecastLegendItem(
                   color: _forecastAccent,
                   label: 'Predicted demand',
                   dashed: true,
                 ),
                 _ForecastLegendItem(
-                  color: _forecastFaint,
-                  label: 'Actual sales unavailable',
+                  color: Colors.black,
+                  label: widget.actualPoints.isEmpty
+                      ? (widget.actualSalesError == null
+                          ? 'No actual observations yet' : 'Actual sales unavailable')
+                      : 'Recorded actual sales',
                 ),
               ],
             ),
@@ -7163,9 +7587,10 @@ class _ProductForecastChartState extends State<_ProductForecastChart> {
           ],
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Historical daily sales and confidence ranges are not exposed by this response. Only supported future predicted demand is shown.',
-          style: TextStyle(fontSize: 11, color: _forecastFaint, height: 1.35),
+        Text(
+          widget.actualSalesError ??
+              'Actual markers show recorded sales only. Today is partial; missing dates are unavailable, not zero. Daily observations do not establish 28-day forecast accuracy.',
+          style: const TextStyle(fontSize: 11, color: _forecastFaint, height: 1.35),
         ),
       ],
     );
@@ -7239,10 +7664,12 @@ class _ForecastLegendPainter extends CustomPainter {
 class _ProductForecastChartPainter extends CustomPainter {
   const _ProductForecastChartPainter({
     required this.points,
+    required this.actualPoints,
     required this.hoverIndex,
   });
 
   final List<ForecastDailyPoint> points;
+  final List<ForecastDailyPoint> actualPoints;
   final int? hoverIndex;
 
   static const _top = 16.0;
@@ -7257,8 +7684,10 @@ class _ProductForecastChartPainter extends CustomPainter {
       1,
       (value, point) => max(value, point.quantity),
     );
-    final step = _forecastNiceStep(maximum / 4);
-    final yMaximum = max(step, (maximum / step).ceil() * step);
+    final actualMaximum = actualPoints.fold<double>(
+      maximum, (value, point) => max(value, point.quantity));
+    final step = _forecastNiceStep(actualMaximum / 4);
+    final yMaximum = max(step, (actualMaximum / step).ceil() * step);
     final innerWidth = max(1.0, size.width - _left - _right);
     final innerHeight = max(1.0, size.height - _top - _bottom);
     double xFor(int index) => points.length == 1
@@ -7310,7 +7739,7 @@ class _ProductForecastChartPainter extends CustomPainter {
       );
     }
 
-    final today = DateTime.now();
+    final today = _manilaToday();
     final todayIndex = points.indexWhere(
       (point) =>
           point.date.year == today.year &&
@@ -7373,6 +7802,27 @@ class _ProductForecastChartPainter extends CustomPainter {
       );
     }
 
+    final actualByDate = {
+      for (final point in actualPoints) _businessDate(point.date): point.quantity,
+    };
+    final actualPaint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    for (var index = 0; index < points.length; index++) {
+      final actual = actualByDate[_businessDate(points[index].date)];
+      if (actual == null) continue;
+      final center = Offset(xFor(index), yFor(actual));
+      if (index > 0) {
+        final previous = actualByDate[_businessDate(points[index - 1].date)];
+        if (previous != null) {
+          canvas.drawLine(Offset(xFor(index - 1), yFor(previous)), center, actualPaint);
+        }
+      }
+      canvas.drawCircle(center, 3.5, Paint()..color = Colors.white);
+      canvas.drawCircle(center, 3.5, Paint()..color = Colors.black);
+    }
+
     final hover = hoverIndex;
     if (hover != null && hover >= 0 && hover < points.length) {
       final hoverPaint = Paint()
@@ -7401,7 +7851,8 @@ class _ProductForecastChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ProductForecastChartPainter oldDelegate) =>
-      oldDelegate.points != points || oldDelegate.hoverIndex != hoverIndex;
+      oldDelegate.points != points || oldDelegate.actualPoints != actualPoints ||
+      oldDelegate.hoverIndex != hoverIndex;
 }
 
 void _drawDashedLine(
@@ -8410,6 +8861,7 @@ class ForecastAnalysisPanel extends StatelessWidget {
   const ForecastAnalysisPanel({
     super.key,
     required this.analysis,
+    this.monitoringChart,
     this.loading = false,
     this.error,
     this.stale = false,
@@ -8425,6 +8877,7 @@ class ForecastAnalysisPanel extends StatelessWidget {
   });
 
   final ForecastAnalysis? analysis;
+  final Widget? monitoringChart;
   final bool loading;
   final String? error;
   final bool stale;
@@ -8440,13 +8893,13 @@ class ForecastAnalysisPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (loading && analysis == null) {
+    if (loading && analysis == null && monitoringChart == null) {
       return const SizedBox(
         height: 360,
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    if (error != null && analysis == null) {
+    if (error != null && analysis == null && monitoringChart == null) {
       return _MessageCard(
         icon: LucideIcons.triangleAlert,
         title: 'Forecast unavailable',
@@ -8457,6 +8910,7 @@ class ForecastAnalysisPanel extends StatelessWidget {
     }
     final value = analysis;
     if (value == null) {
+      if (monitoringChart != null) return monitoringChart!;
       return _MessageCard(
         icon: LucideIcons.chartNoAxesCombined,
         title: emptyTitle,
@@ -8503,7 +8957,7 @@ class ForecastAnalysisPanel extends StatelessWidget {
           ),
         LayoutBuilder(
           builder: (context, constraints) {
-            final forecast = _ForecastCard(
+            final forecast = monitoringChart ?? _ForecastCard(
               analysis: value,
               controls: forecastControls,
               selectedWindow: selectedWindow,
@@ -8634,13 +9088,17 @@ class _ForecastCard extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 20),
-                _ProductForecastChart(
+                _OverviewForecastChart(
                   key: const Key('product-demand-trend'),
-                  points: forecast.daily
+                  forecastPoints: forecast.daily
                       .take(chartDays)
                       .toList(growable: false),
+                  actualPoints: analysis.actualSales.where((actual) =>
+                      forecast.daily.take(chartDays).any((predicted) =>
+                          _businessDate(predicted.date) == _businessDate(actual.date)))
+                      .toList(growable: false),
                   unit: forecast.unit,
-                  synthetic:
+                  includesSimulation:
                       analysis.synthetic ||
                       (analysis.product.sku?.startsWith('SIM-') ?? false),
                   onViewForecastAccuracy: onViewForecastAccuracy,
@@ -8648,6 +9106,8 @@ class _ForecastCard extends StatelessWidget {
                       ? 'No reliable daily forecast is available for this product.'
                       : 'No forecast points were returned.',
                 ),
+                if (analysis.actualSalesError != null) Text(analysis.actualSalesError!,
+                  style: const TextStyle(fontSize: 12, color: Colors.red)),
               ],
             ),
           ),
@@ -8674,7 +9134,7 @@ class _ProductPeriodStrip extends StatelessWidget {
       final compact = MediaQuery.sizeOf(context).width < 640;
       final width = compact ? constraints.maxWidth : constraints.maxWidth / 3;
       final firstPoint = forecast.daily.isEmpty ? null : forecast.daily.first;
-      final now = DateTime.now();
+      final now = _manilaToday();
       final firstPointIsToday =
           firstPoint != null &&
           firstPoint.date.year == now.year &&
@@ -9997,45 +10457,7 @@ class _TrackingAccuracyMainCard extends StatelessWidget {
         ? 'Results available'
         : _trackingEvaluationStatus(monitored);
 
-    final statusColumn = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _TrackingStatusIcon(icon: LucideIcons.hourglass),
-        const SizedBox(height: 12),
-        Text(
-          title,
-          key: !hasItems ? const Key('forecast-performance-empty') : null,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: _trackingInk,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          message,
-          style: const TextStyle(
-            fontSize: 13,
-            height: 1.5,
-            color: _trackingBody,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Operational accuracy: LightGBM only. Comparing all four models requires a separate, fair evaluation.',
-          style: TextStyle(fontSize: 12, height: 1.4, color: _trackingMuted),
-        ),
-        const SizedBox(height: 20),
-        _TrackingAccuracySummary(
-          saved: report.savedRecommendationCount ?? report.items.length,
-          monitored: report.uniqueForecastWindowCount ?? report.items.length,
-          evaluated: evaluated.length,
-          status: status,
-        ),
-      ],
-    );
-    final monitoredColumn = _TrackingMonitoredForecasts(items: monitored);
-
+    // PHASE_3C_LIVE_ACCURACY_DEMO_LAYOUT_V1
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -10043,32 +10465,61 @@ class _TrackingAccuracyMainCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: LayoutBuilder(
-        builder: (context, constraints) {
-          if (constraints.maxWidth < 900) {
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        builder: (context, constraints) => Padding(
+          padding: EdgeInsets.all(constraints.maxWidth < 600 ? 16 : 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  statusColumn,
-                  const SizedBox(height: 24),
-                  monitoredColumn,
+                  Icon(
+                    LucideIcons.chartNoAxesCombined,
+                    color: _trackingAccent,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      key: !hasItems ? const Key('forecast-performance-empty') : null,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: _trackingInk,
+                      ),
+                    ),
+                  ),
                 ],
               ),
-            );
-          }
-          return Padding(
-            padding: const EdgeInsets.all(24),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 10, child: statusColumn),
-                const SizedBox(width: 40),
-                Expanded(flex: 11, child: monitoredColumn),
-              ],
-            ),
-          );
-        },
+              const SizedBox(height: 8),
+              Text(
+                message,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: _trackingBody,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Operational accuracy: LightGBM only. Comparing all four models requires a separate, fair evaluation.',
+                style: TextStyle(fontSize: 12, height: 1.4, color: _trackingMuted),
+              ),
+              const SizedBox(height: 20),
+              _TrackingAccuracySummary(
+                saved: report.savedRecommendationCount ?? report.items.length,
+                monitored: report.uniqueForecastWindowCount ?? report.items.length,
+                evaluated: evaluated.length,
+                status: status,
+              ),
+              const SizedBox(height: 18),
+              const Divider(height: 1, color: _trackingLine),
+              const SizedBox(height: 16),
+              _TrackingMonitoredForecasts(items: monitored),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -10090,6 +10541,7 @@ class _TrackingAccuracySummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
+      // Use the actual API values; no demo values or new calculations.
       final cells = [
         _TrackingAccuracySummaryCell(
           label: 'Saved recommendation records',
@@ -10109,43 +10561,32 @@ class _TrackingAccuracySummary extends StatelessWidget {
           compact: true,
         ),
       ];
-      if (constraints.maxWidth < 680) {
-        return Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: _trackingLine),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            children: [
-              cells[0],
-              const Divider(height: 1, color: _trackingLine),
-              cells[1],
-              const Divider(height: 1, color: _trackingLine),
-              cells[2],
-              const Divider(height: 1, color: _trackingLine),
-              cells[3],
+      if (constraints.maxWidth < 420) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var index = 0; index < cells.length; index++) ...[
+              cells[index],
+              if (index != cells.length - 1)
+                const Divider(height: 1, color: _trackingLine),
             ],
-          ),
+          ],
         );
       }
-      return Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: _trackingLine),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: IntrinsicHeight(
-          child: Row(
-            children: [
-              Expanded(child: cells[0]),
-              const VerticalDivider(width: 1, color: _trackingLine),
-              Expanded(child: cells[1]),
-              const VerticalDivider(width: 1, color: _trackingLine),
-              Expanded(child: cells[2]),
-              const VerticalDivider(width: 1, color: _trackingLine),
-              Expanded(child: cells[3]),
-            ],
-          ),
-        ),
+      if (constraints.maxWidth < 820) {
+        final cellWidth = (constraints.maxWidth - 18) / 2;
+        return Wrap(
+          spacing: 18,
+          runSpacing: 12,
+          children: [
+            for (final cell in cells)
+              SizedBox(width: cellWidth, child: cell),
+          ],
+        );
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [for (final cell in cells) Expanded(child: cell)],
       );
     },
   );
@@ -10164,7 +10605,7 @@ class _TrackingAccuracySummaryCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -10368,23 +10809,21 @@ class _TrackingCompletedAccuracy extends StatelessWidget {
       ),
       const SizedBox(height: 4),
       const Text(
-        'Review completed forecasts and compare predicted demand against actual recorded sales.',
+        'Actual completed-sales evaluations by inventory unit — not restock variance.',
         style: TextStyle(fontSize: 13, color: _trackingMuted),
       ),
       const SizedBox(height: 12),
-      _TrackingAccuracyTableCard(
-        child: items.isEmpty
-            ? const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 22),
-                child: Text(
-                  'No completed forecast evaluations available yet.',
-                  style: TextStyle(fontSize: 13, color: _trackingMuted),
-                ),
-              )
-            : _TrackingCompletedAccuracyTable(items: items),
-      ),
-      if (summaries.isNotEmpty) ...[
-        const SizedBox(height: 14),
+      if (summaries.isEmpty && items.isEmpty)
+        _TrackingAccuracyTableCard(
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 22),
+            child: Text(
+              'No completed forecast evaluations available yet.',
+              style: TextStyle(fontSize: 13, color: _trackingMuted),
+            ),
+          ),
+        )
+      else ...[
         const Text(
           'WAPE and Bias Summary',
           style: TextStyle(
@@ -10395,7 +10834,32 @@ class _TrackingCompletedAccuracy extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _TrackingAccuracyTableCard(
-          child: _TrackingAccuracySummaryTable(summaries: summaries),
+          child: summaries.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                  child: Text('No accuracy summary is available.',
+                    style: TextStyle(fontSize: 12, color: _trackingMuted)),
+                )
+              : _TrackingAccuracySummaryTable(summaries: summaries),
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          'Completed forecast evaluations',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: _trackingInk,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _TrackingAccuracyTableCard(
+          child: items.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                  child: Text('No completed evaluations are available.',
+                    style: TextStyle(fontSize: 12, color: _trackingMuted)),
+                )
+              : _TrackingCompletedAccuracyTable(items: items),
         ),
       ],
     ],
@@ -10550,7 +11014,7 @@ class _TrackingAccuracyTableRow extends StatelessWidget {
         Expanded(
           flex: 24,
           child: header
-              ? const _TrackingHeaderText('Date / Product')
+              ? const _TrackingHeaderText('Saved / Product')
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
