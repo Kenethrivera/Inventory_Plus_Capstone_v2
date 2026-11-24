@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sales Invoice - SPRJ Paint Center</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/config.js"></script>
   <style>
     /* Reset & Base */
     body { 
@@ -196,9 +197,10 @@
 </div>
 
 <script>
-  const SUPABASE_URL = "https://pzotcznujkuzymndluwl.supabase.co"; 
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b3Rjem51amt1enltbmRsdXdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0OTMwMDYsImV4cCI6MjEwNjA2OTAwNn0.OWa1GKXI0rYhlRndI-oMkr9LLccJFj4-LU6YenvdqgY";
-  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const supabaseClient = supabase.createClient(
+    window.INVENTORY_PLUS_PUBLIC_CONFIG.url,
+    window.INVENTORY_PLUS_PUBLIC_CONFIG.anonKey,
+  );
   const urlParams = new URLSearchParams(window.location.search);
   const orderId = urlParams.get('id');
   const queryPaymentMode = urlParams.get('mode') || 'Cash'; // Grab payment mode if passed

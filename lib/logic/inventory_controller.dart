@@ -4225,6 +4225,21 @@ class InventoryController {
     }
   }
 
+  Future<String> customerOrderTrackingToken(String orderId) async {
+    final response = await supabase.rpc(
+      'customer_order_tracking_token_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_order_id': orderId,
+      },
+    );
+    final token = response?.toString() ?? '';
+    if (token.isEmpty) {
+      throw StateError('Order tracking link is unavailable.');
+    }
+    return token;
+  }
+
   Future<void> cancelOrder(CustomerOrder order) async {
     try {
       await supabase.rpc(

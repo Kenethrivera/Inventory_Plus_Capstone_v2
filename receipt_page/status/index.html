@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f7f4">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Track your order · Inventory Plus</title>
+  <style>
+    :root { color-scheme: light; --ink: #211f1d; --muted: #756f69; --line: #e8e1db; --orange: #c83d08; --green: #15803d; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; background: #f8f7f4; color: var(--ink); font: 16px/1.45 Arial, sans-serif; }
+    main { width: min(100% - 32px, 620px); margin: 32px auto 64px; }
+    header { margin-bottom: 22px; }
+    .eyebrow { margin: 0 0 6px; color: var(--orange); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+    h1 { margin: 0; font-size: clamp(27px, 7vw, 36px); line-height: 1.15; }
+    h2 { margin: 0 0 14px; font-size: 19px; }
+    p { margin: 0; }
+    .muted { color: var(--muted); }
+    .card { margin-top: 16px; padding: 22px; background: white; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 5px 18px #33221108; }
+    .card-top, .progress-label, .item { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .order-number { font-size: 21px; font-weight: 700; }
+    .pill { padding: 6px 10px; border-radius: 30px; background: #fff0e7; color: var(--orange); font-size: 13px; font-weight: 700; text-align: right; }
+    .pill.ready, .pill.completed { background: #e9f7ee; color: var(--green); }
+    .pill.cancelled { background: #fce8e5; color: #bd2626; }
+    .stage-list { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 0; }
+    .stage { position: relative; display: flex; gap: 13px; min-height: 51px; color: var(--muted); }
+    .stage:not(:last-child)::after { position: absolute; left: 10px; top: 23px; bottom: 0; width: 2px; background: var(--line); content: ''; }
+    .stage.done:not(:last-child)::after { background: var(--green); }
+    .stage-dot { position: relative; z-index: 1; display: grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 50%; background: #eeeae6; font-size: 12px; font-weight: bold; }
+    .stage.done .stage-dot { background: var(--green); color: white; }
+    .stage.active .stage-dot { background: var(--orange); color: white; }
+    .stage.done, .stage.active { color: var(--ink); font-weight: 700; }
+    .progress-label { margin-bottom: 9px; font-size: 14px; }
+    .progress-track { height: 11px; overflow: hidden; border-radius: 10px; background: #eeeae6; }
+    .progress-fill { width: 0; height: 100%; background: var(--orange); border-radius: inherit; transition: width .3s ease; }
+    .item { padding: 12px 0; border-top: 1px solid var(--line); align-items: flex-start; }
+    .item:first-child { border-top: 0; }
+    .item-name { font-weight: 600; }
+    .item-state { flex: none; color: var(--muted); font-size: 13px; }
+    .item-state.done { color: var(--green); font-weight: 700; }
+    .message { margin-top: 16px; padding: 18px; border-radius: 12px; background: white; border: 1px solid var(--line); }
+    .message.error { color: #a92525; background: #fff6f4; }
+    .footer { margin-top: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; }
+    button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); font: inherit; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    @media (max-width: 460px) { main { margin-top: 22px; } .card { padding: 18px; } .footer { align-items: flex-start; flex-direction: column; } }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/config.js"></script>
+  <script src="./status.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Inventory Plus</p>
+      <h1>Track your order</h1>
+      <p class="muted">Your order's latest progress appears here.</p>
+    </header>
+    <p id="message" class="message" role="status">Loading your order…</p>
+    <div id="order" hidden>
+      <section class="card" aria-label="Order status">
+        <div class="card-top">
+          <div>
+            <p class="muted">Order number</p>
+            <p id="order-number" class="order-number"></p>
+          </div>
+          <span id="status-pill" class="pill"></span>
+        </div>
+        <ol id="stages" class="stage-list" aria-label="Order stages"></ol>
+      </section>
+      <section class="card" aria-label="Item progress">
+        <h2>Item progress</h2>
+        <div class="progress-label"><span>Items prepared</span><strong id="progress-count">0/0</strong></div>
+        <div class="progress-track" role="progressbar" aria-label="Items prepared" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progress-fill" class="progress-fill"></div></div>
+        <div id="items" style="margin-top: 18px"></div>
+      </section>
+      <div class="footer"><span id="last-updated"></span><button id="refresh" type="button">Refresh now</button></div>
+    </div>
+  </main>
+</body>
+</html>

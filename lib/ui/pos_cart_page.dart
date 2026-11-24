@@ -366,6 +366,21 @@ class _PosCartPageState extends State<PosCartPage> {
               ? 'Order submitted for automatic Helper assignment.'
               : 'Order assigned to ${assignedHelper.name}.',
         );
+        try {
+          final token = await widget.controller.customerOrderTrackingToken(
+            createdOrder.id,
+          );
+          if (mounted) _showOrderTrackingQR(createdOrder.id, token);
+        } catch (error, stackTrace) {
+          AppLogger.error(
+            'Order tracking QR unavailable',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          if (mounted) {
+            AppToast.error(context, 'Order saved, but tracking QR is unavailable.');
+          }
+        }
       }
     } catch (e, stackTrace) {
       AppLogger.error(
@@ -3370,6 +3385,68 @@ class _PosCartPageState extends State<PosCartPage> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  void _showOrderTrackingQR(String orderId, String token) {
+    final trackingUrl = Uri.https(
+      'inventoryplusreceipt.netlify.app',
+      '/status/',
+      {'token': token},
+    ).toString();
+    final qrSize = math.min(
+      220.0,
+      math.max(80.0, MediaQuery.sizeOf(context).width - 112),
+    );
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        icon: LucideIcons.qrCode,
+        color: _cashierAccent,
+        title: 'Track this order',
+        subtitle: 'Order #${orderId.substring(0, 8).toUpperCase()}',
+        maxWidth: 420,
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _cashierAccent,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(48),
+            ),
+            child: const Text('Done'),
+          ),
+        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Ask the customer to scan this QR code to see their order progress.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+            QrImageView(
+              key: const ValueKey('customer-order-tracking-qr'),
+              data: trackingUrl,
+              version: QrVersions.auto,
+              size: qrSize,
+              backgroundColor: Colors.white,
+            ),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: trackingUrl));
+                if (dialogContext.mounted) {
+                  AppToast.success(dialogContext, 'Tracking link copied.');
+                }
+              },
+              icon: const Icon(Icons.copy_outlined, size: 17),
+              label: const Text('Copy tracking link'),
+            ),
+          ],
         ),
       ),
     );
