@@ -22,6 +22,7 @@ function fakeElement() {
     append() {},
     replaceChildren() {},
     setAttribute(name, value) { this.attributes[name] = value; },
+    removeAttribute(name) { delete this.attributes[name]; },
     addEventListener(name, callback) { this.listeners[name] = callback; },
   };
 }
@@ -51,10 +52,12 @@ function page(search, rpc) {
 
 test('refreshes one order from preparing to ready with item progress', async () => {
   let status = 'pending';
+  const receiptId = 'b0000000-0000-4000-8000-000000000002';
   const get = page(`?token=${token}`, async () => ({
     data: {
       orderNumber: 'ABC12345',
       status,
+      receiptOrderId: status === 'completed' ? receiptId : null,
       assigned: true,
       createdAt: '2026-11-24T08:00:00Z',
       updatedAt: '2026-11-24T08:01:00Z',
@@ -71,12 +74,19 @@ test('refreshes one order from preparing to ready with item progress', async () 
   assert.equal(get('status-pill').textContent, 'Preparing items');
   assert.equal(get('progress-count').textContent, '1/2');
   assert.equal(get('progress-fill').style.width, '50%');
+  assert.equal(get('view-receipt').hidden, true);
 
   status = 'prepared';
   await get('refresh').listeners.click();
   assert.equal(get('status-pill').textContent, 'Ready for checkout');
   assert.equal(get('progress-count').textContent, '2/2');
   assert.equal(get('progress-fill').style.width, '100%');
+  assert.equal(get('view-receipt').hidden, true);
+
+  status = 'completed';
+  await get('refresh').listeners.click();
+  assert.equal(get('view-receipt').hidden, false);
+  assert.equal(get('view-receipt').href, '/?id=' + receiptId);
 });
 
 test('rejects an invalid tracking link before querying', () => {

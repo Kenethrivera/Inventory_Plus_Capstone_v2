@@ -286,7 +286,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
 
   Future<bool> _open(CustomerOrder order) async {
     if (_busy || _clockBusy) return false;
-    if (order.truckIdentifier == null || order.bodegeroNote == null) {
+    if (order.truckIdentifier == null) {
       try {
         await widget.controller.retryOrdersSnapshot();
       } catch (_) {
@@ -352,10 +352,12 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     });
     final presence = widget.presenceService;
     if (presence != null) {
-      unawaited(presence.setWorkMode(
-        _tabIndex == 0 ? staffLoadingModule : null,
-        orderId: _tabIndex == 0 ? order.id : null,
-      ));
+      unawaited(
+        presence.setWorkMode(
+          _tabIndex == 0 ? staffLoadingModule : null,
+          orderId: _tabIndex == 0 ? order.id : null,
+        ),
+      );
     }
     return true;
   }
@@ -959,58 +961,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     );
   }
 
-  Widget _openCard(CustomerOrder order) {
-    final items = _heavyItems(order);
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: _busy || _clockBusy ? null : () => unawaited(_open(order)),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            border: Border.all(color: _line),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _shortId(order),
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        fontFamily: _font,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      '${items.length} heavy ${items.length == 1 ? 'item' : 'items'} · ${items.map((item) => item.productName).join(', ')}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _muted,
-                        fontSize: 12,
-                        fontFamily: _font,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Icon(LucideIcons.chevronRight, size: 18, color: _orange),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _queue(List<CustomerOrder> orders) {
     final myId = widget.controller.currentUserId;
     final matching = orders
@@ -1026,14 +976,10 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     final assigned = matching
         .where((order) => order.assignedBodegeroId == myId)
         .toList(growable: false);
-    final open = matching
-        .where((order) => order.assignedBodegeroId == null)
-        .toList(growable: false);
-
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth >= 900) {
-          return _desktopQueue(assigned, open);
+          return _desktopQueue(assigned);
         }
         final compact = constraints.maxWidth < 600;
         return ListView(
@@ -1116,49 +1062,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                       _assignedCard(order),
                       const SizedBox(height: 12),
                     ],
-                    const SizedBox(height: 32),
-                    Row(
-                      children: [
-                        const Text(
-                          'Open orders',
-                          style: TextStyle(
-                            color: _ink,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            fontFamily: _font,
-                          ),
-                        ),
-                        const SizedBox(width: 7),
-                        Text(
-                          '${open.length}',
-                          style: const TextStyle(
-                            color: _muted,
-                            fontSize: 17,
-                            fontFamily: _font,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Open an unassigned heavy order to start loading.',
-                      style: TextStyle(
-                        color: _muted,
-                        fontSize: 13,
-                        fontFamily: _font,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (open.isEmpty)
-                      _emptyCard(
-                        _search.isNotEmpty
-                            ? 'No open orders match your search.'
-                            : 'No open orders.',
-                      ),
-                    for (final order in open) ...[
-                      _openCard(order),
-                      const SizedBox(height: 10),
-                    ],
                   ],
                 ),
               ),
@@ -1169,10 +1072,7 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
     );
   }
 
-  Widget _desktopQueue(
-    List<CustomerOrder> assigned,
-    List<CustomerOrder> open,
-  ) => ListView(
+  Widget _desktopQueue(List<CustomerOrder> assigned) => ListView(
     padding: const EdgeInsets.fromLTRB(48, 48, 48, 64),
     children: [
       Center(
@@ -1249,32 +1149,6 @@ class _BodegeroQueuePageState extends State<BodegeroQueuePage> {
                     );
                   },
                 ),
-              if (open.isNotEmpty) ...[
-                const SizedBox(height: 40),
-                Text(
-                  'Open orders ${open.length}',
-                  style: const TextStyle(
-                    color: _ink,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    fontFamily: _font,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final cardWidth = (constraints.maxWidth - 20) / 2;
-                    return Wrap(
-                      spacing: 20,
-                      runSpacing: 20,
-                      children: [
-                        for (final order in open)
-                          SizedBox(width: cardWidth, child: _openCard(order)),
-                      ],
-                    );
-                  },
-                ),
-              ],
             ],
           ),
         ),

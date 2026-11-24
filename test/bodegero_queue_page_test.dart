@@ -638,43 +638,41 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Opening an unassigned loading order claims and opens it', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(390, 844));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final openOrder = CustomerOrder.fromJson({
-      'id': 'open-123456',
-      'status': 'pending',
-      'created_at': '2026-11-14T08:00:00Z',
-      'items': [
-        {
-          'product_id': 'cement-1',
-          'product_name': 'Cement',
-          'quantity': 2,
-          'requires_loading': true,
-        },
-      ],
+  for (final size in [const Size(390, 844), const Size(1280, 800)]) {
+    testWidgets('Unassigned Bodegero orders are hidden at ${size.width}px', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(size);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final openOrder = CustomerOrder.fromJson({
+        'id': 'open-123456',
+        'status': 'pending',
+        'created_at': '2026-11-14T08:00:00Z',
+        'items': [
+          {
+            'product_id': 'cement-1',
+            'product_name': 'Cement',
+            'quantity': 2,
+            'requires_loading': true,
+          },
+        ],
+      });
+      final controller = _ClaimQueueController(openOrder);
+      addTearDown(controller.updates.close);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BodegeroQueuePage(controller: controller, onLogout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your loading orders'), findsOneWidget);
+      expect(find.textContaining('Open orders'), findsNothing);
+      expect(find.text('#OPEN-123'), findsNothing);
+      expect(controller.claimCount, 0);
+      expect(tester.takeException(), isNull);
     });
-    final controller = _ClaimQueueController(openOrder);
-    addTearDown(controller.updates.close);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: BodegeroQueuePage(controller: controller, onLogout: () {}),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Claim'), findsNothing);
-
-    await tester.tap(find.text('#OPEN-123'));
-    await tester.pumpAndSettle();
-
-    expect(controller.claimCount, 1);
-    expect(controller.clockCount, 1);
-    expect(controller.claimedOrder?.assignedBodegeroId, 'bodegero-1');
-    expect(find.text('Load onto truck'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+  }
 
   testWidgets('Available Bodegero claims a pending order after login', (
     tester,
@@ -762,7 +760,9 @@ void main() {
     expect(find.text('Start loading'), findsNWidgets(2));
   });
 
-  testWidgets('A lost claim leaves the order unopened', (tester) async {
+  testWidgets('A failed automatic claim leaves the order out of the queue', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final openOrder = CustomerOrder.fromJson({
@@ -779,19 +779,23 @@ void main() {
       ],
     });
     final controller = _ClaimQueueController(openOrder)..failClaim = true;
+    final presence = _Presence();
     addTearDown(controller.updates.close);
+    addTearDown(presence.dispose);
     await tester.pumpWidget(
       MaterialApp(
-        home: BodegeroQueuePage(controller: controller, onLogout: () {}),
+        home: BodegeroQueuePage(
+          controller: controller,
+          presenceService: presence,
+          onLogout: () {},
+        ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('#OPEN-123'));
-    await tester.pumpAndSettle();
-
     expect(controller.claimCount, 1);
     expect(controller.clockCount, 0);
+    expect(find.text('#OPEN-123'), findsNothing);
     expect(find.text('Load onto truck'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -820,9 +824,8 @@ void main() {
         MediaQuery.sizeOf(tester.element(find.byType(BodegeroQueuePage))).width,
         size.width,
       );
-      if (size.width < 900) {
-        expect(find.text('Open orders'), findsOneWidget);
-      } else {
+      expect(find.textContaining('Open orders'), findsNothing);
+      if (size.width >= 900) {
         expect(find.text('Queue'), findsOneWidget);
         expect(find.text('Map'), findsOneWidget);
         expect(find.text('History'), findsOneWidget);

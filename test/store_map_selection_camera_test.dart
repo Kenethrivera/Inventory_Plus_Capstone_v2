@@ -38,6 +38,66 @@ void main() {
     );
   });
 
+  testWidgets('first loaded layout fits the mobile map viewport', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = InventoryController();
+    final mapKey = GlobalKey<StoreMapState>();
+    Widget mapWith(List<MapElement> layout) => MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 390,
+          height: 640,
+          child: StoreMap(
+            key: mapKey,
+            controller: controller,
+            layout: layout,
+            mode: MapMode.view,
+            viewStyle: MapViewStyle.twoD,
+            fitEntireMap: true,
+            showZoomControls: false,
+            showMobileToolbar: false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(mapWith(const []));
+    await tester.pump();
+    final viewer = tester.widget<InteractiveViewer>(
+      find.byType(InteractiveViewer),
+    );
+    final transform = viewer.transformationController!;
+    final emptyScale = transform.value.getMaxScaleOnAxis();
+
+    await tester.pumpWidget(
+      mapWith([
+        MapElement(
+          id: 'wall-1',
+          type: ElementType.wall,
+          position: const Offset(1000, 80),
+          size: const Size(1000, 15),
+        ),
+      ]),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final fittedScale = transform.value.getMaxScaleOnAxis();
+    final viewportWidth = tester.getSize(find.byType(InteractiveViewer)).width;
+    expect(fittedScale, lessThan(emptyScale));
+    expect(2080 * fittedScale, lessThanOrEqualTo(viewportWidth));
+    expect(
+      transform.value.entry(0, 3),
+      closeTo((viewportWidth - 2080 * fittedScale) / 2, 0.01),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('2D shelf labels and counts stay upright when rotated', (
     tester,
   ) async {

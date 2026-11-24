@@ -131,7 +131,42 @@ void main() {
     expect(controller.order.assignedHelperId, 'helper-1');
     expect(find.text('Assigned to you'), findsOneWidget);
     expect(find.text('Claim'), findsNothing);
+    expect(find.text('Open orders'), findsNothing);
   });
+
+  for (final size in [const Size(390, 844), const Size(1280, 800)]) {
+    testWidgets('Unassigned Helper orders are hidden at ${size.width}px', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(size);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final controller = _HelperController(
+        CustomerOrder.fromJson({
+          'id': 'open-order-1',
+          'status': 'pending',
+          'created_at': '2026-11-14T08:00:00Z',
+          'items': [
+            {
+              'product_id': 'brush-1',
+              'product_name': 'Brush',
+              'quantity': 1,
+              'requires_loading': false,
+            },
+          ],
+        }),
+      );
+      addTearDown(controller.updates.close);
+      await tester.pumpWidget(
+        MaterialApp(home: OrderQueuePage(controller: controller)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Open orders'), findsNothing);
+      expect(find.text('#OPEN-ORD'), findsNothing);
+      expect(controller.claimCount, 0);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('Desktop Helper queue uses the Bodegero-style order cards', (
     tester,
@@ -173,6 +208,7 @@ void main() {
     expect(find.text('Brush'), findsOneWidget);
     expect(find.text('Prepare order'), findsOneWidget);
     expect(find.text('Order queue'), findsNothing);
+    expect(find.text('Open orders'), findsNothing);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('Prepare order'));

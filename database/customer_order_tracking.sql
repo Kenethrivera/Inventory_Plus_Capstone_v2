@@ -76,6 +76,7 @@ grant execute on function public.customer_order_tracking_token_v1(text, uuid)
 
 -- A customer with the unguessable QR token receives only order status data.
 -- No payment, staff, location, customer, or full order row is returned.
+-- The receipt ID is supplied only after completion.
 create or replace function public.customer_order_status_v1(p_token uuid)
 returns jsonb
 language plpgsql
@@ -110,6 +111,8 @@ begin
     'updatedAt', v_order.updated_at,
     'preparedAt', v_order.prepared_at,
     'completedAt', v_order.completed_at,
+    'receiptOrderId', case when v_order.status = 'completed'
+      then v_order.id::text else null end,
     'assigned', v_order.assigned_helper_id is not null
       or v_order.assigned_bodegero_id is not null,
     'items', v_items

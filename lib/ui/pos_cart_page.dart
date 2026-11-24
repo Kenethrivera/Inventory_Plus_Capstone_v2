@@ -241,10 +241,8 @@ class _PosCartPageState extends State<PosCartPage> {
 
   Future<void> _processOrder() async {
     if (_cart.isEmpty || _isProcessingCart) return;
-    if (_cartHasHeavyItems &&
-        (_truckIdentifierController.text.trim().isEmpty ||
-            _bodegeroNoteController.text.trim().isEmpty)) {
-      AppToast.error(context, 'Add the truck identifier and Bodegero note.');
+    if (_cartHasHeavyItems && _truckIdentifierController.text.trim().isEmpty) {
+      AppToast.error(context, 'Add the truck identifier.');
       return;
     }
     final subtotalBeforeDiscount = _calculateTotal();
@@ -1211,7 +1209,7 @@ class _PosCartPageState extends State<PosCartPage> {
                   ),
                   const SizedBox(height: 5),
                   const Text(
-                    'Send the truck identifier and loading note to Bodegero.',
+                    'Send the truck identifier to Bodegero. Add a note if needed.',
                     style: TextStyle(fontSize: 13, color: Color(0xFF655C56)),
                   ),
                   const SizedBox(height: 16),
@@ -1239,7 +1237,7 @@ class _PosCartPageState extends State<PosCartPage> {
                     maxLines: 3,
                     onChanged: (_) => updateDialog(() => error = null),
                     decoration: InputDecoration(
-                      labelText: 'Note to Bodegero',
+                      labelText: 'Note to Bodegero (optional)',
                       hintText: 'What should be loaded and verified?',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -1272,11 +1270,9 @@ class _PosCartPageState extends State<PosCartPage> {
                         ),
                       ),
                       onPressed: () {
-                        if (truckDraft.text.trim().isEmpty ||
-                            noteDraft.text.trim().isEmpty) {
+                        if (truckDraft.text.trim().isEmpty) {
                           updateDialog(
-                            () => error =
-                                'Enter both the truck identifier and note.',
+                            () => error = 'Enter the truck identifier.',
                           );
                           return;
                         }
@@ -3326,14 +3322,9 @@ class _PosCartPageState extends State<PosCartPage> {
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: () {
+                          onPressed: () async {
                             Navigator.pop(context);
-                            _showQRModal(
-                              o.id,
-                              paymentMode: paymentMode,
-                              cashReceived: cashReceived,
-                              change: change,
-                            );
+                            await _showTrackingQRForOrder(o.id);
                           },
                           icon: const Icon(
                             LucideIcons.qrCode,
@@ -3341,7 +3332,7 @@ class _PosCartPageState extends State<PosCartPage> {
                             size: 16,
                           ),
                           label: const Text(
-                            'Digital QR',
+                            'Tracking QR',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -3452,141 +3443,20 @@ class _PosCartPageState extends State<PosCartPage> {
     );
   }
 
-  void _showQRModal(
-    String orderId, {
-    String? paymentMode,
-    double? cashReceived,
-    double? change,
-  }) {
-    String publicReceiptUrl =
-        "https://inventoryplusreceipt.netlify.app/?id=$orderId";
-
-    if (paymentMode != null) {
-      publicReceiptUrl += "&mode=${Uri.encodeComponent(paymentMode)}";
+  Future<void> _showTrackingQRForOrder(String orderId) async {
+    try {
+      final token = await widget.controller.customerOrderTrackingToken(orderId);
+      if (mounted) _showOrderTrackingQR(orderId, token);
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Order tracking QR unavailable',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        AppToast.error(context, 'Tracking QR is unavailable right now.');
+      }
     }
-    if (cashReceived != null && cashReceived > 0) {
-      publicReceiptUrl += "&cash=${cashReceived.toStringAsFixed(2)}";
-    }
-    if (change != null && change > 0) {
-      publicReceiptUrl += "&change=${change.toStringAsFixed(2)}";
-    }
-    final previewQrSize = math.min(
-      200.0,
-      math.max(80.0, MediaQuery.sizeOf(context).width - 112),
-    );
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AppDialog(
-        icon: LucideIcons.qrCode,
-        color: _cashierAccent,
-        title: 'Scan Digital Receipt',
-        subtitle: 'Order #${orderId.substring(0, 8).toUpperCase()}',
-        maxWidth: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF3CD),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFFFEEBA)),
-              ),
-              child: const Text(
-                '⚠️ This receipt will expire after 1 month. Ask customer to screenshot.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF856404),
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Center(
-              child: InkWell(
-                onTap: () => _showReceiptQRZoom(publicReceiptUrl, orderId),
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: QrImageView(
-                    data: publicReceiptUrl,
-                    version: QrVersions.auto,
-                    size: previewQrSize,
-                    backgroundColor: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Click the QR code to enlarge',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: _cashierMuted, fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _cashierAccent,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              minimumSize: const Size.fromHeight(48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showReceiptQRZoom(String receiptUrl, String orderId) {
-    final screen = MediaQuery.sizeOf(context);
-    final qrSize = math.max(
-      80.0,
-      math.min(520.0, math.min(screen.width - 112, screen.height - 250)),
-    );
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AppDialog(
-        icon: LucideIcons.qrCode,
-        color: _cashierAccent,
-        title: 'Digital Receipt QR',
-        subtitle: 'Order #${orderId.substring(0, 8).toUpperCase()}',
-        maxWidth: 620,
-        child: Center(
-          child: QrImageView(
-            data: receiptUrl,
-            version: QrVersions.auto,
-            size: qrSize,
-            backgroundColor: Colors.white,
-          ),
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _cashierAccent,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              minimumSize: const Size.fromHeight(48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
   }
 
   void _showPendingOrdersModal(BuildContext context, {String? targetOrderId}) {

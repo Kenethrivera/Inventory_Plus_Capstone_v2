@@ -11,6 +11,7 @@
     :root { color-scheme: light; --ink: #211f1d; --muted: #756f69; --line: #e8e1db; --orange: #c83d08; --green: #15803d; }
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
+    [hidden] { display: none !important; }
     body { margin: 0; background: #f8f7f4; color: var(--ink); font: 16px/1.45 Arial, sans-serif; }
     main { width: min(100% - 32px, 620px); margin: 32px auto 64px; }
     header { margin-bottom: 22px; }
@@ -44,6 +45,8 @@
     .message { margin-top: 16px; padding: 18px; border-radius: 12px; background: white; border: 1px solid var(--line); }
     .message.error { color: #a92525; background: #fff6f4; }
     .footer { margin-top: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; }
+    .receipt-link { display: block; margin-top: 16px; padding: 14px 18px; border-radius: 10px; background: var(--orange); color: white; font-weight: 700; text-align: center; text-decoration: none; }
+    .receipt-link:hover, .receipt-link:focus-visible { background: #a93508; }
     button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); font: inherit; cursor: pointer; }
     button:disabled { opacity: .6; cursor: wait; }
     @media (max-width: 460px) { main { margin-top: 22px; } .card { padding: 18px; } .footer { align-items: flex-start; flex-direction: column; } }
@@ -77,6 +80,7 @@
         <div class="progress-track" role="progressbar" aria-label="Items prepared" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progress-fill" class="progress-fill"></div></div>
         <div id="items" style="margin-top: 18px"></div>
       </section>
+      <a id="view-receipt" class="receipt-link" target="_blank" rel="noopener noreferrer" hidden>View Receipt</a>
       <div class="footer"><span id="last-updated"></span><button id="refresh" type="button">Refresh now</button></div>
     </div>
   </main>

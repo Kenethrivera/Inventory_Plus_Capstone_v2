@@ -160,6 +160,8 @@ class StoreMapState extends State<StoreMap>
   final TransformationController _transformationController =
       TransformationController();
   bool _isInitialScaleSet = false;
+  bool _hasFittedPopulatedLayout = false;
+  String? _fittedLocationId;
   bool _hasAppliedInitialTransform = false;
   MapElement? _selectedPopupElement;
 
@@ -326,6 +328,9 @@ class StoreMapState extends State<StoreMap>
       ..translate(dx, dy)
       ..scale(scale);
     _hasAppliedInitialTransform = true;
+    if (widget.fitEntireMap && !preserveScale && _layout.isNotEmpty) {
+      _hasFittedPopulatedLayout = true;
+    }
   }
   // -----------------------------------------------
 
@@ -2296,6 +2301,11 @@ class StoreMapState extends State<StoreMap>
 
     Widget map = LayoutBuilder(
       builder: (context, constraints) {
+        final locationId = widget.controller.activeLocationId;
+        if (_fittedLocationId != locationId || _layout.isEmpty) {
+          _fittedLocationId = locationId;
+          _hasFittedPopulatedLayout = false;
+        }
         final nextViewport = Size(constraints.maxWidth, constraints.maxHeight);
         final viewportChanged =
             _currentViewportSize != Size.zero &&
@@ -2333,7 +2343,10 @@ class StoreMapState extends State<StoreMap>
               _pendingBoundsRecenter = false;
               if (!mounted || _cameraSwitchPending) return;
               if (boundsChanged) {
-                _recenterMap(preserveScale: true);
+                _recenterMap(
+                  preserveScale:
+                      !widget.fitEntireMap || _hasFittedPopulatedLayout,
+                );
               } else if (beforeResize != null) {
                 final offset = Offset(
                   (_currentViewportSize.width - beforeResize.width) / 2,

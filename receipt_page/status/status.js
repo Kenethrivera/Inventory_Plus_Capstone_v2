@@ -3,7 +3,8 @@
 
   const $ = id => document.getElementById(id);
   const token = new URLSearchParams(window.location.search).get('token');
-  const validToken = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token || '');
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const validToken = uuidPattern.test(token || '');
   const config = window.INVENTORY_PLUS_PUBLIC_CONFIG;
   const client = config && window.supabase
     ? window.supabase.createClient(config.url, config.anonKey)
@@ -45,6 +46,11 @@
     $('order-number').textContent = '#' + String(order.orderNumber || '');
     $('status-pill').textContent = statusText;
     $('status-pill').className = 'pill ' + (cancelled ? 'cancelled' : stage === 3 ? 'completed' : stage === 2 ? 'ready' : '');
+    const receiptLink = $('view-receipt');
+    const receiptAvailable = status === 'completed' && uuidPattern.test(order.receiptOrderId || '');
+    receiptLink.hidden = !receiptAvailable;
+    if (receiptAvailable) receiptLink.href = '/?id=' + encodeURIComponent(order.receiptOrderId);
+    else receiptLink.removeAttribute('href');
 
     const stages = document.createDocumentFragment();
     labels.forEach((label, index) => {

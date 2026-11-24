@@ -59,7 +59,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   final Map<String, Set<String>> _pickedTracker = {};
   bool _progressSyncWarningShown = false;
-  final Set<String> _claimingOrderIds = <String>{};
   StreamSubscription<List<CustomerOrder>>? _autoClaimSubscription;
   bool _autoClaimInFlight = false;
   bool _autoClaimQueued = false;
@@ -220,7 +219,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   }
 
   bool _openAssignedOrderChecklist(CustomerOrder order) {
-
     final CustomerOrder? latestOrder = widget.controller.orderById(order.id);
 
     if (latestOrder == null ||
@@ -284,24 +282,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
         date.day == now.day;
   }
 
-  Future<void> _claimOrder(CustomerOrder order) async {
-    if (_claimingOrderIds.contains(order.id)) return;
-    setState(() => _claimingOrderIds.add(order.id));
-    final claimed = await widget.controller.claimOrderForCurrentHelper(
-      order.id,
-    );
-    if (!mounted) return;
-    setState(() => _claimingOrderIds.remove(order.id));
-    if (!claimed) {
-      AppToast.error(
-        context,
-        'This order could not be claimed. It may already be assigned.',
-      );
-    } else {
-      _openAssignedOrderChecklist(order);
-    }
-  }
-
   String _mobileOrderId(CustomerOrder order) {
     final id = order.id.trim();
     return '#${(id.length <= 8 ? id : id.substring(0, 8)).toUpperCase()}';
@@ -324,7 +304,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
 
   Widget _buildMobileQueue({
     required List<CustomerOrder> assignedOrders,
-    required List<CustomerOrder> openOrders,
     required int doneToday,
   }) {
     const ink = Color(0xFF171717);
@@ -374,56 +353,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
         for (final order in assignedOrders) ...[
           _mobileAssignedCard(order),
           const SizedBox(height: 12),
-        ],
-        const SizedBox(height: 32),
-        Row(
-          children: [
-            const Text(
-              'Open orders',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: ink,
-                fontFamily: _fontFam,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '${openOrders.length}',
-              style: const TextStyle(
-                fontSize: 17,
-                color: muted,
-                fontFamily: _fontFam,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 3),
-        const Text(
-          'Unassigned orders are added to your queue automatically.',
-          style: TextStyle(fontSize: 13, color: muted, fontFamily: _fontFam),
-        ),
-        const SizedBox(height: 16),
-        if (openOrders.isEmpty)
-          Container(
-            height: 65,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEDEBE7),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Text(
-              'No open orders.',
-              style: TextStyle(
-                color: muted,
-                fontSize: 14,
-                fontFamily: _fontFam,
-              ),
-            ),
-          ),
-        for (final order in openOrders) ...[
-          _mobileOpenCard(order),
-          const SizedBox(height: 10),
         ],
       ],
     );
@@ -557,63 +486,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                   ),
                   const Icon(LucideIcons.chevronRight, size: 18, color: orange),
                 ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _mobileOpenCard(CustomerOrder order) {
-    final claiming = _claimingOrderIds.contains(order.id);
-    final total = order.items.where((item) => !item.requiresLoading).length;
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: claiming ? null : () => unawaited(_claimOrder(order)),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFE1DCD5)),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _mobileOrderId(order),
-                      style: const TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF171717),
-                        fontFamily: _fontFam,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      '$total ${total == 1 ? 'item' : 'items'}${_mobileOrderLocations(order)} · ${_timeAgo(order.createdAt)}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF736B65),
-                        fontFamily: _fontFam,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Icon(
-                LucideIcons.chevronRight,
-                size: 18,
-                color: Color(0xFFC83D08),
               ),
             ],
           ),
@@ -870,17 +742,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
               .length;
 
           if (isCompact) {
-            final openOrders =
-                _cachedOrders
-                    .where(
-                      (order) =>
-                          order.status == 'pending' &&
-                          order.items.any((item) => !item.requiresLoading) &&
-                          (order.assignedHelperId == null ||
-                              order.assignedHelperId!.trim().isEmpty),
-                    )
-                    .toList()
-                  ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
             final doneToday = _cachedOrders
                 .where(
                   (order) =>
@@ -891,7 +752,6 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                 .length;
             return _buildMobileQueue(
               assignedOrders: pendingOrders,
-              openOrders: openOrders,
               doneToday: doneToday,
             );
           }
@@ -1101,7 +961,10 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                           _searchQuery.trim().isEmpty
                               ? 'No orders are assigned to you right now.'
                               : 'No assigned orders match your search.',
-                          style: const TextStyle(color: _helperMuted, fontFamily: _fontFam),
+                          style: const TextStyle(
+                            color: _helperMuted,
+                            fontFamily: _fontFam,
+                          ),
                         ),
                       ),
                     )
@@ -1134,7 +997,9 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
   Widget _buildDesktopOrderCard(CustomerOrder order) {
     final items = order.items.where((item) => !item.requiresLoading).toList();
     final pickedIds = _pickedIds(order);
-    final pickedCount = items.where((item) => pickedIds.contains(item.productId)).length;
+    final pickedCount = items
+        .where((item) => pickedIds.contains(item.productId))
+        .length;
     final progress = OrderWorkProgress.fromOrder(order);
     final id = order.id.toString().toUpperCase();
     final shortId = id.length > 8 ? id.substring(0, 8) : id;
@@ -1168,7 +1033,10 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFE5F0FF),
                       borderRadius: BorderRadius.circular(99),
@@ -1190,13 +1058,21 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                 items.map((item) => item.productName).join(', '),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: _helperMuted, fontSize: 14, fontFamily: _fontFam),
+                style: const TextStyle(
+                  color: _helperMuted,
+                  fontSize: 14,
+                  fontFamily: _fontFam,
+                ),
               ),
               if (progress.isMixed) ...[
                 const SizedBox(height: 8),
                 Text(
                   'Shared order · Bodegero: ${progress.bodegeroSummary}',
-                  style: const TextStyle(color: _helperMuted, fontSize: 12, fontFamily: _fontFam),
+                  style: const TextStyle(
+                    color: _helperMuted,
+                    fontSize: 12,
+                    fontFamily: _fontFam,
+                  ),
                 ),
               ],
               const SizedBox(height: 18),
@@ -1216,7 +1092,11 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                   const SizedBox(width: 12),
                   Text(
                     '$pickedCount/${items.length} picked',
-                    style: const TextStyle(color: _helperMuted, fontSize: 12, fontFamily: _fontFam),
+                    style: const TextStyle(
+                      color: _helperMuted,
+                      fontSize: 12,
+                      fontFamily: _fontFam,
+                    ),
                   ),
                 ],
               ),
@@ -1234,7 +1114,11 @@ class _OrderQueuePageState extends State<OrderQueuePage> {
                       ),
                     ),
                   ),
-                  const Icon(LucideIcons.chevronRight, size: 18, color: _helperOrange),
+                  const Icon(
+                    LucideIcons.chevronRight,
+                    size: 18,
+                    color: _helperOrange,
+                  ),
                 ],
               ),
             ],
@@ -2227,8 +2111,9 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
     final walkingItems = _walkingOrderItems();
     final pickStopMarkers = <PickStopMarker>[];
     for (var i = 0; i < walkingItems.length; i++) {
-      final locationId =
-          controller.findAnyItemById(walkingItems[i].productId)?.locationId;
+      final locationId = controller
+          .findAnyItemById(walkingItems[i].productId)
+          ?.locationId;
       if (locationId != null && locationId.isNotEmpty) {
         pickStopMarkers.add(
           PickStopMarker(
@@ -2247,7 +2132,8 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
     final nextItems = walkingItems.where(
       (item) => !pickedItems.contains(item.productId),
     );
-    final highlightedProductId = _focusedProductId ??
+    final highlightedProductId =
+        _focusedProductId ??
         (nextItems.isEmpty ? null : nextItems.first.productId);
     final highlightedLocationId = highlightedProductId == null
         ? null
@@ -2267,8 +2153,7 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                 IconButton(
                   tooltip: 'Back to queue',
                   onPressed: onBack,
-                  icon: const Icon(LucideIcons.arrowLeft,
-                      color: _helperInk),
+                  icon: const Icon(LucideIcons.arrowLeft, color: _helperInk),
                 ),
                 const SizedBox(width: 18),
                 Expanded(
@@ -2336,8 +2221,7 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                               children: [
                                 Wrap(
                                   alignment: WrapAlignment.spaceBetween,
-                                  crossAxisAlignment:
-                                      WrapCrossAlignment.center,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   spacing: 12,
                                   runSpacing: 12,
                                   children: [
@@ -2398,11 +2282,14 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                                       for (final marker in pickStopMarkers)
                                         Container(
                                           padding: const EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 7),
+                                            horizontal: 10,
+                                            vertical: 7,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: const Color(0xFFF6F5F2),
-                                            borderRadius:
-                                                BorderRadius.circular(18),
+                                            borderRadius: BorderRadius.circular(
+                                              18,
+                                            ),
                                           ),
                                           child: Text(
                                             '${marker.number}. ${marker.label ?? 'Pick stop'}',
@@ -2467,9 +2354,11 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                                 ),
                                 const SizedBox(height: 16),
                               ],
-                              for (var index = 0;
-                                  index < walkingItems.length;
-                                  index++)
+                              for (
+                                var index = 0;
+                                index < walkingItems.length;
+                                index++
+                              )
                                 // Same scanning/verifying card as mobile.
                                 _buildMobilePickCard(
                                   context,
@@ -2516,14 +2405,13 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
                     order.status == 'prepared'
                         ? 'Order ready · Back to queue'
                         : _isSubmittingPreparation
-                            ? 'Saving preparation…'
-                            : remaining == 0
-                                ? order.items.any(
-                                            (item) => item.requiresLoading) &&
-                                        order.loadingVerifiedAt == null
-                                    ? 'Finish light items'
-                                    : 'Finish preparing'
-                                : 'Scan $remaining more to finish',
+                        ? 'Saving preparation…'
+                        : remaining == 0
+                        ? order.items.any((item) => item.requiresLoading) &&
+                                  order.loadingVerifiedAt == null
+                              ? 'Finish light items'
+                              : 'Finish preparing'
+                        : 'Scan $remaining more to finish',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -2544,15 +2432,15 @@ class _OrderChecklistPageState extends State<OrderChecklistPage> {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, constraints) {
-          // Smaller laptops and tablets use the existing stacked mobile
-          // composition instead of squeezing the map and scan list together.
-          if (constraints.maxWidth < 900) {
-            return _buildMobileChecklist(context);
-          }
-          return _buildDesktopPickingChecklist(context);
-        },
-      );
+    builder: (context, constraints) {
+      // Smaller laptops and tablets use the existing stacked mobile
+      // composition instead of squeezing the map and scan list together.
+      if (constraints.maxWidth < 900) {
+        return _buildMobileChecklist(context);
+      }
+      return _buildDesktopPickingChecklist(context);
+    },
+  );
 }
 
 class _ChecklistItemCard extends StatelessWidget {
