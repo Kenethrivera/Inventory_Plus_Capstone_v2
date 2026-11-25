@@ -130,4 +130,98 @@ void main() {
     expect(layout[1].position, const Offset(170, 140));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('door crossing a perpendicular wall is invalid', (tester) async {
+    final mapKey = GlobalKey<StoreMapState>();
+    final door = MapElement(
+      id: 'door-1',
+      type: ElementType.door,
+      position: const Offset(110, 100),
+      size: const Size(80, 15),
+    );
+    final layout = <MapElement>[
+      MapElement(
+        id: 'horizontal-wall',
+        type: ElementType.wall,
+        position: const Offset(100, 100),
+        size: const Size(260, 15),
+      ),
+      MapElement(
+        id: 'vertical-wall',
+        type: ElementType.wall,
+        position: const Offset(210, 40),
+        size: const Size(15, 200),
+      ),
+      door,
+    ];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: StoreMap(
+        key: mapKey,
+        controller: InventoryController(),
+        layout: layout,
+        mode: MapMode.manage,
+        viewStyle: MapViewStyle.twoD,
+        showZoomControls: false,
+        showMobileToolbar: false,
+      )),
+    ));
+    await tester.pump();
+
+    expect(mapKey.currentState!.canUpdateElement(door), isTrue);
+    expect(
+      mapKey.currentState!.canUpdateElement(
+        door.copyWith(position: const Offset(170, 100)),
+      ),
+      isFalse,
+    );
+  });
+
+  testWidgets('wall nudge stops at a door on another wall', (tester) async {
+    final mapKey = GlobalKey<StoreMapState>();
+    final door = MapElement(
+      id: 'door-1',
+      type: ElementType.door,
+      position: const Offset(170, 100),
+      size: const Size(80, 15),
+    );
+    final movingWall = MapElement(
+      id: 'moving-wall',
+      type: ElementType.wall,
+      position: const Offset(300, 40),
+      size: const Size(15, 200),
+    );
+    final layout = <MapElement>[
+      MapElement(
+        id: 'door-wall',
+        type: ElementType.wall,
+        position: const Offset(100, 100),
+        size: const Size(300, 15),
+      ),
+      door,
+      movingWall,
+    ];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: StoreMap(
+        key: mapKey,
+        controller: InventoryController(),
+        layout: layout,
+        mode: MapMode.manage,
+        viewStyle: MapViewStyle.twoD,
+        showZoomControls: false,
+        showMobileToolbar: false,
+      )),
+    ));
+    await tester.pump();
+
+    mapKey.currentState!.selectManageElement('moving-wall');
+    mapKey.currentState!.applySidebarAction(
+      MapSidebarAction.left,
+      nudgeDistance: 80,
+    );
+    await tester.pump();
+
+    expect(movingWall.position.dx, closeTo(250, 0.01));
+    expect(door.position, const Offset(170, 100));
+    expect(tester.takeException(), isNull);
+  });
 }

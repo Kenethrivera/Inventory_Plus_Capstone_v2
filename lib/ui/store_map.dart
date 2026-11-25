@@ -779,6 +779,31 @@ class StoreMapState extends State<StoreMap>
     ];
   }
 
+  bool _doorFitsWall(
+    Offset doorPosition,
+    Size doorSize,
+    double doorRotation,
+    Offset wallPosition,
+    Size wallSize,
+  ) {
+    final horizontal = wallSize.width >= wallSize.height;
+    final doorHorizontal =
+        math.cos(doorRotation).abs() > math.sin(doorRotation).abs();
+    if (horizontal != doorHorizontal) return false;
+    final center = doorPosition +
+        Offset(doorSize.width / 2, doorSize.height / 2);
+    final wallCross = horizontal
+        ? wallPosition.dy + wallSize.height / 2
+        : wallPosition.dx + wallSize.width / 2;
+    final doorCross = horizontal ? center.dy : center.dx;
+    final start = horizontal ? wallPosition.dx : wallPosition.dy;
+    final length = horizontal ? wallSize.width : wallSize.height;
+    final along = horizontal ? center.dx : center.dy;
+    return (doorCross - wallCross).abs() < 1 &&
+        along - doorSize.width / 2 >= start - 0.01 &&
+        along + doorSize.width / 2 <= start + length + 0.01;
+  }
+
   bool _hasCollision(
     MapElement activeEl,
     Offset pos,
@@ -795,18 +820,28 @@ class StoreMapState extends State<StoreMap>
     for (var other in _layout) {
       if (other.id == activeEl.id || ignoredIds.contains(other.id)) continue;
 
-      // ==========================================
-      // NEW: ALLOW DOORS TO ATTACH/OVERLAP WALLS
-      // ==========================================
-      if ((activeEl.type == ElementType.door &&
-              other.type == ElementType.wall) ||
-          (activeEl.type == ElementType.wall &&
-              other.type == ElementType.door) ||
-          (activeEl.type == ElementType.wall &&
-              other.type == ElementType.wall)) {
-        continue; // Skip collision check for doors vs walls
+      if (activeEl.type == ElementType.wall &&
+          other.type == ElementType.wall) {
+        continue;
       }
-      // ==========================================
+      // A door may overlap its supporting wall, but must not cut through a
+      // perpendicular or unrelated wall.
+      if (activeEl.type == ElementType.door &&
+          other.type == ElementType.wall &&
+          _doorFitsWall(pos, size, rot, other.position, other.size)) {
+        continue;
+      }
+      if (activeEl.type == ElementType.wall &&
+          other.type == ElementType.door &&
+          _doorFitsWall(
+            other.position,
+            other.size,
+            other.rotation,
+            pos,
+            size,
+          )) {
+        continue;
+      }
 
       final cornersB = _getCorners(other.position, other.size, other.rotation);
       final axesB = [
@@ -1544,24 +1579,15 @@ class StoreMapState extends State<StoreMap>
 
   List<MapElement> _doorsOnWall(MapElement wall) {
     if (wall.type != ElementType.wall) return const [];
-    final horizontal = wall.size.width >= wall.size.height;
-    final start = horizontal ? wall.position.dx : wall.position.dy;
-    final length = horizontal ? wall.size.width : wall.size.height;
-    final cross = horizontal
-        ? wall.position.dy + wall.size.height / 2
-        : wall.position.dx + wall.size.width / 2;
-    return _layout.where((door) {
-      if (door.type != ElementType.door) return false;
-      final doorHorizontal = door.rotation.abs() < 0.01;
-      if (doorHorizontal != horizontal) return false;
-      final center = door.position +
-          Offset(door.size.width / 2, door.size.height / 2);
-      final doorCross = horizontal ? center.dy : center.dx;
-      final along = horizontal ? center.dx : center.dy;
-      return (doorCross - cross).abs() < 1 &&
-          along - door.size.width / 2 >= start - 0.01 &&
-          along + door.size.width / 2 <= start + length + 0.01;
-    }).toList();
+    return _layout.where((door) =>
+        door.type == ElementType.door &&
+        _doorFitsWall(
+          door.position,
+          door.size,
+          door.rotation,
+          wall.position,
+          wall.size,
+        )).toList();
   }
 
   bool _canMoveWallWithDoors(
@@ -1569,16 +1595,22 @@ class StoreMapState extends State<StoreMap>
     Offset position,
     List<MapElement> doors,
   ) {
-    if (_hasCollision(wall, position, wall.size, wall.rotation)) return false;
-    final delta = position - wall.position;
     final movingIds = doors.map((door) => door.id).toSet();
+    if (_hasCollision(
+      wall,
+      position,
+      wall.size,
+      wall.rotation,
+      ignoredIds: movingIds,
+    )) return false;
+    final delta = position - wall.position;
     for (final door in doors) {
       if (_hasCollision(
         door,
         door.position + delta,
         door.size,
         door.rotation,
-        ignoredIds: movingIds,
+        ignoredIds: {...movingIds, wall.id},
       )) {
         return false;
       }
@@ -1653,10 +1685,15 @@ class StoreMapState extends State<StoreMap>
     var firstContact = 1.0;
 
     for (final other in _layout) {
-      if (other.id == element.id ||
-          (element.type == ElementType.wall &&
-              (other.type == ElementType.wall ||
-                  other.type == ElementType.door))) {
+      if (other.id == element.id || other.type == ElementType.wall ||
+          (other.type == ElementType.door &&
+              _doorFitsWall(
+                other.position,
+                other.size,
+                other.rotation,
+                element.position,
+                element.size,
+              ))) {
         continue;
       }
       final otherCorners =
