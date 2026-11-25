@@ -17,7 +17,7 @@ void main() {
     );
   });
 
-  testWidgets('existing door moves only after a valid drop without a preview', (
+  testWidgets('door preview follows drag and moves only after a valid drop', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 600);
@@ -59,13 +59,19 @@ void main() {
     final drag = await tester.startGesture(start);
     await drag.moveTo(start + const Offset(30, 0));
     await tester.pump();
-    expect(preview, findsNothing);
+    expect(preview, findsOneWidget);
+    final onWallPreview = tester.widget<Positioned>(preview);
+    expect(onWallPreview.left, isNotNull);
     expect(layout[1].position, originalPosition);
 
     final offWall = start + const Offset(30, 100);
     await drag.moveTo(offWall);
     await tester.pump();
-    expect(preview, findsNothing);
+    expect(preview, findsOneWidget);
+    expect(
+      tester.widget<Positioned>(preview).top,
+      greaterThan(onWallPreview.top!),
+    );
     expect(layout[1].position, originalPosition);
 
     await drag.up();
@@ -76,11 +82,52 @@ void main() {
     final validDrag = await tester.startGesture(start);
     await validDrag.moveTo(start + const Offset(30, 0));
     await tester.pump();
-    expect(preview, findsNothing);
+    expect(preview, findsOneWidget);
     expect(layout[1].position, originalPosition);
     await validDrag.up();
     await tester.pump();
     expect(layout[1].position.dx, greaterThan(originalPosition.dx));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('nudging a wall carries its attached door', (tester) async {
+    final mapKey = GlobalKey<StoreMapState>();
+    final layout = <MapElement>[
+      MapElement(
+        id: 'wall-1',
+        type: ElementType.wall,
+        position: const Offset(100, 100),
+        size: const Size(260, 15),
+      ),
+      MapElement(
+        id: 'door-1',
+        type: ElementType.door,
+        position: const Offset(170, 100),
+        size: const Size(80, 15),
+      ),
+    ];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: StoreMap(
+        key: mapKey,
+        controller: InventoryController(),
+        layout: layout,
+        mode: MapMode.manage,
+        viewStyle: MapViewStyle.twoD,
+        showZoomControls: false,
+        showMobileToolbar: false,
+      )),
+    ));
+    await tester.pump();
+
+    mapKey.currentState!.selectManageElement('wall-1');
+    mapKey.currentState!.applySidebarAction(
+      MapSidebarAction.down,
+      nudgeDistance: 40,
+    );
+    await tester.pump();
+
+    expect(layout[0].position, const Offset(100, 140));
+    expect(layout[1].position, const Offset(170, 140));
     expect(tester.takeException(), isNull);
   });
 }

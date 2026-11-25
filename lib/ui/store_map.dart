@@ -624,20 +624,6 @@ class StoreMapState extends State<StoreMap>
 
   void _updatePalettePreview(DragTargetDetails<ElementType> details) {
     _lockDragCanvas();
-    if (details.data == ElementType.door) {
-      if (_hoveredElementId != null ||
-          _dragPreviewPos != null ||
-          _dragPreviewSize != null ||
-          _dragPreviewType != null) {
-        setState(() {
-          _hoveredElementId = null;
-          _dragPreviewPos = null;
-          _dragPreviewSize = null;
-          _dragPreviewType = null;
-        });
-      }
-      return;
-    }
     final size = _getDefaultSize(details.data);
     final position = _paletteWorldPosition(details.offset, size);
     if (position == null) return;
@@ -647,13 +633,21 @@ class StoreMapState extends State<StoreMap>
       position: position,
       label: '',
     )..size = size;
-    final snapped = _snapObjectNearWall(element, position, size, 0.0);
-    const rotation = 0.0;
+    final doorPlacement = details.data == ElementType.door
+        ? _doorPlacement(position, size)
+        : null;
+    final snapped = doorPlacement?.position ??
+        (details.data == ElementType.door
+            ? position
+            : _snapObjectNearWall(element, position, size, 0.0));
+    final rotation = doorPlacement?.rotation ?? 0.0;
     setState(() {
       _hoveredElementId = null;
       _dragPreviewPos = snapped;
       _dragPreviewSize = size;
-      _dragPreviewValid = !_hasCollision(element, snapped, size, rotation);
+      _dragPreviewValid =
+          (details.data != ElementType.door || doorPlacement != null) &&
+          !_hasCollision(element, snapped, size, rotation);
       _dragPreviewRotation = rotation;
       _dragPreviewType = details.data;
     });
@@ -785,7 +779,13 @@ class StoreMapState extends State<StoreMap>
     ];
   }
 
-  bool _hasCollision(MapElement activeEl, Offset pos, Size size, double rot) {
+  bool _hasCollision(
+    MapElement activeEl,
+    Offset pos,
+    Size size,
+    double rot, {
+    Set<String> ignoredIds = const {},
+  }) {
     final cornersA = _getCorners(pos, size, rot);
     final axesA = [
       Offset(math.cos(rot), math.sin(rot)),
@@ -793,7 +793,7 @@ class StoreMapState extends State<StoreMap>
     ];
 
     for (var other in _layout) {
-      if (other.id == activeEl.id) continue;
+      if (other.id == activeEl.id || ignoredIds.contains(other.id)) continue;
 
       // ==========================================
       // NEW: ALLOW DOORS TO ATTACH/OVERLAP WALLS
@@ -843,9 +843,9 @@ class StoreMapState extends State<StoreMap>
     return false;
   }
 
-  // Keep the 40-unit grid, but let furniture sit against a wall when the
-  // nearest grid point would put its footprint inside that wall. Preview,
-  // drop, and move all use this same position so what the user sees is saved.
+  // Keep the 40-unit grid, but move a colliding fixture to the nearest clear
+  // edge. Walls move only across their thickness so dragging does not shift
+  // their endpoints. Preview, drop, and move all use the same position.
   Offset _snapObjectNearWall(
     MapElement element,
     Offset rawPosition,
@@ -853,8 +853,7 @@ class StoreMapState extends State<StoreMap>
     double rotation,
   ) {
     final snapped = _snapToGrid(rawPosition, size, element.type);
-    if (element.type == ElementType.wall ||
-        element.type == ElementType.door ||
+    if (element.type == ElementType.door ||
         !_hasCollision(element, snapped, size, rotation)) {
       return snapped;
     }
@@ -875,21 +874,32 @@ class StoreMapState extends State<StoreMap>
     final xPositions = <double>{snapped.dx};
     final yPositions = <double>{snapped.dy};
 
-    for (final wall in _layout.where((item) => item.type == ElementType.wall)) {
-      final wallBounds = bounds(wall.position, wall.size, wall.rotation);
-      if (!wallBounds.overlaps(objectBounds)) continue;
+    final isWall = element.type == ElementType.wall;
+    final horizontalWall = size.width >= size.height;
+    for (final blocker in _layout.where((item) =>
+        item.id != element.id &&
+        (isWall
+            ? item.type != ElementType.wall && item.type != ElementType.door
+            : item.type == ElementType.wall))) {
+      final blockerBounds =
+          bounds(blocker.position, blocker.size, blocker.rotation);
+      if (!blockerBounds.overlaps(objectBounds)) continue;
 
-      for (final x in <double>[
-        snapped.dx + wallBounds.left - objectBounds.right - clearance,
-        snapped.dx + wallBounds.right - objectBounds.left + clearance,
-      ]) {
-        if ((x - snapped.dx).abs() <= maxAdjustment) xPositions.add(x);
+      if (!isWall || !horizontalWall) {
+        for (final x in <double>[
+          snapped.dx + blockerBounds.left - objectBounds.right - clearance,
+          snapped.dx + blockerBounds.right - objectBounds.left + clearance,
+        ]) {
+          if ((x - snapped.dx).abs() <= maxAdjustment) xPositions.add(x);
+        }
       }
-      for (final y in <double>[
-        snapped.dy + wallBounds.top - objectBounds.bottom - clearance,
-        snapped.dy + wallBounds.bottom - objectBounds.top + clearance,
-      ]) {
-        if ((y - snapped.dy).abs() <= maxAdjustment) yPositions.add(y);
+      if (!isWall || horizontalWall) {
+        for (final y in <double>[
+          snapped.dy + blockerBounds.top - objectBounds.bottom - clearance,
+          snapped.dy + blockerBounds.bottom - objectBounds.top + clearance,
+        ]) {
+          if ((y - snapped.dy).abs() <= maxAdjustment) yPositions.add(y);
+        }
       }
     }
 
@@ -1047,6 +1057,7 @@ class StoreMapState extends State<StoreMap>
               // The Draggable Icon
               Draggable<ElementType>(
                 data: type,
+                dragAnchorStrategy: pointerDragAnchorStrategy,
                 onDragStarted: () => setPaletteDragActive(true),
                 onDragEnd: (_) => setPaletteDragActive(false),
                 feedback: const SizedBox.shrink(),
@@ -1531,8 +1542,70 @@ class StoreMapState extends State<StoreMap>
     return true;
   }
 
+  List<MapElement> _doorsOnWall(MapElement wall) {
+    if (wall.type != ElementType.wall) return const [];
+    final horizontal = wall.size.width >= wall.size.height;
+    final start = horizontal ? wall.position.dx : wall.position.dy;
+    final length = horizontal ? wall.size.width : wall.size.height;
+    final cross = horizontal
+        ? wall.position.dy + wall.size.height / 2
+        : wall.position.dx + wall.size.width / 2;
+    return _layout.where((door) {
+      if (door.type != ElementType.door) return false;
+      final doorHorizontal = door.rotation.abs() < 0.01;
+      if (doorHorizontal != horizontal) return false;
+      final center = door.position +
+          Offset(door.size.width / 2, door.size.height / 2);
+      final doorCross = horizontal ? center.dy : center.dx;
+      final along = horizontal ? center.dx : center.dy;
+      return (doorCross - cross).abs() < 1 &&
+          along - door.size.width / 2 >= start - 0.01 &&
+          along + door.size.width / 2 <= start + length + 0.01;
+    }).toList();
+  }
+
+  bool _canMoveWallWithDoors(
+    MapElement wall,
+    Offset position,
+    List<MapElement> doors,
+  ) {
+    if (_hasCollision(wall, position, wall.size, wall.rotation)) return false;
+    final delta = position - wall.position;
+    final movingIds = doors.map((door) => door.id).toSet();
+    for (final door in doors) {
+      if (_hasCollision(
+        door,
+        door.position + delta,
+        door.size,
+        door.rotation,
+        ignoredIds: movingIds,
+      )) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _moveWallAndDoors(
+    MapElement wall,
+    Offset position,
+    List<MapElement> doors,
+  ) {
+    final delta = position - wall.position;
+    wall.position = position;
+    for (final door in doors) {
+      door.position += delta;
+    }
+  }
+
   void _nudgeElement(MapElement el, Offset delta) {
-    final Offset newPosition = el.position + delta;
+    // Stop at the first fixture along the nudge, even when the selected
+    // distance is larger than the remaining gap.
+    final allowedFraction = el.type == ElementType.wall
+        ? _freeNudgeFraction(el, delta)
+        : 1.0;
+    if (allowedFraction <= 0) return;
+    final Offset newPosition = el.position + delta * allowedFraction;
     final doorPlacement = el.type == ElementType.door
         ? _doorPlacement(newPosition, el.size)
         : null;
@@ -1543,7 +1616,11 @@ class StoreMapState extends State<StoreMap>
     final snappedPosition = doorPlacement?.position ?? newPosition;
     final rotation = doorPlacement?.rotation ?? el.rotation;
 
-    if (_hasCollision(el, snappedPosition, el.size, rotation)) {
+    final attachedDoors = _doorsOnWall(el);
+    final canMove = el.type == ElementType.wall
+        ? _canMoveWallWithDoors(el, snappedPosition, attachedDoors)
+        : !_hasCollision(el, snappedPosition, el.size, rotation);
+    if (!canMove) {
       AppToast.error(
         context,
         "Cannot nudge. It would overlap another element.",
@@ -1552,10 +1629,78 @@ class StoreMapState extends State<StoreMap>
     }
 
     setState(() {
-      el.position = snappedPosition;
+      if (el.type == ElementType.wall) {
+        _moveWallAndDoors(el, snappedPosition, attachedDoors);
+      } else {
+        el.position = snappedPosition;
+      }
       el.rotation = rotation;
     });
     widget.onLayoutEdited?.call();
+  }
+
+  double _freeNudgeFraction(MapElement element, Offset delta) {
+    if (delta.distanceSquared == 0) return 0;
+    final corners = _getCorners(
+      element.position,
+      element.size,
+      element.rotation,
+    );
+    final axes = <Offset>[
+      Offset(math.cos(element.rotation), math.sin(element.rotation)),
+      Offset(-math.sin(element.rotation), math.cos(element.rotation)),
+    ];
+    var firstContact = 1.0;
+
+    for (final other in _layout) {
+      if (other.id == element.id ||
+          (element.type == ElementType.wall &&
+              (other.type == ElementType.wall ||
+                  other.type == ElementType.door))) {
+        continue;
+      }
+      final otherCorners =
+          _getCorners(other.position, other.size, other.rotation);
+      final otherAxes = <Offset>[
+        Offset(math.cos(other.rotation), math.sin(other.rotation)),
+        Offset(-math.sin(other.rotation), math.cos(other.rotation)),
+      ];
+      var entry = double.negativeInfinity;
+      var exit = double.infinity;
+
+      for (final axis in [...axes, ...otherAxes]) {
+        final projections = corners
+            .map((point) => point.dx * axis.dx + point.dy * axis.dy);
+        final otherProjections = otherCorners
+            .map((point) => point.dx * axis.dx + point.dy * axis.dy);
+        final minA = projections.reduce(math.min);
+        final maxA = projections.reduce(math.max);
+        final minB = otherProjections.reduce(math.min);
+        final maxB = otherProjections.reduce(math.max);
+        final speed = delta.dx * axis.dx + delta.dy * axis.dy;
+
+        if (speed.abs() < 1e-9) {
+          if (maxA <= minB || maxB <= minA) {
+            entry = double.infinity;
+            break;
+          }
+          continue;
+        }
+        final a = (minB - maxA) / speed;
+        final b = (maxB - minA) / speed;
+        entry = math.max(entry, math.min(a, b));
+        exit = math.min(exit, math.max(a, b));
+        if (entry >= exit) break;
+      }
+
+      if (entry < exit && exit > 0 && entry < firstContact) {
+        firstContact = math.max(0.0, entry);
+      }
+    }
+
+    if (firstContact == 1.0) return 1.0;
+    // Leave a tiny numerical gap so the collision check agrees with contact.
+    return math.max(0.0, firstContact - 0.001 / delta.distance);
   }
 
   // ==========================================
@@ -2439,10 +2584,12 @@ class StoreMapState extends State<StoreMap>
                             ),
                             size: Size(mapWidth, mapHeight),
                           ),
+                          ...visibleLayout.map(
+                            (el) => _buildPhysicalElement(el, minX, minY),
+                          ),
                           if (_dragPreviewPos != null &&
                               _dragPreviewSize != null &&
-                              _dragPreviewType != null &&
-                              _dragPreviewType != ElementType.door)
+                              _dragPreviewType != null)
                             Positioned(
                               key: const ValueKey('store-map-placement-preview'),
                               left: _dragPreviewPos!.dx - minX,
@@ -2490,9 +2637,6 @@ class StoreMapState extends State<StoreMap>
                                 ),
                               ),
                             ),
-                          ...visibleLayout.map(
-                            (el) => _buildPhysicalElement(el, minX, minY),
-                          ),
                           ..._buildPickStopMarkers(minX, minY),
                           if (widget.mode == MapMode.view &&
                               widget.showItemPopup &&
@@ -3512,6 +3656,25 @@ class StoreMapState extends State<StoreMap>
                             _rawDragPosition =
                                 _rawDragPosition! + Offset(mapDx, mapDy);
                             if (interactiveEl.type == ElementType.door) {
+                              final placement = _doorPlacement(
+                                _rawDragPosition!,
+                                interactiveEl.size,
+                              );
+                              final previewPosition =
+                                  placement?.position ?? _rawDragPosition!;
+                              final previewRotation =
+                                  placement?.rotation ?? interactiveEl.rotation;
+                              _dragPreviewPos = previewPosition;
+                              _dragPreviewSize = interactiveEl.size;
+                              _dragPreviewValid = placement != null &&
+                                  !_hasCollision(
+                                    interactiveEl,
+                                    previewPosition,
+                                    interactiveEl.size,
+                                    previewRotation,
+                                  );
+                              _dragPreviewRotation = previewRotation;
+                              _dragPreviewType = ElementType.door;
                               return;
                             }
                             final Offset snappedPos = _snapObjectNearWall(
@@ -3521,12 +3684,19 @@ class StoreMapState extends State<StoreMap>
                               interactiveEl.rotation,
                             );
                             final rotation = interactiveEl.rotation;
-                            final bool isValid = !_hasCollision(
-                              interactiveEl,
-                              snappedPos,
-                              interactiveEl.size,
-                              rotation,
-                            );
+                            final attachedDoors = _doorsOnWall(interactiveEl);
+                            final bool isValid = interactiveEl.type == ElementType.wall
+                                ? _canMoveWallWithDoors(
+                                    interactiveEl,
+                                    snappedPos,
+                                    attachedDoors,
+                                  )
+                                : !_hasCollision(
+                                    interactiveEl,
+                                    snappedPos,
+                                    interactiveEl.size,
+                                    rotation,
+                                  );
                             _dragPreviewPos = snappedPos;
                             _dragPreviewSize = interactiveEl.size;
                             _dragPreviewValid = isValid;
@@ -3534,7 +3704,15 @@ class StoreMapState extends State<StoreMap>
                             _dragPreviewType = interactiveEl.type;
 
                             if (isValid) {
-                              interactiveEl.position = snappedPos;
+                              if (interactiveEl.type == ElementType.wall) {
+                                _moveWallAndDoors(
+                                  interactiveEl,
+                                  snappedPos,
+                                  attachedDoors,
+                                );
+                              } else {
+                                interactiveEl.position = snappedPos;
+                              }
                               interactiveEl.rotation = rotation;
                             }
                           });
