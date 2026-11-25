@@ -1190,7 +1190,6 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
               _money(order.totalAmount),
               widths[7],
               bold: true,
-              right: true,
             ),
           ]
         : <Widget>[
@@ -1213,7 +1212,6 @@ class _OrdersActivityPageState extends State<OrdersActivityPage> {
               _money(order.totalAmount),
               widths[7],
               bold: true,
-              right: true,
             ),
           ];
     return Material(
