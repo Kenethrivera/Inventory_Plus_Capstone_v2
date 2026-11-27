@@ -2669,17 +2669,10 @@ class InventoryController {
       return;
     }
     try {
-      final response = useStage6b6SecureAccess
-          ? await supabase.rpc(
-              'staff_configuration_snapshot_v1',
-              params: <String, dynamic>{
-                'p_session_token': _requireSessionToken(),
-              },
-            )
-          : await supabase
-                .from('profiles')
-                .select()
-                .eq('location_id', locationId);
+      final response = await supabase.rpc(
+        'staff_configuration_snapshot_v1',
+        params: <String, dynamic>{'p_session_token': _requireSessionToken()},
+      );
       if (activeLocationId != locationId ||
           currentUserId != userId ||
           currentUserRole?.toLowerCase() != 'admin') {
@@ -2944,20 +2937,13 @@ class InventoryController {
     if (activeLocationId == null) return null;
     final targetId = int.tryParse(id);
     if (targetId == null) return null;
-    final response = useStage6b6SecureAccess
-        ? await supabase.rpc(
-            'staff_profile_v1',
-            params: <String, dynamic>{
-              'p_session_token': _requireSessionToken(),
-              'p_target_profile_id': targetId,
-            },
-          )
-        : await supabase
-              .from('profiles')
-              .select()
-              .eq('id', id)
-              .eq('location_id', activeLocationId!)
-              .maybeSingle();
+    final response = await supabase.rpc(
+      'staff_profile_v1',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_target_profile_id': targetId,
+      },
+    );
     return response == null ? null : Map<String, dynamic>.from(response as Map);
   }
 
