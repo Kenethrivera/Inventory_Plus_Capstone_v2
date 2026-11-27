@@ -5258,14 +5258,11 @@ class InventoryController {
   }
 
   Future<List<MapElement>> _readMapLayout(String locId) async {
-    final Map<String, dynamic>? locationResponse = await supabase
-        .from('locations')
-        .select('layout_data')
-        .eq('id', locId)
-        .maybeSingle();
-
-    final dynamic storedLayout = locationResponse?['layout_data'];
-    if (storedLayout == null) return <MapElement>[];
+    final dynamic storedLayout = await supabase.rpc(
+      'read_store_map_v1',
+      params: <String, dynamic>{'p_session_token': _requireSessionToken()},
+    );
+    if (activeLocationId != locId) return <MapElement>[];
     return _decodeMapLayoutValue(storedLayout);
   }
 

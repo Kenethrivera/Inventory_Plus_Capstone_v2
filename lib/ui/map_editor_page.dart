@@ -361,9 +361,9 @@ class _MapEditorPageState extends State<MapEditorPage> {
             title: 'Newer Map Layout Found',
             subtitle: 'Your draft was not overwritten',
             child: const Text(
-              'The store map was changed by another user. Refresh and review '
-              'the latest version. You can keep editing your current draft, '
-              'or reload the newest saved layout. '
+              'The saved store map differs from the version used for this '
+              'draft. You can keep editing your current draft, or reload the '
+              'newest saved layout. '
               'Reloading will discard your local changes.',
               style: TextStyle(fontFamily: _fontFam, fontSize: 13),
             ),
