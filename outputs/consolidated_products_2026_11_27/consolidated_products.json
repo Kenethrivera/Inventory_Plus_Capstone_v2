@@ -1,0 +1,5841 @@
+{
+  "products": [
+    {
+      "name": "Gasa Tape",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "gasa tape",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0089"
+      ]
+    },
+    {
+      "name": "LIHA #?",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "LIHA #?",
+      "original_units": "PCS",
+      "materials": 2,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Name needs review",
+      "members": [
+        "P0119"
+      ]
+    },
+    {
+      "name": "Masking Tape",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "Masking Tape",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0121"
+      ]
+    },
+    {
+      "name": "Masking Tape #1 (1\")",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "Masking Tape #1 (1\")",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0122"
+      ]
+    },
+    {
+      "name": "MASKING TAPE #2",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "MASKING TAPE #2",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0123"
+      ]
+    },
+    {
+      "name": "Masking Tape 1.5\"",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "Masking Tape 1.5\"",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0124"
+      ]
+    },
+    {
+      "name": "S/P #120",
+      "unit": "m",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "S/P #120",
+      "original_units": "MTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0236"
+      ]
+    },
+    {
+      "name": "S/P #156",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "S/P #156",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0237"
+      ]
+    },
+    {
+      "name": "Sand Paper",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 2,
+      "original_names": "Sand Paper",
+      "original_units": "pcs; pc",
+      "materials": 0,
+      "sales": 8,
+      "receipts": 3,
+      "review": "",
+      "members": [
+        "P0244",
+        "P0243"
+      ]
+    },
+    {
+      "name": "Sand Paper #100",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 2,
+      "original_names": "Sand Paper #100; S/P #100",
+      "original_units": "pcs; PCS",
+      "materials": 3,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0245",
+        "P0235"
+      ]
+    },
+    {
+      "name": "Sand Paper 120",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "Sand Paper 120",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0246"
+      ]
+    },
+    {
+      "name": "Sand Paper 150",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "Sand Paper 150",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0247"
+      ]
+    },
+    {
+      "name": "Sanding Paper #240",
+      "unit": "pc",
+      "category": "Abrasives & Tapes",
+      "original_entries": 1,
+      "original_names": "Sanding Paper #240",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0248"
+      ]
+    },
+    {
+      "name": "Epoxy Non-Sag",
+      "unit": "L",
+      "category": "Adhesives & Sealants",
+      "original_entries": 1,
+      "original_names": "Epoxy Non-Sag",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0065"
+      ]
+    },
+    {
+      "name": "SEALANT CLEAR",
+      "unit": "pc",
+      "category": "Adhesives & Sealants",
+      "original_entries": 1,
+      "original_names": "SEALANT CLEAR",
+      "original_units": "PC",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0251"
+      ]
+    },
+    {
+      "name": "STICK WELL",
+      "unit": "pack",
+      "category": "Adhesives & Sealants",
+      "original_entries": 1,
+      "original_names": "STICK WELL",
+      "original_units": "PCK",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0274"
+      ]
+    },
+    {
+      "name": "Vulcaseal",
+      "unit": "L",
+      "category": "Adhesives & Sealants",
+      "original_entries": 1,
+      "original_names": "Vulcaseal",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0289"
+      ]
+    },
+    {
+      "name": "Automotive Lacquer Black",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 2,
+      "original_names": "Automotive lac. Black; AUTOMOTIVE LACQUER BLACK",
+      "original_units": "lt; LTR",
+      "materials": 1,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0012",
+        "P0013"
+      ]
+    },
+    {
+      "name": "Automotive Lacquer White",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "Automotive Lacquer White",
+      "original_units": "ltr",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0014"
+      ]
+    },
+    {
+      "name": "Automotive Raw Sienna",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "Automotive Raw Sienna",
+      "original_units": "ltr",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0015"
+      ]
+    },
+    {
+      "name": "B-1250 CLEAR GLOSS LACQUER",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "B-1250 CLEAR GLOSS LACQUER",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0016"
+      ]
+    },
+    {
+      "name": "B2705 OWS MAPLE",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "B2705 OWS MAPLE",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0022"
+      ]
+    },
+    {
+      "name": "Clear Gloss Lacquer",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 2,
+      "original_names": "clear gloss lac; Clear Gloss Lacquer",
+      "original_units": "lt; ltr",
+      "materials": 0,
+      "sales": 2,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0056",
+        "P0057"
+      ]
+    },
+    {
+      "name": "Dead Flat Lac",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "dead flat lac",
+      "original_units": "lt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0059"
+      ]
+    },
+    {
+      "name": "LACQUER WHITE",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "LACQUER WHITE",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0113"
+      ]
+    },
+    {
+      "name": "Oil Wood Stain",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "Oil Wood Stain",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0136"
+      ]
+    },
+    {
+      "name": "Spar Varnish",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "Spar Varnish",
+      "original_units": "litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0267"
+      ]
+    },
+    {
+      "name": "Wood Mahogany",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "Wood Mahogany",
+      "original_units": "lt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0292"
+      ]
+    },
+    {
+      "name": "Wood Stain Mahogany",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "Wood Stain Mahogany",
+      "original_units": "ltr",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0293"
+      ]
+    },
+    {
+      "name": "Wood Stain Oak",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "wood stain oak",
+      "original_units": "lt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0294"
+      ]
+    },
+    {
+      "name": "Wood Stain Walnut",
+      "unit": "L",
+      "category": "Automotive & Wood Finishes",
+      "original_entries": 1,
+      "original_names": "Wood Stain Walnut",
+      "original_units": "ltr",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0295"
+      ]
+    },
+    {
+      "name": "Basahan",
+      "unit": "kg",
+      "category": "Cleaning & Consumables",
+      "original_entries": 2,
+      "original_names": "Basahan; BASAHAN",
+      "original_units": "kilo; KL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Unit needs review",
+      "members": [
+        "P0034",
+        "P0036"
+      ]
+    },
+    {
+      "name": "Basahan",
+      "unit": "pc",
+      "category": "Cleaning & Consumables",
+      "original_entries": 1,
+      "original_names": "Basahan",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0035"
+      ]
+    },
+    {
+      "name": "Dyaryo",
+      "unit": "kg",
+      "category": "Cleaning & Consumables",
+      "original_entries": 1,
+      "original_names": "Dyaryo",
+      "original_units": "kilo",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0061"
+      ]
+    },
+    {
+      "name": "Aluminum Silver",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "Aluminum Silver",
+      "original_units": "lt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0011"
+      ]
+    },
+    {
+      "name": "B600",
+      "unit": "gal",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "B600",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0023"
+      ]
+    },
+    {
+      "name": "Enamel Mixed",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "Enamel Mixed",
+      "original_units": "litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0062"
+      ]
+    },
+    {
+      "name": "Flat Wall Enamel",
+      "unit": "gal",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "Flat Wall Enamel",
+      "original_units": "Gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0084"
+      ]
+    },
+    {
+      "name": "Flat Wall Enamel",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 2,
+      "original_names": "flat wall enamel; Flat Wall Enamel",
+      "original_units": "lt; ltr",
+      "materials": 0,
+      "sales": 2,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0083",
+        "P0085"
+      ]
+    },
+    {
+      "name": "Gloss Black",
+      "unit": "0.25 L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "Gloss Black",
+      "original_units": "1/4 Quarter liter can 250",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0092"
+      ]
+    },
+    {
+      "name": "Mix Enamel",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "Mix Enamel",
+      "original_units": "1L",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0131"
+      ]
+    },
+    {
+      "name": "QDE Black",
+      "unit": "0.25 L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE BLACK",
+      "original_units": "1/4 LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0184"
+      ]
+    },
+    {
+      "name": "QDE Black",
+      "unit": "0.5 L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE BLACK",
+      "original_units": "1/2 LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0183"
+      ]
+    },
+    {
+      "name": "QDE Black",
+      "unit": "gal",
+      "category": "Enamel Paints",
+      "original_entries": 5,
+      "original_names": "QDE Black; B690 (QDE BLACK); QDE BLACK",
+      "original_units": "1 Gal; 1 Gallon; gallon; GAL",
+      "materials": 2,
+      "sales": 2,
+      "receipts": 1,
+      "review": "Confirm item code match",
+      "members": [
+        "P0178",
+        "P0179",
+        "P0180",
+        "P0024",
+        "P0185"
+      ]
+    },
+    {
+      "name": "QDE Black",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 3,
+      "original_names": "QDE Black; QDE BLACK",
+      "original_units": "Litter; lt; LTR",
+      "materials": 3,
+      "sales": 1,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0181",
+        "P0182",
+        "P0186"
+      ]
+    },
+    {
+      "name": "QDE BLUE",
+      "unit": "0.25 L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE BLUE",
+      "original_units": "1/4 LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0187"
+      ]
+    },
+    {
+      "name": "QDE CARAMEL BROWN?",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE CARAMEL BROWN?",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Name needs review",
+      "members": [
+        "P0188"
+      ]
+    },
+    {
+      "name": "QDE Chocolate Brown",
+      "unit": "0.5 L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE CHOCO BROWN",
+      "original_units": "1/2 LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0189"
+      ]
+    },
+    {
+      "name": "QDE Chocolate Brown",
+      "unit": "gal",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE Chocolate brown",
+      "original_units": "gal",
+      "materials": 1,
+      "sales": 2,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0191"
+      ]
+    },
+    {
+      "name": "QDE Chocolate Brown",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 2,
+      "original_names": "QDE Chocolate Brown; QDE. Chocolate Brown",
+      "original_units": "lt; litter",
+      "materials": 0,
+      "sales": 2,
+      "receipts": 2,
+      "review": "",
+      "members": [
+        "P0190",
+        "P0206"
+      ]
+    },
+    {
+      "name": "QDE Chocolate Brown",
+      "unit": "tin",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "Chocolate Brown QDE",
+      "original_units": "TIN",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0055"
+      ]
+    },
+    {
+      "name": "QDE GREEN",
+      "unit": "0.25 L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE GREEN",
+      "original_units": "1/4 LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0192"
+      ]
+    },
+    {
+      "name": "QDE GREY",
+      "unit": "0.5 L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE GREY",
+      "original_units": "1/2 LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0193"
+      ]
+    },
+    {
+      "name": "QDE Lemon Yellow",
+      "unit": "gal",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE Lemon Yellow",
+      "original_units": "ga",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0194"
+      ]
+    },
+    {
+      "name": "QDE Matte",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE Matte",
+      "original_units": "lt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0195"
+      ]
+    },
+    {
+      "name": "QDE MEDIUM GRAY",
+      "unit": "gal",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE MEDIUM GRAY",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0196"
+      ]
+    },
+    {
+      "name": "QDE MEDIUM GRAY",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE MEDIUM GRAY",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0197"
+      ]
+    },
+    {
+      "name": "QDE modern gray",
+      "unit": "gal",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE modern gray",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0198"
+      ]
+    },
+    {
+      "name": "QDE Sky Blue",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE Sky Blue",
+      "original_units": "Ltr",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0199"
+      ]
+    },
+    {
+      "name": "QDE White",
+      "unit": "gal",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE White",
+      "original_units": "gal",
+      "materials": 1,
+      "sales": 2,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0203"
+      ]
+    },
+    {
+      "name": "QDE White",
+      "unit": "L",
+      "category": "Enamel Paints",
+      "original_entries": 4,
+      "original_names": "QDE White; QDE. White",
+      "original_units": "lt; litter; Litter; ltr",
+      "materials": 2,
+      "sales": 3,
+      "receipts": 3,
+      "review": "",
+      "members": [
+        "P0201",
+        "P0207",
+        "P0200",
+        "P0204"
+      ]
+    },
+    {
+      "name": "QDE White",
+      "unit": "pint",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE White",
+      "original_units": "pt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0202"
+      ]
+    },
+    {
+      "name": "QDE YELLOW",
+      "unit": "0.25 L",
+      "category": "Enamel Paints",
+      "original_entries": 1,
+      "original_names": "QDE YELLOW",
+      "original_units": "1/4 LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0205"
+      ]
+    },
+    {
+      "name": "EPOXY BLACK",
+      "unit": "L",
+      "category": "Epoxy Coatings",
+      "original_entries": 1,
+      "original_names": "EPOXY BLACK",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0064"
+      ]
+    },
+    {
+      "name": "BLIND RIVET",
+      "unit": "pc",
+      "category": "Fasteners & Cutting Tools",
+      "original_entries": 1,
+      "original_names": "BLIND RIVET",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0038"
+      ]
+    },
+    {
+      "name": "CUTTING DISC",
+      "unit": "pc",
+      "category": "Fasteners & Cutting Tools",
+      "original_entries": 1,
+      "original_names": "CUTTING DISC",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0058"
+      ]
+    },
+    {
+      "name": "601 Smoke Gray",
+      "unit": "tin",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "601 Smoke Gray",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0003"
+      ]
+    },
+    {
+      "name": "Acrylic Emulsiuon",
+      "unit": "L",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "Acrylic Emulsiuon",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0007"
+      ]
+    },
+    {
+      "name": "Flat Latex",
+      "unit": "L",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "flat latex",
+      "original_units": "lt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0075"
+      ]
+    },
+    {
+      "name": "Flat Latex",
+      "unit": "tin",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "Flat Latex",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0076"
+      ]
+    },
+    {
+      "name": "Flat Latex Pls",
+      "unit": "tin",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "flat latex pls",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0078"
+      ]
+    },
+    {
+      "name": "Flat Latex White",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 3,
+      "original_names": "flat latex white; FLAT LATEX (WHITE); FLAT LATEX WHITE",
+      "original_units": "gallon; GAL",
+      "materials": 3,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0079",
+        "P0077",
+        "P0080"
+      ]
+    },
+    {
+      "name": "Flat Latex White",
+      "unit": "tin",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "FLAT LATEX WHITE",
+      "original_units": "TIN",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0081"
+      ]
+    },
+    {
+      "name": "FLAT LATEX WHITE (DAVIES)",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "FLAT LATEX WHITE (DAVIES)",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0082"
+      ]
+    },
+    {
+      "name": "Gloss Latex",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 2,
+      "original_names": "Gloss Latex",
+      "original_units": "gallon; gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 2,
+      "review": "",
+      "members": [
+        "P0095",
+        "P0094"
+      ]
+    },
+    {
+      "name": "Gloss Latex",
+      "unit": "L",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "Gloss Latex",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0096"
+      ]
+    },
+    {
+      "name": "Gloss Latex",
+      "unit": "tin",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "Gloss Latex",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0097"
+      ]
+    },
+    {
+      "name": "GLOSS LATEX WHITE",
+      "unit": "L",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "GLOSS LATEX WHITE",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0098"
+      ]
+    },
+    {
+      "name": "KIS / Latex Milk Tea",
+      "unit": "tin",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "KIS / Latex Milk Tea",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0100"
+      ]
+    },
+    {
+      "name": "Latex int",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "Latex int",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0115"
+      ]
+    },
+    {
+      "name": "Latex Paint Dark Semi Gray",
+      "unit": "tin",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "Latex Paint Dark Semi Gray",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0116"
+      ]
+    },
+    {
+      "name": "Latex Paint HB (+ add-on)",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "Latex Paint HB (+ add-on)",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0117"
+      ]
+    },
+    {
+      "name": "Lightning Dark Seal Gray",
+      "unit": "tin",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "lightning dark seal gray",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0118"
+      ]
+    },
+    {
+      "name": "Off White Pls",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "off white pls",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0135"
+      ]
+    },
+    {
+      "name": "Semi Gloss",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 3,
+      "original_names": "semi gloss; Semi gloss; sime gloss",
+      "original_units": "gal; gallon",
+      "materials": 0,
+      "sales": 2,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0252",
+        "P0254",
+        "P0260"
+      ]
+    },
+    {
+      "name": "Semi Gloss",
+      "unit": "L",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "semi gloss",
+      "original_units": "lt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0253"
+      ]
+    },
+    {
+      "name": "Semi Gloss",
+      "unit": "tin",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "Semi gloss",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0255"
+      ]
+    },
+    {
+      "name": "SEMI GLOSS LATEX",
+      "unit": "tin",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "SEMI GLOSS LATEX",
+      "original_units": "TIN",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0257"
+      ]
+    },
+    {
+      "name": "Sunny Days",
+      "unit": "L",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "Sunny Days",
+      "original_units": "lt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0276"
+      ]
+    },
+    {
+      "name": "TINGE OF GRAY (T-5135 TITAN SUPER FLEX)",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "TINGE OF GRAY (T-5135 TITAN SUPER FLEX)",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0285"
+      ]
+    },
+    {
+      "name": "Titan Superflex Elastomeric Paint Mocha Blanch",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "Titan Superflex Elastomeric Paint Mocha Blanch",
+      "original_units": "gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0286"
+      ]
+    },
+    {
+      "name": "TITAN TULLE WHITE",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "TITAN TULLE WHITE",
+      "original_units": "GAL",
+      "materials": 2,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0287"
+      ]
+    },
+    {
+      "name": "Wind Whisper S/G",
+      "unit": "gal",
+      "category": "Latex & Masonry Paints",
+      "original_entries": 1,
+      "original_names": "wind whisper s/g",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0291"
+      ]
+    },
+    {
+      "name": "Acrylic",
+      "unit": "L",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "acrylic",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0006"
+      ]
+    },
+    {
+      "name": "Acrytex Color Black",
+      "unit": "gal",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Acrytex Color Black",
+      "original_units": "gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0010"
+      ]
+    },
+    {
+      "name": "Bala",
+      "unit": "pc",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Bala",
+      "original_units": "pcs",
+      "materials": 2,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0029"
+      ]
+    },
+    {
+      "name": "BALA (S)",
+      "unit": "pc",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "BALA (S)",
+      "original_units": "PCS",
+      "materials": 2,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0031"
+      ]
+    },
+    {
+      "name": "BALA ?",
+      "unit": "pc",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "BALA ?",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review; Name needs review",
+      "members": [
+        "P0030"
+      ]
+    },
+    {
+      "name": "BROWN",
+      "unit": "Unspecified",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "BROWN",
+      "original_units": "(missing)",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review; Unit needs review",
+      "members": [
+        "P0043"
+      ]
+    },
+    {
+      "name": "Buildrite",
+      "unit": "L",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Buildrite",
+      "original_units": "litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0052"
+      ]
+    },
+    {
+      "name": "B|S White",
+      "unit": "gal",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "B|S White",
+      "original_units": "Gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0018"
+      ]
+    },
+    {
+      "name": "Chocolate Brown",
+      "unit": "L",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Chocolate Brown",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0054"
+      ]
+    },
+    {
+      "name": "FLAT WHITE",
+      "unit": "gal",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "FLAT WHITE",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0086"
+      ]
+    },
+    {
+      "name": "FLAT WHITE",
+      "unit": "tin",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "FLAT WHITE",
+      "original_units": "TIN",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0087"
+      ]
+    },
+    {
+      "name": "Gloss Chocolate Brown",
+      "unit": "L",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "gloss chocolate brown",
+      "original_units": "litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0093"
+      ]
+    },
+    {
+      "name": "Hardener Big",
+      "unit": "pc",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Hardener Big",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0099"
+      ]
+    },
+    {
+      "name": "Maple",
+      "unit": "pc",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Maple",
+      "original_units": "pc",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0120"
+      ]
+    },
+    {
+      "name": "MIX",
+      "unit": "gal",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "MIX",
+      "original_units": "GAL",
+      "materials": 2,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0126"
+      ]
+    },
+    {
+      "name": "MIX",
+      "unit": "L",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "MIX",
+      "original_units": "LTR",
+      "materials": 2,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0127"
+      ]
+    },
+    {
+      "name": "MIX",
+      "unit": "tin",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "MIX",
+      "original_units": "TIN",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0128"
+      ]
+    },
+    {
+      "name": "MIX (POWER MIX)?",
+      "unit": "Unspecified",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "MIX (POWER MIX)?",
+      "original_units": "(missing)",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review; Unit needs review; Name needs review",
+      "members": [
+        "P0130"
+      ]
+    },
+    {
+      "name": "MIX ?",
+      "unit": "L",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "MIX ?",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review; Name needs review",
+      "members": [
+        "P0129"
+      ]
+    },
+    {
+      "name": "Nation Maple",
+      "unit": "L",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Nation Maple",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0133"
+      ]
+    },
+    {
+      "name": "Nixon Paint",
+      "unit": "gal",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Nixon Paint",
+      "original_units": "Gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0134"
+      ]
+    },
+    {
+      "name": "Paint",
+      "unit": "pc",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Paint",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0137"
+      ]
+    },
+    {
+      "name": "PAINT TIMPLA",
+      "unit": "gal",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "PAINT TIMPLA",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0164"
+      ]
+    },
+    {
+      "name": "ROS 862",
+      "unit": "gal",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "ROS 862",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0232"
+      ]
+    },
+    {
+      "name": "ROS.530",
+      "unit": "gal",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "ROS.530",
+      "original_units": "gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0234"
+      ]
+    },
+    {
+      "name": "Sachet",
+      "unit": "pc",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Sachet",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0242"
+      ]
+    },
+    {
+      "name": "Semi Gloss B|S",
+      "unit": "gal",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Semi Gloss B|S",
+      "original_units": "Gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0256"
+      ]
+    },
+    {
+      "name": "SEMI GLOSS WHITE",
+      "unit": "gal",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "SEMI GLOSS WHITE",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0258"
+      ]
+    },
+    {
+      "name": "Shepsil",
+      "unit": "bottle",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Shepsil",
+      "original_units": "Bottle",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0259"
+      ]
+    },
+    {
+      "name": "Sinclair Cascara",
+      "unit": "L",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Sinclair Cascara",
+      "original_units": "litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "Category needs review",
+      "members": [
+        "P0261"
+      ]
+    },
+    {
+      "name": "Skin coat / Roller 7",
+      "unit": "pc",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "Skin coat / Roller 7",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0266"
+      ]
+    },
+    {
+      "name": "TULIPS (AE 121)",
+      "unit": "pc",
+      "category": "Needs category review",
+      "original_entries": 1,
+      "original_names": "TULIPS (AE 121)",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Category needs review",
+      "members": [
+        "P0288"
+      ]
+    },
+    {
+      "name": "Catalyst Expoxy",
+      "unit": "L",
+      "category": "Paint Additives & Hardeners",
+      "original_entries": 1,
+      "original_names": "catalyst expoxy",
+      "original_units": "litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0053"
+      ]
+    },
+    {
+      "name": "Baby Roller",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 2,
+      "original_names": "Baby Roller",
+      "original_units": "pcs; pc",
+      "materials": 1,
+      "sales": 2,
+      "receipts": 2,
+      "review": "",
+      "members": [
+        "P0026",
+        "P0025"
+      ]
+    },
+    {
+      "name": "BABY ROLLER BALA (BIG)",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "BABY ROLLER BALA (BIG)",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0027"
+      ]
+    },
+    {
+      "name": "BABY ROLLER BALA (SMALL)",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "BABY ROLLER BALA (SMALL)",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0028"
+      ]
+    },
+    {
+      "name": "Bala Roller",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 2,
+      "original_names": "Bala Roller",
+      "original_units": "pc; pcs",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0032",
+        "P0033"
+      ]
+    },
+    {
+      "name": "Big Roller",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "Big Roller",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0037"
+      ]
+    },
+    {
+      "name": "BRAS (BRUSH)",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "BRAS (BRUSH)",
+      "original_units": "PCS",
+      "materials": 2,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0042"
+      ]
+    },
+    {
+      "name": "Mini Roller",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "mini roller",
+      "original_units": "pc",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0125"
+      ]
+    },
+    {
+      "name": "Paint Brush",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 2,
+      "original_names": "Paint Brush",
+      "original_units": "pcs; pc",
+      "materials": 2,
+      "sales": 1,
+      "receipts": 4,
+      "review": "",
+      "members": [
+        "P0140",
+        "P0139"
+      ]
+    },
+    {
+      "name": "Paint Brush #0.5",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "Paint Brush 1/2",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0149"
+      ]
+    },
+    {
+      "name": "Paint Brush #1",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 7,
+      "original_names": "Brush 1; Paint Brush 1; #1 Brush; Paint Brush #1; Paint brush 1; BRUSH #1; PAINT BRUSH #1",
+      "original_units": "pcs; pc; PCS",
+      "materials": 4,
+      "sales": 6,
+      "receipts": 6,
+      "review": "",
+      "members": [
+        "P0048",
+        "P0147",
+        "P0002",
+        "P0141",
+        "P0146",
+        "P0044",
+        "P0142"
+      ]
+    },
+    {
+      "name": "Paint Brush #1.5",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 2,
+      "original_names": "paint brush 1.5; BRUSH 1 1/2",
+      "original_units": "pcs; PCS",
+      "materials": 3,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0148",
+        "P0049"
+      ]
+    },
+    {
+      "name": "Paint Brush #2",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 7,
+      "original_names": "Paint Brush 2; Paint Brush #2; Brush 2; paint br 2; BRUSH #2",
+      "original_units": "pcs; pc; PCS",
+      "materials": 8,
+      "sales": 10,
+      "receipts": 5,
+      "review": "",
+      "members": [
+        "P0151",
+        "P0150",
+        "P0143",
+        "P0050",
+        "P0138",
+        "P0144",
+        "P0045"
+      ]
+    },
+    {
+      "name": "Paint Brush #2.5",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 2,
+      "original_names": "Brush #2.5; Brush 2½",
+      "original_units": "pc; pcs",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0046",
+        "P0051"
+      ]
+    },
+    {
+      "name": "Paint Brush #3",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 3,
+      "original_names": "paint brush 3; Paint Brush #3; BRUSH #3",
+      "original_units": "pc; PCS",
+      "materials": 1,
+      "sales": 3,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0152",
+        "P0145",
+        "P0047"
+      ]
+    },
+    {
+      "name": "Paint Brush 4",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "Paint Brush 4",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0153"
+      ]
+    },
+    {
+      "name": "Paint tray",
+      "unit": "bottle",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "Paint tray",
+      "original_units": "btl",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0165"
+      ]
+    },
+    {
+      "name": "Paint Tray",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 2,
+      "original_names": "Paint Tray; PAINT TRAY",
+      "original_units": "pc; PCS",
+      "materials": 1,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0166",
+        "P0167"
+      ]
+    },
+    {
+      "name": "PALITA",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "PALITA",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0168"
+      ]
+    },
+    {
+      "name": "PALITA",
+      "unit": "set",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "PALITA",
+      "original_units": "SET",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0169"
+      ]
+    },
+    {
+      "name": "Roller",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 2,
+      "original_names": "roller; Roller",
+      "original_units": "pcs; pc",
+      "materials": 8,
+      "sales": 4,
+      "receipts": 5,
+      "review": "",
+      "members": [
+        "P0217",
+        "P0216"
+      ]
+    },
+    {
+      "name": "ROLLER (7H ?)",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "ROLLER (7H ?)",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Name needs review",
+      "members": [
+        "P0218"
+      ]
+    },
+    {
+      "name": "ROLLER (PAINT ROLLER)",
+      "unit": "Unspecified",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "ROLLER (PAINT ROLLER)",
+      "original_units": "(missing)",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Unit needs review",
+      "members": [
+        "P0219"
+      ]
+    },
+    {
+      "name": "Roller 4",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 4,
+      "original_names": "Roller 4; Roller #4; ROLLER #4",
+      "original_units": "pc; pcs; PCS",
+      "materials": 2,
+      "sales": 5,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0223",
+        "P0220",
+        "P0224",
+        "P0221"
+      ]
+    },
+    {
+      "name": "Roller 4 Cotton",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "roller 4 cotton",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0225"
+      ]
+    },
+    {
+      "name": "Roller 7",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 4,
+      "original_names": "Roller 7; Roller 7\"; ROLLER #7",
+      "original_units": "pcs; pc; PCS",
+      "materials": 1,
+      "sales": 2,
+      "receipts": 2,
+      "review": "",
+      "members": [
+        "P0227",
+        "P0226",
+        "P0228",
+        "P0222"
+      ]
+    },
+    {
+      "name": "Roller Refill 4\"",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 2,
+      "original_names": "refill 4; Roller Refill 4\"",
+      "original_units": "pc",
+      "materials": 0,
+      "sales": 2,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0214",
+        "P0229"
+      ]
+    },
+    {
+      "name": "Roller Refill 7\"",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "Roller Refill 7\"",
+      "original_units": "pc",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0230"
+      ]
+    },
+    {
+      "name": "STEEL BRUSH",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "STEEL BRUSH",
+      "original_units": "PC",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0273"
+      ]
+    },
+    {
+      "name": "Stik Pole Extension",
+      "unit": "pc",
+      "category": "Painting Tools & Accessories",
+      "original_entries": 1,
+      "original_names": "stik pole extension",
+      "original_units": "pc",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0275"
+      ]
+    },
+    {
+      "name": "Acryter Primer",
+      "unit": "gal",
+      "category": "Primers & Sealers",
+      "original_entries": 1,
+      "original_names": "Acryter Primer",
+      "original_units": "gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0009"
+      ]
+    },
+    {
+      "name": "B-1254 LACQUER SANDING SEALER",
+      "unit": "L",
+      "category": "Primers & Sealers",
+      "original_entries": 1,
+      "original_names": "B-1254 LACQUER SANDING SEALER",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0017"
+      ]
+    },
+    {
+      "name": "Block Coat",
+      "unit": "gal",
+      "category": "Primers & Sealers",
+      "original_entries": 1,
+      "original_names": "Block Coat",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0039"
+      ]
+    },
+    {
+      "name": "Epoxy Primer",
+      "unit": "L",
+      "category": "Primers & Sealers",
+      "original_entries": 2,
+      "original_names": "epoxy primer; Expoy Primer",
+      "original_units": "Litter; litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 2,
+      "review": "",
+      "members": [
+        "P0066",
+        "P0074"
+      ]
+    },
+    {
+      "name": "Epoxy Primer Black",
+      "unit": "L",
+      "category": "Primers & Sealers",
+      "original_entries": 1,
+      "original_names": "Epoxy Primer Black",
+      "original_units": "ltr",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0067"
+      ]
+    },
+    {
+      "name": "Epoxy Primer GaG",
+      "unit": "gal",
+      "category": "Primers & Sealers",
+      "original_entries": 1,
+      "original_names": "Epoxy Primer GaG",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0068"
+      ]
+    },
+    {
+      "name": "Epoxy Primer Gray",
+      "unit": "gal",
+      "category": "Primers & Sealers",
+      "original_entries": 1,
+      "original_names": "Epoxy Primer Gray",
+      "original_units": "gal",
+      "materials": 2,
+      "sales": 2,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0069"
+      ]
+    },
+    {
+      "name": "Epoxy Primer Grey",
+      "unit": "L",
+      "category": "Primers & Sealers",
+      "original_entries": 1,
+      "original_names": "epoxy primer grey",
+      "original_units": "lt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0070"
+      ]
+    },
+    {
+      "name": "Epoxy Primer White",
+      "unit": "gal",
+      "category": "Primers & Sealers",
+      "original_entries": 1,
+      "original_names": "Epoxy Primer White",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0071"
+      ]
+    },
+    {
+      "name": "Lacquer Primer Surfacer",
+      "unit": "gal",
+      "category": "Primers & Sealers",
+      "original_entries": 2,
+      "original_names": "Lacquer Primer Surfacer",
+      "original_units": "gal; Gallon",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0104",
+        "P0105"
+      ]
+    },
+    {
+      "name": "Red Oxide",
+      "unit": "gal",
+      "category": "Primers & Sealers",
+      "original_entries": 2,
+      "original_names": "Red Oxide; RED OXIDE",
+      "original_units": "Gallon; GAL",
+      "materials": 2,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0212",
+        "P0213"
+      ]
+    },
+    {
+      "name": "Sanding Sealer",
+      "unit": "L",
+      "category": "Primers & Sealers",
+      "original_entries": 2,
+      "original_names": "Sanding Sealer; Sandy Sealer",
+      "original_units": "ltr; lt",
+      "materials": 0,
+      "sales": 2,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0249",
+        "P0250"
+      ]
+    },
+    {
+      "name": "Boral",
+      "unit": "kg",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 2,
+      "original_names": "boral; BORAL",
+      "original_units": "kilo; KL",
+      "materials": 1,
+      "sales": 1,
+      "receipts": 0,
+      "review": "Unit needs review",
+      "members": [
+        "P0040",
+        "P0041"
+      ]
+    },
+    {
+      "name": "Flexibond Boysen",
+      "unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "Flexibond Boysen",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0088"
+      ]
+    },
+    {
+      "name": "Glazing Putty",
+      "unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "glazing putty",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0090"
+      ]
+    },
+    {
+      "name": "Glazing Putty",
+      "unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "glazing putty",
+      "original_units": "lt",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0091"
+      ]
+    },
+    {
+      "name": "KONSTRUKT",
+      "unit": "tin",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "KONSTRUKT",
+      "original_units": "TIN",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0101"
+      ]
+    },
+    {
+      "name": "KONSTRUKT (K-201)",
+      "unit": "tin",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "KONSTRUKT (K-201)",
+      "original_units": "TIN",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0102"
+      ]
+    },
+    {
+      "name": "Lacquer Putty",
+      "unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "Lacquer Putty",
+      "original_units": "gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0106"
+      ]
+    },
+    {
+      "name": "Lacquer Spot Putty",
+      "unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "Lacquer Spot Putty",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0107"
+      ]
+    },
+    {
+      "name": "Plexibond",
+      "unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 2,
+      "original_names": "PLEXIBOND; PLEXIBOND (B7760)",
+      "original_units": "GAL",
+      "materials": 5,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Confirm item code match",
+      "members": [
+        "P0170",
+        "P0172"
+      ]
+    },
+    {
+      "name": "Plexibond",
+      "unit": "tin",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "PLEXIBOND",
+      "original_units": "TIN",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0171"
+      ]
+    },
+    {
+      "name": "Plexibond pls",
+      "unit": "tin",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "Plexibond pls",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0173"
+      ]
+    },
+    {
+      "name": "Polituff",
+      "unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 3,
+      "original_names": "Polituff; POLITUFF",
+      "original_units": "Litter; lt; LTR",
+      "materials": 3,
+      "sales": 1,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0174",
+        "P0175",
+        "P0176"
+      ]
+    },
+    {
+      "name": "Putty Master",
+      "unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "Putty Master",
+      "original_units": "Gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0177"
+      ]
+    },
+    {
+      "name": "Skim Coat",
+      "unit": "bag",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "Skim Coat",
+      "original_units": "bag",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0262"
+      ]
+    },
+    {
+      "name": "Skim Coat",
+      "unit": "kg",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 2,
+      "original_names": "Skim Coat; SKIM COAT",
+      "original_units": "kilo; KL",
+      "materials": 1,
+      "sales": 1,
+      "receipts": 2,
+      "review": "Unit needs review",
+      "members": [
+        "P0263",
+        "P0265"
+      ]
+    },
+    {
+      "name": "Skim Coat",
+      "unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "Skim Coat",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0264"
+      ]
+    },
+    {
+      "name": "SPOT PUTTY",
+      "unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "SPOT PUTTY",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0268"
+      ]
+    },
+    {
+      "name": "Wall putty",
+      "unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing",
+      "original_entries": 1,
+      "original_names": "Wall putty",
+      "original_units": "gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0290"
+      ]
+    },
+    {
+      "name": "R/G? / R/S? CHOCOLATE BROWN",
+      "unit": "L",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "R/G? / R/S? CHOCOLATE BROWN",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Name needs review",
+      "members": [
+        "P0208"
+      ]
+    },
+    {
+      "name": "R/S TULLE WHITE",
+      "unit": "tin",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "R/S TULLE WHITE",
+      "original_units": "TIN",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0209"
+      ]
+    },
+    {
+      "name": "Roofguard Baguio Green",
+      "unit": "tin",
+      "category": "Roofing Paints",
+      "original_entries": 2,
+      "original_names": "Rfg Baguio Green; B2550 (ROOFGUARD) (BAGUIO GREEN)",
+      "original_units": "tin; TIN",
+      "materials": 1,
+      "sales": 1,
+      "receipts": 0,
+      "review": "Confirm item code match",
+      "members": [
+        "P0215",
+        "P0021"
+      ]
+    },
+    {
+      "name": "Roofguard Pacific Blue",
+      "unit": "tin",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "Roofguard Pacific Blue",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0231"
+      ]
+    },
+    {
+      "name": "ROS-705 (RAIN OR SHINE) GRAY",
+      "unit": "gal",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "ROS-705 (RAIN OR SHINE) GRAY",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0233"
+      ]
+    },
+    {
+      "name": "R|S Pacific Blue",
+      "unit": "tin",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "R|S Pacific Blue",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0210"
+      ]
+    },
+    {
+      "name": "R|S Terra Cotta",
+      "unit": "gal",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "R|S Terra Cotta",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0211"
+      ]
+    },
+    {
+      "name": "S/R CREAM SURPRISE? (DAVIES SR-411)",
+      "unit": "gal",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "S/R CREAM SURPRISE? (DAVIES SR-411)",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Name needs review",
+      "members": [
+        "P0238"
+      ]
+    },
+    {
+      "name": "S/R SMOKE GRAY",
+      "unit": "gal",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "S/R SMOKE GRAY",
+      "original_units": "GAL",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0240"
+      ]
+    },
+    {
+      "name": "S/R Smoke Gray",
+      "unit": "tin",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "S/R Smoke Gray",
+      "original_units": "tin",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0239"
+      ]
+    },
+    {
+      "name": "S|R White",
+      "unit": "gal",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "S|R White",
+      "original_units": "Gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0241"
+      ]
+    },
+    {
+      "name": "Terra Cotta",
+      "unit": "gal",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "terra cotta",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0277"
+      ]
+    },
+    {
+      "name": "Terra Cotta",
+      "unit": "L",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "Terra Cotta",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0279"
+      ]
+    },
+    {
+      "name": "Terra Cotta",
+      "unit": "Unspecified",
+      "category": "Roofing Paints",
+      "original_entries": 1,
+      "original_names": "Terra Cotta",
+      "original_units": "(missing)",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "Unit needs review",
+      "members": [
+        "P0278"
+      ]
+    },
+    {
+      "name": "Spray Paint",
+      "unit": "pc",
+      "category": "Spray Paints",
+      "original_entries": 1,
+      "original_names": "Spray Paint",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 2,
+      "review": "",
+      "members": [
+        "P0269"
+      ]
+    },
+    {
+      "name": "SPRAY PAINT BOSNY",
+      "unit": "pc",
+      "category": "Spray Paints",
+      "original_entries": 1,
+      "original_names": "SPRAY PAINT BOSNY",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0270"
+      ]
+    },
+    {
+      "name": "Spray paint gold",
+      "unit": "pc",
+      "category": "Spray Paints",
+      "original_entries": 1,
+      "original_names": "Spray paint gold",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0271"
+      ]
+    },
+    {
+      "name": "Spray paint primer gray",
+      "unit": "pc",
+      "category": "Spray Paints",
+      "original_entries": 1,
+      "original_names": "Spray paint primer gray",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0272"
+      ]
+    },
+    {
+      "name": "(BOTE?) PAINT THINNER",
+      "unit": "ML",
+      "category": "Thinners & Reducers",
+      "original_entries": 1,
+      "original_names": "(BOTE?) PAINT THINNER",
+      "original_units": "ML",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Unit needs review; Name needs review",
+      "members": [
+        "P0001"
+      ]
+    },
+    {
+      "name": "B1750 Acrytex Reducer",
+      "unit": "gal",
+      "category": "Thinners & Reducers",
+      "original_entries": 2,
+      "original_names": "B1750; B1750 (ACRYTEX REDUCER)",
+      "original_units": "GAL",
+      "materials": 2,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Confirm item code match",
+      "members": [
+        "P0019",
+        "P0020"
+      ]
+    },
+    {
+      "name": "EPOXY (REDUCER) B-55 ?",
+      "unit": "L",
+      "category": "Thinners & Reducers",
+      "original_entries": 1,
+      "original_names": "EPOXY (REDUCER) B-55 ?",
+      "original_units": "LTR",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Name needs review",
+      "members": [
+        "P0063"
+      ]
+    },
+    {
+      "name": "Epoxy Reducer",
+      "unit": "gal",
+      "category": "Thinners & Reducers",
+      "original_entries": 1,
+      "original_names": "Epoxy Reducer",
+      "original_units": "gal",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0073"
+      ]
+    },
+    {
+      "name": "Epoxy Reducer",
+      "unit": "L",
+      "category": "Thinners & Reducers",
+      "original_entries": 1,
+      "original_names": "epoxy reducer",
+      "original_units": "litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0072"
+      ]
+    },
+    {
+      "name": "Lacquer Thinner",
+      "unit": "bottle",
+      "category": "Thinners & Reducers",
+      "original_entries": 4,
+      "original_names": "Lacquer Thinner; laquer thinner; LACQUER THINNER",
+      "original_units": "Bottle; btl; BOTE; BT",
+      "materials": 2,
+      "sales": 1,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0108",
+        "P0114",
+        "P0111",
+        "P0112"
+      ]
+    },
+    {
+      "name": "Lacquer Thinner",
+      "unit": "gal",
+      "category": "Thinners & Reducers",
+      "original_entries": 2,
+      "original_names": "Lacquer Thinner",
+      "original_units": "gal; gallon",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0109",
+        "P0110"
+      ]
+    },
+    {
+      "name": "Lacquer Thinner",
+      "unit": "L",
+      "category": "Thinners & Reducers",
+      "original_entries": 1,
+      "original_names": "lac. Thinner",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0103"
+      ]
+    },
+    {
+      "name": "Paint Thinner",
+      "unit": "bottle",
+      "category": "Thinners & Reducers",
+      "original_entries": 5,
+      "original_names": "Paint Thinner; Paint Thiner; PAINT THINNER",
+      "original_units": "btl; Bottle; bt; BOTE",
+      "materials": 4,
+      "sales": 10,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0158",
+        "P0155",
+        "P0157",
+        "P0162",
+        "P0161"
+      ]
+    },
+    {
+      "name": "Paint Thinner",
+      "unit": "gal",
+      "category": "Thinners & Reducers",
+      "original_entries": 1,
+      "original_names": "Paint Thinner",
+      "original_units": "gallon",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0159"
+      ]
+    },
+    {
+      "name": "Paint Thinner",
+      "unit": "L",
+      "category": "Thinners & Reducers",
+      "original_entries": 1,
+      "original_names": "Paint Thhinner",
+      "original_units": "Litter",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 1,
+      "review": "",
+      "members": [
+        "P0154"
+      ]
+    },
+    {
+      "name": "Paint Thinner",
+      "unit": "ML?",
+      "category": "Thinners & Reducers",
+      "original_entries": 1,
+      "original_names": "PAINT THINNER",
+      "original_units": "ML?",
+      "materials": 2,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Unit needs review",
+      "members": [
+        "P0163"
+      ]
+    },
+    {
+      "name": "Paint Thinner",
+      "unit": "pc",
+      "category": "Thinners & Reducers",
+      "original_entries": 1,
+      "original_names": "Paint Thiner",
+      "original_units": "pc",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0156"
+      ]
+    },
+    {
+      "name": "Paint Thinner",
+      "unit": "Unspecified",
+      "category": "Thinners & Reducers",
+      "original_entries": 1,
+      "original_names": "PAINT THINNER",
+      "original_units": "(missing)",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Unit needs review",
+      "members": [
+        "P0160"
+      ]
+    },
+    {
+      "name": "Door Knob",
+      "unit": "pc",
+      "category": "Tile & Construction Hardware",
+      "original_entries": 1,
+      "original_names": "door knob",
+      "original_units": "pc",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0060"
+      ]
+    },
+    {
+      "name": "Mo Mono Lock",
+      "unit": "pc",
+      "category": "Tile & Construction Hardware",
+      "original_entries": 1,
+      "original_names": "mo mono lock",
+      "original_units": "pc",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0132"
+      ]
+    },
+    {
+      "name": "TILE ADHESIVE",
+      "unit": "BOTE?",
+      "category": "Tile & Construction Hardware",
+      "original_entries": 1,
+      "original_names": "TILE ADHESIVE",
+      "original_units": "BOTE?",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "Unit needs review",
+      "members": [
+        "P0281"
+      ]
+    },
+    {
+      "name": "Tile Adhesive",
+      "unit": "pc",
+      "category": "Tile & Construction Hardware",
+      "original_entries": 1,
+      "original_names": "Tile Adhesive",
+      "original_units": "Pcs",
+      "materials": 0,
+      "sales": 0,
+      "receipts": 3,
+      "review": "",
+      "members": [
+        "P0280"
+      ]
+    },
+    {
+      "name": "Tile Adhesive ABC",
+      "unit": "pc",
+      "category": "Tile & Construction Hardware",
+      "original_entries": 1,
+      "original_names": "Tile Adhesive ABC",
+      "original_units": "pcs",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0282"
+      ]
+    },
+    {
+      "name": "Tile Grout",
+      "unit": "kg",
+      "category": "Tile & Construction Hardware",
+      "original_entries": 1,
+      "original_names": "Tile grouth",
+      "original_units": "kg",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0284"
+      ]
+    },
+    {
+      "name": "Tile Grout",
+      "unit": "pc",
+      "category": "Tile & Construction Hardware",
+      "original_entries": 1,
+      "original_names": "TILE GROUT",
+      "original_units": "PCS",
+      "materials": 1,
+      "sales": 0,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0283"
+      ]
+    },
+    {
+      "name": "A/C Raw Sienna",
+      "unit": "0.25 L",
+      "category": "Tinting Colors",
+      "original_entries": 1,
+      "original_names": "A/C Raw Sienna",
+      "original_units": "1/4 ltr",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0004"
+      ]
+    },
+    {
+      "name": "A/C Raw Sienna / Burnt Umber / Venetian Red",
+      "unit": "0.25 L",
+      "category": "Tinting Colors",
+      "original_entries": 1,
+      "original_names": "A/C Raw Sienna / Burnt Umber / Venetian Red",
+      "original_units": "1/4 ltr",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0005"
+      ]
+    },
+    {
+      "name": "Acrylic Tinting Blue",
+      "unit": "0.25 L",
+      "category": "Tinting Colors",
+      "original_entries": 1,
+      "original_names": "Acrylic Tinting Blue",
+      "original_units": "1/4 ltr",
+      "materials": 0,
+      "sales": 1,
+      "receipts": 0,
+      "review": "",
+      "members": [
+        "P0008"
+      ]
+    }
+  ],
+  "mapping": [
+    {
+      "old_id": "P0001",
+      "old_name": "(BOTE?) PAINT THINNER",
+      "old_unit": "ML",
+      "new_name": "(BOTE?) PAINT THINNER",
+      "new_unit": "ML",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0002",
+      "old_name": "#1 Brush",
+      "old_unit": "pc",
+      "new_name": "Paint Brush #1",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0003",
+      "old_name": "601 Smoke Gray",
+      "old_unit": "tin",
+      "new_name": "601 Smoke Gray",
+      "new_unit": "tin",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0004",
+      "old_name": "A/C Raw Sienna",
+      "old_unit": "1/4 ltr",
+      "new_name": "A/C Raw Sienna",
+      "new_unit": "0.25 L",
+      "category": "Tinting Colors"
+    },
+    {
+      "old_id": "P0005",
+      "old_name": "A/C Raw Sienna / Burnt Umber / Venetian Red",
+      "old_unit": "1/4 ltr",
+      "new_name": "A/C Raw Sienna / Burnt Umber / Venetian Red",
+      "new_unit": "0.25 L",
+      "category": "Tinting Colors"
+    },
+    {
+      "old_id": "P0006",
+      "old_name": "acrylic",
+      "old_unit": "Litter",
+      "new_name": "Acrylic",
+      "new_unit": "L",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0007",
+      "old_name": "Acrylic Emulsiuon",
+      "old_unit": "Litter",
+      "new_name": "Acrylic Emulsiuon",
+      "new_unit": "L",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0008",
+      "old_name": "Acrylic Tinting Blue",
+      "old_unit": "1/4 ltr",
+      "new_name": "Acrylic Tinting Blue",
+      "new_unit": "0.25 L",
+      "category": "Tinting Colors"
+    },
+    {
+      "old_id": "P0009",
+      "old_name": "Acryter Primer",
+      "old_unit": "gallon",
+      "new_name": "Acryter Primer",
+      "new_unit": "gal",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0010",
+      "old_name": "Acrytex Color Black",
+      "old_unit": "gallon",
+      "new_name": "Acrytex Color Black",
+      "new_unit": "gal",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0011",
+      "old_name": "Aluminum Silver",
+      "old_unit": "lt",
+      "new_name": "Aluminum Silver",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0012",
+      "old_name": "Automotive lac. Black",
+      "old_unit": "lt",
+      "new_name": "Automotive Lacquer Black",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0013",
+      "old_name": "AUTOMOTIVE LACQUER BLACK",
+      "old_unit": "LTR",
+      "new_name": "Automotive Lacquer Black",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0014",
+      "old_name": "Automotive Lacquer White",
+      "old_unit": "ltr",
+      "new_name": "Automotive Lacquer White",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0015",
+      "old_name": "Automotive Raw Sienna",
+      "old_unit": "ltr",
+      "new_name": "Automotive Raw Sienna",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0016",
+      "old_name": "B-1250 CLEAR GLOSS LACQUER",
+      "old_unit": "LTR",
+      "new_name": "B-1250 CLEAR GLOSS LACQUER",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0017",
+      "old_name": "B-1254 LACQUER SANDING SEALER",
+      "old_unit": "LTR",
+      "new_name": "B-1254 LACQUER SANDING SEALER",
+      "new_unit": "L",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0018",
+      "old_name": "B|S White",
+      "old_unit": "Gallon",
+      "new_name": "B|S White",
+      "new_unit": "gal",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0019",
+      "old_name": "B1750",
+      "old_unit": "GAL",
+      "new_name": "B1750 Acrytex Reducer",
+      "new_unit": "gal",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0020",
+      "old_name": "B1750 (ACRYTEX REDUCER)",
+      "old_unit": "GAL",
+      "new_name": "B1750 Acrytex Reducer",
+      "new_unit": "gal",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0021",
+      "old_name": "B2550 (ROOFGUARD) (BAGUIO GREEN)",
+      "old_unit": "TIN",
+      "new_name": "Roofguard Baguio Green",
+      "new_unit": "tin",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0022",
+      "old_name": "B2705 OWS MAPLE",
+      "old_unit": "LTR",
+      "new_name": "B2705 OWS MAPLE",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0023",
+      "old_name": "B600",
+      "old_unit": "GAL",
+      "new_name": "B600",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0024",
+      "old_name": "B690 (QDE BLACK)",
+      "old_unit": "GAL",
+      "new_name": "QDE Black",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0025",
+      "old_name": "Baby Roller",
+      "old_unit": "pc",
+      "new_name": "Baby Roller",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0026",
+      "old_name": "Baby Roller",
+      "old_unit": "pcs",
+      "new_name": "Baby Roller",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0027",
+      "old_name": "BABY ROLLER BALA (BIG)",
+      "old_unit": "PCS",
+      "new_name": "BABY ROLLER BALA (BIG)",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0028",
+      "old_name": "BABY ROLLER BALA (SMALL)",
+      "old_unit": "PCS",
+      "new_name": "BABY ROLLER BALA (SMALL)",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0029",
+      "old_name": "Bala",
+      "old_unit": "pcs",
+      "new_name": "Bala",
+      "new_unit": "pc",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0030",
+      "old_name": "BALA ?",
+      "old_unit": "PCS",
+      "new_name": "BALA ?",
+      "new_unit": "pc",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0031",
+      "old_name": "BALA (S)",
+      "old_unit": "PCS",
+      "new_name": "BALA (S)",
+      "new_unit": "pc",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0032",
+      "old_name": "Bala Roller",
+      "old_unit": "pc",
+      "new_name": "Bala Roller",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0033",
+      "old_name": "Bala Roller",
+      "old_unit": "pcs",
+      "new_name": "Bala Roller",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0034",
+      "old_name": "Basahan",
+      "old_unit": "kilo",
+      "new_name": "Basahan",
+      "new_unit": "kg",
+      "category": "Cleaning & Consumables"
+    },
+    {
+      "old_id": "P0035",
+      "old_name": "Basahan",
+      "old_unit": "pcs",
+      "new_name": "Basahan",
+      "new_unit": "pc",
+      "category": "Cleaning & Consumables"
+    },
+    {
+      "old_id": "P0036",
+      "old_name": "BASAHAN",
+      "old_unit": "KL",
+      "new_name": "Basahan",
+      "new_unit": "kg",
+      "category": "Cleaning & Consumables"
+    },
+    {
+      "old_id": "P0037",
+      "old_name": "Big Roller",
+      "old_unit": "pcs",
+      "new_name": "Big Roller",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0038",
+      "old_name": "BLIND RIVET",
+      "old_unit": "PCS",
+      "new_name": "BLIND RIVET",
+      "new_unit": "pc",
+      "category": "Fasteners & Cutting Tools"
+    },
+    {
+      "old_id": "P0039",
+      "old_name": "Block Coat",
+      "old_unit": "gal",
+      "new_name": "Block Coat",
+      "new_unit": "gal",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0040",
+      "old_name": "boral",
+      "old_unit": "kilo",
+      "new_name": "Boral",
+      "new_unit": "kg",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0041",
+      "old_name": "BORAL",
+      "old_unit": "KL",
+      "new_name": "Boral",
+      "new_unit": "kg",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0042",
+      "old_name": "BRAS (BRUSH)",
+      "old_unit": "PCS",
+      "new_name": "BRAS (BRUSH)",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0043",
+      "old_name": "BROWN",
+      "old_unit": "",
+      "new_name": "BROWN",
+      "new_unit": "Unspecified",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0044",
+      "old_name": "BRUSH #1",
+      "old_unit": "PCS",
+      "new_name": "Paint Brush #1",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0045",
+      "old_name": "BRUSH #2",
+      "old_unit": "PCS",
+      "new_name": "Paint Brush #2",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0046",
+      "old_name": "Brush #2.5",
+      "old_unit": "pc",
+      "new_name": "Paint Brush #2.5",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0047",
+      "old_name": "BRUSH #3",
+      "old_unit": "PCS",
+      "new_name": "Paint Brush #3",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0048",
+      "old_name": "Brush 1",
+      "old_unit": "pcs",
+      "new_name": "Paint Brush #1",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0049",
+      "old_name": "BRUSH 1 1/2",
+      "old_unit": "PCS",
+      "new_name": "Paint Brush #1.5",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0050",
+      "old_name": "Brush 2",
+      "old_unit": "pcs",
+      "new_name": "Paint Brush #2",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0051",
+      "old_name": "Brush 2½",
+      "old_unit": "pcs",
+      "new_name": "Paint Brush #2.5",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0052",
+      "old_name": "Buildrite",
+      "old_unit": "litter",
+      "new_name": "Buildrite",
+      "new_unit": "L",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0053",
+      "old_name": "catalyst expoxy",
+      "old_unit": "litter",
+      "new_name": "Catalyst Expoxy",
+      "new_unit": "L",
+      "category": "Paint Additives & Hardeners"
+    },
+    {
+      "old_id": "P0054",
+      "old_name": "Chocolate Brown",
+      "old_unit": "Litter",
+      "new_name": "Chocolate Brown",
+      "new_unit": "L",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0055",
+      "old_name": "Chocolate Brown QDE",
+      "old_unit": "TIN",
+      "new_name": "QDE Chocolate Brown",
+      "new_unit": "tin",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0056",
+      "old_name": "clear gloss lac",
+      "old_unit": "lt",
+      "new_name": "Clear Gloss Lacquer",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0057",
+      "old_name": "Clear Gloss Lacquer",
+      "old_unit": "ltr",
+      "new_name": "Clear Gloss Lacquer",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0058",
+      "old_name": "CUTTING DISC",
+      "old_unit": "PCS",
+      "new_name": "CUTTING DISC",
+      "new_unit": "pc",
+      "category": "Fasteners & Cutting Tools"
+    },
+    {
+      "old_id": "P0059",
+      "old_name": "dead flat lac",
+      "old_unit": "lt",
+      "new_name": "Dead Flat Lac",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0060",
+      "old_name": "door knob",
+      "old_unit": "pc",
+      "new_name": "Door Knob",
+      "new_unit": "pc",
+      "category": "Tile & Construction Hardware"
+    },
+    {
+      "old_id": "P0061",
+      "old_name": "Dyaryo",
+      "old_unit": "kilo",
+      "new_name": "Dyaryo",
+      "new_unit": "kg",
+      "category": "Cleaning & Consumables"
+    },
+    {
+      "old_id": "P0062",
+      "old_name": "Enamel Mixed",
+      "old_unit": "litter",
+      "new_name": "Enamel Mixed",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0063",
+      "old_name": "EPOXY (REDUCER) B-55 ?",
+      "old_unit": "LTR",
+      "new_name": "EPOXY (REDUCER) B-55 ?",
+      "new_unit": "L",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0064",
+      "old_name": "EPOXY BLACK",
+      "old_unit": "LTR",
+      "new_name": "EPOXY BLACK",
+      "new_unit": "L",
+      "category": "Epoxy Coatings"
+    },
+    {
+      "old_id": "P0065",
+      "old_name": "Epoxy Non-Sag",
+      "old_unit": "Litter",
+      "new_name": "Epoxy Non-Sag",
+      "new_unit": "L",
+      "category": "Adhesives & Sealants"
+    },
+    {
+      "old_id": "P0066",
+      "old_name": "epoxy primer",
+      "old_unit": "Litter",
+      "new_name": "Epoxy Primer",
+      "new_unit": "L",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0067",
+      "old_name": "Epoxy Primer Black",
+      "old_unit": "ltr",
+      "new_name": "Epoxy Primer Black",
+      "new_unit": "L",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0068",
+      "old_name": "Epoxy Primer GaG",
+      "old_unit": "gal",
+      "new_name": "Epoxy Primer GaG",
+      "new_unit": "gal",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0069",
+      "old_name": "Epoxy Primer Gray",
+      "old_unit": "gal",
+      "new_name": "Epoxy Primer Gray",
+      "new_unit": "gal",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0070",
+      "old_name": "epoxy primer grey",
+      "old_unit": "lt",
+      "new_name": "Epoxy Primer Grey",
+      "new_unit": "L",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0071",
+      "old_name": "Epoxy Primer White",
+      "old_unit": "gal",
+      "new_name": "Epoxy Primer White",
+      "new_unit": "gal",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0072",
+      "old_name": "epoxy reducer",
+      "old_unit": "litter",
+      "new_name": "Epoxy Reducer",
+      "new_unit": "L",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0073",
+      "old_name": "Epoxy Reducer",
+      "old_unit": "gal",
+      "new_name": "Epoxy Reducer",
+      "new_unit": "gal",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0074",
+      "old_name": "Expoy Primer",
+      "old_unit": "litter",
+      "new_name": "Epoxy Primer",
+      "new_unit": "L",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0075",
+      "old_name": "flat latex",
+      "old_unit": "lt",
+      "new_name": "Flat Latex",
+      "new_unit": "L",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0076",
+      "old_name": "Flat Latex",
+      "old_unit": "tin",
+      "new_name": "Flat Latex",
+      "new_unit": "tin",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0077",
+      "old_name": "FLAT LATEX (WHITE)",
+      "old_unit": "GAL",
+      "new_name": "Flat Latex White",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0078",
+      "old_name": "flat latex pls",
+      "old_unit": "tin",
+      "new_name": "Flat Latex Pls",
+      "new_unit": "tin",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0079",
+      "old_name": "flat latex white",
+      "old_unit": "gallon",
+      "new_name": "Flat Latex White",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0080",
+      "old_name": "FLAT LATEX WHITE",
+      "old_unit": "GAL",
+      "new_name": "Flat Latex White",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0081",
+      "old_name": "FLAT LATEX WHITE",
+      "old_unit": "TIN",
+      "new_name": "Flat Latex White",
+      "new_unit": "tin",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0082",
+      "old_name": "FLAT LATEX WHITE (DAVIES)",
+      "old_unit": "GAL",
+      "new_name": "FLAT LATEX WHITE (DAVIES)",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0083",
+      "old_name": "flat wall enamel",
+      "old_unit": "lt",
+      "new_name": "Flat Wall Enamel",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0084",
+      "old_name": "Flat Wall Enamel",
+      "old_unit": "Gallon",
+      "new_name": "Flat Wall Enamel",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0085",
+      "old_name": "Flat Wall Enamel",
+      "old_unit": "ltr",
+      "new_name": "Flat Wall Enamel",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0086",
+      "old_name": "FLAT WHITE",
+      "old_unit": "GAL",
+      "new_name": "FLAT WHITE",
+      "new_unit": "gal",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0087",
+      "old_name": "FLAT WHITE",
+      "old_unit": "TIN",
+      "new_name": "FLAT WHITE",
+      "new_unit": "tin",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0088",
+      "old_name": "Flexibond Boysen",
+      "old_unit": "Litter",
+      "new_name": "Flexibond Boysen",
+      "new_unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0089",
+      "old_name": "gasa tape",
+      "old_unit": "pcs",
+      "new_name": "Gasa Tape",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0090",
+      "old_name": "glazing putty",
+      "old_unit": "gal",
+      "new_name": "Glazing Putty",
+      "new_unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0091",
+      "old_name": "glazing putty",
+      "old_unit": "lt",
+      "new_name": "Glazing Putty",
+      "new_unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0092",
+      "old_name": "Gloss Black",
+      "old_unit": "1/4 Quarter liter can 250",
+      "new_name": "Gloss Black",
+      "new_unit": "0.25 L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0093",
+      "old_name": "gloss chocolate brown",
+      "old_unit": "litter",
+      "new_name": "Gloss Chocolate Brown",
+      "new_unit": "L",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0094",
+      "old_name": "Gloss Latex",
+      "old_unit": "gal",
+      "new_name": "Gloss Latex",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0095",
+      "old_name": "Gloss Latex",
+      "old_unit": "gallon",
+      "new_name": "Gloss Latex",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0096",
+      "old_name": "Gloss Latex",
+      "old_unit": "Litter",
+      "new_name": "Gloss Latex",
+      "new_unit": "L",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0097",
+      "old_name": "Gloss Latex",
+      "old_unit": "tin",
+      "new_name": "Gloss Latex",
+      "new_unit": "tin",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0098",
+      "old_name": "GLOSS LATEX WHITE",
+      "old_unit": "LTR",
+      "new_name": "GLOSS LATEX WHITE",
+      "new_unit": "L",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0099",
+      "old_name": "Hardener Big",
+      "old_unit": "pcs",
+      "new_name": "Hardener Big",
+      "new_unit": "pc",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0100",
+      "old_name": "KIS / Latex Milk Tea",
+      "old_unit": "tin",
+      "new_name": "KIS / Latex Milk Tea",
+      "new_unit": "tin",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0101",
+      "old_name": "KONSTRUKT",
+      "old_unit": "TIN",
+      "new_name": "KONSTRUKT",
+      "new_unit": "tin",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0102",
+      "old_name": "KONSTRUKT (K-201)",
+      "old_unit": "TIN",
+      "new_name": "KONSTRUKT (K-201)",
+      "new_unit": "tin",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0103",
+      "old_name": "lac. Thinner",
+      "old_unit": "Litter",
+      "new_name": "Lacquer Thinner",
+      "new_unit": "L",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0104",
+      "old_name": "Lacquer Primer Surfacer",
+      "old_unit": "gal",
+      "new_name": "Lacquer Primer Surfacer",
+      "new_unit": "gal",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0105",
+      "old_name": "Lacquer Primer Surfacer",
+      "old_unit": "Gallon",
+      "new_name": "Lacquer Primer Surfacer",
+      "new_unit": "gal",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0106",
+      "old_name": "Lacquer Putty",
+      "old_unit": "gallon",
+      "new_name": "Lacquer Putty",
+      "new_unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0107",
+      "old_name": "Lacquer Spot Putty",
+      "old_unit": "gal",
+      "new_name": "Lacquer Spot Putty",
+      "new_unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0108",
+      "old_name": "Lacquer Thinner",
+      "old_unit": "Bottle",
+      "new_name": "Lacquer Thinner",
+      "new_unit": "bottle",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0109",
+      "old_name": "Lacquer Thinner",
+      "old_unit": "gal",
+      "new_name": "Lacquer Thinner",
+      "new_unit": "gal",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0110",
+      "old_name": "Lacquer Thinner",
+      "old_unit": "gallon",
+      "new_name": "Lacquer Thinner",
+      "new_unit": "gal",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0111",
+      "old_name": "LACQUER THINNER",
+      "old_unit": "BOTE",
+      "new_name": "Lacquer Thinner",
+      "new_unit": "bottle",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0112",
+      "old_name": "LACQUER THINNER",
+      "old_unit": "BT",
+      "new_name": "Lacquer Thinner",
+      "new_unit": "bottle",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0113",
+      "old_name": "LACQUER WHITE",
+      "old_unit": "LTR",
+      "new_name": "LACQUER WHITE",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0114",
+      "old_name": "laquer thinner",
+      "old_unit": "btl",
+      "new_name": "Lacquer Thinner",
+      "new_unit": "bottle",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0115",
+      "old_name": "Latex int",
+      "old_unit": "gal",
+      "new_name": "Latex int",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0116",
+      "old_name": "Latex Paint Dark Semi Gray",
+      "old_unit": "tin",
+      "new_name": "Latex Paint Dark Semi Gray",
+      "new_unit": "tin",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0117",
+      "old_name": "Latex Paint HB (+ add-on)",
+      "old_unit": "gal",
+      "new_name": "Latex Paint HB (+ add-on)",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0118",
+      "old_name": "lightning dark seal gray",
+      "old_unit": "tin",
+      "new_name": "Lightning Dark Seal Gray",
+      "new_unit": "tin",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0119",
+      "old_name": "LIHA #?",
+      "old_unit": "PCS",
+      "new_name": "LIHA #?",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0120",
+      "old_name": "Maple",
+      "old_unit": "pc",
+      "new_name": "Maple",
+      "new_unit": "pc",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0121",
+      "old_name": "Masking Tape",
+      "old_unit": "pcs",
+      "new_name": "Masking Tape",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0122",
+      "old_name": "Masking Tape #1 (1\")",
+      "old_unit": "pcs",
+      "new_name": "Masking Tape #1 (1\")",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0123",
+      "old_name": "MASKING TAPE #2",
+      "old_unit": "PCS",
+      "new_name": "MASKING TAPE #2",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0124",
+      "old_name": "Masking Tape 1.5\"",
+      "old_unit": "pcs",
+      "new_name": "Masking Tape 1.5\"",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0125",
+      "old_name": "mini roller",
+      "old_unit": "pc",
+      "new_name": "Mini Roller",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0126",
+      "old_name": "MIX",
+      "old_unit": "GAL",
+      "new_name": "MIX",
+      "new_unit": "gal",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0127",
+      "old_name": "MIX",
+      "old_unit": "LTR",
+      "new_name": "MIX",
+      "new_unit": "L",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0128",
+      "old_name": "MIX",
+      "old_unit": "TIN",
+      "new_name": "MIX",
+      "new_unit": "tin",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0129",
+      "old_name": "MIX ?",
+      "old_unit": "LTR",
+      "new_name": "MIX ?",
+      "new_unit": "L",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0130",
+      "old_name": "MIX (POWER MIX)?",
+      "old_unit": "",
+      "new_name": "MIX (POWER MIX)?",
+      "new_unit": "Unspecified",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0131",
+      "old_name": "Mix Enamel",
+      "old_unit": "1L",
+      "new_name": "Mix Enamel",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0132",
+      "old_name": "mo mono lock",
+      "old_unit": "pc",
+      "new_name": "Mo Mono Lock",
+      "new_unit": "pc",
+      "category": "Tile & Construction Hardware"
+    },
+    {
+      "old_id": "P0133",
+      "old_name": "Nation Maple",
+      "old_unit": "Litter",
+      "new_name": "Nation Maple",
+      "new_unit": "L",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0134",
+      "old_name": "Nixon Paint",
+      "old_unit": "Gallon",
+      "new_name": "Nixon Paint",
+      "new_unit": "gal",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0135",
+      "old_name": "off white pls",
+      "old_unit": "gal",
+      "new_name": "Off White Pls",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0136",
+      "old_name": "Oil Wood Stain",
+      "old_unit": "Litter",
+      "new_name": "Oil Wood Stain",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0137",
+      "old_name": "Paint",
+      "old_unit": "pcs",
+      "new_name": "Paint",
+      "new_unit": "pc",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0138",
+      "old_name": "paint br 2",
+      "old_unit": "pc",
+      "new_name": "Paint Brush #2",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0139",
+      "old_name": "Paint Brush",
+      "old_unit": "pc",
+      "new_name": "Paint Brush",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0140",
+      "old_name": "Paint Brush",
+      "old_unit": "pcs",
+      "new_name": "Paint Brush",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0141",
+      "old_name": "Paint Brush #1",
+      "old_unit": "pc",
+      "new_name": "Paint Brush #1",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0142",
+      "old_name": "PAINT BRUSH #1",
+      "old_unit": "PCS",
+      "new_name": "Paint Brush #1",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0143",
+      "old_name": "Paint Brush #2",
+      "old_unit": "pc",
+      "new_name": "Paint Brush #2",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0144",
+      "old_name": "Paint Brush #2",
+      "old_unit": "pcs",
+      "new_name": "Paint Brush #2",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0145",
+      "old_name": "Paint Brush #3",
+      "old_unit": "pc",
+      "new_name": "Paint Brush #3",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0146",
+      "old_name": "Paint brush 1",
+      "old_unit": "pc",
+      "new_name": "Paint Brush #1",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0147",
+      "old_name": "Paint Brush 1",
+      "old_unit": "pcs",
+      "new_name": "Paint Brush #1",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0148",
+      "old_name": "paint brush 1.5",
+      "old_unit": "pcs",
+      "new_name": "Paint Brush #1.5",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0149",
+      "old_name": "Paint Brush 1/2",
+      "old_unit": "pcs",
+      "new_name": "Paint Brush #0.5",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0150",
+      "old_name": "Paint Brush 2",
+      "old_unit": "pc",
+      "new_name": "Paint Brush #2",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0151",
+      "old_name": "Paint Brush 2",
+      "old_unit": "pcs",
+      "new_name": "Paint Brush #2",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0152",
+      "old_name": "paint brush 3",
+      "old_unit": "pc",
+      "new_name": "Paint Brush #3",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0153",
+      "old_name": "Paint Brush 4",
+      "old_unit": "pcs",
+      "new_name": "Paint Brush 4",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0154",
+      "old_name": "Paint Thhinner",
+      "old_unit": "Litter",
+      "new_name": "Paint Thinner",
+      "new_unit": "L",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0155",
+      "old_name": "Paint Thiner",
+      "old_unit": "btl",
+      "new_name": "Paint Thinner",
+      "new_unit": "bottle",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0156",
+      "old_name": "Paint Thiner",
+      "old_unit": "pc",
+      "new_name": "Paint Thinner",
+      "new_unit": "pc",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0157",
+      "old_name": "Paint Thinner",
+      "old_unit": "Bottle",
+      "new_name": "Paint Thinner",
+      "new_unit": "bottle",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0158",
+      "old_name": "Paint Thinner",
+      "old_unit": "btl",
+      "new_name": "Paint Thinner",
+      "new_unit": "bottle",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0159",
+      "old_name": "Paint Thinner",
+      "old_unit": "gallon",
+      "new_name": "Paint Thinner",
+      "new_unit": "gal",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0160",
+      "old_name": "PAINT THINNER",
+      "old_unit": "",
+      "new_name": "Paint Thinner",
+      "new_unit": "Unspecified",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0161",
+      "old_name": "PAINT THINNER",
+      "old_unit": "BOTE",
+      "new_name": "Paint Thinner",
+      "new_unit": "bottle",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0162",
+      "old_name": "Paint Thinner",
+      "old_unit": "bt",
+      "new_name": "Paint Thinner",
+      "new_unit": "bottle",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0163",
+      "old_name": "PAINT THINNER",
+      "old_unit": "ML?",
+      "new_name": "Paint Thinner",
+      "new_unit": "ML?",
+      "category": "Thinners & Reducers"
+    },
+    {
+      "old_id": "P0164",
+      "old_name": "PAINT TIMPLA",
+      "old_unit": "GAL",
+      "new_name": "PAINT TIMPLA",
+      "new_unit": "gal",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0165",
+      "old_name": "Paint tray",
+      "old_unit": "btl",
+      "new_name": "Paint tray",
+      "new_unit": "bottle",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0166",
+      "old_name": "Paint Tray",
+      "old_unit": "pc",
+      "new_name": "Paint Tray",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0167",
+      "old_name": "PAINT TRAY",
+      "old_unit": "PCS",
+      "new_name": "Paint Tray",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0168",
+      "old_name": "PALITA",
+      "old_unit": "PCS",
+      "new_name": "PALITA",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0169",
+      "old_name": "PALITA",
+      "old_unit": "SET",
+      "new_name": "PALITA",
+      "new_unit": "set",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0170",
+      "old_name": "PLEXIBOND",
+      "old_unit": "GAL",
+      "new_name": "Plexibond",
+      "new_unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0171",
+      "old_name": "PLEXIBOND",
+      "old_unit": "TIN",
+      "new_name": "Plexibond",
+      "new_unit": "tin",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0172",
+      "old_name": "PLEXIBOND (B7760)",
+      "old_unit": "GAL",
+      "new_name": "Plexibond",
+      "new_unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0173",
+      "old_name": "Plexibond pls",
+      "old_unit": "tin",
+      "new_name": "Plexibond pls",
+      "new_unit": "tin",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0174",
+      "old_name": "Polituff",
+      "old_unit": "Litter",
+      "new_name": "Polituff",
+      "new_unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0175",
+      "old_name": "Polituff",
+      "old_unit": "lt",
+      "new_name": "Polituff",
+      "new_unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0176",
+      "old_name": "POLITUFF",
+      "old_unit": "LTR",
+      "new_name": "Polituff",
+      "new_unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0177",
+      "old_name": "Putty Master",
+      "old_unit": "Gallon",
+      "new_name": "Putty Master",
+      "new_unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0178",
+      "old_name": "QDE Black",
+      "old_unit": "1 Gal",
+      "new_name": "QDE Black",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0179",
+      "old_name": "QDE Black",
+      "old_unit": "1 Gallon",
+      "new_name": "QDE Black",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0180",
+      "old_name": "QDE Black",
+      "old_unit": "gallon",
+      "new_name": "QDE Black",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0181",
+      "old_name": "QDE Black",
+      "old_unit": "Litter",
+      "new_name": "QDE Black",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0182",
+      "old_name": "QDE Black",
+      "old_unit": "lt",
+      "new_name": "QDE Black",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0183",
+      "old_name": "QDE BLACK",
+      "old_unit": "1/2 LTR",
+      "new_name": "QDE Black",
+      "new_unit": "0.5 L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0184",
+      "old_name": "QDE BLACK",
+      "old_unit": "1/4 LTR",
+      "new_name": "QDE Black",
+      "new_unit": "0.25 L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0185",
+      "old_name": "QDE BLACK",
+      "old_unit": "GAL",
+      "new_name": "QDE Black",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0186",
+      "old_name": "QDE BLACK",
+      "old_unit": "LTR",
+      "new_name": "QDE Black",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0187",
+      "old_name": "QDE BLUE",
+      "old_unit": "1/4 LTR",
+      "new_name": "QDE BLUE",
+      "new_unit": "0.25 L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0188",
+      "old_name": "QDE CARAMEL BROWN?",
+      "old_unit": "LTR",
+      "new_name": "QDE CARAMEL BROWN?",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0189",
+      "old_name": "QDE CHOCO BROWN",
+      "old_unit": "1/2 LTR",
+      "new_name": "QDE Chocolate Brown",
+      "new_unit": "0.5 L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0190",
+      "old_name": "QDE Chocolate Brown",
+      "old_unit": "lt",
+      "new_name": "QDE Chocolate Brown",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0191",
+      "old_name": "QDE Chocolate brown",
+      "old_unit": "gal",
+      "new_name": "QDE Chocolate Brown",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0192",
+      "old_name": "QDE GREEN",
+      "old_unit": "1/4 LTR",
+      "new_name": "QDE GREEN",
+      "new_unit": "0.25 L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0193",
+      "old_name": "QDE GREY",
+      "old_unit": "1/2 LTR",
+      "new_name": "QDE GREY",
+      "new_unit": "0.5 L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0194",
+      "old_name": "QDE Lemon Yellow",
+      "old_unit": "ga",
+      "new_name": "QDE Lemon Yellow",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0195",
+      "old_name": "QDE Matte",
+      "old_unit": "lt",
+      "new_name": "QDE Matte",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0196",
+      "old_name": "QDE MEDIUM GRAY",
+      "old_unit": "GAL",
+      "new_name": "QDE MEDIUM GRAY",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0197",
+      "old_name": "QDE MEDIUM GRAY",
+      "old_unit": "LTR",
+      "new_name": "QDE MEDIUM GRAY",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0198",
+      "old_name": "QDE modern gray",
+      "old_unit": "gal",
+      "new_name": "QDE modern gray",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0199",
+      "old_name": "QDE Sky Blue",
+      "old_unit": "Ltr",
+      "new_name": "QDE Sky Blue",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0200",
+      "old_name": "QDE White",
+      "old_unit": "Litter",
+      "new_name": "QDE White",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0201",
+      "old_name": "QDE White",
+      "old_unit": "lt",
+      "new_name": "QDE White",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0202",
+      "old_name": "QDE White",
+      "old_unit": "pt",
+      "new_name": "QDE White",
+      "new_unit": "pint",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0203",
+      "old_name": "QDE White",
+      "old_unit": "gal",
+      "new_name": "QDE White",
+      "new_unit": "gal",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0204",
+      "old_name": "QDE White",
+      "old_unit": "ltr",
+      "new_name": "QDE White",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0205",
+      "old_name": "QDE YELLOW",
+      "old_unit": "1/4 LTR",
+      "new_name": "QDE YELLOW",
+      "new_unit": "0.25 L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0206",
+      "old_name": "QDE. Chocolate Brown",
+      "old_unit": "litter",
+      "new_name": "QDE Chocolate Brown",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0207",
+      "old_name": "QDE. White",
+      "old_unit": "litter",
+      "new_name": "QDE White",
+      "new_unit": "L",
+      "category": "Enamel Paints"
+    },
+    {
+      "old_id": "P0208",
+      "old_name": "R/G? / R/S? CHOCOLATE BROWN",
+      "old_unit": "LTR",
+      "new_name": "R/G? / R/S? CHOCOLATE BROWN",
+      "new_unit": "L",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0209",
+      "old_name": "R/S TULLE WHITE",
+      "old_unit": "TIN",
+      "new_name": "R/S TULLE WHITE",
+      "new_unit": "tin",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0210",
+      "old_name": "R|S Pacific Blue",
+      "old_unit": "tin",
+      "new_name": "R|S Pacific Blue",
+      "new_unit": "tin",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0211",
+      "old_name": "R|S Terra Cotta",
+      "old_unit": "gal",
+      "new_name": "R|S Terra Cotta",
+      "new_unit": "gal",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0212",
+      "old_name": "Red Oxide",
+      "old_unit": "Gallon",
+      "new_name": "Red Oxide",
+      "new_unit": "gal",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0213",
+      "old_name": "RED OXIDE",
+      "old_unit": "GAL",
+      "new_name": "Red Oxide",
+      "new_unit": "gal",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0214",
+      "old_name": "refill 4",
+      "old_unit": "pc",
+      "new_name": "Roller Refill 4\"",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0215",
+      "old_name": "Rfg Baguio Green",
+      "old_unit": "tin",
+      "new_name": "Roofguard Baguio Green",
+      "new_unit": "tin",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0216",
+      "old_name": "Roller",
+      "old_unit": "pc",
+      "new_name": "Roller",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0217",
+      "old_name": "roller",
+      "old_unit": "pcs",
+      "new_name": "Roller",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0218",
+      "old_name": "ROLLER (7H ?)",
+      "old_unit": "PCS",
+      "new_name": "ROLLER (7H ?)",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0219",
+      "old_name": "ROLLER (PAINT ROLLER)",
+      "old_unit": "",
+      "new_name": "ROLLER (PAINT ROLLER)",
+      "new_unit": "Unspecified",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0220",
+      "old_name": "Roller #4",
+      "old_unit": "pc",
+      "new_name": "Roller 4",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0221",
+      "old_name": "ROLLER #4",
+      "old_unit": "PCS",
+      "new_name": "Roller 4",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0222",
+      "old_name": "ROLLER #7",
+      "old_unit": "PCS",
+      "new_name": "Roller 7",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0223",
+      "old_name": "Roller 4",
+      "old_unit": "pc",
+      "new_name": "Roller 4",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0224",
+      "old_name": "Roller 4",
+      "old_unit": "pcs",
+      "new_name": "Roller 4",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0225",
+      "old_name": "roller 4 cotton",
+      "old_unit": "pcs",
+      "new_name": "Roller 4 Cotton",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0226",
+      "old_name": "Roller 7",
+      "old_unit": "pc",
+      "new_name": "Roller 7",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0227",
+      "old_name": "Roller 7",
+      "old_unit": "pcs",
+      "new_name": "Roller 7",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0228",
+      "old_name": "Roller 7\"",
+      "old_unit": "pc",
+      "new_name": "Roller 7",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0229",
+      "old_name": "Roller Refill 4\"",
+      "old_unit": "pc",
+      "new_name": "Roller Refill 4\"",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0230",
+      "old_name": "Roller Refill 7\"",
+      "old_unit": "pc",
+      "new_name": "Roller Refill 7\"",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0231",
+      "old_name": "Roofguard Pacific Blue",
+      "old_unit": "tin",
+      "new_name": "Roofguard Pacific Blue",
+      "new_unit": "tin",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0232",
+      "old_name": "ROS 862",
+      "old_unit": "GAL",
+      "new_name": "ROS 862",
+      "new_unit": "gal",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0233",
+      "old_name": "ROS-705 (RAIN OR SHINE) GRAY",
+      "old_unit": "GAL",
+      "new_name": "ROS-705 (RAIN OR SHINE) GRAY",
+      "new_unit": "gal",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0234",
+      "old_name": "ROS.530",
+      "old_unit": "gallon",
+      "new_name": "ROS.530",
+      "new_unit": "gal",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0235",
+      "old_name": "S/P #100",
+      "old_unit": "PCS",
+      "new_name": "Sand Paper #100",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0236",
+      "old_name": "S/P #120",
+      "old_unit": "MTR",
+      "new_name": "S/P #120",
+      "new_unit": "m",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0237",
+      "old_name": "S/P #156",
+      "old_unit": "PCS",
+      "new_name": "S/P #156",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0238",
+      "old_name": "S/R CREAM SURPRISE? (DAVIES SR-411)",
+      "old_unit": "GAL",
+      "new_name": "S/R CREAM SURPRISE? (DAVIES SR-411)",
+      "new_unit": "gal",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0239",
+      "old_name": "S/R Smoke Gray",
+      "old_unit": "tin",
+      "new_name": "S/R Smoke Gray",
+      "new_unit": "tin",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0240",
+      "old_name": "S/R SMOKE GRAY",
+      "old_unit": "GAL",
+      "new_name": "S/R SMOKE GRAY",
+      "new_unit": "gal",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0241",
+      "old_name": "S|R White",
+      "old_unit": "Gallon",
+      "new_name": "S|R White",
+      "new_unit": "gal",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0242",
+      "old_name": "Sachet",
+      "old_unit": "pcs",
+      "new_name": "Sachet",
+      "new_unit": "pc",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0243",
+      "old_name": "Sand Paper",
+      "old_unit": "pc",
+      "new_name": "Sand Paper",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0244",
+      "old_name": "Sand Paper",
+      "old_unit": "pcs",
+      "new_name": "Sand Paper",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0245",
+      "old_name": "Sand Paper #100",
+      "old_unit": "pcs",
+      "new_name": "Sand Paper #100",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0246",
+      "old_name": "Sand Paper 120",
+      "old_unit": "pcs",
+      "new_name": "Sand Paper 120",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0247",
+      "old_name": "Sand Paper 150",
+      "old_unit": "pcs",
+      "new_name": "Sand Paper 150",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0248",
+      "old_name": "Sanding Paper #240",
+      "old_unit": "pcs",
+      "new_name": "Sanding Paper #240",
+      "new_unit": "pc",
+      "category": "Abrasives & Tapes"
+    },
+    {
+      "old_id": "P0249",
+      "old_name": "Sanding Sealer",
+      "old_unit": "ltr",
+      "new_name": "Sanding Sealer",
+      "new_unit": "L",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0250",
+      "old_name": "Sandy Sealer",
+      "old_unit": "lt",
+      "new_name": "Sanding Sealer",
+      "new_unit": "L",
+      "category": "Primers & Sealers"
+    },
+    {
+      "old_id": "P0251",
+      "old_name": "SEALANT CLEAR",
+      "old_unit": "PC",
+      "new_name": "SEALANT CLEAR",
+      "new_unit": "pc",
+      "category": "Adhesives & Sealants"
+    },
+    {
+      "old_id": "P0252",
+      "old_name": "semi gloss",
+      "old_unit": "gal",
+      "new_name": "Semi Gloss",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0253",
+      "old_name": "semi gloss",
+      "old_unit": "lt",
+      "new_name": "Semi Gloss",
+      "new_unit": "L",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0254",
+      "old_name": "Semi gloss",
+      "old_unit": "gallon",
+      "new_name": "Semi Gloss",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0255",
+      "old_name": "Semi gloss",
+      "old_unit": "tin",
+      "new_name": "Semi Gloss",
+      "new_unit": "tin",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0256",
+      "old_name": "Semi Gloss B|S",
+      "old_unit": "Gallon",
+      "new_name": "Semi Gloss B|S",
+      "new_unit": "gal",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0257",
+      "old_name": "SEMI GLOSS LATEX",
+      "old_unit": "TIN",
+      "new_name": "SEMI GLOSS LATEX",
+      "new_unit": "tin",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0258",
+      "old_name": "SEMI GLOSS WHITE",
+      "old_unit": "GAL",
+      "new_name": "SEMI GLOSS WHITE",
+      "new_unit": "gal",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0259",
+      "old_name": "Shepsil",
+      "old_unit": "Bottle",
+      "new_name": "Shepsil",
+      "new_unit": "bottle",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0260",
+      "old_name": "sime gloss",
+      "old_unit": "gallon",
+      "new_name": "Semi Gloss",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0261",
+      "old_name": "Sinclair Cascara",
+      "old_unit": "litter",
+      "new_name": "Sinclair Cascara",
+      "new_unit": "L",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0262",
+      "old_name": "Skim Coat",
+      "old_unit": "bag",
+      "new_name": "Skim Coat",
+      "new_unit": "bag",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0263",
+      "old_name": "Skim Coat",
+      "old_unit": "kilo",
+      "new_name": "Skim Coat",
+      "new_unit": "kg",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0264",
+      "old_name": "Skim Coat",
+      "old_unit": "Litter",
+      "new_name": "Skim Coat",
+      "new_unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0265",
+      "old_name": "SKIM COAT",
+      "old_unit": "KL",
+      "new_name": "Skim Coat",
+      "new_unit": "kg",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0266",
+      "old_name": "Skin coat / Roller 7",
+      "old_unit": "pcs",
+      "new_name": "Skin coat / Roller 7",
+      "new_unit": "pc",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0267",
+      "old_name": "Spar Varnish",
+      "old_unit": "litter",
+      "new_name": "Spar Varnish",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0268",
+      "old_name": "SPOT PUTTY",
+      "old_unit": "LTR",
+      "new_name": "SPOT PUTTY",
+      "new_unit": "L",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0269",
+      "old_name": "Spray Paint",
+      "old_unit": "pcs",
+      "new_name": "Spray Paint",
+      "new_unit": "pc",
+      "category": "Spray Paints"
+    },
+    {
+      "old_id": "P0270",
+      "old_name": "SPRAY PAINT BOSNY",
+      "old_unit": "PCS",
+      "new_name": "SPRAY PAINT BOSNY",
+      "new_unit": "pc",
+      "category": "Spray Paints"
+    },
+    {
+      "old_id": "P0271",
+      "old_name": "Spray paint gold",
+      "old_unit": "pcs",
+      "new_name": "Spray paint gold",
+      "new_unit": "pc",
+      "category": "Spray Paints"
+    },
+    {
+      "old_id": "P0272",
+      "old_name": "Spray paint primer gray",
+      "old_unit": "pcs",
+      "new_name": "Spray paint primer gray",
+      "new_unit": "pc",
+      "category": "Spray Paints"
+    },
+    {
+      "old_id": "P0273",
+      "old_name": "STEEL BRUSH",
+      "old_unit": "PC",
+      "new_name": "STEEL BRUSH",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0274",
+      "old_name": "STICK WELL",
+      "old_unit": "PCK",
+      "new_name": "STICK WELL",
+      "new_unit": "pack",
+      "category": "Adhesives & Sealants"
+    },
+    {
+      "old_id": "P0275",
+      "old_name": "stik pole extension",
+      "old_unit": "pc",
+      "new_name": "Stik Pole Extension",
+      "new_unit": "pc",
+      "category": "Painting Tools & Accessories"
+    },
+    {
+      "old_id": "P0276",
+      "old_name": "Sunny Days",
+      "old_unit": "lt",
+      "new_name": "Sunny Days",
+      "new_unit": "L",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0277",
+      "old_name": "terra cotta",
+      "old_unit": "gal",
+      "new_name": "Terra Cotta",
+      "new_unit": "gal",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0278",
+      "old_name": "Terra Cotta",
+      "old_unit": "",
+      "new_name": "Terra Cotta",
+      "new_unit": "Unspecified",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0279",
+      "old_name": "Terra Cotta",
+      "old_unit": "Litter",
+      "new_name": "Terra Cotta",
+      "new_unit": "L",
+      "category": "Roofing Paints"
+    },
+    {
+      "old_id": "P0280",
+      "old_name": "Tile Adhesive",
+      "old_unit": "Pcs",
+      "new_name": "Tile Adhesive",
+      "new_unit": "pc",
+      "category": "Tile & Construction Hardware"
+    },
+    {
+      "old_id": "P0281",
+      "old_name": "TILE ADHESIVE",
+      "old_unit": "BOTE?",
+      "new_name": "TILE ADHESIVE",
+      "new_unit": "BOTE?",
+      "category": "Tile & Construction Hardware"
+    },
+    {
+      "old_id": "P0282",
+      "old_name": "Tile Adhesive ABC",
+      "old_unit": "pcs",
+      "new_name": "Tile Adhesive ABC",
+      "new_unit": "pc",
+      "category": "Tile & Construction Hardware"
+    },
+    {
+      "old_id": "P0283",
+      "old_name": "TILE GROUT",
+      "old_unit": "PCS",
+      "new_name": "Tile Grout",
+      "new_unit": "pc",
+      "category": "Tile & Construction Hardware"
+    },
+    {
+      "old_id": "P0284",
+      "old_name": "Tile grouth",
+      "old_unit": "kg",
+      "new_name": "Tile Grout",
+      "new_unit": "kg",
+      "category": "Tile & Construction Hardware"
+    },
+    {
+      "old_id": "P0285",
+      "old_name": "TINGE OF GRAY (T-5135 TITAN SUPER FLEX)",
+      "old_unit": "GAL",
+      "new_name": "TINGE OF GRAY (T-5135 TITAN SUPER FLEX)",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0286",
+      "old_name": "Titan Superflex Elastomeric Paint Mocha Blanch",
+      "old_unit": "gallon",
+      "new_name": "Titan Superflex Elastomeric Paint Mocha Blanch",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0287",
+      "old_name": "TITAN TULLE WHITE",
+      "old_unit": "GAL",
+      "new_name": "TITAN TULLE WHITE",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0288",
+      "old_name": "TULIPS (AE 121)",
+      "old_unit": "PCS",
+      "new_name": "TULIPS (AE 121)",
+      "new_unit": "pc",
+      "category": "Needs category review"
+    },
+    {
+      "old_id": "P0289",
+      "old_name": "Vulcaseal",
+      "old_unit": "Litter",
+      "new_name": "Vulcaseal",
+      "new_unit": "L",
+      "category": "Adhesives & Sealants"
+    },
+    {
+      "old_id": "P0290",
+      "old_name": "Wall putty",
+      "old_unit": "gallon",
+      "new_name": "Wall putty",
+      "new_unit": "gal",
+      "category": "Putty, Skim Coat & Waterproofing"
+    },
+    {
+      "old_id": "P0291",
+      "old_name": "wind whisper s/g",
+      "old_unit": "gal",
+      "new_name": "Wind Whisper S/G",
+      "new_unit": "gal",
+      "category": "Latex & Masonry Paints"
+    },
+    {
+      "old_id": "P0292",
+      "old_name": "Wood Mahogany",
+      "old_unit": "lt",
+      "new_name": "Wood Mahogany",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0293",
+      "old_name": "Wood Stain Mahogany",
+      "old_unit": "ltr",
+      "new_name": "Wood Stain Mahogany",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0294",
+      "old_name": "wood stain oak",
+      "old_unit": "lt",
+      "new_name": "Wood Stain Oak",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    },
+    {
+      "old_id": "P0295",
+      "old_name": "Wood Stain Walnut",
+      "old_unit": "ltr",
+      "new_name": "Wood Stain Walnut",
+      "new_unit": "L",
+      "category": "Automotive & Wood Finishes"
+    }
+  ],
+  "source_file": "Inventory_Plus_Product_Catalog.xlsx",
+  "source_entries": 295
+}

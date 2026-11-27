@@ -2118,8 +2118,8 @@ class _VisualSearchPageState extends State<VisualSearchPage>
               const LinearProgressIndicator(),
               const SizedBox(height: 12),
               const Text(
-                'YOLO did not find a confident match.\n'
-                'Gemini is checking one frame (bounded request).',
+                'No confident match found yet.\n'
+                'Checking the captured image for a possible match...',
                 style: TextStyle(color: Colors.white70),
               ),
             ] else ...[
@@ -2143,7 +2143,7 @@ class _VisualSearchPageState extends State<VisualSearchPage>
                 OutlinedButton.icon(
                   onPressed: _verifyWithGemini,
                   icon: const Icon(Icons.auto_awesome, size: 18),
-                  label: const Text('Retry Gemini'),
+                  label: const Text('Retry image check'),
                 ),
             ],
           ],
@@ -2827,7 +2827,7 @@ class LiveDetectionPainter extends CustomPainter {
     }
 
     final sourceText = isGemini
-        ? "Gemini fallback"
+        ? "Image analysis"
         : isWeak
         ? "Checking..."
         : "YOLO";
@@ -2907,7 +2907,7 @@ class LiveDetectionPainter extends CustomPainter {
 
   void _drawCenterCard(Canvas canvas, Size size) {
     final textSpan = TextSpan(
-      text: "${detection.label}\nGemini fallback",
+      text: "${detection.label}\nImage analysis",
       style: const TextStyle(
         color: Colors.white,
         fontSize: 14,
