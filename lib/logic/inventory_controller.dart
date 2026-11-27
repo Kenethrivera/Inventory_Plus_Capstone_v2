@@ -466,12 +466,19 @@ class InventoryController {
     bool alternate = false,
   }) async {
     final column = alternate ? 'gcash_alt_qr_url' : 'gcash_qr_url';
-    final response = await supabase
-        .from('store_settings')
-        .select(column)
-        .eq('location_id', locationId)
-        .maybeSingle();
+    final response = await fetchStoreSettingsSnapshot();
+    if (activeLocationId != locationId) {
+      throw StateError('The active location changed during the QR upload.');
+    }
     return response?[column]?.toString() ?? '';
+  }
+
+  Future<Map<String, dynamic>?> fetchStoreSettingsSnapshot() async {
+    final response = await supabase.rpc(
+      'store_settings_snapshot_v1',
+      params: <String, dynamic>{'p_session_token': _requireSessionToken()},
+    );
+    return response == null ? null : Map<String, dynamic>.from(response as Map);
   }
 
   Future<String?> _tryFetchPersistedGcashQrUrl(
@@ -871,11 +878,6 @@ class InventoryController {
     _publishRuntimeSettings();
   }
 
-  String _hashPassword(String password) {
-    final bytes = utf8.encode(password);
-    return sha256.convert(bytes).toString();
-  }
-
   Future<void> loadSystemSettings() async {
     _measurementSettingsActivated = true;
     await Future.wait<void>([
@@ -1021,27 +1023,7 @@ class InventoryController {
     final accountId = currentUserNumericId;
     if (locationId == null) return;
     try {
-      Map<String, dynamic>? response;
-      try {
-        response = await supabase
-            .from('store_settings')
-            .select(
-              'gcash_qr_url, gcash_account_name, gcash_number, '
-              'gcash_alt_qr_url, gcash_alt_account_name, gcash_alt_number, '
-              'cashier_auto_approved_discount_limit_pct',
-            )
-            .eq('location_id', locationId)
-            .maybeSingle();
-      } catch (_) {
-        response = await supabase
-            .from('store_settings')
-            .select(
-              'gcash_qr_url, gcash_account_name, gcash_number, '
-              'cashier_auto_approved_discount_limit_pct',
-            )
-            .eq('location_id', locationId)
-            .maybeSingle();
-      }
+      final response = await fetchStoreSettingsSnapshot();
       if (activeLocationId != locationId || currentUserNumericId != accountId) {
         return;
       }
@@ -2823,37 +2805,19 @@ class InventoryController {
 
     late final Map<String, dynamic> row;
     try {
-      final inserted = useStage6b6SecureAccess
-          ? await supabase.rpc(
-              'staff_create_v1',
-              params: <String, dynamic>{
-                'p_session_token': _requireSessionToken(),
-                'p_name': name,
-                'p_username': username,
-                'p_password': password,
-                'p_role': role,
-                'p_email': normalizeOptionalStaffField(email),
-                'p_phone': normalizeOptionalStaffField(phone),
-                'p_address': normalizeOptionalStaffField(address),
-              },
-            )
-          : await supabase
-                .from('profiles')
-                .insert(
-                  buildStaffCreationPayload(
-                    name: name,
-                    username: username,
-                    passwordHash: _hashPassword(password),
-                    role: role,
-                    locationId: locId,
-                    email: email,
-                    phone: phone,
-                    address: address,
-                    mustChangePassword: roleRequiresForcedPasswordChange(role),
-                  ),
-                )
-                .select()
-                .single();
+      final inserted = await supabase.rpc(
+        'staff_create_v1',
+        params: <String, dynamic>{
+          'p_session_token': _requireSessionToken(),
+          'p_name': name,
+          'p_username': username,
+          'p_password': password,
+          'p_role': role,
+          'p_email': normalizeOptionalStaffField(email),
+          'p_phone': normalizeOptionalStaffField(phone),
+          'p_address': normalizeOptionalStaffField(address),
+        },
+      );
       row = Map<String, dynamic>.from(inserted);
     } on PostgrestException catch (error) {
       final constraint = staffCreationConstraintName(

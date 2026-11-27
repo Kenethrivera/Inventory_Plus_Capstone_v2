@@ -16,6 +16,7 @@ class StaffPresenceService extends ChangeNotifier {
   final String userId;
   final String userName;
   final String userRole;
+  final String sessionToken;
 
   Timer? _heartbeatTimer;
   Timer? _expiryTimer;
@@ -40,6 +41,7 @@ class StaffPresenceService extends ChangeNotifier {
     required this.userId,
     required this.userName,
     required this.userRole,
+    required this.sessionToken,
   });
 
   List<Map<String, dynamic>> get activeStaff => _activeStaff;
@@ -92,19 +94,7 @@ class StaffPresenceService extends ChangeNotifier {
     // A new session clears any legacy break state left by older clients.
     _isOnBreak = false;
 
-    final now = DateTime.now().toUtc().toIso8601String();
-
-    await supabase.from('staff_presence').upsert({
-      'user_id': userId,
-      'user_name': userName,
-      'user_role': userRole,
-      'location_id': locationId,
-      'is_online': !_isOnBreak,
-      'current_module': _isOnBreak ? 'On break' : currentModule,
-      'logged_in_at': now,
-      'last_seen_at': now,
-      'logged_out_at': null,
-    }, onConflict: 'user_id');
+    await _writePresence('login', true, currentModule);
 
     _started = true;
     notifyListeners();
@@ -130,23 +120,17 @@ class StaffPresenceService extends ChangeNotifier {
     _heartbeatQueue = _heartbeatQueue.catchError((Object _) {}).then((_) async {
       if (_disposed || !_started) return;
 
-      final now = DateTime.now().toUtc().toIso8601String();
-
-      await supabase.from('staff_presence').upsert({
-        'user_id': userId,
-        'user_name': userName,
-        'user_role': userRole,
-        'location_id': locationId,
-        'is_online': !_isOnBreak,
-        'current_module': _isOnBreak
+      await _writePresence(
+        'heartbeat',
+        !_isOnBreak,
+        _isOnBreak
             ? 'On break'
             : _workMode == null
                 ? _currentModule
                 : _workOrderId == null
                     ? _workMode
                     : '$_workMode:$_workOrderId',
-        'last_seen_at': now,
-      }, onConflict: 'user_id');
+      );
     });
 
     return _heartbeatQueue;
@@ -245,20 +229,31 @@ class StaffPresenceService extends ChangeNotifier {
 
     if (!_disposed) notifyListeners();
 
-    final now = DateTime.now().toUtc().toIso8601String();
+    try {
+      await _writePresence('logout', false, null);
+    } catch (error, stackTrace) {
+      // A revoked or restricted presence write must not block session cleanup.
+      debugPrint('[StaffPresence] logout presence update failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      _removeUserFromSnapshot(userId);
+    }
+  }
 
-    await supabase.from('staff_presence').upsert({
-      'user_id': userId,
-      'user_name': userName,
-      'user_role': userRole,
-      'location_id': locationId,
-      'is_online': false,
-      'current_module': null,
-      'last_seen_at': now,
-      'logged_out_at': now,
-    }, onConflict: 'user_id');
-
-    _removeUserFromSnapshot(userId);
+  Future<void> _writePresence(
+    String event,
+    bool isOnline,
+    String? currentModule,
+  ) async {
+    await supabase.rpc(
+      'staff_presence_write_v1',
+      params: <String, dynamic>{
+        'p_session_token': sessionToken,
+        'p_event': event,
+        'p_is_online': isOnline,
+        'p_current_module': currentModule,
+      },
+    );
   }
 
   Future<void> refreshActiveStaff() async {
@@ -278,6 +273,7 @@ class StaffPresenceService extends ChangeNotifier {
         final rows = await fetchPresentStaff(
           supabase: supabase,
           locationId: locationId,
+          sessionToken: sessionToken,
         );
 
         if (_disposed) return;
@@ -401,40 +397,27 @@ class StaffPresenceService extends ChangeNotifier {
   static Future<List<Map<String, dynamic>>> fetchActiveStaff({
     required SupabaseClient supabase,
     required String locationId,
+    required String sessionToken,
   }) async {
-    final cutoff = DateTime.now()
-        .toUtc()
-        .subtract(activeTimeout)
-        .toIso8601String();
-
-    final response = await supabase
-        .from('staff_presence')
-        .select()
-        .eq('location_id', locationId)
-        .eq('is_online', true)
-        .gte('last_seen_at', cutoff)
-        .order('last_seen_at', ascending: false);
-
-    return List<Map<String, dynamic>>.from(response);
+    final rows = await fetchPresentStaff(
+      supabase: supabase,
+      locationId: locationId,
+      sessionToken: sessionToken,
+    );
+    return rows.where((row) => row['is_online'] == true).toList();
   }
 
   static Future<List<Map<String, dynamic>>> fetchPresentStaff({
     required SupabaseClient supabase,
     required String locationId,
+    required String sessionToken,
   }) async {
-    final cutoff = DateTime.now()
-        .toUtc()
-        .subtract(activeTimeout)
-        .toIso8601String();
-    final response = await supabase
-        .from('staff_presence')
-        .select()
-        .eq('location_id', locationId)
-        .isFilter('logged_out_at', null)
-        .gte('last_seen_at', cutoff)
-        .order('last_seen_at', ascending: false);
+    final response = await supabase.rpc(
+      'staff_presence_list_v1',
+      params: <String, dynamic>{'p_session_token': sessionToken},
+    );
     final now = DateTime.now().toUtc();
-    return List<Map<String, dynamic>>.from(response)
+    return List<Map<String, dynamic>>.from(response as List)
         .where(
           (row) => isCurrentStaffPresence(
             row,

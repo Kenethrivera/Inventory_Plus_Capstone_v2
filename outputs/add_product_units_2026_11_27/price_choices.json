@@ -1,0 +1,2345 @@
+[
+  {
+    "row": 6,
+    "source_id": "1-100",
+    "product": "Sandpaper (Liha) #100",
+    "unit": "pcs",
+    "size": "",
+    "price": 20,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 57,
+    "receipt_article": "Sand Paper #100",
+    "receipt_date": "2026-11-22",
+    "matching_sales": 4,
+    "price_options": {
+      "20": 4
+    }
+  },
+  {
+    "row": 7,
+    "source_id": "1-120",
+    "product": "Sandpaper (Liha) #120",
+    "unit": "pcs",
+    "size": "",
+    "price": 20,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 54,
+    "receipt_article": "Sand Paper 120",
+    "receipt_date": "2026-11-04",
+    "matching_sales": 1,
+    "price_options": {
+      "20": 1
+    }
+  },
+  {
+    "row": 8,
+    "source_id": "1-150",
+    "product": "Sandpaper (Liha) #150",
+    "unit": "pcs",
+    "size": "",
+    "price": 20,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 79,
+    "receipt_article": "Sand Paper 150",
+    "receipt_date": "2026-11-04",
+    "matching_sales": 1,
+    "price_options": {
+      "20": 1
+    }
+  },
+  {
+    "row": 9,
+    "source_id": "1-156",
+    "product": "Sandpaper (Liha) #156",
+    "unit": "pcs",
+    "size": "",
+    "price": 60,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 122,
+    "receipt_article": "S/P #156",
+    "receipt_date": "2026-10-13",
+    "matching_sales": 1,
+    "price_options": {
+      "60": 1
+    }
+  },
+  {
+    "row": 10,
+    "source_id": "1-240",
+    "product": "Sandpaper (Liha) #240",
+    "unit": "pcs",
+    "size": "",
+    "price": 20,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 78,
+    "receipt_article": "Sanding Paper #240",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "20": 1
+    }
+  },
+  {
+    "row": 11,
+    "source_id": "1-other",
+    "product": "Sandpaper (Liha) — Unspecified grit",
+    "unit": "pcs",
+    "size": "",
+    "price": 20.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 51,
+    "receipt_article": "Sand Paper",
+    "receipt_date": "2026-11-23",
+    "matching_sales": 13,
+    "price_options": {
+      "20": 13
+    }
+  },
+  {
+    "row": 12,
+    "source_id": 2,
+    "product": "Masking Tape (All Sizes)",
+    "unit": "pcs",
+    "size": "",
+    "price": 50,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 82,
+    "receipt_article": "Masking Tape #1 (1\")",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 4,
+    "price_options": {
+      "40": 1,
+      "50": 1,
+      "70": 1,
+      "75": 1
+    }
+  },
+  {
+    "row": 13,
+    "source_id": 3,
+    "product": "Cutting Disc",
+    "unit": "pcs",
+    "size": "",
+    "price": 30,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 129,
+    "receipt_article": "CUTTING DISC",
+    "receipt_date": "2026-10-13",
+    "matching_sales": 1,
+    "price_options": {
+      "30": 1
+    }
+  },
+  {
+    "row": 14,
+    "source_id": 4,
+    "product": "Gasa Tape (Mesh Tape)",
+    "unit": "pcs",
+    "size": "",
+    "price": 140.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 63,
+    "receipt_article": "gasa tape",
+    "receipt_date": "2026-11-20",
+    "matching_sales": 1,
+    "price_options": {
+      "140.0": 1
+    }
+  },
+  {
+    "row": 15,
+    "source_id": 5,
+    "product": "Paint Brush 2\" (#2)",
+    "unit": "pcs",
+    "size": "",
+    "price": 50.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 58,
+    "receipt_article": "Paint Brush #2",
+    "receipt_date": "2026-11-22",
+    "matching_sales": 24,
+    "price_options": {
+      "50": 24
+    }
+  },
+  {
+    "row": 16,
+    "source_id": 6,
+    "product": "Paint Brush 1 1/2\" (1.5\")",
+    "unit": "pcs",
+    "size": "",
+    "price": 35,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 100,
+    "receipt_article": "BRUSH 1 1/2",
+    "receipt_date": "2026-10-18",
+    "matching_sales": 4,
+    "price_options": {
+      "35": 3,
+      "45.0": 1
+    }
+  },
+  {
+    "row": 17,
+    "source_id": 7,
+    "product": "Paint Roller (Unspecified Size)",
+    "unit": "pcs",
+    "size": "",
+    "price": 60.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 46,
+    "receipt_article": "Roller",
+    "receipt_date": "2026-11-23",
+    "matching_sales": 17,
+    "price_options": {
+      "60": 10,
+      "70": 4,
+      "80": 1,
+      "95": 2
+    }
+  },
+  {
+    "row": 18,
+    "source_id": 8,
+    "product": "Paint Brush 1\" (#1)",
+    "unit": "pcs",
+    "size": "",
+    "price": 25.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 45,
+    "receipt_article": "#1 Brush",
+    "receipt_date": "2026-11-23",
+    "matching_sales": 16,
+    "price_options": {
+      "25": 16
+    }
+  },
+  {
+    "row": 19,
+    "source_id": 9,
+    "product": "Roller Refill / Bala (Small / 4\")",
+    "unit": "pcs",
+    "size": "",
+    "price": 40.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 82,
+    "receipt_article": "refill 4",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 11,
+    "price_options": {
+      "40": 10,
+      "50.0": 1
+    }
+  },
+  {
+    "row": 20,
+    "source_id": 10,
+    "product": "Paint Brush (Unspecified Size)",
+    "unit": "pcs",
+    "size": "",
+    "price": 25.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 21,
+    "receipt_article": "Paint Brush",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 9,
+    "price_options": {
+      "20": 2,
+      "25": 3,
+      "50": 3,
+      "70": 1
+    }
+  },
+  {
+    "row": 21,
+    "source_id": 11,
+    "product": "Paint Roller 7\"",
+    "unit": "pcs",
+    "size": "",
+    "price": 95,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 96,
+    "receipt_article": "Roller 7\"",
+    "receipt_date": "2026-11-22",
+    "matching_sales": 7,
+    "price_options": {
+      "95": 6,
+      "100": 1
+    }
+  },
+  {
+    "row": 22,
+    "source_id": 12,
+    "product": "Paint Roller 4\"",
+    "unit": "pcs",
+    "size": "",
+    "price": 60.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 81,
+    "receipt_article": "roller 4",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 7,
+    "price_options": {
+      "60": 7
+    }
+  },
+  {
+    "row": 23,
+    "source_id": 13,
+    "product": "Baby / Mini Roller",
+    "unit": "pcs",
+    "size": "",
+    "price": 60.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 36,
+    "receipt_article": "mini roller",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 6,
+    "price_options": {
+      "40": 1,
+      "60": 4,
+      "70": 1
+    }
+  },
+  {
+    "row": 24,
+    "source_id": 14,
+    "product": "Basahan (Rags)",
+    "unit": "kilo",
+    "size": "",
+    "price": 120.0,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 8,
+    "receipt_article": "Basahan",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 2,
+    "price_options": {
+      "120": 2
+    }
+  },
+  {
+    "row": 25,
+    "source_id": 15,
+    "product": "Paint Brush 3\" (#3)",
+    "unit": "pcs",
+    "size": "",
+    "price": 80.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 91,
+    "receipt_article": "paint brush 3",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 4,
+    "price_options": {
+      "80": 3,
+      "95.0": 1
+    }
+  },
+  {
+    "row": 26,
+    "source_id": 16,
+    "product": "Paint Tray",
+    "unit": "pcs",
+    "size": "",
+    "price": 70.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 25,
+    "receipt_article": "Paint Tray",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 2,
+    "price_options": {
+      "70": 2
+    }
+  },
+  {
+    "row": 27,
+    "source_id": 17,
+    "product": "Paint Brush 4\"",
+    "unit": "pcs",
+    "size": "",
+    "price": 100,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 25,
+    "receipt_article": "Paint Brush 4",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 1,
+    "price_options": {
+      "100": 1
+    }
+  },
+  {
+    "row": 28,
+    "source_id": 18,
+    "product": "Palita (Putty Knife / Scraper)",
+    "unit": "pcs",
+    "size": "",
+    "price": 80,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 87,
+    "receipt_article": "PALITA",
+    "receipt_date": "2026-10-18",
+    "matching_sales": 1,
+    "price_options": {
+      "80": 1
+    }
+  },
+  {
+    "row": 29,
+    "source_id": 19,
+    "product": "Paint Roller 4\" (Cotton)",
+    "unit": "pcs",
+    "size": "",
+    "price": 60,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 100,
+    "receipt_article": "roller 4 cotton",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 1,
+    "price_options": {
+      "60": 1
+    }
+  },
+  {
+    "row": 30,
+    "source_id": 20,
+    "product": "Roller Refill / Bala (Big / 7\")",
+    "unit": "pcs",
+    "size": "",
+    "price": 60,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 89,
+    "receipt_article": "Roller Refill 7\"",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 2,
+    "price_options": {
+      "60": 2
+    }
+  },
+  {
+    "row": 31,
+    "source_id": 21,
+    "product": "Paint Brush 2 1/2\" (#2.5)",
+    "unit": "pcs",
+    "size": "",
+    "price": 50,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 133,
+    "receipt_article": "Brush 2",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 8,
+    "price_options": {
+      "50": 7,
+      "60.0": 1
+    }
+  },
+  {
+    "row": 32,
+    "source_id": 22,
+    "product": "Paint Brush 1/2\"",
+    "unit": "pcs",
+    "size": "",
+    "price": 35,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 19,
+    "receipt_article": "Paint Brush 1/2",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 1,
+    "price_options": {
+      "35": 1
+    }
+  },
+  {
+    "row": 33,
+    "source_id": 23,
+    "product": "Extension Pole (Stick)",
+    "unit": "pcs",
+    "size": "",
+    "price": 490.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 55,
+    "receipt_article": "stik pole extension",
+    "receipt_date": "2026-11-20",
+    "matching_sales": 1,
+    "price_options": {
+      "390": 1
+    }
+  },
+  {
+    "row": 34,
+    "source_id": 24,
+    "product": "Big Roller",
+    "unit": "pcs",
+    "size": "",
+    "price": 90,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 134,
+    "receipt_article": "Big Roller",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 1,
+    "price_options": {
+      "90": 1
+    }
+  },
+  {
+    "row": 35,
+    "source_id": 25,
+    "product": "Paint (Misc. Tool Entry)",
+    "unit": "pcs",
+    "size": "",
+    "price": 70,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 135,
+    "receipt_article": "Paint",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 1,
+    "price_options": {
+      "70": 1
+    }
+  },
+  {
+    "row": 36,
+    "source_id": 26,
+    "product": "Steel Brush",
+    "unit": "pcs",
+    "size": "",
+    "price": 70,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 161,
+    "receipt_article": "STEEL BRUSH",
+    "receipt_date": "2026-10-14",
+    "matching_sales": 1,
+    "price_options": {
+      "70": 1
+    }
+  },
+  {
+    "row": 37,
+    "source_id": 27,
+    "product": "Dyaryo (Newspaper)",
+    "unit": "kilo",
+    "size": "",
+    "price": 100,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 15,
+    "receipt_article": "Dyaryo",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 1,
+    "price_options": {
+      "100": 1
+    }
+  },
+  {
+    "row": 38,
+    "source_id": 28,
+    "product": "Custom-Mixed Latex (Mix / Timpla)",
+    "unit": "gal",
+    "size": "",
+    "price": 700,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 82,
+    "receipt_article": "MIX",
+    "receipt_date": "2026-10-17",
+    "matching_sales": 3,
+    "price_options": {
+      "700": 2,
+      "890": 1
+    }
+  },
+  {
+    "row": 39,
+    "source_id": 29,
+    "product": "Semi-Gloss Latex",
+    "unit": "gal",
+    "size": "",
+    "price": 820,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 68,
+    "receipt_article": "semi gloss",
+    "receipt_date": "2026-11-20",
+    "matching_sales": 3,
+    "price_options": {
+      "690": 1,
+      "800.0": 1,
+      "820": 1
+    }
+  },
+  {
+    "row": 40,
+    "source_id": 30,
+    "product": "Flat Latex White",
+    "unit": "gal",
+    "size": "",
+    "price": 590,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 43,
+    "receipt_article": "flat latex white",
+    "receipt_date": "2026-11-03",
+    "matching_sales": 5,
+    "price_options": {
+      "530": 1,
+      "590": 2,
+      "600": 1,
+      "720": 1
+    }
+  },
+  {
+    "row": 41,
+    "source_id": 31,
+    "product": "Gloss Latex (White / Unspecified)",
+    "unit": "gal",
+    "size": "",
+    "price": 820,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 46,
+    "receipt_article": "gloss latex",
+    "receipt_date": "2026-11-03",
+    "matching_sales": 3,
+    "price_options": {
+      "690.0": 1,
+      "820": 2
+    }
+  },
+  {
+    "row": 42,
+    "source_id": 32,
+    "product": "Flat Latex (Unspecified Color)",
+    "unit": "tin",
+    "size": "",
+    "price": 2800.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 59,
+    "receipt_article": "Flat Latex",
+    "receipt_date": "2026-11-20",
+    "matching_sales": 2,
+    "price_options": {
+      "2800.0": 2
+    }
+  },
+  {
+    "row": 43,
+    "source_id": 33,
+    "product": "Titan Tulle White",
+    "unit": "gal",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 28,
+    "receipt_article": "TITAN TULLE WHITE",
+    "receipt_date": "2026-10-15",
+    "matching_sales": 2,
+    "price_options": {
+      "850": 1,
+      "890": 1
+    }
+  },
+  {
+    "row": 44,
+    "source_id": 34,
+    "product": "Off-White Latex",
+    "unit": "gal",
+    "size": "",
+    "price": 800.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 65,
+    "receipt_article": "off white pls",
+    "receipt_date": "2026-11-20",
+    "matching_sales": 1,
+    "price_options": {
+      "800.0": 1
+    }
+  },
+  {
+    "row": 45,
+    "source_id": 35,
+    "product": "Acrylic Emulsion",
+    "unit": "ltr",
+    "size": "",
+    "price": 230,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 75,
+    "receipt_article": "acrylic",
+    "receipt_date": "2026-11-04",
+    "matching_sales": 2,
+    "price_options": {
+      "230": 1,
+      "280": 1
+    }
+  },
+  {
+    "row": 46,
+    "source_id": 36,
+    "product": "Latex Milk Tea (KIS)",
+    "unit": "tin",
+    "size": "",
+    "price": 3350,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 83,
+    "receipt_article": "KIS / Latex Milk Tea",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "3350": 1
+    }
+  },
+  {
+    "row": 47,
+    "source_id": 37,
+    "product": "Flat Latex White (Davies)",
+    "unit": "gal",
+    "size": "",
+    "price": 740,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 152,
+    "receipt_article": "FLAT LATEX WHITE (DAVIES)",
+    "receipt_date": "2026-10-13",
+    "matching_sales": 1,
+    "price_options": {
+      "740": 1
+    }
+  },
+  {
+    "row": 48,
+    "source_id": 38,
+    "product": "Boysen Latex White",
+    "unit": "gal",
+    "size": "",
+    "price": 3500,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 131,
+    "receipt_article": "B|S White",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 1,
+    "price_options": {
+      "3500": 1
+    }
+  },
+  {
+    "row": 49,
+    "source_id": 39,
+    "product": "Latex 601 Smoke Gray",
+    "unit": "tin",
+    "size": "",
+    "price": 3400,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 94,
+    "receipt_article": "601 Smoke Gray",
+    "receipt_date": "2026-11-22",
+    "matching_sales": 1,
+    "price_options": {
+      "3400": 1
+    }
+  },
+  {
+    "row": 50,
+    "source_id": 40,
+    "product": "Latex Dark Semi Gray",
+    "unit": "tin",
+    "size": "",
+    "price": 3400,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 68,
+    "receipt_article": "Latex Paint Dark Semi Gray",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "3400": 1
+    }
+  },
+  {
+    "row": 51,
+    "source_id": 41,
+    "product": "Lightning Dark Seal Gray",
+    "unit": "tin",
+    "size": "",
+    "price": 3400.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 54,
+    "receipt_article": "lightning dark seal gray",
+    "receipt_date": "2026-11-20",
+    "matching_sales": 1,
+    "price_options": {
+      "300": 1
+    }
+  },
+  {
+    "row": 52,
+    "source_id": 42,
+    "product": "Latex Paint HB (+ add-on)",
+    "unit": "gal",
+    "size": "",
+    "price": 1420,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 69,
+    "receipt_article": "Latex Paint HB (+ add-on)",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "1420": 1
+    }
+  },
+  {
+    "row": 53,
+    "source_id": 43,
+    "product": "Semi-Gloss Latex (Boysen)",
+    "unit": "gal",
+    "size": "",
+    "price": 950,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 170,
+    "receipt_article": "Semi Gloss B|S",
+    "receipt_date": "2026-11-09",
+    "matching_sales": 1,
+    "price_options": {
+      "950": 1
+    }
+  },
+  {
+    "row": 54,
+    "source_id": 44,
+    "product": "Acrytex / Tulips (AE-121)",
+    "unit": "pcs",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 109,
+    "receipt_article": "TULIPS (AE 121)",
+    "receipt_date": "2026-10-18",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 55,
+    "source_id": 45,
+    "product": "Nixon Latex Paint",
+    "unit": "gal",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 124,
+    "receipt_article": "Nixon Paint",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 56,
+    "source_id": 46,
+    "product": "Titan Superflex Mocha Blanch",
+    "unit": "gal",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 33,
+    "receipt_article": "Titan Superflex Elastomeric Paint Mocha Blanch",
+    "receipt_date": "2026-11-03",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 57,
+    "source_id": 47,
+    "product": "Titan Superflex Tinge of Gray",
+    "unit": "gal",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 124,
+    "receipt_article": "TINGE OF GRAY (T-5135 TITAN SUPER FLEX)",
+    "receipt_date": "2026-10-13",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 58,
+    "source_id": 48,
+    "product": "Wind Whisper Semi-Gloss Latex",
+    "unit": "gal",
+    "size": "",
+    "price": 840.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 76,
+    "receipt_article": "wind whisper s/g",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "840.0": 1
+    }
+  },
+  {
+    "row": 59,
+    "source_id": 49,
+    "product": "Semi-Gloss Latex White",
+    "unit": "gal",
+    "size": "",
+    "price": 820,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 190,
+    "receipt_article": "SEMI GLOSS WHITE",
+    "receipt_date": "2026-10-15",
+    "matching_sales": 1,
+    "price_options": {
+      "820": 1
+    }
+  },
+  {
+    "row": 60,
+    "source_id": 50,
+    "product": "Interior Latex",
+    "unit": "gal",
+    "size": "",
+    "price": 750.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 15,
+    "receipt_article": "Latex int",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 1,
+    "price_options": {
+      "750.0": 1
+    }
+  },
+  {
+    "row": 61,
+    "source_id": 51,
+    "product": "Acrytex Color Black",
+    "unit": "gal",
+    "size": "",
+    "price": 690,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 4,
+    "receipt_article": "Acrytex Color Black",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 1,
+    "price_options": {
+      "690": 1
+    }
+  },
+  {
+    "row": 62,
+    "source_id": 52,
+    "product": "Sinclair Cascara",
+    "unit": "ltr",
+    "size": "",
+    "price": 290.0,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 11,
+    "receipt_article": "Sinclair Cascara",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 1,
+    "price_options": {
+      "290.0": 1
+    }
+  },
+  {
+    "row": 63,
+    "source_id": 53,
+    "product": "Sunny Days Latex",
+    "unit": "ltr",
+    "size": "",
+    "price": 240.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 47,
+    "receipt_article": "Sunny Days",
+    "receipt_date": "2026-11-20",
+    "matching_sales": 1,
+    "price_options": {
+      "240.0": 1
+    }
+  },
+  {
+    "row": 64,
+    "source_id": 54,
+    "product": "QDE White (incl. B-600)",
+    "unit": "ltr",
+    "size": "",
+    "price": 295,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 23,
+    "receipt_article": "QDE White",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 8,
+    "price_options": {
+      "240.0": 1,
+      "245": 1,
+      "280": 1,
+      "290": 1,
+      "295": 3,
+      "320": 1
+    }
+  },
+  {
+    "row": 65,
+    "source_id": 55,
+    "product": "QDE Black (incl. B-690)",
+    "unit": "ltr",
+    "size": "",
+    "price": 280,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 70,
+    "receipt_article": "QDE Black",
+    "receipt_date": "2026-11-04",
+    "matching_sales": 5,
+    "price_options": {
+      "120.0": 1,
+      "280": 4
+    }
+  },
+  {
+    "row": 66,
+    "source_id": 56,
+    "product": "QDE / Enamel Chocolate Brown",
+    "unit": "ltr",
+    "size": "",
+    "price": 240.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 14,
+    "receipt_article": "QDE Chocolate Brown",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 6,
+    "price_options": {
+      "200": 1,
+      "220": 1,
+      "240": 2,
+      "280.0": 1,
+      "350": 1
+    }
+  },
+  {
+    "row": 67,
+    "source_id": 57,
+    "product": "QDE Medium / Modern Gray",
+    "unit": "gal",
+    "size": "",
+    "price": 980.0,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 145,
+    "receipt_article": "QDE MEDIUM GRAY",
+    "receipt_date": "2026-10-13",
+    "matching_sales": 2,
+    "price_options": {
+      "290": 1,
+      "980": 1
+    }
+  },
+  {
+    "row": 68,
+    "source_id": 58,
+    "product": "Flat Wall Enamel",
+    "unit": "ltr",
+    "size": "",
+    "price": 280,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 85,
+    "receipt_article": "Flat Wall Enamel",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 2,
+    "price_options": {
+      "280": 2
+    }
+  },
+  {
+    "row": 69,
+    "source_id": 59,
+    "product": "Mixed Enamel",
+    "unit": "ltr",
+    "size": "",
+    "price": 240,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 13,
+    "receipt_article": "Enamel Mixed",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 5,
+    "price_options": {
+      "240": 2,
+      "250": 2,
+      "280": 1
+    }
+  },
+  {
+    "row": 70,
+    "source_id": 60,
+    "product": "Enamel Maple (Nation)",
+    "unit": "ltr",
+    "size": "",
+    "price": 280,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 118,
+    "receipt_article": "Nation Maple",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 1,
+    "price_options": {
+      "280": 1
+    }
+  },
+  {
+    "row": 71,
+    "source_id": 61,
+    "product": "Epoxy Enamel Black",
+    "unit": "ltr",
+    "size": "",
+    "price": 320,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 26,
+    "receipt_article": "EPOXY BLACK",
+    "receipt_date": "2026-10-14",
+    "matching_sales": 1,
+    "price_options": {
+      "320": 1
+    }
+  },
+  {
+    "row": 72,
+    "source_id": 62,
+    "product": "QDE Sky Blue",
+    "unit": "ltr",
+    "size": "",
+    "price": 240,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 44,
+    "receipt_article": "QDE Sky Blue",
+    "receipt_date": "2026-11-23",
+    "matching_sales": 1,
+    "price_options": {
+      "240": 1
+    }
+  },
+  {
+    "row": 73,
+    "source_id": 63,
+    "product": "QDE Lemon Yellow",
+    "unit": "gal",
+    "size": "",
+    "price": 1920.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 97,
+    "receipt_article": "QDE Lemon Yellow",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "1920.0": 1
+    }
+  },
+  {
+    "row": 74,
+    "source_id": 64,
+    "product": "Aluminum Silver Enamel",
+    "unit": "ltr",
+    "size": "",
+    "price": 295.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 38,
+    "receipt_article": "Aluminum Silver",
+    "receipt_date": "2026-11-20",
+    "matching_sales": 1,
+    "price_options": {
+      "295.0": 1
+    }
+  },
+  {
+    "row": 75,
+    "source_id": 65,
+    "product": "QDE Caramel Brown",
+    "unit": "ltr",
+    "size": "",
+    "price": 290,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 207,
+    "receipt_article": "QDE CARAMEL BROWN?",
+    "receipt_date": "2026-10-15",
+    "matching_sales": 1,
+    "price_options": {
+      "290": 1
+    }
+  },
+  {
+    "row": 76,
+    "source_id": 66,
+    "product": "QDE Matte",
+    "unit": "ltr",
+    "size": "",
+    "price": 290.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 18,
+    "receipt_article": "QDE Matte",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 1,
+    "price_options": {
+      "290.0": 1
+    }
+  },
+  {
+    "row": 77,
+    "source_id": 67,
+    "product": "Gloss Black Enamel",
+    "unit": "ltr",
+    "size": "1/4 ltr",
+    "price": 100.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 11,
+    "receipt_article": "Gloss Black",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 1,
+    "price_options": {
+      "100.0": 1
+    }
+  },
+  {
+    "row": 78,
+    "source_id": 68,
+    "product": "QDE Gray",
+    "unit": "ltr",
+    "size": "1/2 ltr",
+    "price": 100,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 121,
+    "receipt_article": "QDE GREY",
+    "receipt_date": "2026-10-13",
+    "matching_sales": 1,
+    "price_options": {
+      "100": 1
+    }
+  },
+  {
+    "row": 79,
+    "source_id": 69,
+    "product": "QDE Yellow",
+    "unit": "ltr",
+    "size": "1/4 ltr",
+    "price": 100,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 49,
+    "receipt_article": "QDE YELLOW",
+    "receipt_date": "2026-10-15",
+    "matching_sales": 1,
+    "price_options": {
+      "100": 1
+    }
+  },
+  {
+    "row": 80,
+    "source_id": 70,
+    "product": "QDE Blue",
+    "unit": "ltr",
+    "size": "1/4 ltr",
+    "price": 60,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 51,
+    "receipt_article": "QDE BLUE",
+    "receipt_date": "2026-10-15",
+    "matching_sales": 1,
+    "price_options": {
+      "60": 1
+    }
+  },
+  {
+    "row": 81,
+    "source_id": 71,
+    "product": "QDE Green",
+    "unit": "ltr",
+    "size": "1/4 ltr",
+    "price": 60,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 50,
+    "receipt_article": "QDE GREEN",
+    "receipt_date": "2026-10-15",
+    "matching_sales": 1,
+    "price_options": {
+      "60": 1
+    }
+  },
+  {
+    "row": 82,
+    "source_id": 72,
+    "product": "Enamel Brown (Unspecified)",
+    "unit": "ltr",
+    "size": "",
+    "price": 200.0,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 22,
+    "receipt_article": "BROWN",
+    "receipt_date": "2026-10-14",
+    "matching_sales": 1,
+    "price_options": {
+      "200.0": 1
+    }
+  },
+  {
+    "row": 83,
+    "source_id": 73,
+    "product": "Rain or Shine Gray / Smoke Gray",
+    "unit": "gal",
+    "size": "",
+    "price": 850,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 77,
+    "receipt_article": "ROS-705 (RAIN OR SHINE) GRAY",
+    "receipt_date": "2026-10-17",
+    "matching_sales": 2,
+    "price_options": {
+      "850": 1,
+      "890": 1
+    }
+  },
+  {
+    "row": 84,
+    "source_id": 74,
+    "product": "Rain or Shine Terra Cotta",
+    "unit": "gal",
+    "size": "",
+    "price": 960.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 77,
+    "receipt_article": "terra cotta",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 2,
+    "price_options": {
+      "790.0": 1,
+      "960.0": 1
+    }
+  },
+  {
+    "row": 85,
+    "source_id": 75,
+    "product": "Roofguard Baguio Green (B-2550)",
+    "unit": "tin",
+    "size": "",
+    "price": 3000.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 29,
+    "receipt_article": "Rfg Baguio Green",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 2,
+    "price_options": {
+      "3000": 2
+    }
+  },
+  {
+    "row": 86,
+    "source_id": 76,
+    "product": "Roofing Paint Chocolate Brown",
+    "unit": "ltr",
+    "size": "",
+    "price": 280,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 172,
+    "receipt_article": "R/G? / R/S? CHOCOLATE BROWN",
+    "receipt_date": "2026-10-14",
+    "matching_sales": 1,
+    "price_options": {
+      "280": 1
+    }
+  },
+  {
+    "row": 87,
+    "source_id": 77,
+    "product": "Rain or Shine Pacific Blue",
+    "unit": "tin",
+    "size": "",
+    "price": 3050,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 99,
+    "receipt_article": "R|S Pacific Blue",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 1,
+    "price_options": {
+      "3050": 1
+    }
+  },
+  {
+    "row": 88,
+    "source_id": 78,
+    "product": "Roofguard Pacific Blue",
+    "unit": "tin",
+    "size": "",
+    "price": 3050,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 24,
+    "receipt_article": "Roofguard Pacific Blue",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 1,
+    "price_options": {
+      "3050": 1
+    }
+  },
+  {
+    "row": 89,
+    "source_id": 79,
+    "product": "Rain or Shine Tulle White",
+    "unit": "tin",
+    "size": "",
+    "price": 2980,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 150,
+    "receipt_article": "R/S TULLE WHITE",
+    "receipt_date": "2026-10-13",
+    "matching_sales": 1,
+    "price_options": {
+      "2980": 1
+    }
+  },
+  {
+    "row": 90,
+    "source_id": 80,
+    "product": "Rain or Shine Cream Surprise (SR-411)",
+    "unit": "gal",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 119,
+    "receipt_article": "S/R CREAM SURPRISE? (DAVIES SR-411)",
+    "receipt_date": "2026-10-13",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 91,
+    "source_id": 81,
+    "product": "Rain or Shine ROS-530",
+    "unit": "gal",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 38,
+    "receipt_article": "ROS.530",
+    "receipt_date": "2026-11-03",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 92,
+    "source_id": 82,
+    "product": "Rain or Shine ROS-862",
+    "unit": "gal",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 90,
+    "receipt_article": "ROS 862",
+    "receipt_date": "2026-10-18",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 93,
+    "source_id": 83,
+    "product": "Rain or Shine White",
+    "unit": "gal",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 164,
+    "receipt_article": "S|R White",
+    "receipt_date": "2026-11-08",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 94,
+    "source_id": 84,
+    "product": "Skim Coat",
+    "unit": "kilo",
+    "size": "",
+    "price": 40,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 56,
+    "receipt_article": "Skim Coat",
+    "receipt_date": "2026-11-22",
+    "matching_sales": 4,
+    "price_options": {
+      "40": 4
+    }
+  },
+  {
+    "row": 95,
+    "source_id": 85,
+    "product": "Plexibond Waterproofing",
+    "unit": "gal",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 117,
+    "receipt_article": "PLEXIBOND",
+    "receipt_date": "2026-10-18",
+    "matching_sales": 5,
+    "price_options": {
+      "870": 1,
+      "890": 4
+    }
+  },
+  {
+    "row": 96,
+    "source_id": 86,
+    "product": "Polituff Body Filler",
+    "unit": "ltr",
+    "size": "",
+    "price": 340.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 2,
+    "receipt_article": "Polituff",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 5,
+    "price_options": {
+      "320": 2,
+      "340": 3
+    }
+  },
+  {
+    "row": 97,
+    "source_id": 87,
+    "product": "Stick Well Adhesive",
+    "unit": "pack",
+    "size": "",
+    "price": 85,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 38,
+    "receipt_article": "STICK WELL",
+    "receipt_date": "2026-10-15",
+    "matching_sales": 1,
+    "price_options": {
+      "85": 1
+    }
+  },
+  {
+    "row": 98,
+    "source_id": 88,
+    "product": "Konstrukt (K-201)",
+    "unit": "tin",
+    "size": "",
+    "price": 1500,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 60,
+    "receipt_article": "KONSTRUKT",
+    "receipt_date": "2026-10-16",
+    "matching_sales": 2,
+    "price_options": {
+      "1500": 2
+    }
+  },
+  {
+    "row": 99,
+    "source_id": 89,
+    "product": "Vulcaseal",
+    "unit": "ltr",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 127,
+    "receipt_article": "Vulcaseal",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 100,
+    "source_id": 90,
+    "product": "Spot / Lacquer Putty",
+    "unit": "gal",
+    "size": "",
+    "price": 1390.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 74,
+    "receipt_article": "Lacquer Spot Putty",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "930": 1
+    }
+  },
+  {
+    "row": 101,
+    "source_id": 91,
+    "product": "Glazing Putty",
+    "unit": "gal",
+    "size": "",
+    "price": 800.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 67,
+    "receipt_article": "glazing putty",
+    "receipt_date": "2026-11-20",
+    "matching_sales": 1,
+    "price_options": {
+      "800.0": 1
+    }
+  },
+  {
+    "row": 102,
+    "source_id": 92,
+    "product": "Boysen Flexibond",
+    "unit": "ltr",
+    "size": "",
+    "price": 240,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 61,
+    "receipt_article": "Flexibond Boysen",
+    "receipt_date": "2026-11-04",
+    "matching_sales": 1,
+    "price_options": {
+      "240": 1
+    }
+  },
+  {
+    "row": 103,
+    "source_id": 93,
+    "product": "Boral Plaster",
+    "unit": "kilo",
+    "size": "",
+    "price": 65.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 74,
+    "receipt_article": "boral",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 2,
+    "price_options": {
+      "60": 1,
+      "65.0": 1
+    }
+  },
+  {
+    "row": 104,
+    "source_id": 94,
+    "product": "Lacquer Putty",
+    "unit": "gal",
+    "size": "",
+    "price": 980,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 78,
+    "receipt_article": "Lacquer Putty",
+    "receipt_date": "2026-11-04",
+    "matching_sales": 1,
+    "price_options": {
+      "980": 1
+    }
+  },
+  {
+    "row": 105,
+    "source_id": 95,
+    "product": "Epoxy Non-Sag",
+    "unit": "ltr",
+    "size": "",
+    "price": 850,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 173,
+    "receipt_article": "Epoxy Non-Sag",
+    "receipt_date": "2026-11-09",
+    "matching_sales": 1,
+    "price_options": {
+      "850": 1
+    }
+  },
+  {
+    "row": 106,
+    "source_id": 96,
+    "product": "Putty Master",
+    "unit": "gal",
+    "size": "",
+    "price": 790,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 59,
+    "receipt_article": "Putty Master",
+    "receipt_date": "2026-11-04",
+    "matching_sales": 1,
+    "price_options": {
+      "790": 1
+    }
+  },
+  {
+    "row": 107,
+    "source_id": 97,
+    "product": "Wall Putty",
+    "unit": "gal",
+    "size": "",
+    "price": 790,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 7,
+    "receipt_article": "Wall putty",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 1,
+    "price_options": {
+      "790": 1
+    }
+  },
+  {
+    "row": 108,
+    "source_id": 98,
+    "product": "Buildrite Waterproofing",
+    "unit": "ltr",
+    "size": "",
+    "price": 340,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 17,
+    "receipt_article": "Buildrite",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 1,
+    "price_options": {
+      "340": 1
+    }
+  },
+  {
+    "row": 109,
+    "source_id": 99,
+    "product": "Clear Sealant",
+    "unit": "pcs",
+    "size": "",
+    "price": 220,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 188,
+    "receipt_article": "SEALANT CLEAR",
+    "receipt_date": "2026-10-15",
+    "matching_sales": 1,
+    "price_options": {
+      "220": 1
+    }
+  },
+  {
+    "row": 110,
+    "source_id": 100,
+    "product": "Waterproofing Sachet",
+    "unit": "pcs",
+    "size": "",
+    "price": 100,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 108,
+    "receipt_article": "Sachet",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 1,
+    "price_options": {
+      "100": 1
+    }
+  },
+  {
+    "row": 111,
+    "source_id": 101,
+    "product": "Epoxy Primer Gray",
+    "unit": "gal",
+    "size": "",
+    "price": 890.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 22,
+    "receipt_article": "Epoxy Primer GaG",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 5,
+    "price_options": {
+      "890": 4,
+      "930": 1
+    }
+  },
+  {
+    "row": 112,
+    "source_id": 102,
+    "product": "Epoxy Primer White",
+    "unit": "gal",
+    "size": "",
+    "price": 1200,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 20,
+    "receipt_article": "Epoxy Primer White",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 1,
+    "price_options": {
+      "1200": 1
+    }
+  },
+  {
+    "row": 113,
+    "source_id": 103,
+    "product": "Red Oxide Primer",
+    "unit": "gal",
+    "size": "",
+    "price": 740,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 175,
+    "receipt_article": "RED OXIDE",
+    "receipt_date": "2026-10-15",
+    "matching_sales": 3,
+    "price_options": {
+      "740": 2,
+      "890": 1
+    }
+  },
+  {
+    "row": 114,
+    "source_id": 104,
+    "product": "Epoxy Primer (Unspecified Color)",
+    "unit": "ltr",
+    "size": "",
+    "price": 340,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 102,
+    "receipt_article": "epoxy primer",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 2,
+    "price_options": {
+      "340": 2
+    }
+  },
+  {
+    "row": 115,
+    "source_id": 105,
+    "product": "Lacquer Sanding Sealer (B-1254)",
+    "unit": "ltr",
+    "size": "",
+    "price": 295.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 61,
+    "receipt_article": "Sanding Sealer",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 3,
+    "price_options": {
+      "280": 1,
+      "295.0": 2
+    }
+  },
+  {
+    "row": 116,
+    "source_id": 106,
+    "product": "Lacquer Primer Surfacer",
+    "unit": "gal",
+    "size": "",
+    "price": 1390,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 75,
+    "receipt_article": "Lacquer Primer Surfacer",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 2,
+    "price_options": {
+      "1050": 1,
+      "1390": 1
+    }
+  },
+  {
+    "row": 117,
+    "source_id": 107,
+    "product": "Acrytex Primer",
+    "unit": "gal",
+    "size": "",
+    "price": 1150,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 36,
+    "receipt_article": "Acryter Primer",
+    "receipt_date": "2026-11-03",
+    "matching_sales": 1,
+    "price_options": {
+      "1150": 1
+    }
+  },
+  {
+    "row": 118,
+    "source_id": 108,
+    "product": "Block Coat Primer",
+    "unit": "gal",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 80,
+    "receipt_article": "Block Coat",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 119,
+    "source_id": 109,
+    "product": "Epoxy Primer Black",
+    "unit": "ltr",
+    "size": "",
+    "price": 420.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 35,
+    "receipt_article": "Epoxy Primer Black",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 1,
+    "price_options": {
+      "420.0": 1
+    }
+  },
+  {
+    "row": 120,
+    "source_id": 110,
+    "product": "Epoxy Catalyst",
+    "unit": "ltr",
+    "size": "",
+    "price": 240,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 92,
+    "receipt_article": "catalyst expoxy",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 1,
+    "price_options": {
+      "240": 1
+    }
+  },
+  {
+    "row": 121,
+    "source_id": 111,
+    "product": "Paint Thinner",
+    "unit": "btl",
+    "size": "",
+    "price": 95.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 53,
+    "receipt_article": "Paint Thinner",
+    "receipt_date": "2026-11-22",
+    "matching_sales": 15,
+    "price_options": {
+      "95": 13,
+      "100": 1,
+      "185": 1
+    }
+  },
+  {
+    "row": 122,
+    "source_id": 112,
+    "product": "Lacquer Thinner",
+    "unit": "btl",
+    "size": "",
+    "price": 95.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 35,
+    "receipt_article": "laquer thinner",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 4,
+    "price_options": {
+      "95": 4
+    }
+  },
+  {
+    "row": 123,
+    "source_id": 113,
+    "product": "Epoxy Reducer",
+    "unit": "gal",
+    "size": "",
+    "price": 740,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 19,
+    "receipt_article": "Epoxy Reducer",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 1,
+    "price_options": {
+      "740": 1
+    }
+  },
+  {
+    "row": 124,
+    "source_id": 114,
+    "product": "Acrytex Reducer (B-1750)",
+    "unit": "gal",
+    "size": "",
+    "price": 740,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 61,
+    "receipt_article": "B1750",
+    "receipt_date": "2026-10-16",
+    "matching_sales": 2,
+    "price_options": {
+      "740": 2
+    }
+  },
+  {
+    "row": 125,
+    "source_id": 115,
+    "product": "Clear Gloss Lacquer (B-1250)",
+    "unit": "ltr",
+    "size": "",
+    "price": 295.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 88,
+    "receipt_article": "clear gloss lac",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 3,
+    "price_options": {
+      "280": 1,
+      "295.0": 2
+    }
+  },
+  {
+    "row": 126,
+    "source_id": 116,
+    "product": "Spar Varnish",
+    "unit": "ltr",
+    "size": "",
+    "price": 890,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 5,
+    "receipt_article": "Spar Varnish",
+    "receipt_date": "2026-11-02",
+    "matching_sales": 1,
+    "price_options": {
+      "890": 1
+    }
+  },
+  {
+    "row": 127,
+    "source_id": 117,
+    "product": "Automotive Lacquer White",
+    "unit": "ltr",
+    "size": "",
+    "price": 450,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 71,
+    "receipt_article": "Automotive Lacquer White",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 2,
+    "price_options": {
+      "420": 1,
+      "450": 1
+    }
+  },
+  {
+    "row": 128,
+    "source_id": 118,
+    "product": "Automotive Lacquer Black",
+    "unit": "ltr",
+    "size": "",
+    "price": 390.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 49,
+    "receipt_article": "Automotive lac. Black",
+    "receipt_date": "2026-11-20",
+    "matching_sales": 2,
+    "price_options": {
+      "390.0": 1,
+      "420": 1
+    }
+  },
+  {
+    "row": 129,
+    "source_id": 119,
+    "product": "Wood Stain Mahogany",
+    "unit": "ltr",
+    "size": "",
+    "price": 280,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 73,
+    "receipt_article": "Wood Stain Mahogany",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 2,
+    "price_options": {
+      "280": 2
+    }
+  },
+  {
+    "row": 130,
+    "source_id": 120,
+    "product": "Automotive Raw Sienna",
+    "unit": "ltr",
+    "size": "",
+    "price": 450,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 72,
+    "receipt_article": "Automotive Raw Sienna",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "450": 1
+    }
+  },
+  {
+    "row": 131,
+    "source_id": 121,
+    "product": "Dead Flat Lacquer",
+    "unit": "ltr",
+    "size": "",
+    "price": 295.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 89,
+    "receipt_article": "dead flat lac",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "295.0": 1
+    }
+  },
+  {
+    "row": 132,
+    "source_id": 122,
+    "product": "Oil Wood Stain (Unspecified)",
+    "unit": "ltr",
+    "size": "",
+    "price": 280,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 67,
+    "receipt_article": "Oil Wood Stain",
+    "receipt_date": "2026-11-04",
+    "matching_sales": 1,
+    "price_options": {
+      "280": 1
+    }
+  },
+  {
+    "row": 133,
+    "source_id": 123,
+    "product": "Oil Wood Stain Maple (B-2705)",
+    "unit": "ltr",
+    "size": "",
+    "price": 280,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 134,
+    "receipt_article": "B2705 OWS MAPLE",
+    "receipt_date": "2026-10-13",
+    "matching_sales": 1,
+    "price_options": {
+      "280": 1
+    }
+  },
+  {
+    "row": 134,
+    "source_id": 124,
+    "product": "Wood Stain Oak",
+    "unit": "ltr",
+    "size": "",
+    "price": 280.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 90,
+    "receipt_article": "wood stain oak",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "280.0": 1
+    }
+  },
+  {
+    "row": 135,
+    "source_id": 125,
+    "product": "Wood Stain Walnut",
+    "unit": "ltr",
+    "size": "",
+    "price": 280.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 62,
+    "receipt_article": "Wood Stain Walnut",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "280.0": 1
+    }
+  },
+  {
+    "row": 136,
+    "source_id": 126,
+    "product": "Lacquer / Epoxy Hardener (Big)",
+    "unit": "pcs",
+    "size": "",
+    "price": 250,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 80,
+    "receipt_article": "Hardener Big",
+    "receipt_date": "2026-11-04",
+    "matching_sales": 1,
+    "price_options": {
+      "250": 1
+    }
+  },
+  {
+    "row": 137,
+    "source_id": 127,
+    "product": "Shepsil",
+    "unit": "btl",
+    "size": "",
+    "price": 120,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 57,
+    "receipt_article": "Shepsil",
+    "receipt_date": "2026-11-04",
+    "matching_sales": 1,
+    "price_options": {
+      "120": 1
+    }
+  },
+  {
+    "row": 138,
+    "source_id": 128,
+    "product": "Blind Rivet",
+    "unit": "pcs",
+    "size": "",
+    "price": 0.75,
+    "receipt_sheet": "Oct 13-18",
+    "receipt_row": 114,
+    "receipt_article": "BLIND RIVET",
+    "receipt_date": "2026-10-18",
+    "matching_sales": 1,
+    "price_options": {
+      "7.5": 1
+    }
+  },
+  {
+    "row": 139,
+    "source_id": 129,
+    "product": "Tile Adhesive (incl. ABC)",
+    "unit": "pcs",
+    "size": "",
+    "price": 290,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 157,
+    "receipt_article": "Tile Adhesive",
+    "receipt_date": "2026-11-08",
+    "matching_sales": 4,
+    "price_options": {
+      "290": 3,
+      "340": 1
+    }
+  },
+  {
+    "row": 140,
+    "source_id": 130,
+    "product": "Tile Grout",
+    "unit": "kilo",
+    "size": "",
+    "price": 120.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 12,
+    "receipt_article": "Tile grouth",
+    "receipt_date": "2026-11-19",
+    "matching_sales": 1,
+    "price_options": {
+      "120.0": 1
+    }
+  },
+  {
+    "row": 141,
+    "source_id": 131,
+    "product": "Door Knob",
+    "unit": "pcs",
+    "size": "",
+    "price": 295.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 78,
+    "receipt_article": "door knob",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "295.0": 1
+    }
+  },
+  {
+    "row": 142,
+    "source_id": 132,
+    "product": "Mono Lock",
+    "unit": "pcs",
+    "size": "",
+    "price": 240.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 93,
+    "receipt_article": "mo mono lock",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "240.0": 1
+    }
+  },
+  {
+    "row": 143,
+    "source_id": 133,
+    "product": "Spray Paint (Standard / Bosny)",
+    "unit": "pcs",
+    "size": "",
+    "price": 130,
+    "receipt_sheet": "Nov 2-9",
+    "receipt_row": 137,
+    "receipt_article": "Spray Paint",
+    "receipt_date": "2026-11-05",
+    "matching_sales": 3,
+    "price_options": {
+      "120": 1,
+      "130": 1,
+      "140": 1
+    }
+  },
+  {
+    "row": 144,
+    "source_id": 134,
+    "product": "Spray Paint — Primer Gray",
+    "unit": "pcs",
+    "size": "",
+    "price": 140,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 101,
+    "receipt_article": "Spray paint primer gray",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "140": 1
+    }
+  },
+  {
+    "row": 145,
+    "source_id": 135,
+    "product": "Spray Paint — Gold",
+    "unit": "pcs",
+    "size": "",
+    "price": 180.0,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 102,
+    "receipt_article": "Spray paint gold",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "180.0": 1
+    }
+  },
+  {
+    "row": 146,
+    "source_id": 136,
+    "product": "Acrytex Tinting Colors (Raw Sienna / Burnt Umber / Venetian Red)",
+    "unit": "ltr",
+    "size": "1/4 ltr",
+    "price": 110,
+    "receipt_sheet": "Sheet2",
+    "receipt_row": 72,
+    "receipt_article": "A/C Raw Sienna / Burnt Umber / Venetian Red",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "110": 1
+    }
+  },
+  {
+    "row": 147,
+    "source_id": 137,
+    "product": "Acrylic Tinting Color — Blue",
+    "unit": "ltr",
+    "size": "1/4 ltr",
+    "price": 690.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 88,
+    "receipt_article": "Acrylic Tinting Blue",
+    "receipt_date": "2026-11-21",
+    "matching_sales": 1,
+    "price_options": {
+      "690.0": 1
+    }
+  },
+  {
+    "row": 148,
+    "source_id": 138,
+    "product": "Acrytex Tinting Color — Raw Sienna",
+    "unit": "ltr",
+    "size": "1/4 ltr",
+    "price": 280.0,
+    "receipt_sheet": "Nov 18-23",
+    "receipt_row": 5,
+    "receipt_article": "A/C Raw Sienna",
+    "receipt_date": "2026-11-18",
+    "matching_sales": 1,
+    "price_options": {
+      "280.0": 1
+    }
+  }
+]

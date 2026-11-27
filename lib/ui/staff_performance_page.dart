@@ -467,32 +467,6 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
   }
 
   Future<void> _showBodegeroDetails(Map<String, dynamic> record) {
-    String number(String key, [int digits = 1]) =>
-        (record[key] as num?)?.toStringAsFixed(digits) ?? '—';
-    Widget stat(String label, String value) => Container(
-      width: 250,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _surface,
-        border: Border.all(color: _border),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(color: _muted, fontSize: 11)),
-          const SizedBox(height: 5),
-          Text(
-            value,
-            style: const TextStyle(
-              color: _ink,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
     return showDialog<void>(
       context: context,
       builder: (context) => AppDialog(
@@ -500,69 +474,17 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
         color: _accent,
         title: '${record['employee_name']}',
         subtitle: 'Bodegero · ${_period.displayLabel}',
-        maxWidth: 600,
+        maxWidth: 700,
         actions: [
           FilledButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
           ),
         ],
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              record['score'] == null
-                  ? 'Insufficient data for a score'
-                  : 'Score ${number('score')} · ${StaffPerformanceV1.bandFor((record['score'] as num).toDouble())}',
-              style: const TextStyle(
-                color: _ink,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              record['score'] == null
-                  ? 'At least 5 valid timed loads are required.'
-                  : 'Based on ${record['valid_timing_count']} valid timed loads.',
-              style: const TextStyle(color: _muted, fontSize: 12),
-            ),
-            const SizedBox(height: 18),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                stat('Assigned orders', '${record['assigned_count']}'),
-                stat('Loaded orders', '${record['completed_count']}'),
-                stat('Workload points', number('workload_points', 2)),
-                stat(
-                  'Valid / excluded timing',
-                  '${record['valid_timing_count']} / ${record['excluded_timing_count']}',
-                ),
-                stat('Median active load', '${number('median_minutes')} min'),
-                stat(
-                  'Average wait to start',
-                  '${number('average_start_delay_minutes')} min',
-                ),
-                stat(
-                  'Recorded pause time',
-                  '${number('total_paused_minutes')} min',
-                ),
-                stat('On-time rate', '${number('on_time_rate')}%'),
-                stat('Pace', '${number('points_per_hour', 2)} pts/hour'),
-                stat('Completion rate', '${number('completion_rate')}%'),
-                stat('Overdue orders', '${record['overdue_count']}'),
-              ],
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'Score = 40% on time + 30% peer workload + 20% peer pace + 10% completion. '
-              'Peer comparisons use Bodegeros in this store and period. '
-              'Open loading work counts as overdue after 24 hours.',
-              style: TextStyle(color: _muted, fontSize: 12),
-            ),
-          ],
+        child: _BodegeroDetailContent(
+          record: record,
+          report: _bodegeroReport ?? const <String, dynamic>{},
+          periodLabel: _period.displayLabel,
         ),
       ),
     );
@@ -683,14 +605,19 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
       return showStaffMetricExplanation(
         context,
         StaffMetricExplanation(
-          title: 'Bodegero performance',
+          title: 'How the performance score works',
           whatItMeasures:
               'Verified heavy loading, active time, and completed workload.',
           whyItMatters:
               'Shows the loading work completed while keeping untimed older orders out of the score.',
           formula:
-              'Score = on time × 40% + peer workload × 30% + peer pace × 20% + completion × 10%',
+              'Final Score =\n'
+              '(On-Time × 40%)\n'
+              '+ (Peer Workload × 30%)\n'
+              '+ (Peer Pace × 20%)\n'
+              '+ (Completion × 10%)',
           data: [
+            const StaffMetricValue('Selected role', 'Bodegero'),
             StaffMetricValue('Selected period', _period.displayLabel),
             const StaffMetricValue('Minimum timed loads', '5'),
             const StaffMetricValue(
@@ -702,8 +629,8 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
               'Heavy item lines plus quantity bands',
             ),
           ],
-          result: 'A 0–100 score after enough timed loads',
-          scoreEffect: 'Yes',
+          result: 'A transparent 0–100 Final Score after enough timed loads',
+          scoreEffect: 'Yes — this defines the Final Score',
           scoreEffectExplanation:
               'Pauses are excluded from active loading time. Older untimed loads do not count toward the score.',
         ),
@@ -769,6 +696,382 @@ class _StaffPerformancePageState extends State<StaffPerformancePage> {
           periodLabel: _period.displayLabel,
         ),
       ),
+    );
+  }
+}
+
+class _BodegeroDetailContent extends StatelessWidget {
+  const _BodegeroDetailContent({
+    required this.record,
+    required this.report,
+    required this.periodLabel,
+  });
+
+  final Map<String, dynamic> record;
+  final Map<String, dynamic> report;
+  final String periodLabel;
+
+  int _count(String key) => (record[key] as num?)?.toInt() ?? 0;
+  double? _value(String key) => (record[key] as num?)?.toDouble();
+  String _number(String key, [int digits = 1]) =>
+      _value(key)?.toStringAsFixed(digits) ?? '—';
+  String _minutes(String key) =>
+      _value(key) == null ? '—' : '${_number(key)} min';
+  String _percent(String key) => _value(key) == null ? '—' : '${_number(key)}%';
+
+  List<Map<String, dynamic>> get _qualifiedPeers =>
+      (report['records'] as List? ?? const [])
+          .map((entry) => Map<String, dynamic>.from(entry as Map))
+          .where(
+            (entry) =>
+                ((entry['valid_timing_count'] as num?)?.toInt() ?? 0) >= 5,
+          )
+          .toList();
+
+  double? _peerScore(String key) {
+    if (_count('valid_timing_count') < 5) return null;
+    final values = _qualifiedPeers
+        .map((peer) => (peer[key] as num?)?.toDouble())
+        .whereType<double>()
+        .toList();
+    final mine = _value(key);
+    if (mine == null || values.isEmpty) return null;
+    final low = values.reduce((a, b) => a < b ? a : b);
+    final high = values.reduce((a, b) => a > b ? a : b);
+    return high == low ? 50 : (mine - low) * 100 / (high - low);
+  }
+
+  StaffMetricExplanation _explain(
+    String title,
+    String measure,
+    String result, {
+    String? formula,
+    bool affectsScore = false,
+  }) => StaffMetricExplanation(
+    title: title,
+    whatItMeasures: measure,
+    whyItMatters: affectsScore
+        ? 'This is part of the Bodegero performance score for the selected period.'
+        : 'This gives context for the employee’s loading work in the selected period.',
+    howItWorks: formula == null ? measure : null,
+    formula: formula,
+    data: [StaffMetricValue('Selected period', periodLabel)],
+    result: result,
+    scoreEffect: affectsScore ? 'Yes' : 'No — informational only',
+    scoreEffectExplanation: affectsScore
+        ? 'The Bodegero score uses this measure with its stated weight.'
+        : 'This value is shown for context and is not a separate score component.',
+  );
+
+  _DetailValue _row(
+    String label,
+    String value,
+    String measure, {
+    String? formula,
+    bool affectsScore = false,
+  }) => _DetailValue(
+    label,
+    value,
+    explanation: _explain(
+      label,
+      measure,
+      value,
+      formula: formula,
+      affectsScore: affectsScore,
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final score = _value('score');
+    final color = _scoreColor(score);
+    final assigned = _count('assigned_count');
+    final completed = _count('completed_count');
+    final workload = _value('workload_points') ?? 0;
+    final totalLoaded = (report['total_completed'] as num?)?.toInt() ?? 0;
+    final totalWorkload =
+        (report['total_workload_points'] as num?)?.toDouble() ?? 0;
+    final workloadPeer = _peerScore('workload_points');
+    final pacePeer = _peerScore('points_per_hour');
+    final scoreExplanation = StaffMetricExplanation(
+      title: 'Performance Score Breakdown',
+      whatItMeasures: 'The weighted 0–100 Bodegero score.',
+      whyItMatters:
+          'It summarizes verified heavy loading in this store and period.',
+      formula:
+          'Score =\n'
+          '(On-time rate × 40%)\n'
+          '+ (Peer workload × 30%)\n'
+          '+ (Peer pace × 20%)\n'
+          '+ (Completion rate × 10%)',
+      data: [
+        StaffMetricValue('Selected period', periodLabel),
+        StaffMetricValue(
+          'Valid timed loads',
+          '${_count('valid_timing_count')}',
+        ),
+        StaffMetricValue(
+          'Qualified Bodegero peers',
+          '${_qualifiedPeers.length}',
+        ),
+      ],
+      result: score == null
+          ? 'Insufficient data (${_count('valid_timing_count')} / 5 valid timed loads)'
+          : 'Final Score: ${score.toStringAsFixed(1)} / 100',
+      scoreEffect: 'Yes — this defines the Bodegero score',
+      scoreEffectExplanation:
+          'Peer workload and pace compare qualified Bodegeros in the same store and period. Pauses are excluded from active loading time.',
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      score == null
+                          ? 'Insufficient data'
+                          : StaffPerformanceV1.bandFor(score),
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      score == null
+                          ? 'At least 5 valid timed loads are required.'
+                          : 'Based on ${_count('valid_timing_count')} valid timed loads.',
+                      style: const TextStyle(color: _muted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                score?.toStringAsFixed(1) ?? '—',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: _border),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Strengths',
+                style: TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                score == null
+                    ? 'More completed timed loads are needed before a dependable performance summary can be shown.'
+                    : (_value('on_time_rate') ?? 0) >= 85
+                    ? 'Loading work is completed within the on-time target consistently.'
+                    : 'Review the performance measures below to identify strengths and areas for improvement.',
+                style: const TextStyle(color: _muted, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        _DetailSection(
+          title: 'Contribution',
+          rows: [
+            _row(
+              'Assigned orders',
+              '$assigned',
+              'Heavy orders assigned to this Bodegero.',
+            ),
+            _row(
+              'Loaded orders',
+              '$completed / $totalLoaded',
+              'Verified loaded orders and the store total.',
+            ),
+            _row(
+              'Order share',
+              totalLoaded == 0
+                  ? '0.0%'
+                  : '${(completed * 100 / totalLoaded).toStringAsFixed(1)}%',
+              'Share of verified loaded orders in the store.',
+              formula: 'Loaded orders ÷ store loaded orders × 100',
+            ),
+            _row(
+              'Workload',
+              '${workload.toStringAsFixed(2)} / ${totalWorkload.toStringAsFixed(2)} points',
+              'Heavy loading workload points and store total.',
+              affectsScore: true,
+            ),
+            _row(
+              'Workload share',
+              totalWorkload == 0
+                  ? '0.0%'
+                  : '${(workload * 100 / totalWorkload).toStringAsFixed(1)}%',
+              'Share of the store’s completed heavy loading workload.',
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        const _GroupHeading(title: 'Performance'),
+        const SizedBox(height: 8),
+        _DetailSection(
+          title: 'A. Data Basis',
+          rows: [
+            _row(
+              'Valid timing sample',
+              '${_count('valid_timing_count')}',
+              'Verified loads with valid active loading time.',
+            ),
+            _row(
+              'Excluded timing records',
+              '${_count('excluded_timing_count')}',
+              'Verified loads without valid timing; excluded from timed measures.',
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _DetailSection(
+          title: 'B. Speed',
+          rows: [
+            _row(
+              'Median active load',
+              _minutes('median_minutes'),
+              'Middle active loading duration of valid timed loads.',
+            ),
+            _row(
+              'Average wait to start',
+              _minutes('average_start_delay_minutes'),
+              'Average time from assignment to loading start for valid timed loads.',
+            ),
+            _row(
+              'Recorded pause time',
+              _minutes('total_paused_minutes'),
+              'Recorded pauses on verified loads; excluded from active loading time.',
+            ),
+            _row(
+              'Pace',
+              _value('points_per_hour') == null
+                  ? '—'
+                  : '${_number('points_per_hour', 2)} pts/hour',
+              'Timed workload points per active loading hour.',
+              formula: 'Timed workload points × 60 ÷ active loading minutes',
+              affectsScore: true,
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _DetailSection(
+          title: 'C. Timeliness & Completion',
+          rows: [
+            _row(
+              'On-time rate',
+              _percent('on_time_rate'),
+              'Share of valid timed loads verified within the assignment-to-proof target.',
+              formula: 'On-time timed loads ÷ valid timed loads × 100',
+              affectsScore: true,
+            ),
+            _row(
+              'Completion rate',
+              _percent('completion_rate'),
+              'Verified loads relative to verified and overdue loads.',
+              formula: 'Loaded orders ÷ (loaded orders + overdue orders) × 100',
+              affectsScore: true,
+            ),
+            _row(
+              'Overdue orders',
+              '${_count('overdue_count')}',
+              'Open assigned loading work older than 24 hours.',
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _DetailSection(
+          title: 'Performance Score Breakdown',
+          headerExplanation: scoreExplanation,
+          rows: score == null
+              ? [
+                  _DetailValue(
+                    'Final Score',
+                    'Insufficient data (${_count('valid_timing_count')} / 5 valid timed loads)',
+                    explanation: scoreExplanation,
+                  ),
+                  _row(
+                    'Peer cohort',
+                    '${_qualifiedPeers.length} employees qualified for comparison',
+                    'Bodegeros in this store and period with at least five valid timed loads.',
+                  ),
+                ]
+              : [
+                  _row(
+                    'On-time',
+                    '${_number('on_time_rate')} × 40% = ${((_value('on_time_rate') ?? 0) * .40).toStringAsFixed(2)}',
+                    'On-time loading rate, weighted at 40%.',
+                    affectsScore: true,
+                  ),
+                  _row(
+                    'Peer workload',
+                    '${workloadPeer?.toStringAsFixed(2) ?? '—'} × 30% = ${((workloadPeer ?? 0) * .30).toStringAsFixed(2)}',
+                    'Workload normalized against qualified Bodegeros in the same store and period.',
+                    affectsScore: true,
+                  ),
+                  _row(
+                    'Peer pace',
+                    '${pacePeer?.toStringAsFixed(2) ?? '—'} × 20% = ${((pacePeer ?? 0) * .20).toStringAsFixed(2)}',
+                    'Loading pace normalized against qualified Bodegeros in the same store and period.',
+                    affectsScore: true,
+                  ),
+                  _row(
+                    'Completion',
+                    '${_number('completion_rate')} × 10% = ${((_value('completion_rate') ?? 0) * .10).toStringAsFixed(2)}',
+                    'Completion rate, weighted at 10%.',
+                    affectsScore: true,
+                  ),
+                  _DetailValue(
+                    'Final Score',
+                    score.toStringAsFixed(1),
+                    explanation: scoreExplanation,
+                  ),
+                ],
+        ),
+        const SizedBox(height: 14),
+        _DetailSection(
+          title: 'Data Confidence',
+          rows: [
+            _row(
+              'Timing records',
+              '${_count('valid_timing_count')} valid / ${_count('excluded_timing_count')} excluded',
+              'Availability of valid timing data for the selected period.',
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

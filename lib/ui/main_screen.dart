@@ -1160,7 +1160,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
 
     ReportExportController.instance.clear();
-    await _staffPresenceService?.stop(logoutReason: 'store_hours_expired');
+    await _stopPresenceForLogout('store_hours_expired');
     await widget.controller.revokeCurrentSession();
 
     await widget.realtimeSync.stop();
@@ -1207,6 +1207,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       userId: userId,
       userName: userName,
       userRole: userRole,
+      sessionToken: widget.controller.currentSessionToken,
     );
     service.bindRealtimeSync(widget.realtimeSync);
     _staffPresenceService = service;
@@ -4438,7 +4439,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     try {
       _clearStoreAccessScheduling();
       ReportExportController.instance.clear();
-      await _staffPresenceService?.stop(logoutReason: 'manual_logout');
+      await _stopPresenceForLogout('manual_logout');
       await widget.controller.revokeCurrentSession();
       await widget.realtimeSync.stop();
       await AppSessionStorage().clear();
@@ -4461,7 +4462,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     try {
       _clearStoreAccessScheduling();
       ReportExportController.instance.clear();
-      await _staffPresenceService?.stop(logoutReason: 'manual_logout');
+      await _stopPresenceForLogout('manual_logout');
       await widget.controller.revokeCurrentSession();
       await widget.realtimeSync.stop();
       await AppSessionStorage().clear();
@@ -4481,6 +4482,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           AppErrorMapper.message(e, fallback: AppErrorCategory.server),
         );
       }
+    }
+  }
+
+  Future<void> _stopPresenceForLogout(String reason) async {
+    try {
+      await _staffPresenceService?.stop(logoutReason: reason);
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Presence update failed during logout',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 }

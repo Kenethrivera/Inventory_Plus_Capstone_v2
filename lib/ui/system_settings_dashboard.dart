@@ -79,15 +79,7 @@ extension _SettingsDashboard on _SystemSettingsPageState {
       return;
     }
     try {
-      final row = await widget.controller.supabase
-          .from('store_settings')
-          .select(
-            'auto_assign_orders, max_active_orders_per_helper, '
-            'max_approved_discount_pct, gcash_account_name, '
-            'gcash_number, gcash_alt_account_name, gcash_alt_number',
-          )
-          .eq('location_id', locationId)
-          .maybeSingle();
+      final row = await widget.controller.fetchStoreSettingsSnapshot();
       if (!mounted || widget.controller.activeLocationId != locationId) return;
       setState(() {
         _maxApprovedDiscountCtrl.text = _formatPct(
