@@ -377,21 +377,16 @@ class StaffPresenceService extends ChangeNotifier {
 
   static Future<void> logBlockedLogin({
     required SupabaseClient supabase,
-    required String locationId,
-    required String userId,
-    required String userName,
-    required String userRole,
+    required String sessionToken,
     required String reason,
   }) async {
-    await supabase.from('staff_session_logs').insert({
-      'user_id': userId,
-      'user_name': userName,
-      'user_role': userRole,
-      'location_id': locationId,
-      'login_at': DateTime.now().toUtc().toIso8601String(),
-      'blocked_by_store_hours': true,
-      'block_reason': reason,
-    });
+    await supabase.rpc(
+      'record_blocked_staff_login_v1',
+      params: <String, dynamic>{
+        'p_session_token': sessionToken,
+        'p_reason': reason,
+      },
+    );
   }
 
   static Future<List<Map<String, dynamic>>> fetchActiveStaff({

@@ -871,12 +871,15 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         return;
       }
 
-      await widget.storeAccessService.saveSettings(settings);
+      final saved = await widget.storeAccessService.saveSettings(
+        settings,
+        sessionToken: widget.controller.currentSessionToken,
+      );
 
       if (!mounted) return;
 
       setState(() {
-        _storeAccessBaseline = settings;
+        _storeAccessBaseline = saved;
         _storeAccessConflictNotified = false;
         _isSavingStoreAccess = false;
       });

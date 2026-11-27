@@ -221,13 +221,7 @@ class StoreAccessService {
         .maybeSingle();
 
     if (response == null) {
-      final defaults = defaultSettings();
-
-      await supabase
-          .from('store_access_settings')
-          .upsert(defaults.toMap(), onConflict: 'location_id');
-
-      return defaults;
+      return defaultSettings();
     }
 
     return StoreAccessSettings.fromMap(Map<String, dynamic>.from(response));
@@ -265,11 +259,22 @@ class StoreAccessService {
     return settings;
   }
 
-  Future<void> saveSettings(StoreAccessSettings settings) async {
-    await supabase
-        .from('store_access_settings')
-        .upsert(settings.toMap(), onConflict: 'location_id');
-    _publish(settings);
+  Future<StoreAccessSettings> saveSettings(
+    StoreAccessSettings settings, {
+    required String sessionToken,
+  }) async {
+    final response = await supabase.rpc(
+      'update_store_access_settings_v1',
+      params: <String, dynamic>{
+        'p_session_token': sessionToken,
+        'p_settings': settings.toMap(),
+      },
+    );
+    final saved = StoreAccessSettings.fromMap(
+      Map<String, dynamic>.from(response as Map),
+    );
+    _publish(saved);
+    return saved;
   }
 
   void _publish(StoreAccessSettings settings) {

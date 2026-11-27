@@ -3111,12 +3111,13 @@ class InventoryController {
     late final Future<List<Map<String, dynamic>>> request;
     request =
         () async {
-          final response = await supabase
-              .from('transaction_history')
-              .select('*, profiles(name, role)')
-              .eq('location_id', locationId)
-              .eq('product_id', productId)
-              .order('created_at', ascending: false);
+          final response = await supabase.rpc(
+            'product_stock_history_v1',
+            params: <String, dynamic>{
+              'p_session_token': _requireSessionToken(),
+              'p_product_id': productId,
+            },
+          );
 
           if (activeLocationId != locationId) {
             throw StateError('Transaction history location changed.');
@@ -3126,7 +3127,8 @@ class InventoryController {
           }
 
           final result = List<Map<String, dynamic>>.unmodifiable(
-            List<Map<String, dynamic>>.from(response),
+            (response as List<dynamic>)
+                .map((row) => Map<String, dynamic>.from(row as Map)),
           );
           if (_productHistoryGeneration == generation &&
               activeLocationId == locationId) {

@@ -121,14 +121,19 @@ class _LoginPageState extends State<LoginPage> {
             accessResult.reason ??
             'Staff login is not allowed outside store hours.';
 
-        await StaffPresenceService.logBlockedLogin(
-          supabase: widget.controller.supabase,
-          locationId: assignedLocationId,
-          userId: userId,
-          userName: userName,
-          userRole: userRole,
-          reason: reason,
-        );
+        try {
+          await StaffPresenceService.logBlockedLogin(
+            supabase: widget.controller.supabase,
+            sessionToken: sessionToken,
+            reason: reason,
+          );
+        } catch (error, stackTrace) {
+          AppLogger.error(
+            'Could not record blocked staff login',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
 
         await _authService.logout(sessionToken);
 
