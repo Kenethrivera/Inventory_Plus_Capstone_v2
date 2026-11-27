@@ -5,12 +5,14 @@ import 'package:inventory_plus/data/inventory.dart';
 import 'package:inventory_plus/ui/qr_labels_preview_dialog.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('fits the selected number of QR labels on A4', () async {
     final items = List.generate(
       13,
       (index) => InventoryItem(
         id: '$index',
-        name: 'Adjustable wrench with a longer product name $index',
+        name: 'Adjustable wrench – longer product name $index',
         sku: 'SKU-QR-$index',
         color: index == 0 ? 'Red' : null,
         price: 1000,

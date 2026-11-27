@@ -43,6 +43,8 @@ flutter:
     - assets/models/best.tflite
     - assets/models/best_v1.2.tflite
     - assets/models/labels.txt
+    - assets/fonts/LibreFranklin-Regular.ttf
+    - assets/fonts/LibreFranklin-Bold.ttf
 
 msix_config:
   display_name: Inventory Plus

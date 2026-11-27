@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -257,7 +258,15 @@ Future<Uint8List> buildQrLabelsPdf(
   List<InventoryItem> items,
   int labelsPerPage,
 ) async {
-  final doc = pw.Document();
+  final regularFont = pw.Font.ttf(
+    await rootBundle.load('assets/fonts/LibreFranklin-Regular.ttf'),
+  );
+  final boldFont = pw.Font.ttf(
+    await rootBundle.load('assets/fonts/LibreFranklin-Bold.ttf'),
+  );
+  final doc = pw.Document(
+    theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
+  );
   final layout = QrLabelPageLayout.forCount(labelsPerPage);
   final labelSize = layout.labelSize;
   final gap = 6 * PdfPageFormat.mm;
@@ -316,15 +325,21 @@ pw.Widget _pdfLabel(InventoryItem item, double size, double fontScale) =>
         mainAxisAlignment: pw.MainAxisAlignment.center,
         crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
-          pw.Text(
-            item.displayName.replaceAll(' · ', ' - '),
-            style: pw.TextStyle(
-              fontSize: 16 * fontScale,
-              fontWeight: pw.FontWeight.bold,
+          pw.SizedBox(
+            height: 50 * fontScale,
+            child: pw.Center(
+              child: pw.Text(
+                _pdfLabelName(item.displayName),
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  fontSize: _labelNameFontSize(item.displayName) * fontScale,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                maxLines: 3,
+              ),
             ),
-            maxLines: 1,
           ),
-          pw.SizedBox(height: 10 * fontScale),
+          pw.SizedBox(height: 4 * fontScale),
           pw.Expanded(
             child: pw.BarcodeWidget(
               barcode: pw.Barcode.qrCode(),
@@ -343,3 +358,16 @@ pw.Widget _pdfLabel(InventoryItem item, double size, double fontScale) =>
         ],
       ),
     );
+
+String _pdfLabelName(String name) => name
+    .replaceAll(RegExp(r'[\u2010-\u2015\u2212]'), '-')
+    .replaceAll(RegExp(r'\s*\u00b7\s*'), ' - ')
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .trim();
+
+double _labelNameFontSize(String name) {
+  final length = _pdfLabelName(name).length;
+  if (length > 85) return 10;
+  if (length > 58) return 11.5;
+  return 13;
+}
