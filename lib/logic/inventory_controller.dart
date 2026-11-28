@@ -1981,64 +1981,35 @@ class InventoryController {
     }
     final quantityChange = updatedItem.quantity - oldItem.quantity;
 
-    // Product details remain a normal save. Quantity and its history entry are
-    // committed together by adjust_inventory_quantity_v1 below.
-    if (useStage6b7SecureProductAccess) {
-      final savedProduct = await supabase.rpc(
-        'product_details_update_v3',
-        params: <String, dynamic>{
-          'p_session_token': _requireSessionToken(),
-          'p_product_id': updatedItem.id,
-          'p_product_name': updatedItem.name,
-          'p_sku': updatedItem.sku,
-          'p_product_price': updatedItem.price,
-          'p_description': updatedItem.description,
-          'p_manufacturer': updatedItem.manufacturer,
-          'p_model': updatedItem.model,
-          'p_product_size': updatedItem.productSize,
-          'p_color': updatedItem.color,
-          'p_shelf_level': updatedItem.shelfLevel,
-          'p_bin_number': updatedItem.binNumber,
-          'p_image_url': updatedItem.imageUrl,
-          'p_unit': updatedItem.unit,
-          'p_max_quantity': updatedItem.maxQuantity,
-          'p_requires_loading': updatedItem.requiresLoading,
-        },
+    // Save product details and map placement through the session-authorized
+    // function. Quantity and its history entry use the separate adjustment RPC.
+    final savedProduct = await supabase.rpc(
+      'product_details_update_v4',
+      params: <String, dynamic>{
+        'p_session_token': _requireSessionToken(),
+        'p_product_id': updatedItem.id,
+        'p_product_name': updatedItem.name,
+        'p_sku': updatedItem.sku,
+        'p_product_price': updatedItem.price,
+        'p_description': updatedItem.description,
+        'p_manufacturer': updatedItem.manufacturer,
+        'p_model': updatedItem.model,
+        'p_product_size': updatedItem.productSize,
+        'p_color': updatedItem.color,
+        'p_category': updatedItem.category,
+        'p_map_element_id': updatedItem.locationId,
+        'p_shelf_level': updatedItem.shelfLevel,
+        'p_bin_number': updatedItem.binNumber,
+        'p_image_url': updatedItem.imageUrl,
+        'p_unit': updatedItem.unit,
+        'p_max_quantity': updatedItem.maxQuantity,
+        'p_requires_loading': updatedItem.requiresLoading,
+      },
+    );
+    if (savedProduct != true) {
+      throw const AppUserFacingException(
+        'Product was not saved. Refresh inventory and try again.',
       );
-      if (savedProduct != true) {
-        throw const AppUserFacingException(
-          'Product was not saved. Refresh inventory and try again.',
-        );
-      }
-    } else {
-      final savedProduct = await supabase
-          .from('products')
-          .update({
-            'product_name': updatedItem.name,
-            'sku': updatedItem.sku,
-            'category': updatedItem.category,
-            'product_price': updatedItem.price,
-            'description': updatedItem.description,
-            'manufacturer': updatedItem.manufacturer,
-            'model': updatedItem.model,
-            'product_size': updatedItem.productSize,
-            'color': updatedItem.color,
-            'shelf_level': updatedItem.shelfLevel,
-            'bin_number': updatedItem.binNumber,
-            'image_url': updatedItem.imageUrl,
-            'unit': updatedItem.unit,
-            'max_quantity': updatedItem.maxQuantity,
-            'requires_loading': updatedItem.requiresLoading,
-          })
-          .eq('id', updatedItem.id)
-          .eq('location_id', locationId)
-          .select('id')
-          .maybeSingle();
-      if (savedProduct == null) {
-        throw const AppUserFacingException(
-          'Product was not saved. Refresh inventory and try again.',
-        );
-      }
     }
 
     String? transactionId;
@@ -2160,7 +2131,7 @@ class InventoryController {
     if (error is PostgrestException &&
         (((error.code == 'PGRST202' || error.code == '42883') &&
                 (details.contains('create_product_v3') ||
-                    details.contains('product_details_update_v3'))) ||
+                    details.contains('product_details_update_v4'))) ||
             (error.code == '42703' && details.contains('color')))) {
       throw const AppUserFacingException(
         'Product setup is incomplete. Please ask an administrator to update the database.',

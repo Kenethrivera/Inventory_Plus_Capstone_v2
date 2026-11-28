@@ -2997,11 +2997,11 @@ class _ItemDetailsDrawerState extends State<_ItemDetailsDrawer> {
         binNumber: item.binNumber,
         imageUrl: savedImageUrl,
         requiresLoading: _requiresLoading,
+      ).copyWith(
+        locationId: _locationValue,
+        clearLocation: _locationValue == null,
       );
       await widget.onSave(updated);
-      if (_locationValue != item.locationId) {
-        await widget.controller.assignItemToLocation(item.id, _locationValue);
-      }
       if (!mounted) return;
       _imageUrlController.text = savedImageUrl;
       setState(() {
