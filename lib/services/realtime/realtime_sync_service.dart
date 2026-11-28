@@ -421,54 +421,26 @@ class RealtimeSyncService {
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
-          table: 'notifications',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'location_id',
-            value: locationId,
-          ),
-          callback: (_) => signalChange('notifications'),
+          // No notification content is sent to anon. The signal invalidates
+          // the session-scoped notification_feed_v1 snapshot.
+          table: 'notification_realtime_signals',
+          callback: (_) => signalChange('notification_signal'),
         )
         .subscribe((status, error) {
           debugPrint(
             '[RealtimeSync] NOTIFICATIONS STATUS=$status error=$error',
           );
           if (status == RealtimeSubscribeStatus.subscribed) {
-            if (notificationsSubscribed) {
-              signalChange('notifications_resubscribed');
-            }
+            signalChange(
+              notificationsSubscribed
+                  ? 'notifications_resubscribed'
+                  : 'notifications_subscribed',
+            );
             notificationsSubscribed = true;
           }
         });
 
-    bool readsSubscribed = false;
-    final RealtimeChannel readsChannel = _supabase
-        .channel('inventory-plus:notification-reads:$userId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'notification_reads',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'user_id',
-            value: userId,
-          ),
-          callback: (_) => signalChange('notification_reads'),
-        )
-        .subscribe((status, error) {
-          debugPrint(
-            '[RealtimeSync] NOTIFICATION READS STATUS=$status error=$error',
-          );
-          if (status == RealtimeSubscribeStatus.subscribed) {
-            if (readsSubscribed) {
-              signalChange('notification_reads_resubscribed');
-            }
-            readsSubscribed = true;
-          }
-        });
-
     _channels[notificationsKey] = notificationsChannel;
-    _channels[readsKey] = readsChannel;
     _notificationChangesController.add(null);
 
     debugPrint(
@@ -511,20 +483,22 @@ class RealtimeSyncService {
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
-          table: 'staff_presence',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'location_id',
-            value: locationId,
-          ),
-          callback: (_) => signalChange('staff_presence'),
+          // Raw presence rows are hidden by RLS. The trigger publishes only
+          // an invalidation revision; StaffPresenceService fetches scoped data
+          // through staff_presence_list_v1 after receiving it.
+          table: 'staff_presence_realtime_signals',
+          callback: (_) => signalChange('staff_presence_signal'),
         )
         .subscribe((status, error) {
           debugPrint('[RealtimeSync] PRESENCE STATUS=$status error=$error');
           if (status == RealtimeSubscribeStatus.subscribed) {
-            if (hasSubscribed) {
-              signalChange('staff_presence_resubscribed');
-            }
+            // Close the gap between the initial snapshot and the point when
+            // the subscription actually begins receiving changes.
+            signalChange(
+              hasSubscribed
+                  ? 'staff_presence_resubscribed'
+                  : 'staff_presence_subscribed',
+            );
             hasSubscribed = true;
           }
         });

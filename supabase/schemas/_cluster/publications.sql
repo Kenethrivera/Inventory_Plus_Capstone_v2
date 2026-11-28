@@ -6,6 +6,8 @@ ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."measurements";
 
 ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."notification_reads";
 
+ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."notification_realtime_signals";
+
 ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."notifications";
 
 ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."order_history_realtime_signals";
@@ -17,6 +19,8 @@ ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."products";
 ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."profiles";
 
 ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."staff_presence";
+
+ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."staff_presence_realtime_signals";
 
 ALTER PUBLICATION "supabase_realtime" ADD TABLE "public"."staff_session_logs";
 

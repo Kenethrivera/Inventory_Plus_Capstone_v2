@@ -20,6 +20,11 @@ CREATE UNIQUE INDEX notifications_active_lifecycle_unique
   ON public.notifications USING btree (location_id, lifecycle_key)
   WHERE ((lifecycle_key IS NOT NULL) AND (is_resolved = false));
 
+CREATE TRIGGER notifications_signal_realtime_v1
+  AFTER INSERT OR UPDATE OR DELETE ON public.notifications
+  FOR EACH ROW
+  EXECUTE FUNCTION public.signal_notification_change_v1();
+
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."notifications" TO "anon", "authenticated";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."notifications" TO "service_role";

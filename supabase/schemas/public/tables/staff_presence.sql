@@ -17,6 +17,11 @@ CREATE INDEX idx_staff_presence_location ON public.staff_presence USING btree (l
 
 CREATE INDEX idx_staff_presence_role ON public.staff_presence USING btree (user_role);
 
+CREATE TRIGGER staff_presence_signal_realtime_v1
+  AFTER INSERT OR UPDATE OR DELETE ON public.staff_presence
+  FOR EACH ROW
+  EXECUTE FUNCTION public.signal_staff_presence_change_v1();
+
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."staff_presence" TO "anon", "authenticated";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."staff_presence" TO "service_role";
