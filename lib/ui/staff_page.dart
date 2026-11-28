@@ -56,6 +56,7 @@ class _StaffPageState extends State<StaffPage> {
   StreamSubscription<List<CustomerOrder>>? _ordersSubscription;
   StreamSubscription<void>? _performanceSubscription;
   Timer? _ordersRefreshTimer;
+  Timer? _presenceRefreshTimer;
   Map<String, int> _activeOrderCounts = const {};
   int _metricsGeneration = 0;
 
@@ -68,6 +69,7 @@ class _StaffPageState extends State<StaffPage> {
     if (widget.isActive) {
       unawaited(_loadToday());
       _startOrderRefresh();
+      _startPresenceRefresh();
     }
   }
 
@@ -77,6 +79,20 @@ class _StaffPageState extends State<StaffPage> {
     _ordersRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (mounted && widget.isActive) {
         unawaited(widget.controller.retryOrdersSnapshot());
+      }
+    });
+  }
+
+  void _startPresenceRefresh() {
+    _presenceRefreshTimer?.cancel();
+    final presence = widget.presence;
+    if (presence == null) return;
+
+    unawaited(presence.refreshActiveStaff());
+    // The session-scoped RPC also works when RLS prevents Realtime events.
+    _presenceRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted && widget.isActive && identical(widget.presence, presence)) {
+        unawaited(presence.refreshActiveStaff());
       }
     });
   }
@@ -159,6 +175,15 @@ class _StaffPageState extends State<StaffPage> {
       _ordersRefreshTimer?.cancel();
       _ordersRefreshTimer = null;
     }
+    if (widget.isActive &&
+        (!oldWidget.isActive ||
+            oldWidget.controller != widget.controller ||
+            oldWidget.presence != widget.presence)) {
+      _startPresenceRefresh();
+    } else if (!widget.isActive && oldWidget.isActive) {
+      _presenceRefreshTimer?.cancel();
+      _presenceRefreshTimer = null;
+    }
   }
 
   void _rebuild() {
@@ -220,6 +245,7 @@ class _StaffPageState extends State<StaffPage> {
   @override
   void dispose() {
     _ordersRefreshTimer?.cancel();
+    _presenceRefreshTimer?.cancel();
     _metricsGeneration++;
     unawaited(_staffSubscription?.cancel());
     unawaited(_ordersSubscription?.cancel());

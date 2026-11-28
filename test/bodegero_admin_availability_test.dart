@@ -53,6 +53,12 @@ class _AdminController extends InventoryController {
     periodEnd: periodEnd,
   );
 
+  @override
+  Future<Map<String, dynamic>> loadBodegeroPerformance({
+    required DateTime periodStart,
+    required DateTime periodEnd,
+  }) async => const {};
+
   Future<void> close() => _orders.close();
 }
 
@@ -64,12 +70,24 @@ class _OnlinePresence extends StaffPresenceService {
         userId: 'admin-1',
         userName: 'Admin',
         userRole: 'admin',
+        sessionToken: 'test-session',
       );
 
+  bool online = true;
+  int refreshCount = 0;
+
   @override
-  List<Map<String, dynamic>> get activeStaff => [
-    {'user_id': '7', 'user_role': 'bodegero', 'is_online': true},
-  ];
+  List<Map<String, dynamic>> get activeStaff => online
+      ? [
+          {'user_id': '7', 'user_role': 'bodegero', 'is_online': true},
+        ]
+      : const [];
+
+  @override
+  Future<void> refreshActiveStaff() async {
+    refreshCount++;
+    notifyListeners();
+  }
 }
 
 void main() {
@@ -83,7 +101,7 @@ void main() {
     );
   });
 
-  testWidgets('Admin Staff refreshes assigned Bodegero status on opening', (
+  testWidgets('Admin Staff refreshes orders on opening without marking staff busy', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
@@ -127,8 +145,59 @@ void main() {
     await tester.pumpWidget(page(true));
     await tester.pumpAndSettle();
     expect(controller.refreshCount, 1);
-    expect(find.text('Busy'), findsOneWidget);
+    expect(find.text('Available'), findsOneWidget);
     expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Staff availability refreshes while the page is active', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final order = CustomerOrder.fromJson({
+      'id': 'idle-1',
+      'status': 'completed',
+      'items': const [],
+    });
+    final controller = _AdminController(order);
+    final presence = _OnlinePresence();
+    addTearDown(() async {
+      presence.dispose();
+      await controller.close();
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: StaffPage(
+          controller: controller,
+          isActive: true,
+          presence: presence,
+        ),
+      ),
+    ));
+    await tester.pump();
+    expect(presence.refreshCount, 1);
+    expect(find.text('Available'), findsOneWidget);
+
+    presence.online = false;
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump();
+    expect(presence.refreshCount, 2);
+    expect(find.text('Offline'), findsOneWidget);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: StaffPage(
+          controller: controller,
+          isActive: false,
+          presence: presence,
+        ),
+      ),
+    ));
+    await tester.pump(const Duration(seconds: 10));
+    expect(presence.refreshCount, 2);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
