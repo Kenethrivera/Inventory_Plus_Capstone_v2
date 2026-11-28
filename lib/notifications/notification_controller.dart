@@ -23,6 +23,7 @@ class NotificationController extends ChangeNotifier {
   String? _errorMessage;
   StreamSubscription<void>? _notificationChangesSubscription;
   StreamSubscription<void>? _orderChangesSubscription;
+  Timer? _refreshTimer;
   bool _refreshInFlight = false;
   bool _refreshQueued = false;
   bool _hasLoadedSnapshot = false;
@@ -101,6 +102,7 @@ class NotificationController extends ChangeNotifier {
   void bindRealtimeSync(RealtimeSyncService realtimeSync) {
     unawaited(_notificationChangesSubscription?.cancel());
     unawaited(_orderChangesSubscription?.cancel());
+    _refreshTimer?.cancel();
 
     _notificationChangesSubscription = realtimeSync.notificationChanges.listen(
       (_) => unawaited(_refreshNotifications()),
@@ -124,6 +126,12 @@ class NotificationController extends ChangeNotifier {
         debugPrint('[NotificationController] Order invalidation error: $error');
       },
     );
+
+    // Poll the session-scoped feed when custom-session RLS hides row changes
+    // from the Realtime connection.
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      unawaited(_refreshNotifications());
+    });
   }
 
   Future<void> _refreshNotifications({bool showLoading = false}) async {
@@ -808,6 +816,7 @@ class NotificationController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _refreshTimer?.cancel();
     unawaited(_notificationChangesSubscription?.cancel());
     unawaited(_orderChangesSubscription?.cancel());
     super.dispose();

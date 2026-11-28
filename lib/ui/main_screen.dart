@@ -244,11 +244,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         sessionToken: widget.controller.currentSessionToken,
         realtimeSync: widget.realtimeSync,
       );
-      if (role.toLowerCase() == 'bodegero') {
-        unawaited(_notificationController!.loadNotifications());
-      }
+      unawaited(_notificationController!.loadNotifications());
       if (role.toLowerCase() == 'admin') {
-        unawaited(_notificationController!.loadNotifications());
         _orderDelaySubscription = widget.realtimeSync.orderChanges.listen(
           (_) => unawaited(_scanOrderDelayNotifications()),
         );
